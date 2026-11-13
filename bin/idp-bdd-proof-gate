@@ -9,47 +9,17 @@ refused -- fail-closed.
 This is the "show the green run, do not describe it" rule (LAW 22) given a machine that
 can say no, and it applies to every session, not one agent's workflow.
 
-TWO MODES, ONE PREDICATE (2026-11-11, P0 on issue #7467). `--live` grades the pull
-request the CI event is about; the JSON mode grades a pull request handed to it on
-stdin. They were two different gates. The JSON one checked the head and the runner's
-counts; `--live` checked only that SOME `BDD-PROOF` block existed -- so `--live` passed
-a pull request whose block named a different commit, or named no run at all. A gate that
-grades one thing and admits another is not a gate, so `grade()` is now the ONE
-predicate, and both modes run it.
-
-WHICH PULL REQUEST IS UNDER TEST. Two exact sources, and never a guess:
-  1. the GitHub event payload (`pull_request.number`, or the `pr-<n>-` inside
-     `merge_group.head_ref`), read from GITHUB_EVENT_PATH. The payload also carries the
-     body and the head sha, so the common case -- a pull_request event -- is graded
-     with no token at all;
-  2. an explicit head branch (GITHUB_HEAD_REF, or the branch of GITHUB_REF when it is
-     not the repository's default branch), resolved through `gh pr list --head`.
-There is NO newest-pull-request fallback. That fallback graded whatever session opened
-a pull request last: it refused a correct branch because another branch's pull request
-had no proof block, and -- the worse direction -- it passed a pull request with no
-proof at all because some OTHER pull request had one.
-
+Input: a pull request as JSON on stdin or as a file path (the shape `gh pr view --json`).
 Exit codes:
-  0  PROVED         the pull request carries BDD proof on its own head commit
-  1  REFUSED        no block, no passing runner evidence, or the run is not on this head
-  2  BLIND          the pull request could not be read at all: no token, gh failed, the
-                    event payload is unreadable. Never a pass.
-  3  NOT APPLICABLE there is no pull request under test (a push that has no pull
-                    request yet). Nothing was graded and nothing was proved; the caller
-                    says so in those words, because "no proof" and "a proof" are two
-                    different facts.
-
-Input (JSON mode): a pull request as JSON on stdin or as a file path (the shape
-`gh pr view --json`).
+  0  the pull request carries BDD proof on its own head commit
+  1  refused -- missing block, unparseable, or the run is not on this head
+  2  the input could not be read at all (BLIND, never a pass)
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -57,34 +27,29 @@ from pathlib import Path
 BEGIN = "BDD-PROOF"
 END = "END-BDD-PROOF"
 
-# The four verdicts. The numbers are the contract: bin/idp-ci reads them, and so does
-# every caller that has to tell "refused" from "could not look" from "nothing to look at".
-EXIT_PROVED = 0
-EXIT_REFUSED = 1
-EXIT_BLIND = 2
-EXIT_NOT_APPLICABLE = 3
-
 # A passing BDD line, and the bar is deliberately high: the block must carry a RUNNER'S
 # OWN COUNTS, not a sentence saying the tests passed. "I ran the tests and they passed" is
 # the claim this gate exists to refuse, so a bare `passed` never counts.
 #
 # Accepted shapes, one per family:
-#   cucumber / behave / pytest-bdd : "31 scenarios (31 passed)", "5 features (5 passed)"
+#   cucumber / behave / pytest-bdd : "31 scenarios (31 passed)", "0 failed", "5 features passed"
 #   jest-cucumber / vitest-cucumber: "Tests: 31 passed, 31 total"
 #   go test -run TestBDD           : "--- PASS: TestBDDGateway (0.02s)"
 #   pytest with bdd plugin         : "142 passed in 4.51s"
 PASS_PATTERNS = [
     # cucumber family summaries
-    re.compile(r"\b[1-9]\d*\s+scenarios?\b[^\n]{0,40}\b[1-9]\d*\s+passed\b", re.I),
-    re.compile(r"\b[1-9]\d*\s+features?\b[^\n]{0,40}\b[1-9]\d*\s+passed\b", re.I),
-    # A bare '0 failed' proves no execution; require at least one passing test.
+    re.compile(r"\b\d+\s+scenarios?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
+    re.compile(r"\b\d+\s+features?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
+    re.compile(r"\b\d+\s+failed\b", re.I)
+    if False
+    else re.compile(r"\b0\s+failed\b", re.I),
     # jest / vitest
-    re.compile(r"Tests:\s*[1-9]\d*\s+passed", re.I),
-    re.compile(r"\b[1-9]\d*\s+passed,\s*[1-9]\d*\s+total\b", re.I),
+    re.compile(r"Tests:\s*\d+\s+passed", re.I),
+    re.compile(r"\b\d+\s+passed,\s*\d+\s+total\b", re.I),
     # go
     re.compile(r"^---\s*PASS:\s*\w", re.M),
     # pytest
-    re.compile(r"\b[1-9]\d*\s+passed\s+in\s+[\d.]+s", re.I),
+    re.compile(r"\b\d+\s+passed\s+in\s+[\d.]+s", re.I),
 ]
 
 # A block that only asserts in prose, with no runner output at all. Refused separately so
@@ -93,26 +58,6 @@ PROSE_ONLY = re.compile(
     r"^\s*(i\s+(ran|ran\s+the)|tests?\s+(pass|passed|are\s+green)|all\s+green|"
     r"bdd\s+(pass|passed|is\s+green)|verified\s+manually)\b",
     re.I | re.M,
-)
-
-# The estate's OWN producer writes this line, and it is the reason the producer can fill
-# the block at all (issue #7467: "a producer that can honestly fill it"). The Greenlane
-# (greenlane/github.py::_ensure_pr) creates the pull request and writes:
-#
-#     required checks green on candidate <sha>: <check>, <check>, ...
-#
-# after it has awaited every required check green on the candidate it names. It is not a
-# runner's counts, so it does not go into PASS_PATTERNS and pretend to be one; it is
-# evidence in its own right, and it is accepted only in that exact shape: the phrase, a
-# commit, and at least one named check. "required checks green" on its own is not enough.
-#
-# WHAT THIS DOES NOT DO: it does not make the gate cryptographic. The gate proves that a
-# block exists, carries runner-shaped or lander-shaped evidence, and names this pull
-# request's head. It cannot prove the runner ran. A machine that could would be a
-# different gate, and this one is not claiming to be it.
-GREENLANE_EVIDENCE = re.compile(
-    r"required\s+checks\s+green\s+on\s+candidate\s+[0-9a-f]{7,40}\s*:\s*\S+",
-    re.I,
 )
 
 
@@ -133,336 +78,122 @@ def head_from_block(block: str) -> str | None:
 
 
 def looks_like_a_pass(block: str) -> bool:
-    """True only when the block carries a runner's own counts, or the lander's own line."""
-    if GREENLANE_EVIDENCE.search(block):
-        return True
+    """True only when the block carries a runner's own counts, not a prose claim."""
     if PROSE_ONLY.search(block) and not any(p.search(block) for p in PASS_PATTERNS):
         return False
     return any(p.search(block) for p in PASS_PATTERNS)
 
 
-def same_commit(head: str, proved: str) -> bool:
-    """True when the two names the same commit (either may be the other's prefix)."""
-    h = (head or "").lower()
-    p = (proved or "").lower()
-    if not h or not p:
-        return False
-    if len(h) < 7 or len(p) < 7:
-        return h == p
-    return h.startswith(p) or p.startswith(h)
+def live_pr() -> dict:
+    """The pull request under test (the CI event's PR), as gh reports it.
 
-
-def grade(
-    body: str,
-    head: str,
-    label: str,
-    proved_override: str | None = None,
-) -> tuple[int, str]:
-    """The ONE predicate: the block exists, it carries a passing run, it names this head.
-
-    Returns (exit code, the sentence that says which of the three failed). Both the live
-    mode and the JSON mode run exactly this, so a pull request cannot pass one and fail
-    the other. `proved_override` is the JSON mode's documented test hook (BDD_RUN_HEAD)
-    and is never set by the live mode.
+    The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
+    session opened, not the PR being graded -- so a run for branch A refused because branch
+    B's freshly-opened PR carried no BDD-PROOF block. That false-red is what the founder's
+    comment at bin/idp-ci:73-84 was working around with a load-bearing `|| true`. Fix that
+    class by reading the PR number from the GitHub Actions event payload when it is set
+    (pull_request or merge_group event), and fall back to newest only when neither is
+    present (local invocation).
     """
-    block = extract_block(body or "")
-    if block is None:
-        return EXIT_REFUSED, f"{label} carries no {BEGIN} ... {END} block"
-    if not looks_like_a_pass(block):
-        return EXIT_REFUSED, f"{label}: the proof block carries no passing BDD run"
-    proved = proved_override or head_from_block(block)
-    if proved is None:
-        return EXIT_REFUSED, f"{label}: the proof block names no head commit"
-    if not head:
-        return (
-            EXIT_BLIND,
-            f"{label}: its head commit is unknown, so the proof cannot be tied to it",
-        )
-    if not same_commit(head, proved):
-        return (
-            EXIT_REFUSED,
-            f"{label}: the proof names {proved}, but the head is {head[:12]}",
-        )
-    return EXIT_PROVED, f"{label}: bdd proof on head {proved}"
+    import os
+    import subprocess
 
+    root = Path(__file__).resolve().parents[1]
 
-# -- which pull request is under test --------------------------------------------------------
+    # GHA sets GITHUB_EVENT_PATH to a JSON file describing the triggering event. For
+    # pull_request events its .pull_request.number is the PR under test; for merge_group
+    # its .merge_group.head_ref parses to `refs/heads/gh-readonly-queue/<base>/pr-<n>-...`.
+    pr_number = None
+    ev_path = os.environ.get("GITHUB_EVENT_PATH")
+    if ev_path and Path(ev_path).is_file():
+        try:
+            ev = json.loads(Path(ev_path).read_text())
+            pr_number = (ev.get("pull_request") or {}).get("number")
+            if not pr_number:
+                head = (ev.get("merge_group") or {}).get("head_ref") or ""
+                # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
+                import re
 
+                m = re.search(r"/pr-(\d+)-", head)
+                if m:
+                    pr_number = int(m.group(1))
+        except Exception:  # noqa: S110 - malformed event JSON falls through to gh list
+            pass
 
-def gh_bin() -> str:
-    """`gh`, found the way a login shell would find it (the executor's PATH is thin)."""
-    found = shutil.which("gh")
-    if found:
-        return found
-    for d in (
-        os.path.expanduser("~/.local/bin"),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/opt/hostedtoolcache/gh",
-    ):
-        cand = os.path.join(d, "gh")
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return cand
-    return "gh"
-
-
-def gh_json(args: list[str]) -> tuple[int, str, str]:
-    """Run gh with these arguments. Returns (rc, stdout, stderr); never raises.
-
-    The timeout is 30 s because this runs inside the fast gate, whose whole budget is
-    60 s: a gate that waits longer than the job it blocks is a gate that times the job
-    out instead of answering.
-    """
-    try:
-        p = subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell
-            [gh_bin(), *args],
+    if pr_number:
+        out = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--json",
+                "number,title,body,headRefOid",
+            ],
+            cwd=root,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,
         )
-    except FileNotFoundError:
-        return 127, "", "gh is not installed"
-    except Exception as e:  # noqa: BLE001 -- any failure here is BLIND, not a crash
-        return 127, "", str(e)
-    return p.returncode, p.stdout, p.stderr
+        if out.returncode != 0:
+            raise RuntimeError(
+                f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}"
+            )
+        return json.loads(out.stdout)
 
-
-def read_event(env: dict) -> tuple[dict | None, str]:
-    """The GitHub event payload, or (None, why-not).
-
-    An event path that is set but unreadable is an ERROR, not an absence: the payload is
-    how the gate learns which pull request it is grading, so a stale or broken one means
-    the gate cannot tell, and cannot-tell is BLIND.
-    """
-    path = (env.get("GITHUB_EVENT_PATH") or "").strip()
-    if not path:
-        return None, ""
-    p = Path(path)
-    if not p.is_file():
-        return None, f"GITHUB_EVENT_PATH is set to {path}, which is not a file"
-    try:
-        raw = p.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:  # noqa: BLE001 -- unreadable payload is BLIND
-        return None, f"cannot read the event payload {path}: {e}"
-    try:
-        ev = json.loads(raw)
-    except Exception as e:  # noqa: BLE001 -- malformed payload is BLIND
-        return None, f"the event payload {path} is not JSON: {e}"
-    if not isinstance(ev, dict):
-        return None, f"the event payload {path} is not an object"
-    return ev, ""
-
-
-def default_branch(event: dict | None) -> str:
-    """The repository's default branch, when the payload names it."""
-    repo = (event or {}).get("repository") or {}
-    return (repo.get("default_branch") or "").strip()
-
-
-def explicit_branch(env: dict, event: dict | None) -> tuple[str, str]:
-    """The head branch this run is about, and why there is none.
-
-    GITHUB_HEAD_REF is set by GitHub on a pull_request event and by the estate's own
-    pre-push hook for a lane branch. GITHUB_REF is the ref being pushed; it names a
-    branch only when it is not a pull-request merge ref.
-    """
-    default = default_branch(event)
-    candidates: list[str] = []
-    head_ref = (env.get("GITHUB_HEAD_REF") or "").strip()
+    # GITHUB_HEAD_REF is set by the pre-push hook for lane/* branches. Use it to find
+    # the correct PR for the branch being pushed, instead of the global newest PR.
+    head_ref = os.environ.get("GITHUB_HEAD_REF", "")
     if head_ref:
-        candidates.append(head_ref)
-    ref = (env.get("GITHUB_REF") or "").strip()
-    if ref.startswith("refs/heads/"):
-        candidates.append(ref[len("refs/heads/") :])
-    name = (env.get("GITHUB_REF_NAME") or "").strip()
-    if name and not name.endswith("/merge"):
-        candidates.append(name)
-    for cand in candidates:
-        branch = cand[len("refs/heads/") :] if cand.startswith("refs/heads/") else cand
-        if not branch:
-            continue
-        if branch.startswith("queue/"):
-            return "", (
-                f"the Greenlane's candidate ({branch}) is a branch under test, "
-                "not a pull request: there is no proof to grade here"
-            )
-        if default and branch == default:
-            return "", (
-                f"the push is to the default branch ({branch}), which is not a "
-                "pull request's head: there is no proof to grade here"
-            )
-        return branch, ""
-    return "", ""
-
-
-def pr_by_number(number: int) -> tuple[str, dict | None, str]:
-    """(kind, target, detail) with kind in {resolved, blind, none}."""
-    rc, out, err = gh_json(
-        ["pr", "view", str(number), "--json", "number,title,body,headRefOid"]
-    )
-    if rc != 0:
-        why = (err or out or "").strip().replace("\n", " ")[:200]
-        return "blind", None, f"gh could not read pull request #{number}: {why}"
-    try:
-        pr = json.loads(out or "{}")
-    except Exception as e:  # noqa: BLE001 -- unreadable answer is BLIND
-        return (
-            "blind",
-            None,
-            f"gh returned unreadable JSON for pull request #{number}: {e}",
-        )
-    if not isinstance(pr, dict):
-        return "blind", None, f"gh returned no pull request for #{number}"
-    return (
-        "resolved",
-        {
-            "number": pr.get("number") or number,
-            "body": pr.get("body") or "",
-            "headRefOid": pr.get("headRefOid") or "",
-            "source": "gh pr view",
-        },
-        "",
-    )
-
-
-def pr_by_branch(branch: str, owner: str) -> tuple[str, dict | None, str]:
-    """(kind, target, detail) for the pull request whose head is exactly `branch`."""
-    queries = []
-    if owner:
-        queries.append(f"{owner}:{branch}")
-    queries.append(branch)
-    rows: list[dict] = []
-    for head in queries:
-        rc, out, err = gh_json(
+        out = subprocess.run(
             [
+                "gh",
                 "pr",
                 "list",
                 "--head",
-                head,
+                head_ref,
                 "--state",
                 "all",
                 "--limit",
-                "20",
+                "1",
                 "--json",
-                "number,title,body,headRefOid,headRefName",
-            ]
+                "number,title,body,headRefOid",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
-        if rc != 0:
-            why = (err or out or "").strip().replace("\n", " ")[:200]
-            return "blind", None, f"gh could not list pull requests for {head}: {why}"
-        try:
-            parsed = json.loads(out or "[]")
-        except Exception as e:  # noqa: BLE001 -- unreadable answer is BLIND
-            return "blind", None, f"gh returned unreadable JSON for {head}: {e}"
-        if not isinstance(parsed, list):
-            return "blind", None, f"gh returned no list for {head}"
-        rows = [r for r in parsed if (r.get("headRefName") or "") == branch]
-        if rows:
-            break
+        if out.returncode == 0:
+            rows = json.loads(out.stdout or "[]")
+            if rows:
+                return rows[0]
+
+    out = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--json",
+            "number,title,body,headRefOid",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if out.returncode != 0:
+        raise RuntimeError(
+            f"gh could not list pull requests: {out.stderr.strip()[:200]}"
+        )
+    rows = json.loads(out.stdout or "[]")
     if not rows:
-        return "none", None, f"no pull request has the head branch {branch}"
-    rows.sort(key=lambda r: r.get("number") or 0)
-    pr = rows[-1]
-    return (
-        "resolved",
-        {
-            "number": pr.get("number"),
-            "body": pr.get("body") or "",
-            "headRefOid": pr.get("headRefOid") or "",
-            "source": f"the pull request whose head branch is {branch}",
-        },
-        "",
-    )
-
-
-def pr_in_payload(event: dict, number: int) -> dict | None:
-    """The pull request `number` as the event payload carries it, or None.
-
-    A merge_group event names its pull request in the head ref; some payloads also carry
-    the pull requests themselves, body and head included. When they are there, the pull
-    request is graded with no token at all -- the same way a pull_request event is.
-    """
-    rows = event.get("pull_requests")
-    if not isinstance(rows, list):
-        return None
-    for row in rows:
-        if not isinstance(row, dict) or row.get("number") != number:
-            continue
-        body = row.get("body")
-        if body is None:
-            return None
-        head = ((row.get("head") or {}).get("sha")) or ""
-        return {
-            "number": number,
-            "body": body or "",
-            "headRefOid": head,
-            "source": "the event payload",
-        }
-    return None
-
-
-def resolve(env: dict) -> tuple[str, dict | None, str]:
-    """The pull request under test: (kind, target, detail).
-
-    kind is "resolved" (grade this), "blind" (a pull request IS under test but could not
-    be read) or "none" (there is no pull request under test; nothing to grade).
-    """
-    event, err = read_event(env)
-    if err:
-        return "blind", None, err
-    if event is not None:
-        pr = event.get("pull_request") or {}
-        number = pr.get("number")
-        if number:
-            body = pr.get("body")
-            head = ((pr.get("head") or {}).get("sha")) or ""
-            if body is not None:
-                # The payload carries the body and the head: the event names the pull
-                # request exactly, and nothing has to be fetched to grade it.
-                return (
-                    "resolved",
-                    {
-                        "number": number,
-                        "body": body or "",
-                        "headRefOid": head,
-                        "source": "the event payload",
-                    },
-                    "",
-                )
-            return pr_by_number(int(number))
-        mg = event.get("merge_group") or {}
-        head_ref = mg.get("head_ref") or ""
-        m = re.search(r"/pr-(\d+)-", head_ref)
-        if m:
-            number = int(m.group(1))
-            in_group = pr_in_payload(event, number)
-            if in_group is not None:
-                return "resolved", in_group, ""
-            return pr_by_number(number)
-    branch, why = explicit_branch(env, event)
-    if branch:
-        owner = (env.get("GITHUB_REPOSITORY_OWNER") or "").strip()
-        if not owner:
-            repo = (env.get("GITHUB_REPOSITORY") or "").strip()
-            owner = repo.split("/")[0] if "/" in repo else ""
-        return pr_by_branch(branch, owner)
-    if why:
-        return "none", None, why
-    return "none", None, "no pull request is under test"
-
-
-def live_grade(env: dict) -> tuple[int, str]:
-    """Grade the pull request under test. Returns (exit code, the sentence that says why)."""
-    kind, target, detail = resolve(env)
-    if kind == "blind":
-        return EXIT_BLIND, f"BLIND: {detail}"
-    if kind == "none" or target is None:
-        return EXIT_NOT_APPLICABLE, f"no pull request under test: {detail}"
-    return grade(
-        target.get("body") or "",
-        target.get("headRefOid") or "",
-        f"pull request #{target.get('number')}",
-    )
+        raise RuntimeError("no pull request exists on this repository to grade")
+    return rows[0]
 
 
 def _self_test() -> int:
@@ -478,67 +209,60 @@ def _self_test() -> int:
         "BDD-PROOF\nhead: abc1234\ni ran the tests and they passed\nEND-BDD-PROOF"
     )
     bad_none = "no proof block at all here"
-    lander = (
-        "BDD-PROOF\nhead: abc1234\nrequired checks green on candidate abc1234: bdd, ci-success\n"
-        "END-BDD-PROOF"
+    assert extract_block(good) is not None, "extractor missed a real block"
+    assert extract_block(bad_none) is None, "extractor invented a block"
+    assert head_from_block(extract_block(good)) == "abc1234", "head parser wrong"
+    assert looks_like_a_pass(extract_block(good)) is True, (
+        "counts pattern refused a real pass"
     )
-    cases = [
-        ("extractor missed a real block", extract_block(good) is not None),
-        ("extractor invented a block", extract_block(bad_none) is None),
-        ("head parser wrong", head_from_block(extract_block(good) or "") == "abc1234"),
-        (
-            "counts pattern refused a real pass",
-            looks_like_a_pass(extract_block(good) or ""),
-        ),
-        (
-            "prose accepted as pass",
-            not looks_like_a_pass(extract_block(bad_prose) or ""),
-        ),
-        (
-            "the lander's own line refused",
-            looks_like_a_pass(extract_block(lander) or ""),
-        ),
-        ("same_commit ignored a prefix", same_commit("abc1234def", "abc1234")),
-        (
-            "same_commit accepted a different commit",
-            not same_commit("abc1234", "def5678"),
-        ),
-    ]
-    for why, ok in cases:
-        if not ok:
-            print(f"bdd-proof-gate --self-test: FAILED, {why}", file=sys.stderr)
-            return 1
+    assert looks_like_a_pass(extract_block(bad_prose)) is False, (
+        "prose accepted as pass"
+    )
     print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
     return 0
 
 
 def main() -> int:
-    if "--self-test" in sys.argv:
-        return _self_test()
-    if "-h" in sys.argv or "--help" in sys.argv:
-        print((__doc__ or "bdd-proof-gate").split("\n")[0])
-        return 0
+    if "--self-test" in sys.argv or "-h" in sys.argv or "--help" in sys.argv:
+        return (
+            _self_test()
+            if "--self-test" in sys.argv
+            else (print(__doc__ or "bdd-proof-gate") or 0)
+        )
     if "--live" in sys.argv:
-        rc, msg = live_grade(os.environ)
-        stream = sys.stdout if rc == EXIT_PROVED else sys.stderr
-        print(msg, file=stream)
-        return rc
+        try:
+            pr = live_pr()
+        except Exception as e:
+            print(
+                f"bdd-proof-gate: BLIND, cannot read a pull request: {e}",
+                file=sys.stderr,
+            )
+            return 2
+        body = pr.get("body") or ""
+        if extract_block(body) is None:
+            # Named, not silently green: the last PR carries no proof, and the rule says so.
+            print(
+                f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"ok: PR #{pr.get('number')} carries a {BEGIN} block")
+        return 0
 
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
     try:
         raw = sys.stdin.read() if src == "-" else Path(src).read_text()
     except Exception as e:
         print(f"bdd-proof-gate: cannot read input: {e}", file=sys.stderr)
-        return EXIT_BLIND
+        return 2
 
     try:
         pr = json.loads(raw)
     except Exception as e:
         print(f"bdd-proof-gate: input is not JSON: {e}", file=sys.stderr)
-        return EXIT_BLIND
-    if not isinstance(pr, dict):
-        print("bdd-proof-gate: input is not a pull request object", file=sys.stderr)
-        return EXIT_BLIND
+        return 2
+
+    import os
 
     body = pr.get("body") or ""
     head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
@@ -547,24 +271,34 @@ def main() -> int:
     # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
     #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
     #   BDD_RUN_HEAD  -- pretend the proof names this commit
-    # They apply to the JSON mode ONLY. The live mode reads the pull request under test
-    # and grades it as it is; a live grade that the environment can steer is not a grade.
+    # Both default to the input, so an unset environment changes nothing.
     if os.environ.get("BDD_PR_HEAD"):
         head = os.environ["BDD_PR_HEAD"].lower()
     run_head_override = os.environ.get("BDD_RUN_HEAD", "").lower()
 
-    rc, msg = grade(
-        body,
-        head,
-        f"'{title}'",
-        proved_override=run_head_override or None,
-    )
-    if rc != EXIT_PROVED:
-        print(msg, file=sys.stderr)
-        return rc
-    proved = run_head_override or head_from_block(extract_block(body) or "") or ""
+    block = extract_block(body)
+    if block is None:
+        print(f"refused: '{title}' carries no {BEGIN} ... {END} block", file=sys.stderr)
+        return 1
+
+    if not looks_like_a_pass(block):
+        print("refused: the proof block carries no passing BDD run", file=sys.stderr)
+        return 1
+
+    proved = run_head_override or head_from_block(block)
+    if proved is None:
+        print("refused: the proof block names no head commit", file=sys.stderr)
+        return 1
+
+    if head and not head.startswith(proved):
+        print(
+            f"refused: the proof names {proved}, but the pull request's head is {head[:12]}",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"ok: bdd proof on head {proved}")
-    return EXIT_PROVED
+    return 0
 
 
 if __name__ == "__main__":

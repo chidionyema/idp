@@ -1,5 +1,5 @@
 /**
- * active-focus-memory - every session starts from the estate's bi-temporal truth.
+ * active-focus-memory — every session starts from the estate's bi-temporal truth.
  *
  * WHY THIS EXISTS. An agent's context window is not memory: the founder's standing
  * instructions, the facts the estate has proven, and the actions already known to fail get
@@ -23,7 +23,7 @@
  * WHY A FAILED COMPILE IS NOT AN ERROR. Memory is an optimisation, never a blocker. If the
  * engine is missing, the DB is locked, or sqlite3 is unavailable, the session proceeds
  * without the header. A hook that refuses a session because memory could not be read would
- * make the estate's own memory surface an outage - the R6 failure mode, a recovery path that
+ * make the estate's own memory surface an outage — the R6 failure mode, a recovery path that
  * depends on what it recovers.
  *
  * WHAT IT MUST NOT DO: it does not write, does not decide, does not retry in a loop.

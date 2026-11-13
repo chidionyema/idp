@@ -1,77 +1,126 @@
-"""The disk doors fit inside one door, and no disk door points at the retired cleaner.
+"""Disk reclamation is ONE deterministic shell script. No guardian, no intent, no agent.
 
-Measured 2026-10-25, through the door: `disk-free` as invoked ran for 100s and came back exit 124
-with no measurement in it -- the cleaner's `du` of HOME (T_SCAN 300s) was SIGTERMed by the door's
-ceiling, so the caches, docker and tier phases never ran and nothing said so. A door whose work
-cannot fit the door is not a slow door, it is a door that reports nothing. That finding stands.
+THE LAW (founder, 2026-11-11, "PIN 10"). Disk reclamation is 100 percent machine-owned. A short
+POSIX shell script running via cron/launchd deletes caches, scratch and oversized logs
+deterministically, and NEVER spawns an agent. The founder's instruction, verbatim: "DELETE EVERY
+DISK CLEANUP CODE NOW".
 
-THE CLEANER WAS RETIRED 2026-11-11 by founder order (see tests/estate/test_disk_cleanup.py for the
-measurement: 120 steps at 3 MB each while the volume fell 500 MB, then 1012 MB -> 2335 MB
-recovered on its own once it was stopped). So the tests that exercised the cleaner's budget
-behaviour against a real script are gone with the script. What remains is the part of this file
-that is about the DOORS, which is still true and still worth holding:
+MEASURED 2026-11-11, which is why the family was deleted rather than repaired: as the resident
+guardian the 804-line `bin/idp-disk-watch` completed 225 bounded steps at `last_freed_mb=3` while
+the volume fell 1526 MB -> 1012 MB, and on low disk it raised an incident and woke an LLM agent to
+clean the disk -- while `estate-execute` simultaneously refused every agent command because free
+space was under the 1500 MB floor. That is a self-DDoS: the cleaner blocked by the condition it
+exists to fix. When the guardian was stopped the volume recovered on its own, 1012 MB -> 2335 MB.
 
-  1. every disk intent still declares a bound under the executor ceiling;
-  2. no disk intent still invokes the retired cleaner;
-  3. the intents still parse as valid intent YAML.
+So the family is GONE from source -- not tombstoned, not disabled behind a flag, deleted. What
+replaced it is `bin/estate-cache-trim`: POSIX shell, bounded, deterministic, no agent.
+
+This file holds the three claims that keep the family from growing back:
+
+  1. every path of the guardian family is ABSENT from the tree;
+  2. no disk intent survives -- reclamation is a script, not a door with steps and a budget;
+  3. the one survivour is shell, is bounded, and names no agent/LLM/model anywhere.
+
+A deletion is asserted POSITIVELY (stat the path), because a test that only greps for a name
+passes just as happily on a repo that never had one.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 INTENTS = ROOT / "platform/estate/intents"
-CEILING = 100  # mcp/plugins/estate_executor.py CEILING_SEC
 
-DISK_INTENTS = ["disk-free.yaml", "disk-cleanup.yaml", "disk-reclaim.yaml"]
+DELETED_PATHS = [
+    # The guardian family, deleted 2026-11-11.
+    "bin/idp-disk-watch",
+    "bin/idp-disk-guard",
+    "platform/estate/libexec/disk-cleanup.sh",
+    "platform/estate/intents/disk-cleanup.yaml",
+    "platform/estate/intents/disk-free.yaml",
+    "platform/estate/intents/disk-reclaim.yaml",
+    "launchd/ai.estate.disk-watch.plist.tmpl",
+    "launchd/ai.estate.disk-cleanup.plist.tmpl",
+    "infra/macos/tools/disk-sentinel",
+    # Their tests went with them: a test for a deleted thing is a tombstone.
+    "tests/estate/test_disk_cleanup.py",
+    "tests/estate/test_disk_watch.py",
+    "tests/test_disk_cleanup_keeps_a_claimed_worktree.py",
+    "tests/test_disk_sentinel_retired.py",
+    "tests/test_disk_watch_plist_runs.py",
+]
 
 
-@pytest.mark.parametrize("intent", DISK_INTENTS)
-def test_every_disk_intent_parses_and_names_itself(intent: str):
-    doc = yaml.safe_load((INTENTS / intent).read_text(encoding="utf-8"))
-    assert doc["name"] == intent.removesuffix(".yaml")
-    assert doc.get("steps"), f"{intent} must declare its steps"
-
-
-@pytest.mark.parametrize("intent", DISK_INTENTS)
-def test_no_disk_intent_invokes_the_retired_cleaner(intent: str):
-    """A door that shells out to a tombstone reports nothing, which is the defect this guards.
-
-    Matches an EXECUTION of the retired script (a command line that runs it), not prose: the
-    descriptions legitimately explain what the script used to do, and a check that fires on a
-    comment is the same fail-open defect it exists to prevent.
-    """
-    body = (INTENTS / intent).read_text(encoding="utf-8")
-    live_calls = []
-    for line in body.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#") or "disk-cleanup.sh" not in stripped:
-            continue
-        # An execution names the script as a command argument: `bash .../disk-cleanup.sh`,
-        # `nohup bash .../disk-cleanup.sh`, or a bare invocation at line start.
-        if (
-            stripped.startswith("bash ")
-            or stripped.startswith("nohup ")
-            or stripped.startswith("~/.estate/libexec/disk-cleanup.sh")
-            or stripped.startswith("$HOME/.estate/libexec/disk-cleanup.sh")
-        ):
-            live_calls.append(line)
-    assert not live_calls, (
-        f"{intent} still executes the retired cleaner: {live_calls!r}. "
-        "Retired 2026-11-11: it freed 3 MB/step while the volume fell."
+@pytest.mark.parametrize("rel", DELETED_PATHS)
+def test_the_guardian_family_is_gone_from_source(rel: str):
+    assert not (ROOT / rel).exists(), (
+        f"{rel} is back. The disk guardian family was DELETED 2026-11-11 by founder order "
+        "('DELETE EVERY DISK CLEANUP CODE NOW'): 225 steps freed 3 MB while the volume fell "
+        "500 MB, and stopping it recovered 1.3 GB on its own. Do not restore it, do not "
+        "tombstone it, and do not replace it with a scheduled agent."
     )
 
 
-def test_the_reclaim_door_still_declares_a_bound_under_the_ceiling():
-    """The finding that created this file: a door whose work cannot fit the door is not a door."""
-    doc = yaml.safe_load((INTENTS / "disk-reclaim.yaml").read_text(encoding="utf-8"))
-    budget = (doc.get("args") or {}).get("budget_s") or {}
-    declared = budget.get("default")
-    assert declared is not None, "disk-reclaim must keep a declared budget"
-    assert declared < CEILING, (
-        f"disk-reclaim's default budget {declared}s must sit under the {CEILING}s door ceiling"
+def test_no_disk_intent_survives():
+    """Reclamation is a shell script, not a door.
+
+    A disk intent is the family's shape: steps, a budget, a place to add phase six. The founder's
+    replacement is 20 lines of POSIX that a cron entry runs. If a `disk-*.yaml` appears here, the
+    family has grown back through the door instead of through `bin/`.
+    """
+    stragglers = sorted(p.name for p in INTENTS.glob("disk-*.yaml"))
+    assert stragglers == [], (
+        f"disk intents are back: {stragglers!r}. Disk reclamation is machine-owned POSIX shell "
+        "in bin/estate-cache-trim, never an intent with steps an agent can extend."
+    )
+
+
+def test_the_one_disk_script_is_posix_shell_and_bounded():
+    """The surviving script must stay a script: shell, short, and with a hard target."""
+    script = ROOT / "bin" / "estate-cache-trim"
+    assert script.is_file(), (
+        "bin/estate-cache-trim is the ONE surviving piece of disk reclamation; it must exist"
+    )
+    text = script.read_text(encoding="utf-8")
+    first = text.splitlines()[0]
+    assert first.startswith("#!") and ("sh" in first), (
+        f"estate-cache-trim must be POSIX shell, got shebang {first!r}: a Python disk daemon is "
+        "the family this replaced"
+    )
+    assert "set -eu" in text, "a disk script must fail loudly, never continue on error"
+    assert "TARGET_MB" in text, (
+        "a reclamation pass must declare the target it is reclaiming toward, or 'ran and freed "
+        "nothing' reports success -- which is exactly how the guardian failed for weeks"
+    )
+
+
+def test_the_disk_script_never_spawns_an_agent():
+    """Pin 10, in one assertion: the machine owns this, an LLM does not.
+
+    The 804-line guardian raised an incident and woke an agent to clean the disk. That is the
+    thing the founder ordered deleted. The replacement may run `rm`, `find` and `df`; the moment
+    it can call a model, an agent or the estate's door, the defect is back.
+    """
+    text = (ROOT / "bin" / "estate-cache-trim").read_text(encoding="utf-8")
+    # An INVOCATION of an agent or the door, never a path that happens to be named after one:
+    # `/private/tmp/claude-501` is a cache directory the script deletes, and matching that name
+    # would push a maintainer to rename the cache instead of keeping the law.
+    forbidden = re.compile(
+        r"(?:^|[|;&(]\s*)(?:/\S*/)?(?:claude|codex|minimax|gemini|llm|agent|"
+        r"estate-execute|estate_invoke)\b",
+        re.IGNORECASE,
+    )
+    # Only execution counts: the header comment may say why the guardian was wrong.
+    live = [
+        line
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#") and forbidden.search(line)
+    ]
+    assert live == [], (
+        f"estate-cache-trim can reach an agent/model: {live!r}. Disk reclamation is "
+        "100 percent machine-owned (Pin 10)."
     )

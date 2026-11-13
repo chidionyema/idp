@@ -1,3 +1,44 @@
+<!-- LIVE_ESTATE_PREFLIGHT_START -->
+## LIVE ESTATE PREFLIGHT — 2026-11-12T17:05:40Z
+
+**P0 GUARDRAIL:** max 15 min per investigation. Declare the question, paths checked and stop condition. At 15 min, stop and report. No open-ended search; capability-index and estate-brief first.
+**STEP 0:** run ~/.estate/bin/estate-session before any work. No handshake, no commit.
+**NUMBERS ONLY:** claims are YIELD/1 records; prose is not evidence. Run estate-protocol check.
+**RECURSIVE FACTORY:** every build step emits YIELD/1; the builder follows the protocol it enforces. See ~/.estate/protocol/RECURSIVE_FACTORY.md.
+**FOUNDER CHANNEL:** founder-gate 127.0.0.1:4320 only; YIELD/1 or ESCALATE/1; prose = 422 + logged violation. No silent failure.
+**CONTROL PLANE:** idp/docs/CONTROL_PLANE.md — policy is signed off-machine; this laptop holds only the pinned public key.
+**NEXT SESSION:** ~/.estate/state/NEXT_SESSION.md — resume, failure tree, known gaps, work queue.
+
+### State (do not guess)
+- **Disk free:** 5653 MB · floor 1500 MB · preempt 2000 MB
+- **Router:** pennyd 127.0.0.1:4200 · surface 127.0.0.1:3000 (#projector, #omega)
+- **Estate bus:** http://127.0.0.1:4300/ (preflight, map, state, artifacts)
+- **Must read:** /Users/roseonyema/Documents/code/idp/docs/ESTATE_MAP.md
+- **Today:** /Users/roseonyema/.estate/state/DAILY_LOG.md
+- **Blocked on founder:** 3 · cloudflare_dns_bus, github_required_check, github_actions_runner
+- **Law:** never ask for a fact the estate can answer; read /capabilities on the bus.
+- **Control plane 4090:** 302 to 127.0.0.1:3000/
+- **Receipts:** bin/estate-receipt -- <cmd> before any completion claim
+- **Memory door:** /Users/roseonyema/Documents/code/idp/platform/estate/memory/door.py
+- **Preflight file:** /Users/roseonyema/.estate/state/SESSION_PREFLIGHT.md
+
+### Repositories
+- **idp** lane/arm-dof-gate @ d63fa7f66 · dirty=129 · remote lanes=[origin/lane/delete-backstage-source, origin/lane/disk-delete-only, origin/lane/a-retired-guardian-cannot-still-guard]
+- **argon-src** lane/genesis-port @ c176bb9 · dirty=6 · remote lanes=[origin/lane/aistudio-io-import-probe-20261112, origin/lane/genesis-port, origin/lane/company-operating-calendar-20261111]
+- **argon-runtime** main @ da1536c · dirty=155 · remote lanes=[origin/lane/company-operating-calendar-20261111, origin/lane/genesis-architecture, origin/lane/arch-diagram-probe]
+
+### Peer handoffs (unclaimed)
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/genesis-face-fleet-roundtable.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/idp-direct-executor-thin-client.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/idp-cloudflare-cutover-hardening.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/merdian-vercel-cutover.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/otto-private-office-release.patch
+- [AI_STUDIO_STAGED] check AISTUDIO_BUNDLE_URL before claiming
+
+### Recently landed artifacts
+- (none recorded)
+<!-- LIVE_ESTATE_PREFLIGHT_END -->
+
 # AGENTS.md — estate-wide. Every agent on this machine, and every product.
 
 What the estate is and where things live. Enforcement is not in this file; it is in the executor,
@@ -52,73 +93,6 @@ provenance, security, or production controls. Classify by **actual operational e
 A failed hypothesis is learning yield; repeated unmeasured speculation is not. An agent
 should report what ran, what changed, what was measured, and what it will test next—not
 hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#7906.
-
----
-
-## KARMA — accountable instruction-to-yield intelligence (founder, 2026-11-12)
-
-**KARMA is an estate operating capability, not a new ledger, memory store, currency,
-punishment system or policy gate.** Read the [fleet KARMA doctrine](docs/training/2026-11-12-karma-operating-doctrine.md)
-and the executable first read-only observer `bin/idp-karma-observe` before designing an
-instruction, reward, recovery, model evaluation or monitoring change.
-
-- **Instruction acceptance issues a durable obligation (debt), not a completed task.**
-  Bind instruction ID, intent/expected outcome, authorised issuer, accountable QUAD
-  agent/session, parent instruction, owner lease, acceptance time, policy/evaluator
-  versions and completion conditions. The obligation survives handback, session
-  termination, provider changes and agent generations; settlement requires independently
-  VERIFIED YIELD and real operation, not a report or green PR. Refusal is explicit.
-- **Identity and time are first-class.** QUAD owns immutable agent attribution,
-  public-key signature verification and externally checked historical integrity.
-  Preserve model provider, requested and returned model IDs, real provider revision/
-  fingerprint when disclosed, agent generation and configuration lineage; mark
-  unavailable revisions UNKNOWN. Distinguish claimed source time, observed, durable
-  recorded and externally anchored time, plus effective/valid intervals. Causal
-  links, not timestamp proximity, establish asserted parenthood; no backdated
-  replay may silently supersede an authorised newer event.
-- **Everything consequential is measured; absence is measurable too.** FLOW owns
-  instruction→execution→verified yield, token/compute/CI/time/human costs and
-  exact recovery custody. Optimus joins observation coverage, resource efficiency,
-  failure-class obligations, founder interruptions, guesses versus reproducible
-  claims, reward/eval versions and recurrence. Record an UNKNOWN when billing,
-  external version, input, result, signature or expected telemetry is missing;
-  UNKNOWN is never zero, PASS or positive reward. Collect bounded metadata and
-  evidence digests, not indiscriminate secrets/personal data.
-- **Provider science is factorial and longitudinal.** HELM/research compares matched
-  holdout tasks by provider/model/revision × no-method/skills/memory/HELM ×
-  generation and time. Record controlled environment, evaluator/oracle/method SHA,
-  uncertainty, outcome, cost and negative results. A self-declared provider
-  fingerprint or a model-graded reward cannot establish causal uplift. Separate
-  underlying model updates from our own reproducible interventions.
-- **Karmic debt is failure-class obligation, not blame.** Original model mistakes,
-  false completion, breached laws and abandoned work remain attributed to their
-  historical actors and are inherited as unresolved correction tasks. Competent
-  successor agents earn credit only for independently reproduced repair,
-  adversarial holdout success and measured recurrence reduction. Deprecation
-  never deletes the underlying history or unresolved obligation. A proved breach
-  may restrict the *relevant* privileged capability lease until externally checked
-  compensation; safe diagnosis and repair remain possible and production must not
-  be indiscriminately frozen.
-- **Root-cause sweep:** MAP complete bounded blast radius → FILTER by violated
-  invariant → AUTOMATE with the existing owner/tools → execute independent
-  FALSIFIER and live real-caller proof → GENERALISE to same-shaped failures →
-  ENFORCE only once a working canary proves the control does not break operations.
-  Causes may be design, management, spec/BDD, security, governance, architecture,
-  observability or resource policy—not merely code. An agent reports a verified
-  reduction in that failure class, not a new gate or a document as success.
-- **Chronos operates the recurring reconciliation cadence** through the existing
-  company scheduler; it does not become another scheduler. Genesis projects
-  authenticated KARMA health, obligation age, observed versus missing traces,
-  real intervention performance and debt retirement with evidence links. A page
-  or scheduled definition is not proof that the reconciliation executed.
-
-This doctrine is shared by the whole fleet; the authority to execute remains in
-the existing executor, QUAD, OPA/OPAL (only when genuinely deployed), existing
-CI/Greenlane, policy owner and independent verifier. No self-awarded currency,
-new blanket gate, model-provider spending or unchecked production change.
-The first executable canary intentionally reports `UNLINKED_TO_INSTRUCTION` for
-GitHub runs lacking FLOW/QUAD linkage, rather than fabricating a debtor.
-Claim: chidionyema/idp#7452.
 
 ---
 
@@ -724,7 +698,15 @@ could not be measured says so, never PASS.
 | the cluster | BLOCKED on the node half | CI run `40684052518`, job `122801786864` fails at `bin/idp-oke-rebuild --apply` with `nodes-per-node-pool limit has been exceeded`; that half is owned by idp#7318 |
 | the laptop volume | RECLAIMED, continuously | the resident guardian (`ai.estate.disk-watch`) takes one bounded incremental step per cycle and prints a RESULT line with free space before and after; the old watcher freed 0M |
 | the critical-function spine | EXTENDED; the estate's metric is now ONE number | `catalog/critical-functions.json` (7 functions + 1 assumption, founder-critical first) + `platform/estate/libexec/critical-watch.py` + `platform/estate/libexec/critical-probe.py`: the metric is `estate_health` (ADR 0049), judged by `tests/test_critical_functions_registry.py`. Measured 2026-10-30: memory-plane DOWN (the door's TLS handshake fails), router-lanes DEGRADED (4 declared lanes not served), spend-bound ok, estate-substrate RED (the cluster-state receipt is 4160 min old) |
+| the Genesis inbound bridge | BLOCKED on one founder action -- the credentials are absent, not unsynced | Measured 2026-11-12 16:13 UTC: the vault (12 entries, 0 `*GOOGLE*`), 47 GitHub secrets (0 `GENESIS`), and no `bw` CLI hold none of the four `GENESIS_GOOGLE_*` values, so the bridge prints `Google OAuth credentials are missing; intake NOT ACTIVE`. An OAuth token is minted by the founder granting a Google account, never derivable (section 4); unblock = four values into `estate-secrets/secrets/dev/`. Detail: `docs/decisions/2026-11-12-genesis-credentials-are-not-in-the-estate.md` |
 
 The live surfaces are the estate graph (`growmos context` — every row above is a node there),
 `crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live
-board). This block is dated **2026-10-28**: when it disagrees with those, they are right.
+board). This block is dated **2026-11-12** (rows before that date keep the date they name):
+when it disagrees with those, they are right.
+
+
+
+## NO NEW CODE (2026-11-12)
+
+Before writing any new file or tool, query capability-index, read estate-brief, and search for an existing implementation. New code requires a justification record with evidence. Default answer: use, wrap, or fix what exists.

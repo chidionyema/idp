@@ -452,7 +452,9 @@ FIRST_CONTACT = (
     "code-review",
     "explore",
     "search-text",
-    "disk-free",
+    # `disk-free`, `disk-reclaim` and `disk-cleanup` were DELETED 2026-11-11 by founder order.
+    # Disk reclamation is one POSIX shell script, `bin/estate-cache-trim`, run by cron/launchd;
+    # it is not a door, it has no intent, and it never spawns an agent (Pin 10).
     "host-pressure",
     "hypotheses.race",
     "claim-open",

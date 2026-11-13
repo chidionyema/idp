@@ -1,4 +1,4 @@
-// estate-commands.ts - named estate capabilities with diagnosis enforcement.
+// estate-commands.ts — named estate capabilities with diagnosis enforcement.
 //
 // Layers (research-backed):
 //   1. Tool surface: only estate_invoke for diagnosis tasks
@@ -201,7 +201,7 @@ export default function estateCommands(pi: ExtensionAPI): void {
 
   // Session lifecycle
   pi.on("session_start", async () => {
-    // Wire growmos context on every session start - agent starts with memory
+    // Wire growmos context on every session start — agent starts with memory
     try {
       execSync(
         `growmos --root ${path.join(HOME, "Documents", "code", "estate-graph")} context`,

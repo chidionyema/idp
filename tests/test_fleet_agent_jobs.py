@@ -544,7 +544,7 @@ def test_a_running_job_shows_the_stage_it_is_in(gh, jobs, stage):
 
 def test_a_passed_run_with_an_open_pr_links_the_pr(gh):
     run = gh.add_run("agent (pi): ship it", status="completed", conclusion="success")
-    gh.pulls[f"chidionyema:lane/agent-pi-{run['id']}"] = [
+    gh.pulls[f"chidionyema:agent/pi-{run['id']}"] = [
         {
             "number": 4600,
             "html_url": "https://github.com/x/pull/4600",
@@ -563,7 +563,7 @@ def test_a_passed_run_with_an_open_pr_links_the_pr(gh):
 
 def test_a_merged_pr_is_done_and_is_never_asked_about_again(gh):
     run = gh.add_run("agent (pi): ship it", status="completed", conclusion="success")
-    gh.pulls[f"chidionyema:lane/agent-pi-{run['id']}"] = [
+    gh.pulls[f"chidionyema:agent/pi-{run['id']}"] = [
         {"number": 4601, "html_url": "u", "state": "closed", "merged_at": _iso(5)}
     ]
     j = _one(gh)
@@ -578,7 +578,7 @@ def test_a_pr_closed_without_merging_is_a_failure_that_says_so(gh):
     run = gh.add_run(
         "agent (claude-code): try", status="completed", conclusion="success"
     )
-    gh.pulls[f"chidionyema:lane/agent-claude-code-{run['id']}"] = [
+    gh.pulls[f"chidionyema:agent/claude-code-{run['id']}"] = [
         {"number": 4602, "html_url": "u", "state": "closed", "merged_at": None}
     ]
     j = _one(gh)
@@ -595,7 +595,7 @@ def test_a_passed_run_with_no_pr_is_not_shown_as_success(gh):
 
 def test_an_open_pr_is_asked_about_again_until_it_ends(gh):
     run = gh.add_run("agent (pi): pending", status="completed", conclusion="success")
-    head = f"chidionyema:lane/agent-pi-{run['id']}"
+    head = f"chidionyema:agent/pi-{run['id']}"
     gh.pulls[head] = [
         {"number": 1, "html_url": "u", "state": "open", "merged_at": None}
     ]
@@ -721,7 +721,7 @@ def test_a_failed_run_with_no_failed_job_still_says_how_it_ended(gh):
 
 def test_a_run_from_before_titles_is_listed_with_its_raw_title(gh):
     run = gh.add_run("agent-sandbox", status="completed", conclusion="success")
-    gh.pulls[f"chidionyema:lane/agent-claude-code-{run['id']}"] = [
+    gh.pulls[f"chidionyema:agent/claude-code-{run['id']}"] = [
         {"number": 4515, "html_url": "u", "state": "closed", "merged_at": _iso()}
     ]
     j = _one(gh)

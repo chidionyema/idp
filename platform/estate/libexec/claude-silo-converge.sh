@@ -9,8 +9,9 @@
 # from a different world. Founder 2026-09-29: "siloing information and causing split brain ...
 # this is a hostile act"; "how many times have we gutted this folder only for it to rear its ugly
 # head again". CI already refuses .claude/ in a commit (#4722); nothing kept the LOCAL folders
-# converged, so they regrew from agents, hooks and Claude Code itself. This runs every five
-# minutes from bin/idp-disk-watch, so the folder cannot stay wrong for longer than that.
+# converged, so they regrew from agents, hooks and Claude Code itself. This runs from the
+# scheduler every five minutes, so the folder cannot stay wrong for longer than that. (It used to
+# be driven by bin/idp-disk-watch, which was deleted 2026-11-11.)
 #
 # WHAT. ~/.claude keeps exactly Claude Code's own runtime state (KEEP below: settings.json, the
 # projects/ transcripts and auto-memory, sessions, history, caches, plugins, mcp, telemetry).

@@ -1,6 +1,6 @@
 // read-shunt pi shim: offload bulk file reads to the estate's read-shunt core.
 //
-// Thin adapter only - every decision (threshold, worker model, router URL, ledger,
+// Thin adapter only — every decision (threshold, worker model, router URL, ledger,
 // enabled flag) lives in ~/Documents/code/claude-guards/read_shunt, shared with the
 // Claude Code shim and the MCP/CLI. This file just translates a pi `read` tool_result
 // into the neutral hook payload and applies the returned digest. Fail-open: if the core
@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
     const input = event.input as { path?: string; offset?: number; limit?: number };
     if (!input?.path) return;
     // Ranged reads (offset/limit) are exact-range requests and are never shunted; this
-    // pre-filter only avoids spawning a subprocess - the core re-checks the same thing.
+    // pre-filter only avoids spawning a subprocess — the core re-checks the same thing.
     if (input.offset || input.limit) return;
 
     const digest = await shunt({

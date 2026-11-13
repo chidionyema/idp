@@ -66,50 +66,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  stage-vercel-release:
-    name: Stage tested Merdian web changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: candidate-assurance
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Advance the Merdian release branch only when its web tree changes
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          current=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/release/merdian" \
-            --jq '.[] | select(.ref == "refs/heads/release/merdian") | .object.sha')
-          baseline=${current:-$EVENT_BEFORE}
-
-          web_tree() {
-            gh api "repos/$GITHUB_REPOSITORY/git/trees/$1" \
-              --jq '.tree[] | select(.path == "web" and .type == "tree") | .sha'
-          }
-
-          candidate_tree=$(web_tree "$GITHUB_SHA")
-          baseline_tree=$(web_tree "$baseline")
-          if ! [[ "$candidate_tree" =~ ^[a-f0-9]{40}$ && "$baseline_tree" =~ ^[a-f0-9]{40}$ ]]; then
-            printf 'Merdian release requires both verified Git tree IDs.\n' >&2
-            exit 2
-          fi
-          if [[ "$candidate_tree" == "$baseline_tree" ]]; then
-            printf 'Merdian web tree %s already staged or unchanged.\n' "$candidate_tree"
-            exit 0
-          fi
-
-          if [[ -n "$current" ]]; then
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/release/merdian" \
-              -f sha="$GITHUB_SHA" -F force=false --jq .object.sha
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref=refs/heads/release/merdian -f sha="$GITHUB_SHA" --jq .object.sha
-          fi
-
   public-readback:
     name: Public customer-view canary and incident notification
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'

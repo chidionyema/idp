@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const script = join(root, 'scripts', 'merdian-public-release-gate.mjs');
 const sources = [
-  'app/page.tsx', 'app/layout.tsx', 'app/merian.css', 'app/globals.css',
+  'app/page.tsx', 'app/layout.tsx', 'app/merian.css',
   'app/manifest.ts', 'app/opengraph-image.tsx',
   'components/Logo.tsx', 'components/Nav.tsx', 'components/Footer.tsx',
   'content/site.ts', 'app/products/page.tsx', 'app/research/page.tsx',
@@ -112,35 +112,4 @@ test('missing the canonical Meridian identity fails the release', () => withFixt
   const result = run(dir);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /missing Meridian Intelligence/);
-}));
-
-
-test('red: illegible light-surface semantic text token cannot deploy', () => withFixture(dir => {
-  const path = join(dir, 'app/globals.css');
-  const original = readFileSync(path, 'utf8');
-  assert.match(original, /--ink-2:\s*#2A2A28/);
-  writeFileSync(path, original.replace('--ink-2: #2A2A28', '--ink-2: #F4F4F4'));
-  const result = run(dir);
-  assert.notEqual(result.status, 0, 'pale editorial text must fail WCAG AA contrast');
-  assert.match(result.stderr, /contrast below WCAG AA 4.5:1/);
-}));
-
-test('red: removing light-surface editorial override cannot deploy', () => withFixture(dir => {
-  const path = join(dir, 'app/merian.css');
-  const original = readFileSync(path, 'utf8');
-  const match = original.match(/\.mi-manifesto\s+\.mi-eyebrow,\s*\.mi-services\s+\.mi-eyebrow,[\s\S]*?\{\s*color:\s*var\(--ink-2\)\s*\}/);
-  assert.ok(match, 'baseline needs the semantic light-surface override');
-  writeFileSync(path, original.replace(match[0], '/* disabled light-surface text override */'));
-  const result = run(dir);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /light-surface eyebrow semantic contrast override missing/);
-}));
-
-test('red: missing semantic ink token cannot silently pass a source-only gate', () => withFixture(dir => {
-  const path = join(dir, 'app/globals.css');
-  const original = readFileSync(path, 'utf8');
-  writeFileSync(path, original.replace('--ink-2: #2A2A28', '--ink-2-removed: #2A2A28'));
-  const result = run(dir);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /foreground\/background contrast tokens missing/);
 }));

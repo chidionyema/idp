@@ -24,6 +24,15 @@ die()  { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 OS="$(uname -s)"; [ "$OS" = "Darwin" ] || die "macOS only (got $OS)"
 [ -d "$IDP/.git" ] || die "not a git repo: $IDP"
+
+# Backstage is frozen history (founder, 2026-11-12, idp#8000): a 2.4 GB install sat unused on this
+# machine for Genesis, which never imported it. It was deleted and must not be downloaded again.
+# The gate runs here so no bootstrap can bring it back, and so the refusal names the reason:
+#   docs/decisions/2026-11-12-backstage-is-frozen-history.md
+if [ -x "$IDP/bin/backstage-refused" ]; then
+  "$IDP/bin/backstage-refused" "$@" < /dev/null || die "refused: Backstage is frozen history"
+fi
+
 avail=$(df -k "$HOME" | awk 'NR==2 {print $4}')
 [ "$avail" -gt 500000 ] || die "need 500MB free (have $(( avail/1024 ))MB)"
 

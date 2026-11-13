@@ -85,14 +85,6 @@ FAIL_CONCLUSIONS = (
     "action_required",
     "startup_failure",
 )
-# The lane writes its OWN verdict on the head it judged, as a commit-status context named
-# "greenlane", and the DESCRIPTION is the reason the work did not land. Measured 2026-11-11 over
-# the 61 stranded items: 53 carried this verdict, and 30 of them (12,671 added lines -- 68% of
-# ALL stranded work) said the same thing: "refused: retired, this lane head is 1 days old".
-# The work was never judged. It aged out. An auditor that cannot read the reason can say a PR
-# died but never why, and a salvage machine with no reason cannot heal anything.
-LANE_VERDICT_CONTEXT = "greenlane"
-VERDICT_WORKERS = 16
 
 PR_LIMIT = 300
 # Per item we sample at most this many added lines. Added work in one PR is routinely hundreds of
@@ -115,90 +107,6 @@ DEFAULT_REPOS = {
 
 
 @dataclass
-class Rollup:
-    """What one head commit's CHECK RUNS said.
-
-    Two shapes reach us and BOTH must be read. A CheckRun carries `conclusion` and `status`; a
-    legacy commit-status context carries `state` and NO conclusion field at all. The first
-    version of this file read only the CheckRun shape, so every `state: FAILURE` context was
-    silently dropped -- and the resulting empty failing set was then reported as "no failing
-    check", which the classifier turned into a fabricated GENUINE. Measured 2026-11-11: 8 of the
-    24 closed-unmerged PRs carried a `greenlane` context with `state=FAILURE` and were all
-    classified GENUINE with an empty evidence list.
-    """
-
-    failing: list[str] = field(default_factory=list)
-    succeeded: int = 0
-    concluded: int = 0
-    readable: bool = False
-
-
-@dataclass
-class HeadStatus:
-    """Every LEGACY commit status GitHub recorded on one head commit.
-
-    The status API and the check-runs API are disjoint: a head can have 30 check runs and no
-    legacy status at all, or one legacy status and no check runs. Reading only one of them
-    leaves half the evidence unseen.
-    """
-
-    contexts: list[tuple[str, str, str]] = field(default_factory=list)
-    # (context, state, description)
-    readable: bool = False
-
-    def lane_reason(self) -> str:
-        """The estate's own verdict on this head, when it failed."""
-        for context, state, description in self.contexts:
-            if (
-                context.strip().lower() == LANE_VERDICT_CONTEXT
-                and state in ("failure", "error")
-            ):
-                return description
-        return ""
-
-    def other_failure(self) -> tuple[str, str]:
-        """(context, description) of the first failure that is not the lane verdict."""
-        for context, state, description in self.contexts:
-            if (
-                context.strip().lower() != LANE_VERDICT_CONTEXT
-                and state in ("failure", "error")
-            ):
-                return context, description
-        return "", ""
-
-    def lane_pending_reason(self) -> str:
-        """The lane's verdict when it had NOT judged the work.
-
-        A pending lane context is not a failure and not a success: it is the estate saying it
-        never got to the work. Reported so the census does not read it as a red check.
-        """
-        for context, state, description in self.contexts:
-            if context.strip().lower() == LANE_VERDICT_CONTEXT and state not in (
-                "success",
-                "failure",
-                "error",
-            ):
-                return description
-        return ""
-
-
-@dataclass
-class Item:
-    """One stranded thing: a closed-unmerged PR or an unmerged lane."""
-
-    name: str
-    sha: str
-    subject: str
-    branch: str
-    pr: dict | None = None
-    added: list[str] = field(default_factory=list)
-    classification: str = "UNKNOWN"
-    kill_class: str = "UNKNOWN"
-    kill_reason: str = ""
-    failing_checks: list[str] = field(default_factory=list)
-
-
-@dataclass
 class Stranded:
     """One piece of work that did not land, and what became of it."""
 
@@ -211,8 +119,6 @@ class Stranded:
     surviving_lines: int = 0
     classification: str = "UNKNOWN"
     failing_checks: list[str] = field(default_factory=list)
-    kill_class: str = "UNKNOWN"
-    kill_reason: str = ""
     closed_at: str = ""
     recover_command: str = ""
     note: str = ""
@@ -232,10 +138,7 @@ class RepoAudit:
     mechanical: int = 0
     genuine: int = 0
     unknown: int = 0
-    closed_by_decision: int = 0
     unmeasured: int = 0
-    kill_classes: dict[str, int] = field(default_factory=dict)
-    kill_class_lines: dict[str, int] = field(default_factory=dict)
     stranded: list[Stranded] = field(default_factory=list)
     blind: list[str] = field(default_factory=list)
 
@@ -526,8 +429,10 @@ def _list_prs(slug: str, limit: int, cwd: str | None) -> tuple[list[dict], bool,
         return [], False, f"unparseable gh output: {exc}"
 
 
-def _rollup_for(slug: str, number: int, cwd: str | None) -> Rollup:
-    """What one PR head's checks said: the failing names, how many passed, was it readable."""
+def _rollup_for(
+    slug: str, number: int, cwd: str | None
+) -> tuple[list[str], bool, bool]:
+    """(failing check names, did any check ever run, was the rollup readable) for one PR."""
     rc, out = _gh(
         "pr",
         "view",
@@ -540,60 +445,40 @@ def _rollup_for(slug: str, number: int, cwd: str | None) -> Rollup:
         timeout=45,
     )
     if rc != 0 or not out.strip():
-        return Rollup()
+        return [], False, False
     try:
         data = json.loads(out[out.index("{") :]).get("statusCheckRollup") or []
     except (ValueError, TypeError):
-        return Rollup()
-    roll = _parse_rollup(data)
-    return roll
-
-
-def _parse_rollup(entries: list) -> Rollup:
-    """Read BOTH check shapes out of a PR status rollup.
-
-    A CheckRun carries `conclusion` and `status`; a legacy commit-status context carries `state`
-    and NO conclusion field at all. The first version of this file read only the CheckRun shape,
-    so every `state: FAILURE` context was silently dropped -- and the resulting empty failing set
-    was then reported as "no failing check", which the classifier turned into a fabricated
-    GENUINE. Measured 2026-11-11: 8 of the 24 closed-unmerged PRs carried a `greenlane` context
-    with `state=FAILURE` and were all classified GENUINE with an empty evidence list.
-    """
-    roll = Rollup(readable=True)
-    for entry in entries:
+        return [], False, False
+    names, ever_ran = [], False
+    for entry in data:
         if not isinstance(entry, dict):
             continue
-        name = (
-            entry.get("name")
-            or entry.get("context")
-            or (entry.get("checkSuite") or {}).get("app", {}).get("name")
-            or "unnamed-check"
-        )
+        ever_ran = True
         conclusion = (entry.get("conclusion") or "").lower()
         status = (entry.get("status") or "").lower()
-        state = (entry.get("state") or "").lower()
-        if conclusion in FAIL_CONCLUSIONS or state in ("failure", "error"):
-            roll.failing.append(name)
-            roll.concluded += 1
-        elif conclusion == "success" or state == "success":
-            roll.succeeded += 1
-            roll.concluded += 1
-        elif conclusion in ("skipped", "neutral") or state == "expected":
-            roll.concluded += 1
-        # A check that has not concluded is NO EVIDENCE: not a failure, not a success. The
-        # first version of this file called it a failure, which turned a queued check on a
-        # closed PR into a fabricated GENUINE -- the same defect as the empty-set guess.
-    return roll
+        if conclusion in FAIL_CONCLUSIONS or (
+            not conclusion and status and status not in ("completed", "success")
+        ):
+            names.append(
+                entry.get("name")
+                or entry.get("context")
+                or entry.get("checkSuite", {}).get("app", {}).get("name")
+                or "unnamed-check"
+            )
+    return names, ever_ran, True
 
 
-def _rollups_for(slug: str, numbers: list[int], cwd: str | None) -> dict[int, Rollup]:
+def _rollups_for(
+    slug: str, numbers: list[int], cwd: str | None
+) -> dict[int, tuple[list[str], bool, bool]]:
     """Rollups for MANY PRs, concurrently.
 
     These are network-bound subprocess calls, so threads are the right tool and the GIL is not in
     the way. Measured 2026-11-11: 21 rollups sequentially took 38 s; this form is what makes the
     classification affordable inside one door call.
     """
-    results: dict[int, Rollup] = {}
+    results: dict[int, tuple[list[str], bool, bool]] = {}
     if not numbers:
         return results
     workers = min(ROLLUP_WORKERS, len(numbers))
@@ -604,52 +489,7 @@ def _rollups_for(slug: str, numbers: list[int], cwd: str | None) -> dict[int, Ro
             try:
                 results[number] = future.result()
             except Exception:  # noqa: BLE001 -- one failed rollup must not blind the audit
-                results[number] = Rollup()
-    return results
-
-
-def _statuses_for(slug: str, sha: str, cwd: str | None) -> HeadStatus:
-    """Every LEGACY commit status on one head commit, with its description.
-
-    The description is where the estate's own verdict lives ("refused: retired, this lane head
-    is 1 days old"). The status API is disjoint from the check-runs API, so this is read
-    alongside the rollup, never instead of it.
-    """
-    rc, out = _gh("api", f"repos/{slug}/commits/{sha}/status", cwd=cwd, timeout=45)
-    if rc != 0 or not out.strip():
-        return HeadStatus()
-    try:
-        data = json.loads(out[out.index("[") :])
-    except (ValueError, TypeError):
-        return HeadStatus()
-    contexts = [
-        (
-            str(entry.get("context") or "unnamed-status"),
-            str(entry.get("state") or "").lower(),
-            str(entry.get("description") or "").strip(),
-        )
-        for entry in (data or [])
-        if isinstance(entry, dict)
-    ]
-    return HeadStatus(contexts=contexts, readable=True)
-
-
-def _statuses_batch(
-    slug: str, shas: list[str], cwd: str | None
-) -> dict[str, HeadStatus]:
-    """The head statuses for MANY commits, concurrently."""
-    results: dict[str, HeadStatus] = {}
-    if not shas:
-        return results
-    workers = min(VERDICT_WORKERS, len(shas))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_statuses_for, slug, sha, cwd): sha for sha in shas}
-        for future in as_completed(futures):
-            sha = futures[future]
-            try:
-                results[sha] = future.result()
-            except Exception:  # noqa: BLE001 -- one unreadable status must not blind the audit
-                results[sha] = HeadStatus()
+                results[number] = ([], False, False)
     return results
 
 
@@ -657,100 +497,29 @@ def _failing_checks(pr: dict) -> list[str]:
     return list(pr.get("_failing") or [])
 
 
-def _classify(failing: list[str], readable: bool, succeeded: int = 0) -> str:
+def _classify(failing: list[str], readable: bool, ever_ran: bool) -> str:
     """MECHANICAL if ONLY cosmetic checks failed; GENUINE for a real failure; else UNKNOWN.
 
     All of the failing checks must be cosmetic for MECHANICAL, and none may be substantive. A PR
     that failed ruff AND claim-gate did not fail for a formatting reason -- it had no claim -- and
     calling that auto-healable sends a normalizer to fix the wrong thing.
 
-    THE LAW: an empty failing set is NEVER a failure. It is either a decision (CLOSED_BY_DECISION,
-    when at least one check succeeded and none failed) or no evidence at all (UNKNOWN). The first
-    version of this file returned GENUINE for an empty failing set on any PR that had a rollup,
-    which asserted a failure the evidence did not support -- and hid the real evidence, because
-    the rollup reader dropped legacy `state: FAILURE` contexts entirely.
+    An empty check list is NOT "mechanical". It can mean the checks passed (and something else
+    killed the PR), that no check ever ran, or that the rollup could not be read. Guessing there
+    would be exactly the fabrication this tool exists to prevent, so it is UNKNOWN.
     """
     if not readable:
         return "UNKNOWN"
-    if failing:
-        lowered = [f.lower() for f in failing]
-        if any(any(s in f for s in SUBSTANTIVE_CHECKS) for f in lowered):
-            return "GENUINE"
-        return (
-            "MECHANICAL"
-            if all(any(k in f for k in MECHANICAL_KEYWORDS) for f in lowered)
-            else ("GENUINE")
-        )
-    if succeeded > 0:
-        return "CLOSED_BY_DECISION"
-    return "UNKNOWN"
-
-
-def _kill_class(description: str) -> tuple[str, bool]:
-    """(class, mechanically_repairable) for a recorded reason.
-
-    `mechanically_repairable` means a deterministic action can make the work land -- re-run a
-    lane that aged out, rebase it onto main. It is False for anything that needs a judgement, a
-    person, or an event outside the estate.
-    """
-    text = (description or "").strip().lower()
-    if not text:
-        return "UNKNOWN", False
-    if "retired" in text and "lane head" in text:
-        return "STALE_RETIRED", True
-    if "does not rebase onto main" in text:
-        return "NOT_REBASED", True
-    if "no live claim" in text:
-        return "CLAIM_MISSING", False
-    if "rate limit" in text or "rate-limited" in text:
-        return "EXTERNAL_QUOTA", False
-    if "has not judged it yet" in text or text.startswith("queued"):
-        return "NOT_JUDGED", False
-    if "failure --" in text or "failure:" in text:
-        return "CHECK_FAILED", False
-    if "refused" in text:
-        return "LANE_REFUSED", False
-    return "UNKNOWN", False
-
-
-def _classify_head(
-    failing: list[str], readable: bool, succeeded: int, status: HeadStatus
-) -> tuple[str, str, str]:
-    """(classification, kill_class, kill_reason) for one stranded head.
-
-    The estate's own lane verdict wins when it failed, because it is the RECORDED reason the
-    work did not land -- and it is more specific than any list of check names. Only when it did
-    not fail do the checks decide.
-
-    Measured 2026-11-11: reading it moved 8 PRs (5,783 added lines) off a fabricated GENUINE
-    onto the reason the estate actually recorded.
-    """
-    lane_reason = status.lane_reason()
-    if lane_reason:
-        kill_class, mechanical = _kill_class(lane_reason)
-        if mechanical:
-            return "MECHANICAL", kill_class, lane_reason
-        if kill_class == "NOT_JUDGED":
-            return "UNKNOWN", kill_class, lane_reason
-        return "GENUINE", kill_class, lane_reason
-
-    _context, description = status.other_failure()
-    if description:
-        kill_class, mechanical = _kill_class(description)
-        if mechanical:
-            return "MECHANICAL", kill_class, description
-        if kill_class == "UNKNOWN":
-            return "GENUINE", "CHECK_FAILED", description
-        return "GENUINE", kill_class, description
-
-    pending_reason = status.lane_pending_reason()
-    if pending_reason:
-        kill_class, _mechanical = _kill_class(pending_reason)
-        if kill_class == "UNKNOWN":
-            kill_class = "NOT_JUDGED"
-        return "UNKNOWN", kill_class, pending_reason
-
-    return _classify(failing, readable, succeeded), "UNKNOWN", ""
+    if not failing:
+        return "UNKNOWN" if not ever_ran else "GENUINE"
+    lowered = [f.lower() for f in failing]
+    if any(any(s in f for s in SUBSTANTIVE_CHECKS) for f in lowered):
+        return "GENUINE"
+    return (
+        "MECHANICAL"
+        if all(any(k in f for k in MECHANICAL_KEYWORDS) for f in lowered)
+        else ("GENUINE")
+    )
 
 
 def _recover_command(number: int | None, branch: str, path: str) -> str:
@@ -760,25 +529,6 @@ def _recover_command(number: int | None, branch: str, path: str) -> str:
         f"git -C {path} fetch origin pull/{number}/head:recover/pr-{number} "
         f"&& git -C {path} switch recover/pr-{number}"
     )
-
-
-def _count_class(audit: RepoAudit, classification: str) -> None:
-    """Tally one closed-unmerged PR into exactly one coarse class."""
-    if classification == "MECHANICAL":
-        audit.mechanical += 1
-    elif classification == "GENUINE":
-        audit.genuine += 1
-    elif classification == "CLOSED_BY_DECISION":
-        audit.closed_by_decision += 1
-    else:
-        audit.unknown += 1
-
-
-def _count_kill_class(audit: RepoAudit, kill_class: str, added_lines: int) -> None:
-    """Tally one stranded item into its precise class, with the line weight it carries."""
-    key = kill_class or "UNKNOWN"
-    audit.kill_classes[key] = audit.kill_classes.get(key, 0) + 1
-    audit.kill_class_lines[key] = audit.kill_class_lines.get(key, 0) + added_lines
 
 
 def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
@@ -853,35 +603,7 @@ def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
     rollups = _rollups_for(slug, need, path)
     unread_rollups = 0
 
-    items: list[Item] = []
-
-    # ---- PHASE 3b: the recorded reason, for every stranded head, concurrently ----
-    # The lane's own verdict is a LEGACY commit status on the head; the check runs are a
-    # different API. The two are disjoint, so BOTH are read: a head can have 30 check runs and
-    # no legacy status, or one legacy status and no check runs.
-    statuses = _statuses_batch(
-        slug,
-        sorted(
-            {
-                s
-                for s in (
-                    [str(pr.get("headRefOid") or "") for pr in pending]
-                    + [sha for _name, sha in lane_rows]
-                )
-                if s
-            }
-        ),
-        path,
-    )
-    need = [
-        int(pr["number"])
-        for pr in pending
-        if str(pr.get("headRefOid") or "") not in in_main
-    ][:ROLLUP_SAMPLE]
-    rollups = _rollups_for(slug, need, path)
-    unread_rollups = 0
-    unread_statuses = 0
-
+    items: list[tuple[str, str, str, str, dict | None, list[str], str]] = []
     for pr in pending:
         number = pr.get("number")
         sha = pr.get("headRefOid") or ""
@@ -890,31 +612,26 @@ def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
         if sha and sha in in_main:
             audit.superseded += 1
             continue
-        roll = rollups.get(int(number), Rollup())
-        if int(number) not in rollups or not roll.readable:
+        failing, ever_ran, readable = rollups.get(int(number), ([], False, False))
+        if int(number) not in rollups or not readable:
             unread_rollups += 1
-        status = statuses.get(sha, HeadStatus())
-        if sha and not status.readable:
-            unread_statuses += 1
-        classification, kill_class, kill_reason = _classify_head(
-            roll.failing, roll.readable, roll.succeeded, status
-        )
-        failing = list(roll.failing)
-        if status.lane_reason() and LANE_VERDICT_CONTEXT not in failing:
-            failing.append(LANE_VERDICT_CONTEXT)
-        _count_class(audit, classification)
+        classification = _classify(failing, readable, ever_ran)
+        if classification == "MECHANICAL":
+            audit.mechanical += 1
+        elif classification == "GENUINE":
+            audit.genuine += 1
+        else:
+            audit.unknown += 1
+        pr = dict(pr, _failing=failing)
         items.append(
-            Item(
-                name=f"#{number}",
-                sha=sha,
-                subject=subject,
-                branch=branch,
-                pr=dict(pr, _failing=failing),
-                added=added_by_sha.get(sha, []),
-                classification=classification,
-                kill_class=kill_class,
-                kill_reason=kill_reason,
-                failing_checks=failing,
+            (
+                f"#{number}",
+                sha,
+                subject,
+                branch,
+                pr,
+                added_by_sha.get(sha, []),
+                classification,
             )
         )
 
@@ -923,33 +640,16 @@ def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
             continue
         audit.unmerged_lanes += 1
         _rc, subj = _git("log", "-1", "--format=%s", sha, cwd=path)
-        status = statuses.get(sha, HeadStatus())
-        if not status.readable:
-            unread_statuses += 1
-        classification, kill_class, kill_reason = _classify_head(
-            [], False, 0, status
-        )
-        _count_class(audit, classification)
         items.append(
-            Item(
-                name=name,
-                sha=sha,
-                subject=subj.strip()[:80],
-                branch=name,
-                added=added_by_sha.get(sha, []),
-                classification=classification,
-                kill_class=kill_class,
-                kill_reason=kill_reason,
-                failing_checks=[LANE_VERDICT_CONTEXT] if status.lane_reason() else [],
-            )
+            (name, sha, subj.strip()[:80], name, None, added_by_sha.get(sha, []), "")
         )
 
     # ---- PHASE 4: ONE answer about main survival, for every probe in the audit ----
     probes_by_sha: dict[str, list[str]] = {}
-    for item in items:
-        sample = list(dict.fromkeys(item.added))[:MAX_PROBES]
+    for _name, sha, _subject, _branch, _pr, added, _classification in items:
+        sample = list(dict.fromkeys(added))[:MAX_PROBES]
         if sample:
-            probes_by_sha[item.sha] = sample
+            probes_by_sha[sha] = sample
 
     survival_ok = not (shallow or not reach_ok)
     hits: dict[str, bool] = {}
@@ -973,29 +673,25 @@ def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
                     "defaults to LOST"
                 )
 
-    for item in items:
-        added = item.added
+    for name, sha, subject, branch, pr, added, classification in items:
         if not added:
             audit.stranded.append(
                 Stranded(
-                    "pr" if item.pr is not None else "lane",
-                    item.name,
-                    item.sha,
-                    item.subject,
+                    "pr" if pr is not None else "lane",
+                    name,
+                    sha,
+                    subject,
                     verdict="MISSING-PARTIAL",
-                    classification=item.classification or "UNKNOWN",
-                    failing_checks=item.failing_checks,
-                    kill_class=item.kill_class,
-                    kill_reason=item.kill_reason,
-                    closed_at=(item.pr or {}).get("closedAt") or "",
+                    classification=classification or "UNKNOWN",
+                    failing_checks=_failing_checks(pr) if pr else [],
+                    closed_at=(pr or {}).get("closedAt") or "",
                     note=(
                         "head commit not fetchable offline; adds no measurable lines"
-                        if item.pr is not None
+                        if pr is not None
                         else "lane commit adds no measurable lines"
                     ),
                 )
             )
-            _count_kill_class(audit, item.kill_class, 0)
             continue
         probes = list(dict.fromkeys(added))[:MAX_PROBES]
         found = sum(1 for probe in probes if hits.get(probe))
@@ -1010,28 +706,25 @@ def audit_repo(slug: str, path: str, limit: int = PR_LIMIT) -> RepoAudit:
         if verdict == "UNMEASURED":
             audit.unmeasured += 1
         recover = (
-            _recover_command(item.pr.get("number") if item.pr else None, item.branch, path)
+            _recover_command(pr.get("number") if pr else None, branch, path)
             if verdict in ("LOST", "PARTIAL")
             else ""
         )
         audit.stranded.append(
             Stranded(
-                "pr" if item.pr is not None else "lane",
-                item.name,
-                item.sha,
-                item.subject,
+                "pr" if pr is not None else "lane",
+                name,
+                sha,
+                subject,
                 verdict=verdict,
                 added_lines=len(added),
                 surviving_lines=surviving,
-                classification=item.classification or "UNKNOWN",
-                failing_checks=item.failing_checks,
-                kill_class=item.kill_class,
-                kill_reason=item.kill_reason,
-                closed_at=(item.pr or {}).get("closedAt") or "",
+                classification=classification or "UNKNOWN",
+                failing_checks=_failing_checks(pr) if pr else [],
+                closed_at=(pr or {}).get("closedAt") or "",
                 recover_command=recover,
             )
         )
-        _count_kill_class(audit, item.kill_class, len(added))
 
     absent = sum(1 for s in audit.stranded if s.verdict == "MISSING-PARTIAL")
     if absent:
@@ -1080,19 +773,9 @@ def render(audits: list[RepoAudit]) -> str:
             f"lost_work={a.lost_work_prs} unmerged_lanes={a.unmerged_lanes}"
         )
         out.append(
-            f"  killed by MECHANICAL={a.mechanical} GENUINE={a.genuine} "
-            f"CLOSED_BY_DECISION={a.closed_by_decision} UNKNOWN={a.unknown}"
+            f"  killed by MECHANICAL={a.mechanical} GENUINE={a.genuine} UNKNOWN={a.unknown}"
             + (f" UNMEASURED={a.unmeasured}" if a.unmeasured else "")
         )
-        if a.kill_classes:
-            out.append("  why (items/lines):")
-            for kill_class, count in sorted(
-                a.kill_classes.items(), key=lambda kv: -a.kill_class_lines.get(kv[0], 0)
-            ):
-                out.append(
-                    f"    {kill_class:<22} {count:>4} items  "
-                    f"{a.kill_class_lines.get(kill_class, 0):>7} added lines"
-                )
         for line in a.blind:
             out.append(f"  BLIND: {line}")
         ordered = sorted(
@@ -1105,8 +788,8 @@ def render(audits: list[RepoAudit]) -> str:
         for s in ordered[:10]:
             ratio = f"{s.surviving_lines}/{s.added_lines}"
             out.append(
-                f"  {s.verdict:<15} {s.name:<22} {ratio:>8}  {s.classification:<19} "
-                f"{s.kill_class:<18} {s.subject[:36]}"
+                f"  {s.verdict:<15} {s.name:<22} {ratio:>8}  {s.classification:<10} "
+                f"{s.subject[:44]}"
             )
         if len(ordered) > 10:
             out.append(
@@ -1144,7 +827,6 @@ def main(argv: list[str]) -> int:
 
     manifest = {
         "schema": SCHEMA,
-        "manifest_version": 2,
         "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "pr_limit": limit,
         "repos": [

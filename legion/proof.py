@@ -59,7 +59,7 @@ def run_proof(manifest_path: str | Path) -> dict[str, Any]:
     started = time.time()
     started_iso = datetime.now(tz=timezone.utc).isoformat()
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - the manifest's own declared proof command
             shlex.split(command),
             capture_output=True,
             text=True,
@@ -77,6 +77,12 @@ def run_proof(manifest_path: str | Path) -> dict[str, Any]:
             (exc.stderr or b"") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         )
         output_tail = (out + err)[-OUTPUT_TAIL_CHARS:] + "\n[proof: TIMEOUT]"
+    except OSError as exc:
+        # A proof command that cannot be executed is a recorded failure, not a crash. Without
+        # this, a manifest naming a missing binary raised an uncaught FileNotFoundError and
+        # exited 1 with a traceback instead of the PROOF-FAILED record the caller reads.
+        exit_code, timed_out = 127, False
+        output_tail = f"[proof: COMMAND-NOT-FOUND] {exc}"[-OUTPUT_TAIL_CHARS:]
     duration_ms = round((time.time() - started) * 1000, 1)
 
     chain = _state_dir() / "legion-proof.jsonl"

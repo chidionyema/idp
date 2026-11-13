@@ -49,13 +49,6 @@ done
 AFTER=$(free_mb)
 echo "cache-trim: ${AFTER} MB free (freed $((AFTER - BEFORE)) MB)"
 
-# One appended line per run, machine-readable, so "is it operating?" is answerable by
-# reading a file rather than running launchctl. A scheduled job that leaves no trace is
-# indistinguishable from one that never ran, and "loaded" is not "operating".
-printf '%s %sMB -> %sMB free (%+dMB) target=%sMB\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BEFORE" "$AFTER" "$((AFTER - BEFORE))" "$TARGET_MB" \
-  >> "${HOME}/.estate/cache-trim.receipt" 2>/dev/null || true
-
 # Exit 1 when still under target so a caller can see it did not solve it, and
 # never 0 for "ran and achieved nothing" -- that was the guardian's failure.
 if [ "$AFTER" -lt "$TARGET_MB" ]; then

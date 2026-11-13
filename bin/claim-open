@@ -46,41 +46,6 @@ from datetime import datetime, timezone
 
 IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# An absolute path, because a partial one is a lint error (S607) and because the executor's PATH
-# does not carry every git. Resolved once, so every git call in this file runs the same binary.
-GIT = shutil.which("git") or "/usr/bin/git"
-
-# Names that are not an identity: the environment hands the same one to every shell, and a claim
-# wearing it cannot be told apart from another agent's claim.
-#
-# Measured 2026-11-11 over the last 12 open issues: five read `agent=estate-agent`, because
-# ~/.zshrc line 49 exports ESTATE_AGENT=estate-agent for every shell on this machine and no
-# harness overrode it. claim-gate then answers "held by estate-agent", which every agent reads as
-# both "not me" (not blocked) and "possibly me" (maybe mine) -- the collision #6407 exists to
-# stop, reached through a value that looks like an identity. "otto" was the previous hardcoded
-# default; "chatgpt" is a model name, not an agent, and two claims wore it the same day.
-#
-# "pi" is deliberately NOT here: it is a name agents choose, and several live sessions use it.
-# Refusing a name that correct work already uses is the guard that taxes every agent (R14) for
-# the sake of a tidiness nobody asked for. The environment's name is refused; the agent's is not.
-SHARED_AGENT_NAMES = frozenset({"estate-agent", "otto", "chatgpt"})
-
-
-def shared_agent_refusal(name: str) -> str:
-    """The refusal when `name` is the environment's name and not the agent's. Empty when it is.
-
-    Returns the text rather than exiting, so a caller can decide and a test can read it.
-    """
-    if name.strip().lower() not in SHARED_AGENT_NAMES:
-        return ""
-    return (
-        f"FAIL    claim-open  '{name}' is not an identity: it is the name the ENVIRONMENT gives "
-        f"every shell, so a claim wearing it cannot be told apart from another agent's.\n"
-        f"                    Pass --agent <a name that is yours alone>, or export ESTATE_AGENT to "
-        f"one before you start. Two agents cannot share a name here: claim-gate reports the holder "
-        f"by name, and a shared name is a shared answer."
-    )
-
 
 def resolve_repo() -> str:
     """The checkout to measure and claim: the one you are standing in, not this script's repo.
@@ -101,17 +66,13 @@ def resolve_repo() -> str:
     explicit = os.environ.get("ESTATE_CLAIM_REPO", "").strip()
     if explicit:
         return os.path.abspath(explicit)
-    p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-        [GIT, "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
     )
     root = p.stdout.strip()
     # Only a tree that can prove a claim is usable: a cwd inside some other repository (or no
     # repository) falls back rather than claiming against files this script cannot gate.
-    if (
-        p.returncode == 0
-        and root
-        and os.path.exists(os.path.join(root, "bin", "claim-gate"))
-    ):
+    if p.returncode == 0 and root and os.path.exists(os.path.join(root, "bin", "claim-gate")):
         return root
     return IDP
 
@@ -207,30 +168,14 @@ def globs_for(files: list[str], declared: list[str] = ()) -> list[str]:
 def find_issue(title: str | None, issue: int | None) -> int:
     if issue:
         return issue
-    # Not an assert: `python -O` removes asserts, and this guard must still hold under -O.
-    if not title:
-        sys.exit(
-            'FAIL    claim-open  no issue and no title: pass --issue N or --title "..."'
-        )
+    assert title, "argparse guarantees one of --issue/--title"
     # Reuse an open issue with this exact title rather than opening a duplicate: re-running the
     # command, or a retried lane, must not litter the tracker with the same claim.
-    out = gh(
-        "issue",
-        "list",
-        "--state",
-        "open",
-        "--search",
-        title,
-        "--limit",
-        "5",
-        "--json",
-        "number,title",
-    )
+    out = gh("issue", "list", "--state", "open", "--search", title,
+             "--limit", "5", "--json", "number,title")
     for row in json.loads(out or "[]"):
         if row.get("title") == title:
-            print(
-                f"ok      claim-open  reusing open issue #{row['number']} with this title"
-            )
+            print(f"ok      claim-open  reusing open issue #{row['number']} with this title")
             return int(row["number"])
     body = (
         "Declared by bin/claim-open.\n\n"
@@ -247,18 +192,14 @@ def find_issue(title: str | None, issue: int | None) -> int:
 def ensure_open(num: int) -> None:
     d = json.loads(gh("issue", "view", str(num), "--json", "state"))
     if d.get("state") != "OPEN":
-        sys.exit(
-            f"FAIL    claim-open  issue #{num} is not open: a claim-gate claim must be open"
-        )
+        sys.exit(f"FAIL    claim-open  issue #{num} is not open: a claim-gate claim must be open")
 
 
 def post_claim(num: int, agent: str, paths: list[str]) -> None:
     hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     body = f"CLAIM agent={agent} paths={','.join(paths)} heartbeat={hb}"
     gh("issue", "comment", str(num), "--body", body)
-    print(
-        f"ok      claim-open  claimed #{num} as {agent} ({len(paths)} path{'s' if len(paths) != 1 else ''})"
-    )
+    print(f"ok      claim-open  claimed #{num} as {agent} ({len(paths)} path{'s' if len(paths)!=1 else ''})")
 
 
 def stamp_trailers(num: int, agent: str) -> None:
@@ -272,9 +213,7 @@ def stamp_trailers(num: int, agent: str) -> None:
                 f"{have_agent.group(1)}, not #{num} as {agent}.\n"
                 "                    Amend deliberately; do not silently re-point a commit's claim."
             )
-        print(
-            f"ok      claim-open  commit already carries Claim: #{num} and Agent: {agent}"
-        )
+        print(f"ok      claim-open  commit already carries Claim: #{num} and Agent: {agent}")
         return
     body = msg.rstrip("\n")
     if not have_claim:
@@ -284,12 +223,8 @@ def stamp_trailers(num: int, agent: str) -> None:
     # --amend rewrites the message only; the tree is untouched, so this cannot lose work.
     p = run(["git", "commit", "--amend", "-q", "-m", body])
     if p.returncode != 0:
-        sys.exit(
-            f"FAIL    claim-open  could not stamp trailers: {p.stderr.strip()[:200]}"
-        )
-    print(
-        f"ok      claim-open  stamped Claim: #{num} and Agent: {agent} into the commit"
-    )
+        sys.exit(f"FAIL    claim-open  could not stamp trailers: {p.stderr.strip()[:200]}")
+    print(f"ok      claim-open  stamped Claim: #{num} and Agent: {agent} into the commit")
 
 
 def note_claim(num: int) -> None:
@@ -297,38 +232,37 @@ def note_claim(num: int) -> None:
 
     The ledger is read through gh and cached; without the note, bin/estate-memory-enforce
     refuses the first edit after claim-open as unclaimed. A failed note costs only that delay.
+
+    The cached register is also DROPPED, because noting the number is not enough: the cache also
+    holds the claim's path list, so a claim extended with --paths keeps the previous paths until
+    FOCUS_TTL_S (300 s) expires and every edit to a newly claimed file is refused as unclaimed.
+    Dropping the cache costs one `gh issue list` on the next read and removes a false refusal that
+    would otherwise block the agent for up to five minutes.
     """
     sys.path.insert(0, os.path.join(IDP, "platform", "estate", "memory"))
     try:
         import focus  # noqa: PLC0415 -- optional: a checkout without it still claims
 
         focus.note_claim(num)
+        # The stale register would still serve the OLD paths; make the next read re-read issues.
+        cache = focus.focus_cache_path()
+        if os.path.exists(cache):
+            os.unlink(cache)
     except (ImportError, OSError) as e:
-        print(
-            f"warn    claim-open  focus note not written ({e}): the hook sees it next poll"
-        )
+        print(f"warn    claim-open  focus note not written ({e}): the hook sees it next poll")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
     ap.add_argument("--title", help="open (or reuse) an issue with this title")
-    ap.add_argument(
-        "--agent",
-        default=os.environ.get("ESTATE_AGENT", ""),
-        help="claiming agent; default: $ESTATE_AGENT, else refuse",
-    )
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""),
+                    help="claiming agent; default: $ESTATE_AGENT, else refuse")
     ap.add_argument("--base", default="origin/main", help="the range the claim covers")
-    ap.add_argument(
-        "--paths",
-        default="",
-        help="comma-separated paths to declare before they change (new files)",
-    )
-    ap.add_argument(
-        "--check-only",
-        action="store_true",
-        help="write nothing; only run claim-gate over this range",
-    )
+    ap.add_argument("--paths", default="",
+                    help="comma-separated paths to declare before they change (new files)")
+    ap.add_argument("--check-only", action="store_true",
+                    help="write nothing; only run claim-gate over this range")
     a = ap.parse_args()
     if not a.issue and not a.title:
         ap.error("one of --issue or --title is required")
@@ -336,27 +270,16 @@ def main() -> int:
     # "otto", so every agent that skipped --agent/ESTATE_AGENT claimed as otto
     # and claim-gate could not tell agents apart. No default is honest — refuse.
     if not a.agent:
-        sys.exit(
-            "FAIL    claim-open  no agent identity: pass --agent <name> or set ESTATE_AGENT"
-        )
-    # A name the environment supplies is not an identity (#7934). Refused BEFORE any network call,
-    # so a wrong name costs a comment, not a claim.
-    shared = shared_agent_refusal(a.agent)
-    if shared:
-        sys.exit(shared)
+        sys.exit("FAIL    claim-open  no agent identity: pass --agent <name> or set ESTATE_AGENT")
 
     if not os.path.exists(GATE):
-        sys.exit(
-            f"FAIL    claim-open  no bin/claim-gate at {GATE}: cannot prove the claim here"
-        )
+        sys.exit(f"FAIL    claim-open  no bin/claim-gate at {GATE}: cannot prove the claim here")
 
     base = git("merge-base", a.base, "HEAD").strip()
     files = changed_files(base)
     paths = globs_for(files, a.paths.split(","))
-    print(
-        f"      claim-open  change touches {len(files)} file(s): {', '.join(files[:5])}"
-        + (f" (+{len(files) - 5} more)" if len(files) > 5 else "")
-    )
+    print(f"      claim-open  change touches {len(files)} file(s): {', '.join(files[:5])}"
+          + (f" (+{len(files)-5} more)" if len(files) > 5 else ""))
 
     if not a.check_only:
         num = find_issue(a.title, a.issue)
@@ -371,10 +294,7 @@ def main() -> int:
     env = {**os.environ, "GITHUB_REPOSITORY": repo_slug}
     p = subprocess.run(  # noqa: S603 -- fixed argv; GATE is a path in this repo
         [GATE, base, "HEAD"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        cwd=REPO,
-        env=env,
+        capture_output=True, text=True, cwd=REPO, env=env,
     )
     sys.stdout.write(p.stdout)
     sys.stderr.write(p.stderr)

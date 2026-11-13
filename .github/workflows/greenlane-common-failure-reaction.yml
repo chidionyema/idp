@@ -14,14 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   react:
-    # GitHub creates no runner for skipped/cancelled upstream ticks.
-    # Only completed actual executions (success/failure) can publish a
-    # changed canonical state that needs a reactor. Dispatch remains intact.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.head_repository.full_name == github.repository &&
-       (github.event.workflow_run.conclusion == 'success' ||
-        github.event.workflow_run.conclusion == 'failure'))
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
