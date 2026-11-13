@@ -1,0 +1,24 @@
+bind = "127.0.0.1:4200"
+log_path = "/Users/roseonyema/.estate/pennyd/decisions.jsonl"
+providers_dir = "/Users/roseonyema/.estate/pennyd/providers"
+keys_file = "/Users/roseonyema/.estate/pennyd/keys.toml"
+reload_interval_s = 5
+
+[cache]
+capacity = 10000
+ttl_min_s = 300
+ttl_max_s = 3600
+hit_rate_floor = 0.5
+
+[budgets]
+default_daily_usd = 20.0
+budgets_path = "/Users/roseonyema/.estate/pennyd/budgets.json"
+
+[shaping]
+cache_control = true
+max_tokens_cap = 1024
+tool_result_max_chars = 2000
+
+[router]
+breaker_threshold = 3
+breaker_cooldown_s = 30
