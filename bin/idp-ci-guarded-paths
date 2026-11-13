@@ -31,7 +31,14 @@ fi
 rc=0
 
 # 1) Guarded-path signature check.
-changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+# 2026-11-13: this line read "$BASE"...HEAD_REV (no $). git diff failed, `|| true` hid it, the list
+# was always empty and no guarded path was detected from #7328 (2026-10-28) on. Fail closed now: a
+# diff that cannot be computed is a refusal, never an empty list.
+if ! changed="$(git diff --name-only "$BASE...$HEAD_REV" 2>&1)"; then
+  echo "BLIND guarded-paths  cannot diff $BASE...$HEAD_REV: refusing to pass unproven"
+  echo "      $changed"
+  exit 1
+fi
 guard_hit=""
 while IFS= read -r g; do
   [ -z "$g" ] && continue
