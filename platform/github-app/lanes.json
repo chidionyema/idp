@@ -45,5 +45,9 @@
   "sandbox-sweeper": {
     "metadata": "read",
     "contents": "write"
+  },
+  "runner-admin": {
+    "metadata": "read",
+    "administration": "write"
   }
 }

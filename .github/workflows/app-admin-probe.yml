@@ -1,0 +1,55 @@
+# button: Prove the estate App holds repository administration
+# founder: Mints a token for the runner-admin lane and reads argon's self-hosted runner list, which only Administration permission can read. Green means the permission you granted on 2026-11-13 is live; red names what GitHub refused.
+#
+# The founder granted estate-agents "Administration: Read and write" on 2026-11-13 so argon's
+# workflows can run on a self-hosted runner instead of metered minutes. This proves the grant
+# reached the installation, read-only: it lists runners and nothing else.
+name: app-admin-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   app-admin  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          owner: ${{ github.repository_owner }}
+          repositories: argon
+          permission-administration: read
+
+      - name: Read argon's runner list (Administration only)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          MINTED: ${{ steps.app.outcome }}
+        run: |
+          set -uo pipefail
+          if [ "$MINTED" != success ]; then
+            echo "FAIL    app-admin  the installation refused an administration token: the grant is not live (accept it at https://github.com/settings/installations)" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
+          out=$(gh api repos/${{ github.repository_owner }}/argon/actions/runners -q '.total_count' 2>&1); rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "ok      app-admin  administration is live on argon; self-hosted runners registered: $out" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "FAIL    app-admin  token minted but GitHub refused the runner list: ${out:0:160}" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
