@@ -27532,7 +27532,6 @@
         "cap:tool/idp-ci",
         "cap:tool/idp-install-deps",
         "cap:tool/idp-machine-submit",
-        "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
         "cap:workflow/gha-ci"
@@ -51183,10 +51182,6 @@
       "writer": "repo",
       "path": "bin/language-gate",
       "depends_on": [
-        {
-          "id": "cap:tool/claim-gate",
-          "edge": "invokes"
-        },
         {
           "id": "cap:tool/estate-patch",
           "edge": "invokes"
