@@ -93,7 +93,9 @@ jobs:
           cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
           # Every answer is checked for success and its error codes printed (run 43350977453 died
           # with jq exit 5 iterating a null result and printed nothing).
-          lst=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" || true)
+          for i in 1 2 3 4 5 6 7 8; do  # account-scope grants can lag the zone grant by seconds
+            lst=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" || true)
+            jq -e '.success == true' <<<"$lst" >/dev/null 2>&1 && break; sleep 6; done
           jq -e '.success == true' <<<"$lst" >/dev/null 2>&1 || {
             echo "FAIL    passkey  KV list refused: $(jq -c '.errors' <<<"$lst" 2>/dev/null || echo 'non-JSON answer')"; exit 1; }
           ns=$(jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' <<<"$lst" | head -1)
