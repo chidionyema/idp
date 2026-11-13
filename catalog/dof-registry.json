@@ -1,6 +1,6 @@
 {
   "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
-  "revision": "2026-11-09-founder-temporary-suspension-v2",
+  "revision": "2026-11-13-founder-dof-enforced",
   "why": "An open critical incident constrains changes that DEPEND on it; unrelated low-effect docs and non-protected tests may proceed only under explicit safeWorkScope.allowPatterns. Unknown or privileged effects require incident-scoped repairs with authenticated authority. Incident visibility failure cannot mint authority from commit trailers.",
   "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
   "immutableWhileRed": [
@@ -88,12 +88,13 @@
     "@substrate"
   ],
   "control": {
-    "mode": "disabled",
-    "directive": "founder-directive-2026-11-09",
+    "mode": "enforced",
+    "directive": "founder-directive-2026-11-13",
     "scope": "global-dof-only",
-    "reason": "Founder-directed temporary removal of only DoF global incident freeze; all other policies unchanged",
+    "reason": "Founder 2026-11-13: force DoF; a critical service down narrows every agent to its repair",
     "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
     "lastVerifiedBacklog": null,
-    "suspendedComponents": []
+    "suspendedComponents": [],
+    "previousMode": "disabled (founder-directive-2026-11-09)"
   }
 }
