@@ -3,6 +3,13 @@
 # bin/idp-ci-guarded-paths enforces this server-side; the local pre-push hook echoes the same set.
 # The rule: policy files, hook infrastructure, and this list itself cannot be changed without a
 # founder signature. Cryptographic guarantee, not memory.
+#
+# Founder, 2026-11-13 (control-primitive lockdown): every file that tells an agent what it may do,
+# or decides whether its work lands, is a control primitive. An agent may read one; it may never
+# change one. W_agent(control primitives) = 0. A change lands only with the founder's X-Idp-Auth
+# signature. Measured before this change: 49 commits touched these files on main from 2026-11-05
+# to 2026-11-13, 44 of them landed by estate-agents[bot] with no founder signature (#8023, #8027
+# and #8029 among them: agent-authored security workflows, merged unsigned within 90 minutes).
 cat <<'PATHS'
 platform/edge/otel-endpoint-exception.yaml
 platform/edge/inject-otel-endpoint.yaml
@@ -12,4 +19,23 @@ platform/policies/kyverno/
 bin/idp-auth
 bin/idp-guarded-paths
 bin/idp-ci-guarded-paths
+AGENTS.md
+CLAUDE.md
+CODEOWNERS
+\.github/workflows/
+docs/keys/
+bin/claim-gate
+bin/claim-open
+bin/dof-gate
+bin/idp-ci
+bin/idp-greenlane
+bin/estate-memory-enforce
+greenlane/
+sovereign/
+policy/
+catalog/dof-registry\.json
+catalog/critical-functions\.json
+platform/estate/protocolkit/
+platform/estate/memory/handback\.py
+platform/founder-passkey/
 PATHS
