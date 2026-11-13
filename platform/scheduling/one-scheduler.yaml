@@ -179,3 +179,9 @@ still_outside_dagster:
 - job: platform/temporal/kini-state.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/argon-guardian-relay.yml
+  kind: GitHub Actions cron
+  fold: 'pending: Dagster has no live home off the laptop (OKE retired); graded by Chronos (idp#8026)'
+- job: .github/workflows/chronos-weekly.yml
+  kind: GitHub Actions cron
+  fold: 'pending: Dagster has no live home off the laptop (OKE retired); graded by Chronos (idp#8026)'

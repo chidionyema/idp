@@ -304,6 +304,90 @@ def board_row(row: dict) -> str:
     return f"{mark}  {row['id']:<20} {age_s}  tol={row.get('max_age_minutes')}  declared={row.get('declares_human') or row.get('declares')}  gaps=[{gap_s}]"
 
 
+# ---------------------------------------------------------------------------
+# COVERAGE: the loop map (founder, 2026-11-13: "map disconnects and track all
+# these loops across estate"). Grading eight clocks says nothing about the
+# clocks nobody grades. A recurring job is a LOOP; the loop is CLOSED only when
+# something independent measures that it delivered. Today that something is
+# this script, so a declaration with no obligation here is an OPEN loop: it can
+# stop and nothing will notice (the `conscience` shape, six weeks dead).
+#
+# The census is not re-derived here: bin/idp-one-scheduler already finds every
+# launchd plist, GitHub cron and Kubernetes CronJob, and scheduler/schedule.yml
+# is the Dagster job list. Both are read, neither is copied (one of each layer).
+# The floor in legions/estate-clocks.json (`coverage_floor`) only rises: a
+# change that grades fewer loops than the floor is refused by --gate.
+
+HOME_OF_KIND = {
+    "GitHub Actions cron": "github-cron",
+    "launchd job on the laptop": "laptop",
+    "Kubernetes CronJob": "cluster",
+}
+
+
+def _census(root: Path) -> list[dict]:
+    """Every recurring declaration in the tree, one row each. Raises
+    RegistryBlind when either census cannot be read: a map with a hole in it
+    must not be reported as the whole territory."""
+    import importlib.machinery
+    import importlib.util
+
+    src = root / "bin" / "idp-one-scheduler"
+    try:
+        loader = importlib.machinery.SourceFileLoader("idp_one_scheduler", str(src))
+        spec = importlib.util.spec_from_loader("idp_one_scheduler", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        outside = mod.found(str(root))
+    except (OSError, ImportError, SyntaxError) as exc:
+        raise RegistryBlind(f"census: bin/idp-one-scheduler unreadable: {exc}") from exc
+    rows = [
+        {"id": job, "kind": kind, "home": HOME_OF_KIND.get(kind, "unknown")}
+        for job, kind in sorted(outside.items())
+    ]
+    sched = root / "scheduler" / "schedule.yml"
+    try:
+        import yaml  # the Dagster list is YAML; only --coverage needs it
+
+        jobs = (yaml.safe_load(sched.read_text(encoding="utf-8")) or {}).get("jobs") or {}
+    except (OSError, ImportError) as exc:
+        raise RegistryBlind(f"census: {sched} unreadable: {exc}") from exc
+    for name, job in sorted(jobs.items()):
+        runs_on = (job or {}).get("runs_on", "unknown")
+        rows.append({"id": f"dagster:{name}", "kind": "Dagster schedule", "home": f"dagster@{runs_on}"})
+    return rows
+
+
+def coverage(manifest: dict, census: list[dict]) -> dict:
+    """Join the census with the obligations. Pure: no network, no clock."""
+    graded = {
+        o.get("workflow"): o.get("id")
+        for o in manifest.get("obligations", [])
+        if o.get("state") != "retired" and o.get("workflow")
+    }
+    rows = []
+    for row in census:
+        wf = row["id"].rsplit("/", 1)[-1] if row["id"].startswith(".github/workflows/") else None
+        oid = graded.get(wf) if wf else None
+        rows.append(dict(row, obligation=oid, loop="CLOSED" if oid else "OPEN"))
+    closed = sum(1 for r in rows if r["loop"] == "CLOSED")
+    by_home: dict = {}
+    for r in rows:
+        h = by_home.setdefault(r["home"], {"declared": 0, "closed": 0})
+        h["declared"] += 1
+        h["closed"] += r["loop"] == "CLOSED"
+    floor = manifest.get("coverage_floor")
+    return {
+        "declared": len(rows),
+        "closed": closed,
+        "open": len(rows) - closed,
+        "coverage_floor": floor,
+        "below_floor": isinstance(floor, int) and closed < floor,
+        "by_home": by_home,
+        "loops": rows,
+    }
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Grade delivered cadence, not declared cadence.")
     ap.add_argument("--registry", default=str(DEFAULT_REGISTRY))
@@ -312,6 +396,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--json", action="store_true", help="the board as data")
     ap.add_argument("--gate", action="store_true", help="exit 1 on a miss, 2 when blind")
     ap.add_argument("--now", default="", help="pin the clock, for tests")
+    ap.add_argument(
+        "--coverage",
+        action="store_true",
+        help="the loop map: every recurring declaration, CLOSED (graded here) or OPEN",
+    )
     ap.add_argument(
         "--runs-json",
         default="",
@@ -354,6 +443,26 @@ def main(argv: list[str]) -> int:
         # look, so it must not report that the estate is well OR unwell.
         print(f"BLIND chronos: {blind_registry}", file=sys.stderr)
         return 2
+    if args.coverage:
+        try:
+            cov = coverage(manifest, _census(IDP))
+        except RegistryBlind as blind_census:
+            print(f"BLIND chronos: {blind_census}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(cov, indent=2))
+        else:
+            print(f"chronos loop map: {cov['closed']} closed, {cov['open']} open of {cov['declared']} declared"
+                  f" (floor {cov['coverage_floor']})")
+            for home, h in sorted(cov["by_home"].items()):
+                print(f"  {home:22} {h['closed']:3} closed / {h['declared']:3} declared")
+            for r in cov["loops"]:
+                if r["loop"] == "OPEN":
+                    print(f"  OPEN  {r['home']:16} {r['id']}")
+        if not args.gate:
+            return 0
+        return 1 if cov["below_floor"] else 0
+
     wanted = [o for o in manifest["obligations"] if not args.obligation or o.get("id") == args.obligation]
     if args.obligation and not wanted:
         print(f"--obligation: no such obligation {args.obligation!r}", file=sys.stderr)

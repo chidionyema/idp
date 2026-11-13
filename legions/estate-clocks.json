@@ -148,6 +148,20 @@
       "max_age_minutes": 720,
       "catch_up": "next tick",
       "state": "active"
+    },
+    {
+      "id": "chronos-weekly",
+      "kind": "github-workflow",
+      "workflow": "chronos-weekly.yml",
+      "declares": "13 7 * * 1",
+      "declares_human": "weekly, Monday 07:13 UTC",
+      "owner": "estate",
+      "evidence": "Founder 2026-11-13: 'a schedule also for Chronos weekly'. Chronos grades its own weekly review: a silent week is a MISS.",
+      "max_age_minutes": 11520,
+      "catch_up": "next tick",
+      "state": "active"
     }
-  ]
+  ],
+  "coverage_floor": 7,
+  "coverage_floor_why": "Chronos loop map (bin/idp-estate-clocks --coverage): the number of recurring declarations graded for delivery. It only rises; --coverage --gate refuses a tree below it. Measured 2026-11-13: 7 closed of 139 (chronos-weekly added) declared."
 }

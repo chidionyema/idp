@@ -1,0 +1,71 @@
+# button: Run Chronos's weekly loop review now
+# founder: Every Monday morning Chronos grades every clock the estate declares (did it actually run?) and maps every recurring job as closed (something checks it delivered) or open (it can stop and nobody notices). The result is posted to one standing issue, so the week's open loops are visible without anyone asking.
+#
+# chronos-weekly (idp#8026). Founder, 2026-11-13: "map disconnects and track all these loops across
+# estate" and "a schedule also for Chronos weekly". Read-only: it grades and reports, it never
+# dispatches (bin/idp-estate-clocks, WHAT IT IS NOT). Chronos grades this clock too
+# (legions/estate-clocks.json obligation chronos-weekly), so a silent week is itself a MISS.
+name: chronos-weekly
+
+on:
+  schedule:
+    - cron: "13 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: chronos-weekly
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Grade every clock and map every loop
+        id: grade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e -uo pipefail
+          python3 -m pip install --quiet pyyaml
+          timeout 300 python3 bin/idp-estate-clocks > board.txt 2>&1; board_rc=$?
+          timeout 120 python3 bin/idp-estate-clocks --coverage --gate > loops.txt 2>&1; loops_rc=$?
+          echo "board_rc=$board_rc" >> "$GITHUB_OUTPUT"
+          echo "loops_rc=$loops_rc" >> "$GITHUB_OUTPUT"
+          {
+            echo "**Chronos weekly** — run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "Delivered cadence (exit $board_rc):"
+            echo '```'; tail -40 board.txt; echo '```'
+            echo "Loop map (exit $loops_rc; 1 = closed loops fell below the floor):"
+            echo '```'; head -12 loops.txt; echo "..."; echo '```'
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post to the standing issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="[chronos] weekly loop review"
+          n=$(gh api "repos/$REPO/issues?state=open&per_page=100" --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ -z "$n" ]; then
+            n=$(gh api "repos/$REPO/issues" -f title="$title" \
+                  -f body="Chronos posts its weekly grade of every declared clock and the estate loop map here (.github/workflows/chronos-weekly.yml)." \
+                  --jq .number)
+          fi
+          gh api "repos/$REPO/issues/$n/comments" -F body=@comment.md --jq .html_url
+
+      - name: A blind review fails the run
+        if: steps.grade.outputs.board_rc == '2' || steps.grade.outputs.loops_rc == '2'
+        run: |
+          echo "BLIND chronos-weekly: board=${{ steps.grade.outputs.board_rc }} loops=${{ steps.grade.outputs.loops_rc }}"
+          exit 2
