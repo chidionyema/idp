@@ -152,11 +152,46 @@ def same_commit(head: str, proved: str) -> bool:
     return h.startswith(p) or p.startswith(h)
 
 
+def tree_of(sha: str) -> str | None:
+    """The git tree a commit names: local object store first, then the GitHub API. None if unreadable."""
+    git = shutil.which("git")
+    if git:
+        try:
+            p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                [git, "rev-parse", "--verify", "--quiet", f"{sha}^{{tree}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if p.returncode == 0 and p.stdout.strip():
+                return p.stdout.strip()
+        except (OSError, subprocess.SubprocessError) as e:
+            print(
+                f"bdd-proof-gate: local tree of {sha[:12]} unreadable ({e}); asking GitHub",
+                file=sys.stderr,
+            )
+    repo = os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp")
+    rc, out, _ = gh_json(
+        ["api", f"repos/{repo}/commits/{sha}", "--jq", ".commit.tree.sha"]
+    )
+    t = out.strip() if rc == 0 else ""
+    return t if re.fullmatch(r"[0-9a-f]{40}", t) else None
+
+
+def same_tested_bytes(head: str, proved: str, tree=tree_of) -> bool:
+    """The Greenlane tests a candidate commit, then lands each lane as its own commit on main: a different
+    sha with the same bytes (2026-11-13: candidate c40017e and head 469db1b, both tree 667b30c0). The proof
+    stands when the two commits carry the identical tree. Unreadable trees never pass."""
+    a, b = tree(head), tree(proved)
+    return bool(a) and a == b
+
+
 def grade(
     body: str,
     head: str,
     label: str,
     proved_override: str | None = None,
+    tree_lookup=None,
 ) -> tuple[int, str]:
     """The ONE predicate: the block exists, it carries a passing run, it names this head.
 
@@ -165,6 +200,7 @@ def grade(
     the other. `proved_override` is the JSON mode's documented test hook (BDD_RUN_HEAD)
     and is never set by the live mode.
     """
+    tree_lookup = tree_lookup or tree_of
     block = extract_block(body or "")
     if block is None:
         return EXIT_REFUSED, f"{label} carries no {BEGIN} ... {END} block"
@@ -178,7 +214,10 @@ def grade(
             EXIT_BLIND,
             f"{label}: its head commit is unknown, so the proof cannot be tied to it",
         )
-    if not same_commit(head, proved):
+    if not same_commit(head, proved) and not (
+        GREENLANE_EVIDENCE.search(block)
+        and same_tested_bytes(head, proved, tree_lookup)
+    ):
         return (
             EXIT_REFUSED,
             f"{label}: the proof names {proved}, but the head is {head[:12]}",
