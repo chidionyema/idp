@@ -119,6 +119,16 @@ def _open(d: dict) -> list:
     return [e for e in d.get("entries", []) if e.get("state") == "open"]
 
 
+def _applicable(d: dict, session: str) -> list:
+    """Bind complaint pins to an observed session; legacy pins remain global."""
+    return [
+        e for e in _open(d)
+        if not e.get("target_session") or (
+            bool(session) and e["target_session"] == session
+        )
+    ]
+
+
 def _match(d: dict, key: str):
     """Find an open entry by id, issue or a fragment of its error.
 
@@ -194,16 +204,25 @@ def cmd_verdict(as_json: bool) -> int:
         d = _load()
     except Exception as exc:
         return blind(f"{LEDGER} could not be read: {type(exc).__name__}: {exc}")
-    open_e = _open(d)
+    target_session = os.environ.get("ESTATE_PIN_SESSION", "").strip()
+    open_e = _applicable(d, target_session)
+    unbound_scoped = len([e for e in _open(d) if e.get("target_session")]) if not target_session else 0
     self_id = os.environ.get("ESTATE_PIN_SELF", "")
     mine = _match(d, self_id) if self_id else None
     if mine:
         open_e = [mine] + [e for e in open_e if e is not mine]
     if as_json:
-        print(json.dumps({"pinned": bool(open_e), "open": open_e}, indent=1))
+        print(json.dumps({
+            "pinned": bool(open_e), "open": open_e,
+            "session_bound": bool(target_session),
+            "scoped_unobserved": unbound_scoped,
+        }, indent=1))
         return EXIT_PINNED if open_e else EXIT_OK
     if not open_e:
-        print("CLEAR pin-open: nothing open. Start work and drive it to operational.")
+        if unbound_scoped:
+            print("UNBOUND pin-open: targeted complaint exists but caller supplied no session identity.")
+        else:
+            print("CLEAR pin-open: nothing applicable. Start work and drive it to operational.")
         return EXIT_OK
     print(
         "PINNED pin-open: this session may start NO other work until the issue below moves."
@@ -214,7 +233,7 @@ def cmd_verdict(as_json: bool) -> int:
     return EXIT_PINNED
 
 
-def cmd_open(issue: str, err: str, do: str, blocks: str) -> int:
+def cmd_open(issue: str, err: str, do: str, blocks: str, target_session: str = "") -> int:
     try:
         d = _load()
     except Exception as exc:
@@ -240,6 +259,7 @@ def cmd_open(issue: str, err: str, do: str, blocks: str) -> int:
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "by": os.environ.get("ESTATE_AGENT", "estate-agent"),
         "route": "",
+        "target_session": target_session or None,
     }
     if any(w in (do or "").lower() for w in _NEEDS_HUMAN):
         entry["route"] = _page_founder(entry)
@@ -301,6 +321,8 @@ def main(argv=None) -> int:
     ap.add_argument("--do", default="")
     ap.add_argument("--blocks", default="")
     ap.add_argument("--proof", default="")
+    ap.add_argument("--target-session", default="",
+                    help="pin only the named harness session; empty preserves legacy global pin")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "open":
@@ -308,7 +330,8 @@ def main(argv=None) -> int:
             return blind(
                 "'open' needs an issue: bin/pin-open open '#7351' --err '...' --do '...'"
             )
-        return cmd_open(a.ident, a.err, a.do, a.blocks)
+        return cmd_open(a.ident, a.err, a.do, a.blocks,
+                        target_session=a.target_session.strip())
     if a.cmd == "resolve":
         if not a.ident:
             return blind(
