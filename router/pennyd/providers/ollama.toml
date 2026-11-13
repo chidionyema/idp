@@ -1,0 +1,15 @@
+# Local lane: ollama / llama.cpp server on the Pi. Free by definition.
+id = "ollama"
+dialect = "openai"          # ollama speaks OpenAI-compatible /v1
+base_url = "http://127.0.0.1:11434"
+
+[auth]
+kind = "none"
+
+[[models]]
+id = "qwen3:1.7b"
+class = "local"
+price_in_per_mtok = 0.0
+price_out_per_mtok = 0.0
+context_window = 32000
+aliases = ["triage"]        # cheap classification / does-this-need-a-model calls
