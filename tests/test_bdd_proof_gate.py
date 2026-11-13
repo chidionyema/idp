@@ -549,3 +549,115 @@ def test_nonzero_bdd_evidence_remains_proved_in_json_and_live(tmp_path: Path) ->
         )
         rc, out, err = run_gate(["--live"], clean_env(GITHUB_EVENT_PATH=str(ev)))
         assert rc == 0, f"LIVE refused {evidence!r}: rc={rc} out={out} err={err}"
+
+
+def test_live_rerun_recovers_same_head_proof_corrected_after_event(
+    tmp_path: Path,
+) -> None:
+    """GitHub Actions reruns replay the old event body, but the PR can be fixed."""
+    number = 4242
+    ev = event_file(
+        tmp_path,
+        {
+            "pull_request": {
+                "number": number,
+                "body": proof_body(OTHER),
+                "head": {"sha": HEAD},
+            }
+        },
+    )
+    live = pr_payload(number, proof_body(HEAD), HEAD)
+    bindir = fake_gh(tmp_path, out=json.dumps(live))
+    log = tmp_path / "gh.log"
+    rc, out, err = run_gate(
+        ["--live"],
+        clean_env(
+            GITHUB_EVENT_PATH=str(ev),
+            GH_TOKEN="read-only-test-token",
+            PATH=f"{bindir}:{os.environ.get('PATH', '')}",
+            FAKE_GH_LOG=str(log),
+            FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        ),
+    )
+    assert rc == 0, f"{out} {err}"
+    assert log.read_text().count("pr view 4242") == 1
+
+
+def test_live_rerun_never_accepts_changed_head_from_same_pr(tmp_path: Path) -> None:
+    """A newer commit needs its OWN event and proof; a fresh body is not enough."""
+    ev = event_file(
+        tmp_path,
+        {
+            "pull_request": {
+                "number": 4242,
+                "body": proof_body(OTHER),
+                "head": {"sha": HEAD},
+            }
+        },
+    )
+    live = pr_payload(4242, proof_body(OTHER), OTHER)
+    bindir = fake_gh(tmp_path, out=json.dumps(live))
+    rc, _out, err = run_gate(
+        ["--live"],
+        clean_env(
+            GITHUB_EVENT_PATH=str(ev),
+            GH_TOKEN="read-only-test-token",
+            PATH=f"{bindir}:{os.environ.get('PATH', '')}",
+            FAKE_GH_LOG=str(tmp_path / "gh.log"),
+            FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        ),
+    )
+    assert rc == 1, err
+
+
+def test_live_rerun_never_accepts_foreign_pr_proof(tmp_path: Path) -> None:
+    ev = event_file(
+        tmp_path,
+        {
+            "pull_request": {
+                "number": 4242,
+                "body": "no proof",
+                "head": {"sha": HEAD},
+            }
+        },
+    )
+    foreign = pr_payload(9999, proof_body(HEAD), HEAD)
+    bindir = fake_gh(tmp_path, out=json.dumps(foreign))
+    rc, _out, err = run_gate(
+        ["--live"],
+        clean_env(
+            GITHUB_EVENT_PATH=str(ev),
+            GH_TOKEN="read-only-test-token",
+            PATH=f"{bindir}:{os.environ.get('PATH', '')}",
+            FAKE_GH_LOG=str(tmp_path / "gh.log"),
+            FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        ),
+    )
+    assert rc == 1, err
+
+
+def test_live_rerun_github_lookup_failure_keeps_original_refusal(
+    tmp_path: Path,
+) -> None:
+    ev = event_file(
+        tmp_path,
+        {
+            "pull_request": {
+                "number": 4242,
+                "body": "no proof",
+                "head": {"sha": HEAD},
+            }
+        },
+    )
+    bindir = fake_gh(tmp_path, out="", rc=1)
+    rc, _out, err = run_gate(
+        ["--live"],
+        clean_env(
+            GITHUB_EVENT_PATH=str(ev),
+            GH_TOKEN="read-only-test-token",
+            PATH=f"{bindir}:{os.environ.get('PATH', '')}",
+            FAKE_GH_LOG=str(tmp_path / "gh.log"),
+            FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        ),
+    )
+    assert rc == 1, err

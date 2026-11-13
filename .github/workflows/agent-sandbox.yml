@@ -71,12 +71,14 @@ permissions:
 jobs:
   agent:
     # Only the founder may label an issue they authored as a Legion mission.
+    # claude-native selects genuine Claude Code with the same founder authorization,
+    # sealed transcript firewall and patch-only submission boundaries.
     if: >-
       github.event_name != 'issues' || (
         github.actor == vars.ESTATE_FOUNDER_LOGIN &&
         github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
         ((github.event.action == 'opened' && startsWith(github.event.issue.title, '[LEGION] ')) ||
-         (github.event.action == 'labeled' && github.event.label.name == 'legion-run'))
+         (github.event.action == 'labeled' && (github.event.label.name == 'legion-run' || github.event.label.name == 'claude-native')))
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -97,7 +99,7 @@ jobs:
 
       - name: Install the harness and age
         env:
-          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
         run: |
           set -euo pipefail
           case "$HARNESS" in
@@ -109,7 +111,7 @@ jobs:
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
-          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
@@ -129,7 +131,12 @@ jobs:
           case "$HARNESS" in
             claude-code)
               [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
-              rc=0; claude -p "$TASK" --dangerously-skip-permissions < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              # No GitHub token in this job. Authenticate Claude first with a real
+              # Anthropic modelUsage receipt; reject GLM aliases before running tasks.
+              [ -x bin/claude-anthropic ] || { echo "::error::CLAUDE_NATIVE_LAUNCHER_NOT_ON_TRUSTED_MAIN"; exit 1; }
+              rc=0; bin/claude-anthropic --verify-live < /dev/null > "$out/claude-provider-receipt" 2> "$out/claude-provider-error" || rc=$?
+              if [ "$rc" -ne 0 ]; then echo "::error::CLAUDE_NATIVE_PROVIDER_NOT_VERIFIED exit=$rc"; exit "$rc"; fi
+              rc=0; bin/claude-anthropic -p "$TASK" --dangerously-skip-permissions < /dev/null > "$out/stdout" 2>&1 || rc=$?
               transcript=$(newest "$HOME/.claude/projects") ;;
             pi)
               [ -n "$MINIMAX_API_KEY" ] || { echo "::error::SEED_MINIMAX_API_KEY is not set"; exit 1; }
@@ -211,7 +218,7 @@ jobs:
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
           files=()
-          for name in base patch transcript.jsonl stdout google.failed.stdout google.failed.transcript.jsonl; do
+          for name in base patch transcript.jsonl stdout claude-provider-receipt claude-provider-error google.failed.stdout google.failed.transcript.jsonl; do
             if [ -f "$out/$name" ]; then files+=("$name"); fi
           done
           [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
@@ -329,7 +336,7 @@ jobs:
         id: claim
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           ISSUE: ${{ github.event_name == 'issues' && github.event.issue.number || inputs.issue }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -353,7 +360,7 @@ jobs:
       - name: Commit through the estate's own hooks and push the lane
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           NUM: ${{ steps.claim.outputs.num }}
           AGENT: ${{ steps.claim.outputs.agent }}
