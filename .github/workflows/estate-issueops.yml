@@ -36,6 +36,37 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/issue"
           printf '%s\n\n%s\n' "$TITLE" "$BODY" > "$RUNNER_TEMP/issue/task.txt"
+      - name: Deterministic founder intake and prior-case retrieval
+        # The founder and issuer were authenticated above. Issue body is still
+        # untrusted task DATA. This command only reads the ONE existing case
+        # ledger and appends bounded references; it grants no authority.
+        env:
+          INPUT: ${{ runner.temp }}/issue/task.txt
+          RESULT: ${{ runner.temp }}/issue/intake.json
+        run: |
+          set -euo pipefail
+          bin/estate-founder-intake --file "$INPUT" --no-publish --json > "$RESULT"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          task = Path(os.environ["INPUT"])
+          record = json.loads(Path(os.environ["RESULT"]).read_text())
+          candidates = record.get("retrieved_cases") or []
+          # Do not disclose prior prompts; similarity never proves a cause.
+          if candidates:
+              with task.open("a", encoding="utf-8") as stream:
+                  stream.write("\n\n---\nUNVERIFIED PRIOR CASE CANDIDATES:\n")
+                  stream.write(json.dumps(candidates[:5], sort_keys=True) + "\n")
+          print(json.dumps({
+              "schema": "estate.founder-intake-issueops.v1",
+              "fingerprint": record.get("fingerprint"),
+              "case_count": len(candidates),
+              "case_authority": "RETRIEVAL_ONLY",
+              "execution_authority": "EXISTING_ESTATE_EXECUTE",
+          }, sort_keys=True))
+          PY
       - name: Run the task on the estate (the executor door)
         id: start
         env:
