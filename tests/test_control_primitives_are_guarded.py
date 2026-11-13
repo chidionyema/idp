@@ -220,3 +220,154 @@ def test_every_existing_vendor_rule_file_is_a_link_to_agents_md() -> None:
         if f.exists() and f.is_file() and f.resolve() != law:
             own_text.append(name)
     assert own_text == [], f"second law files with their own text: {own_text}"
+
+
+# --- The founder signature, end to end with the REAL scripts and a throwaway key -----------------
+
+AUTH = REPO / "bin/idp-auth"
+
+
+def _keypair(tmp_path: Path) -> tuple[Path, Path]:
+    key, pub = tmp_path / "founder.key", tmp_path / "founder.pub"
+    subprocess.run(
+        ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(key)],
+        check=True,
+        capture_output=True,
+    )  # noqa: S603,S607
+    key.chmod(0o600)
+    subprocess.run(
+        ["openssl", "pkey", "-in", str(key), "-pubout", "-out", str(pub)],
+        check=True,
+        capture_output=True,
+    )  # noqa: S603,S607
+    return key, pub
+
+
+def _sealed_repo(
+    tmp_path: Path, signed: list[str], change: dict[str, str]
+) -> tuple[Path, Path]:
+    """Base carries the throwaway pub; a lane changes files; the founder seals with an empty commit."""
+    key, pub = _keypair(tmp_path)
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)  # noqa: S603,S607
+    for k, v in (
+        ("commit.gpgsign", "false"),
+        ("user.name", "agent"),
+        ("user.email", "agent@example.com"),
+    ):
+        _git(repo, "config", k, v)
+    (repo / "docs/keys").mkdir(parents=True)
+    (repo / "docs/keys/founder.pub").write_text(pub.read_text())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    for name, text in change.items():
+        (repo / name).write_text(text)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "lane change\n\nX-Idp-Signed: " + "0" * 64)
+    env = {**__import__("os").environ, "IDP_FOUNDER_KEY": str(key)}
+    trailers = subprocess.run(  # noqa: S603
+        ["bash", str(AUTH), "approve", *signed],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        f"seal\n\n{trailers}X-Idp-Signed: {'0' * 64}",
+    )
+    return repo, key
+
+
+def _verdict(repo: Path, base: str = "HEAD~2") -> tuple[int, str]:
+    done = subprocess.run(
+        ["bash", str(CHECKER), base], cwd=repo, capture_output=True, text=True
+    )  # noqa: S603,S607
+    return done.returncode, done.stdout + done.stderr
+
+
+def test_a_founder_signed_change_passes(tmp_path: Path) -> None:
+    repo, _ = _sealed_repo(tmp_path, ["AGENTS.md"], {"AGENTS.md": "one law\n"})
+    rc, out = _verdict(repo)
+    assert rc == 0, out
+    assert "founder signature valid" in out, out
+
+
+def test_a_signature_over_other_paths_does_not_license_agents_md(
+    tmp_path: Path,
+) -> None:
+    repo, _ = _sealed_repo(
+        tmp_path, ["README.md"], {"AGENTS.md": "rewritten\n", "README.md": "x\n"}
+    )
+    rc, out = _verdict(repo)
+    assert rc != 0, f"a README.md signature licensed an AGENTS.md change:\n{out}"
+
+
+def test_the_signature_survives_the_greenlane_squash(tmp_path: Path) -> None:
+    """Greenlane lands one squashed commit on main carrying the lane's trailers. Same content, new parent."""
+    repo, _ = _sealed_repo(tmp_path, ["AGENTS.md"], {"AGENTS.md": "one law\n"})
+    msg = subprocess.run(
+        ["git", "log", "-1", "--format=%B"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout  # noqa: S603,S607
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()  # noqa: S603,S607
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD~2"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()  # noqa: S603,S607
+    squashed = subprocess.run(  # noqa: S603
+        [
+            "git",
+            "commit-tree",
+            tree,
+            "-p",
+            base,
+            "-m",
+            "squash\n\nGreenlane-Head: x\n\n" + msg,
+        ],  # noqa: S607
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _git(repo, "reset", "-q", "--hard", squashed)
+    rc, out = _verdict(repo, "HEAD~1")
+    assert rc == 0, f"a signed change could not survive the squash:\n{out}"
+
+
+def test_content_changed_after_signing_is_refused(tmp_path: Path) -> None:
+    repo, _ = _sealed_repo(tmp_path, ["AGENTS.md"], {"AGENTS.md": "one law\n"})
+    (repo / "AGENTS.md").write_text("agent edits after the seal\n")
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "-am",
+        "late edit\n\n"
+        + subprocess.run(  # noqa: S603
+            ["git", "log", "-1", "--format=%(trailers:only)"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,  # noqa: S607
+        ).stdout,
+    )
+    rc, out = _verdict(repo, "HEAD~3")
+    assert rc != 0, f"content changed after the founder signed and still passed:\n{out}"
