@@ -1,0 +1,21 @@
+services:
+  pennyd:
+    build: .
+    ports: ["127.0.0.1:4000:4000"]
+    volumes:
+      - ./providers:/app/providers:ro
+      - pennyd-log:/var/lib/pennyd
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-lane"]
+    volumes: [ollama-data:/root/.ollama]
+    restart: unless-stopped
+
+volumes:
+  pennyd-log:
+  ollama-data:

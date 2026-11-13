@@ -1,0 +1,21 @@
+[package]
+name = "pennyd"
+version = "0.1.0"
+edition = "2021"
+description = "24/7 token-efficiency daemon: exact cache, cheap-first cascade, hard budgets, founder visibility"
+
+[dependencies]
+penny-core = { path = "../penny-core" }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures-util = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }
+bytes = { workspace = true }
+async-trait = { workspace = true }
+toml = { workspace = true }
