@@ -31,7 +31,13 @@ fi
 rc=0
 
 # 1) Guarded-path signature check.
-changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+# idp#8021: this line read `"$BASE"...HEAD_REV` (the literal word) from 2026-09-17; git refused it,
+# the error was swallowed and every guarded change passed unseen. A diff that cannot be computed
+# is now a refusal, never an empty list.
+if ! changed="$(git diff --name-only "$BASE...$HEAD_REV" 2>&1)"; then
+  echo "FAIL  guarded-paths  cannot compute the changed paths for $BASE...$HEAD_REV: $changed"
+  exit 1
+fi
 guard_hit=""
 while IFS= read -r g; do
   [ -z "$g" ] && continue
