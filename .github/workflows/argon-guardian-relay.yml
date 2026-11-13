@@ -86,7 +86,8 @@ jobs:
         env:
           TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          set -uo pipefail
+          # Actions runs this with bash -e; the relay's refusal (exit 1) must reach rc, not end the step.
+          set +e -uo pipefail
           base=$(cat "$RUNNER_TEMP/verified-head" 2>/dev/null || jq -r .initial_base platform/argon-guardian/trust.json)
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
