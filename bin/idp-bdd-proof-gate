@@ -458,10 +458,38 @@ def live_grade(env: dict) -> tuple[int, str]:
         return EXIT_BLIND, f"BLIND: {detail}"
     if kind == "none" or target is None:
         return EXIT_NOT_APPLICABLE, f"no pull request under test: {detail}"
-    return grade(
+    original = grade(
         target.get("body") or "",
         target.get("headRefOid") or "",
         f"pull request #{target.get('number')}",
+    )
+    # Pull-request events snapshot the body at event creation. The PR head can
+    # remain unchanged while the author corrects its proof block; rerunning the
+    # failed CI job replays the stale event payload, so the same obsolete body
+    # used to fail forever even after GitHub displayed the corrected proof.
+    #
+    # Only recover a *refusal* when this runner has read-only GitHub authority,
+    # and only from this exact numbered PR with the SAME commit as the event.
+    # No token, failed lookup, another PR, or a changed head: no new permission.
+    if (
+        original[0] != EXIT_REFUSED
+        or target.get("source") != "the event payload"
+        or not (env.get("GH_TOKEN") or env.get("GITHUB_TOKEN"))
+    ):
+        return original
+    kind, fresh, _error = pr_by_number(int(target["number"]))
+    if kind != "resolved" or fresh is None:
+        return original
+    if int(fresh.get("number") or 0) != int(target["number"]):
+        return original
+    before = target.get("headRefOid") or ""
+    after = fresh.get("headRefOid") or ""
+    if not before or not after or before.lower() != after.lower():
+        return original
+    return grade(
+        fresh.get("body") or "",
+        after,
+        f"pull request #{target['number']}",
     )
 
 
