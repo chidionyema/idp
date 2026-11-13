@@ -91,3 +91,38 @@ jobs:
           # The judgement's own exit decides the run: 2 is BLIND (fails), 0/1 are outcomes.
           [ "${{ steps.beat.outputs.rc }}" = 2 ] && exit 2
           exit 0
+
+      - name: Decode the App key (for the Genesis mirror)
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   chronos-mirror  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: argon
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          owner: ${{ github.repository_owner }}
+          repositories: argon
+          permission-contents: write
+
+      - name: Mirror the snapshot onto the Genesis surface (argon outbox-state, I-0051)
+        env:
+          TOKEN: ${{ steps.argon.outputs.token }}
+        run: |
+          set -uo pipefail
+          # The one writer of argon's outbox-state is argon's own write_state; this runs argon's code
+          # (bin/genesis_chronos.py from argon main), never a second writer. Until I-0051 lands on
+          # argon main the file is absent and the step says so instead of writing.
+          git init -q argon && cd argon
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/argon.git"
+          git fetch -q --depth 1 --filter=blob:none origin main || { echo "BLIND   chronos-mirror  argon not reachable"; exit 2; }
+          git checkout -q FETCH_HEAD -- bin/genesis_chronos.py bin/genesis_cloud_health.py 2>/dev/null \
+            || { echo "WAIT    chronos-mirror  argon main has no bin/genesis_chronos.py yet (I-0051 not landed)"; exit 0; }
+          python3 bin/genesis_chronos.py publish . ../latest.json

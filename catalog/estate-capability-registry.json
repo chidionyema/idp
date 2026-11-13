@@ -57919,7 +57919,8 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
         ]
       },
       "owner": "@chidionyema",
