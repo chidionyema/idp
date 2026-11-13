@@ -104,20 +104,40 @@ def _staged_added_python_files() -> list[str]:
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.MULTILINE)
 
 
-def _lane_messages(base: str, lane_head: str, squash_msg: str) -> str:
-    """The commit messages of the lane a Greenlane queue commit came from.
+def _lane_messages(
+    base: str,
+    lane_head: str,
+    squash_msg: str,
+    examined: set[str] | None = None,
+) -> str:
+    """Preserve source trailers through repeated signed Greenlane squashes.
 
-    Found live, 2026-10-30 (queue/b4693, run 41113337234): the Greenlane lands a lane as one
-    squashed commit whose message keeps only the subject, `Greenlane-Head: <lane head>` and its
-    signature -- every Language-Exception trailer is dropped, so this gate refused the very commit
-    that introduced it. Same resolution bin/claim-gate's lane_text uses for its Claim:/Agent:
-    trailers: read the lane head's own messages, fetching it by sha when no ref still holds it;
-    failing that, judge the squash message as it is (no trailer -> refused, never assumed)."""
+    A lane first becomes a signed Greenlane-Head squash, then a queue candidate
+    may squash that commit AGAIN. A single dereference sees only the middle
+    squash message and loses the original Language-Exception. Walk the bounded
+    provenance DAG; a missing/cyclic reference contributes NO permission.
+    """
+    examined = examined if examined is not None else set()
+    # 32 distinct Git object heads is sufficient for any legitimate nested
+    # candidate. Bound remote fetch and CPU cost on untrusted trailer input.
+    if lane_head in examined or len(examined) >= 32:
+        return squash_msg
+    examined.add(lane_head)
     if _git("cat-file", "-e", f"{lane_head}^{{commit}}", check=False).returncode != 0:
         _git("fetch", "-q", "--no-tags", "origin", lane_head, check=False)
-    if _git("cat-file", "-e", f"{lane_head}^{{commit}}", check=False).returncode == 0:
-        return _git("log", "--format=%B", f"{base}..{lane_head}").stdout
-    return squash_msg
+    if _git("cat-file", "-e", f"{lane_head}^{{commit}}", check=False).returncode != 0:
+        return squash_msg
+    history = _git("log", "--format=%B", f"{base}..{lane_head}", check=False)
+    if history.returncode != 0:
+        return squash_msg
+    messages = history.stdout
+    for parent_head in HEAD_TRAILER.findall(messages):
+        if parent_head.lower() in examined:
+            continue
+        inherited = _lane_messages(base, parent_head.lower(), "", examined)
+        if inherited:
+            messages += "\n" + inherited
+    return messages
 
 
 def _commit_messages(base: str, head: str) -> str:

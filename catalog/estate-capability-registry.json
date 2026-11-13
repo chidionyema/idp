@@ -26022,6 +26022,63 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/argon-guardian-relay",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "argon-guardian-relay -- argon's provenance guardian, run where a runner always exists.",
+      "contract": {
+        "inputs": [
+          "--base",
+          "--end",
+          "--founder-chat-sha256",
+          "--is-ancestor",
+          "--json",
+          "--repo",
+          "--verifier"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/argon-guardian-relay",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        ".github/workflows/argon-guardian-relay.yml"
+      ]
+    },
+    {
       "id": "cap:tool/arxiv-harvest",
       "schema_version": 1,
       "kind": "tool",
@@ -27109,7 +27166,6 @@
         "cap:tool/idp-ci",
         "cap:tool/idp-install-deps",
         "cap:tool/idp-machine-submit",
-        "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
         "cap:workflow/gha-ci"
@@ -50660,10 +50716,6 @@
       "path": "bin/language-gate",
       "depends_on": [
         {
-          "id": "cap:tool/claim-gate",
-          "edge": "invokes"
-        },
-        {
           "id": "cap:tool/estate-patch",
           "edge": "invokes"
         },
@@ -55648,6 +55700,64 @@
       "mirrors": []
     },
     {
+      "id": "cap:workflow/gha-argon-guardian-relay",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "argon-guardian-relay -- the GitHub Actions workflow argon-guardian-relay.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/argon-guardian-relay.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:workflow/gha-backstage-release",
       "schema_version": 1,
       "kind": "workflow",
@@ -57978,6 +58088,117 @@
         "health",
         "proof",
         "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-founder-passkey-deploy",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "founder-passkey-deploy -- the GitHub Actions workflow founder-passkey-deploy.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/founder-passkey-deploy.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-genesis-aistudio-source-intake",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "Genesis AI Studio private source intake -- the GitHub Actions workflow genesis-aistudio-source-intake.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/genesis-aistudio-source-intake.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
       ],
       "known_issues": [],
       "mirrors": []

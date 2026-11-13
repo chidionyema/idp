@@ -1,0 +1,8 @@
+{
+  "_comment": "Trust anchor for bin/argon-guardian-relay. guardian_sha is the last argon commit the argon guardian verified before its runner stopped (provenance-guardian last success 2026-11-06T23:33:42Z); the verifier is loaded from that commit, never from the tree being judged. founder_chat_sha256 is read from genesis-guardian-trust.json at that commit. initial_base is where the relay starts when it has no cached verified head. Changing this file is a trust rotation: it lands only through the Greenlane on this repository, whose main is protected server-side, unlike argon's.",
+  "repository": "chidionyema/argon",
+  "branches": ["main"],
+  "guardian_sha": "5135623097e5e957f40ee8f3522590d2dd2b5116",
+  "founder_chat_sha256": "5af707181a7e3534ef32448a3aabdb91c8f69c40434719d28fc3888b3e09ebec",
+  "initial_base": "5135623097e5e957f40ee8f3522590d2dd2b5116"
+}
