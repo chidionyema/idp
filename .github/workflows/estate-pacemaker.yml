@@ -20,7 +20,7 @@ on:
         default: manual
 
 permissions:
-  contents: read
+  contents: write   # appends chronos/latest.json to the state/chronos branch, never main
   actions: write
   issues: write
 
@@ -36,15 +36,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run what Chronos says missed; ticket a silent home
+        id: beat
         env:
           GH_TOKEN: ${{ github.token }}
           HOME_NAME: ${{ inputs.home || 'github-cron' }}
         run: |
           set +e -uo pipefail
-          timeout 240 python3 bin/estate-pacemaker --home "$HOME_NAME" --apply | tee beat.txt
-          rc=${PIPESTATUS[0]}
-          { echo '```'; cat beat.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          # 0 nothing to do, 1 acted or found a silent home (a finding, the job did its work),
-          # 2 BLIND: a pacemaker that cannot see fails the run so Chronos and the homes see it.
-          [ "$rc" -eq 2 ] && exit 2
+          timeout 240 python3 bin/estate-pacemaker --home "$HOME_NAME" --apply --json > beat.json
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          { echo '```json'; cat beat.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Publish the founder-surface snapshot (state/chronos, chronos/latest.json)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOME_NAME: ${{ inputs.home || 'github-cron' }}
+        run: |
+          set +e -uo pipefail
+          python3 -m pip install --quiet pyyaml
+          timeout 120 python3 bin/idp-estate-clocks --json > board.json 2>/dev/null; board_rc=$?
+          timeout 60 python3 bin/idp-estate-clocks --coverage --json > loops.json 2>/dev/null; loops_rc=$?
+          python3 bin/estate-pacemaker --snapshot beat.json board.json loops.json \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > latest.json || exit 2
+          git config user.name "estate-pacemaker"; git config user.email "estate-pacemaker@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            if git fetch -q --depth 1 origin state/chronos 2>/dev/null; then
+              git checkout -q -B snap FETCH_HEAD
+            else
+              git checkout -q --orphan snap && git rm -rq --cached . && find . -mindepth 1 -maxdepth 1 ! -name .git ! -name latest.json -exec rm -rf {} +
+            fi
+            mkdir -p chronos && cp latest.json chronos/latest.json && git add chronos/latest.json
+            git commit -qm "chronos snapshot: $HOME_NAME $(date -u +%FT%TZ)" || exit 0
+            git push -q origin snap:refs/heads/state/chronos && { echo "ok      published state/chronos"; break; }
+            sleep 3
+          done
+          # The judgement's own exit decides the run: 2 is BLIND (fails), 0/1 are outcomes.
+          [ "${{ steps.beat.outputs.rc }}" = 2 ] && exit 2
           exit 0

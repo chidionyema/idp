@@ -236,6 +236,72 @@ def _ticket(repo: str, home: dict) -> str:
     ).strip()
 
 
+def snapshot(beat: dict, board: dict, loops: dict, run_url: str) -> dict:
+    """The founder-surface document: one JSON every surface (Genesis HUD, the pinned Telegram line)
+    reads. Built only from the three machine outputs; a missing input is UNKNOWN, never zero."""
+    s = board.get("summary") or {}
+    homes_silent = [h["home"] for h in beat.get("silent_homes", [])]
+    dispatched = [
+        a["id"] for a in beat.get("actions", []) if a.get("action") == "dispatched"
+    ]
+    return {
+        "schema": "estate.chronos.snapshot/v1",
+        "observed_at": beat.get("observed_at") or board.get("observed_at"),
+        "run_url": run_url,
+        "woken_by": beat.get("home"),
+        "clocks": {
+            "graded": s.get("graded", "UNKNOWN"),
+            "ok": s.get("ok", "UNKNOWN"),
+            "missed": s.get("missed", "UNKNOWN"),
+            "unknown": s.get("unknown", "UNKNOWN"),
+            "rows": [
+                {
+                    k: r.get(k)
+                    for k in (
+                        "id",
+                        "verdict",
+                        "age_minutes",
+                        "max_age_minutes",
+                        "declares_human",
+                        "last_url",
+                    )
+                }
+                for r in board.get("obligations", [])
+            ],
+        },
+        "loops": {
+            "declared": loops.get("declared", "UNKNOWN"),
+            "closed": loops.get("closed", "UNKNOWN"),
+            "open": loops.get("open", "UNKNOWN"),
+            "floor": loops.get("coverage_floor", "UNKNOWN"),
+            "by_home": loops.get("by_home", {}),
+        },
+        "pacemaker": {
+            "homes_graded": beat.get("homes_graded", False),
+            "silent_homes": homes_silent,
+            "dispatched": dispatched,
+            "blind": [b["id"] for b in beat.get("blind", [])],
+        },
+        "line": (
+            f"Clocks {s.get('ok', '?')}/{s.get('graded', '?')} ran on time · "
+            f"loops {loops.get('closed', '?')}/{loops.get('declared', '?')} closed · "
+            f"pacemaker ran {len(dispatched)} missed · "
+            + (
+                "homes "
+                + (
+                    "all knocking"
+                    if beat.get("homes_graded") and not homes_silent
+                    else (
+                        "silent: " + ", ".join(homes_silent)
+                        if homes_silent
+                        else "not yet graded"
+                    )
+                )
+            )
+        ),
+    }
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Run what Chronos says missed; ticket a silent home."
@@ -256,7 +322,24 @@ def main(argv: list[str]) -> int:
     ap.add_argument(
         "--pacemaker-runs-json", default="", help="fixture: the pacemaker's own runs"
     )
+    ap.add_argument(
+        "--snapshot",
+        nargs=3,
+        metavar=("BEAT", "BOARD", "LOOPS"),
+        help="build the surface JSON",
+    )
+    ap.add_argument("--run-url", default="")
     args = ap.parse_args(argv[1:])
+
+    if args.snapshot:
+        docs = []
+        for path in args.snapshot:
+            try:
+                docs.append(json.loads(Path(path).read_text()))
+            except (OSError, json.JSONDecodeError):
+                docs.append({})  # missing input -> UNKNOWN fields, never zeros
+        print(json.dumps(snapshot(*docs, args.run_url), indent=2))
+        return 0
 
     chronos = _chronos()
     now = chronos._parse_iso(args.now) if args.now else chronos._utcnow()

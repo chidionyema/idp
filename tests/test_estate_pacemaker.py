@@ -183,3 +183,41 @@ def test_the_cloudflare_home_mints_an_app_jwt_github_would_accept(tmp_path):
     )  # noqa: S607
     got = json.loads(out.stdout)
     assert got == {"ok": True, "iss": "12345", "ttl": 600}
+
+
+def test_the_surface_snapshot_says_unknown_for_a_missing_input_never_zero():
+    snap = _mod().snapshot({}, {}, {}, "u")
+    assert (
+        snap["clocks"]["graded"] == "UNKNOWN" and snap["loops"]["closed"] == "UNKNOWN"
+    )
+    assert "homes not yet graded" in snap["line"]
+
+
+def test_the_surface_snapshot_names_dispatches_and_silent_homes():
+    beat = {
+        "home": "cloudflare",
+        "observed_at": "2026-11-13T02:00:00Z",
+        "homes_graded": True,
+        "actions": [
+            {"id": "relay", "action": "dispatched"},
+            {"id": "g", "action": "cooldown"},
+        ],
+        "silent_homes": [{"home": "mac"}],
+        "blind": [],
+    }
+    board = {
+        "summary": {"graded": 10, "ok": 7, "missed": 3, "unknown": 0},
+        "obligations": [],
+    }
+    loops = {
+        "declared": 141,
+        "closed": 8,
+        "open": 133,
+        "coverage_floor": 8,
+        "by_home": {},
+    }
+    snap = _mod().snapshot(beat, board, loops, "u")
+    assert snap["pacemaker"]["dispatched"] == ["relay"]
+    assert snap["line"] == (
+        "Clocks 7/10 ran on time · loops 8/141 closed · pacemaker ran 1 missed · homes silent: mac"
+    )

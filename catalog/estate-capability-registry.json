@@ -30623,7 +30623,9 @@
           "--pacemaker-runs-json",
           "--recent-json",
           "--repo",
-          "--runs-json"
+          "--run-url",
+          "--runs-json",
+          "--snapshot"
         ],
         "outputs": [
           "stdout",
@@ -30647,7 +30649,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-pacemaker"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -57938,13 +57942,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-pacemaker.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-pacemaker",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
