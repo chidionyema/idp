@@ -1,5 +1,6 @@
 """The founder's instruction store must be runnable: it sat at mode 644 and failed 'Permission denied'."""
 
+import json
 import os
 import subprocess
 from pathlib import Path
