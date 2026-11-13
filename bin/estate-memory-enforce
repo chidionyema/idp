@@ -274,7 +274,7 @@ def focus_verdict(path: str, rows, agent: str):
 PIN_DOOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pin-open")
 
 
-def pin_verdict():
+def pin_verdict(sid: str = ""):
     """(ok, reason): may this session start any work other than its open issue?
 
     Founder, 2026-11-10: "any agent that tried to report an issue already logged once must be
@@ -294,7 +294,8 @@ def pin_verdict():
         return None, "pin-open door absent: nothing to decide"
     try:
         r = subprocess.run(  # noqa: S603 - fixed argv, our own door
-            [sys.executable, PIN_DOOR, "--json"], capture_output=True, text=True, timeout=20
+            [sys.executable, PIN_DOOR, "--json"], capture_output=True, text=True, timeout=20,
+            env={**os.environ, "ESTATE_PIN_SESSION": sid},
         )
     except Exception as exc:  # BLIND is not a refusal
         return None, f"pin-open unreachable: {type(exc).__name__}: {exc}"
@@ -506,7 +507,7 @@ def pre(data: dict) -> int:
         record("pre", "refuse", dof_why, session=sid, tool=tool, path=path)
         deny_pre(f"Refused by the DoF repair lock. {dof_why}")
         return 0
-    pin_ok, pin_why = pin_verdict()
+    pin_ok, pin_why = pin_verdict(sid)
     if pin_ok is False:
         record("pre", "refuse", pin_why, session=sid, tool=tool, path=path)
         deny_pre(pin_why)
