@@ -1,0 +1,19 @@
+resources:
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+
+configMapGenerator:
+  - name: pennyd-providers
+    files:
+      - providers/ollama.toml
+      - providers/deepseek.toml
+      - providers/anthropic.toml
+
+secretGenerator:
+  - name: pennyd-keys
+    envs:
+      - secrets/lane-keys.env
+
+commonLabels:
+  app: pennyd
