@@ -1,0 +1,29 @@
+id = "groq"
+dialect = "openai"
+base_url = "https://api.groq.com/openai/v1"
+request_path = "/chat/completions"
+api_key_file = "/Users/roseonyema/.estate/pennyd/secrets/groq/GROQ_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "GROQ_API_KEY"
+
+[[models]]
+id = "openai/gpt-oss-120b"
+class = "free"
+price_in_per_mtok = 0
+price_out_per_mtok = 0
+context_window = 131072
+min_output_tokens = 256
+aliases = ["groq", "claude-haiku-fast"]
+fallbacks = ["openrouter/nvidia/nemotron-3.5-lightning:free"]
+
+[[models]]
+id = "qwen/qwen3.8-27b"
+class = "free"
+price_in_per_mtok = 0
+price_out_per_mtok = 0
+context_window = 131072
+min_output_tokens = 256
+aliases = ["narrate", "claude-haiku-local"]
+fallbacks = ["groq/openai/gpt-oss-120b"]
