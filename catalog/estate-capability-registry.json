@@ -6,8 +6,8 @@
     "intent": 118,
     "layer": 261,
     "service": 121,
-    "tool": 492,
-    "workflow": 105
+    "tool": 493,
+    "workflow": 107
   },
   "records": [
     {
@@ -26424,7 +26424,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-pacemaker"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -30605,6 +30607,74 @@
       ],
       "known_issues": [],
       "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-pacemaker",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-pacemaker -- a missed clock is run, and a silent pacemaker home is a ticket.",
+      "contract": {
+        "inputs": [
+          "--apply",
+          "--home",
+          "--jq",
+          "--json",
+          "--now",
+          "--pacemaker-runs-json",
+          "--recent-json",
+          "--repo",
+          "--runs-json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-pacemaker",
+      "depends_on": [
+        {
+          "id": "cap:tool/argon-guardian-relay",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-clocks",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        ".github/workflows/estate-pacemaker.yml"
+      ]
     },
     {
       "id": "cap:tool/estate-patch",
@@ -38148,6 +38218,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-pacemaker",
         "cap:tool/idp-estate-clocks-proof",
         "cap:tool/idp-estate-clocks-publish",
         "cap:workflow/gha-estate-homes-drill"
@@ -57812,6 +57883,116 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-issueops.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-estate-pacemaker",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-pacemaker -- the GitHub Actions workflow estate-pacemaker.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-pacemaker.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-estate-pacemaker-deploy",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-pacemaker-deploy -- the GitHub Actions workflow estate-pacemaker-deploy.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-pacemaker-deploy.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [

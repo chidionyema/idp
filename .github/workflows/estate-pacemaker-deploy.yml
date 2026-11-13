@@ -1,0 +1,117 @@
+# button: Deploy the pacemaker's Cloudflare home
+# founder: Publishes the Cloudflare clock that wakes the pacemaker every 5 minutes, independently of GitHub's own scheduler, then proves it is running. It needs no website and no domain.
+#
+# estate-pacemaker-deploy (idp#8026). Placement: ADR 0034 rung 4, Cloudflare Workers free tier,
+# account scope only (no zone: a cron trigger needs no route). Same mint-use-delete shape as
+# founder-passkey-deploy.yml. The GitHub App key reaches the Worker as a secret, converted to PKCS#8
+# for WebCrypto; it is never printed (masked line by line).
+name: estate-pacemaker-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - platform/pacemaker/worker.js
+      - .github/workflows/estate-pacemaker-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: estate-pacemaker-deploy
+  cancel-in-progress: false
+
+env:
+  API: https://api.cloudflare.com/client/v4
+  SCRIPT: estate-pacemaker
+  KV_TITLE: estate-pacemaker-state
+  CRON: "*/5 * * * *"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mint a Workers token for this run only
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  root token or account id is not set"; exit 2; }
+          groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" '.result[] | select(.name==$n and (.scopes|index("com.cloudflare.api.account"))) | .id' <<<"$groups" | head -1; }
+          acct=(); for n in "Workers Scripts Write" "Workers KV Storage Write"; do
+            g=$(gid "$n"); [ -n "$g" ] || { echo "FAIL    cloudflare  no account permission group '$n'"; exit 1; }; acct+=("$g"); done
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "estate-pacemaker-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg e "$expires" \
+            --argjson ag "$(printf '%s\n' "${acct[@]}" | jq -R '{id:.}' | jq -s .)" \
+            '{name:$n, expires_on:$e, policies:[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:$ag}]}')
+          out=$(curl -sS -X POST -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          value=$(jq -r .result.value <<<"$out"); echo "::add-mask::$value"
+          { echo "id=$(jq -r .result.id <<<"$out")"; echo "token=$value"; } >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Workers token minted, expires $expires"
+
+      - name: Upload the Worker, its secrets and its cron
+        env:
+          TOKEN: ${{ steps.mint.outputs.token }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          APP_ID: ${{ secrets.SEED_GITHUB_APP_ID }}
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_ID" ] && [ -n "$PEM_B64" ] || { echo "BLIND   pacemaker  GitHub App id or key is not set"; exit 2; }
+          cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
+          ns=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" | jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' | head -1)
+          if [ -z "$ns" ]; then
+            ns=$(cf -X POST -H 'Content-Type: application/json' -d "$(jq -nc --arg t "$KV_TITLE" '{title:$t}')" \
+              "$API/accounts/$ACCOUNT/storage/kv/namespaces" | jq -r '.result.id // empty')
+            [ -n "$ns" ] || { echo "FAIL    pacemaker  KV namespace could not be created"; exit 1; }
+          fi
+          meta=$(jq -nc --arg ns "$ns" --arg repo "$GITHUB_REPOSITORY" '{main_module:"worker.js", compatibility_date:"2026-11-01",
+            bindings:[{type:"kv_namespace", name:"STATE", namespace_id:$ns}, {type:"plain_text", name:"REPO", text:$repo}]}')
+          out=$(cf -X PUT -F "metadata=$meta;type=application/json" \
+            -F "worker.js=@platform/pacemaker/worker.js;type=application/javascript+module" \
+            "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    pacemaker  script upload refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          pkcs8=$(printf %s "$PEM_B64" | base64 -d | openssl pkcs8 -topk8 -nocrypt 2>/dev/null)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pkcs8"
+          for kv in "APP_ID=$APP_ID" "APP_PEM_PKCS8=$pkcs8"; do
+            name=${kv%%=*}; val=${kv#*=}
+            out=$(cf -X PUT -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg n "$name" --arg v "$val" '{name:$n, text:$v, type:"secret_text"}')" \
+              "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT/secrets")
+            jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    pacemaker  secret $name refused"; exit 1; }
+          done
+          out=$(cf -X PUT -H 'Content-Type: application/json' -d "$(jq -nc --arg c "$CRON" '[{cron:$c}]')" \
+            "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT/schedules")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    pacemaker  cron refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          echo "ok      pacemaker  Worker $SCRIPT uploaded, secrets set, cron $CRON"
+
+      - name: Prove the Cloudflare home knocked
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # Proof is the effect, not the upload: a pacemaker run titled "pacemaker · cloudflare"
+          # appears within two cron periods.
+          for i in $(seq 1 26); do
+            n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/estate-pacemaker.yml/runs?per_page=30" \
+                  --jq '[.workflow_runs[] | select(.display_title == "pacemaker · cloudflare")] | length' 2>/dev/null || echo 0)
+            [ "${n:-0}" -gt 0 ] && break; sleep 25
+          done
+          [ "${n:-0}" -gt 0 ] || { echo "FAIL    pacemaker  no run from the cloudflare home within 11 min"; exit 1; }
+          echo "ok      pacemaker  the cloudflare home knocked ($n run(s))" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the run's token
+        if: always() && steps.mint.outputs.id != ''
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $ROOT" "$API/user/tokens/${{ steps.mint.outputs.id }}" | jq -e '.success' >/dev/null \
+            && echo "ok      cloudflare  run token deleted" || echo "WARN    cloudflare  run token not deleted; it expires in two hours"

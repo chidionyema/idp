@@ -185,3 +185,9 @@ still_outside_dagster:
 - job: .github/workflows/chronos-weekly.yml
   kind: GitHub Actions cron
   fold: 'pending: Dagster has no live home off the laptop (OKE retired); graded by Chronos (idp#8026)'
+- job: .github/workflows/estate-pacemaker.yml
+  kind: GitHub Actions cron
+  fold: 'home 1 of 3 of the pacemaker (ADR 0037); it knocks, Dagster has no live home off the laptop (idp#8026)'
+- job: launchd/ai.estate.pacemaker.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'home 3 of 3 of the pacemaker (ADR 0037) until an A1 home exists (idp#8026)'

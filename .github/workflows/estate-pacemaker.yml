@@ -1,0 +1,50 @@
+# button: Run the pacemaker now (runs any clock that missed, names any silent pacemaker home)
+# founder: GitHub's scheduler skips most of the estate's timed jobs (measured 7% delivered on 2026-11-13). The pacemaker reads Chronos's grades and runs every job that missed its time. It has three homes (GitHub, Cloudflare, the Mac) that each wake it; each run checks the other homes are still waking it and opens a ticket naming any that went quiet.
+#
+# estate-pacemaker (idp#8026; ADR 0037 three homes, two providers). The judgement is
+# bin/estate-pacemaker; the homes only knock this workflow with their name:
+#   github-cron  the schedule below
+#   cloudflare   platform/pacemaker/worker.js cron (deployed by estate-pacemaker-deploy.yml)
+#   mac          launchd/ai.estate.pacemaker.plist.tmpl (until an A1 home exists)
+name: estate-pacemaker
+run-name: "pacemaker · ${{ inputs.home || 'github-cron' }}"
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      home:
+        description: which home knocked
+        required: false
+        default: manual
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: estate-pacemaker
+  cancel-in-progress: false
+
+jobs:
+  beat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run what Chronos says missed; ticket a silent home
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOME_NAME: ${{ inputs.home || 'github-cron' }}
+        run: |
+          set +e -uo pipefail
+          timeout 240 python3 bin/estate-pacemaker --home "$HOME_NAME" --apply | tee beat.txt
+          rc=${PIPESTATUS[0]}
+          { echo '```'; cat beat.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          # 0 nothing to do, 1 acted or found a silent home (a finding, the job did its work),
+          # 2 BLIND: a pacemaker that cannot see fails the run so Chronos and the homes see it.
+          [ "$rc" -eq 2 ] && exit 2
+          exit 0

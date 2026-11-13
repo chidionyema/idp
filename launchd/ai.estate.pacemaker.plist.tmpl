@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- WHAT IT DOES: every 15 minutes, knock the estate pacemaker on GitHub with home=mac
+     (gh workflow run estate-pacemaker.yml). It decides nothing: bin/estate-pacemaker, running on
+     GitHub, runs every clock Chronos graded MISSED and tickets any pacemaker home gone silent.
+     This is the third home of three (ADR 0037: GitHub cron, Cloudflare cron, this), a different
+     failure domain from both. It is the laptop rung until an Oracle A1 home exists; the laptop
+     going to sleep shows up as "[pacemaker] home mac is silent", which is the design working. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.pacemaker</string>
+  <key>ProgramArguments</key><array>
+    <string>/opt/homebrew/bin/gh</string>
+    <string>workflow</string>
+    <string>run</string>
+    <string>estate-pacemaker.yml</string>
+    <string>-R</string>
+    <string>chidionyema/idp</string>
+    <string>-f</string>
+    <string>home=mac</string>
+  </array>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/pacemaker.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/pacemaker.err.log</string>
+</dict></plist>

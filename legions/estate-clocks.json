@@ -160,8 +160,29 @@
       "max_age_minutes": 11520,
       "catch_up": "next tick",
       "state": "active"
+    },
+    {
+      "id": "estate-pacemaker",
+      "kind": "github-workflow",
+      "workflow": "estate-pacemaker.yml",
+      "declares": "*/10 * * * *",
+      "declares_human": "every 10 minutes (GitHub home; Cloudflare and mac homes knock by dispatch)",
+      "owner": "estate",
+      "evidence": "idp#8026: the pacemaker's own GitHub clock. Its other two homes are graded by the pacemaker itself (silent_homes).",
+      "max_age_minutes": 720,
+      "catch_up": "cloudflare and mac homes",
+      "state": "active"
     }
   ],
-  "coverage_floor": 7,
-  "coverage_floor_why": "Chronos loop map (bin/idp-estate-clocks --coverage): the number of recurring declarations graded for delivery. It only rises; --coverage --gate refuses a tree below it. Measured 2026-11-13: 7 closed of 139 (chronos-weekly added) declared."
+  "coverage_floor": 8,
+  "coverage_floor_why": "Chronos loop map (bin/idp-estate-clocks --coverage): the number of recurring declarations graded for delivery. It only rises; --coverage --gate refuses a tree below it. Measured 2026-11-13: 8 closed of 141 (chronos-weekly and estate-pacemaker added) declared.",
+  "pacemaker": {
+    "why": "ADR 0037 three homes, two providers. Each home knocks estate-pacemaker.yml with its name; every run tickets a home silent past its tolerance (minutes).",
+    "homes": {
+      "github-cron": 90,
+      "cloudflare": 30,
+      "mac": 90
+    },
+    "cooldown_minutes": 30
+  }
 }

@@ -1,0 +1,364 @@
+#!/usr/bin/env python3
+"""estate-pacemaker -- a missed clock is run, and a silent pacemaker home is a ticket.
+
+WHY (idp#8026, measured 2026-11-13). GitHub's scheduler delivered 13 of ~176 expected idp cron
+runs between 23:00Z and 01:30Z (7%); argon-guardian-relay, the only guard on argon main, had not
+fired once in 2h40m. workflow_dispatch always started. Chronos (bin/idp-estate-clocks) GRADES and
+by design never dispatches; this is the half it leaves out: it reads Chronos's verdicts and
+dispatches what Chronos says MISSED.
+
+WHO WATCHES THE PACEMAKER (founder: "who monitors it? if it goes down then what?"). ADR 0037:
+three homes in two providers. Every home only KNOCKS -- runs estate-pacemaker.yml with its own
+`home` input -- and the run's title carries the home's name. Every run, whichever home woke it,
+reads the last run per home and opens a ticket for any home silent past its tolerance. Any two
+homes can die and the third still runs the missed clocks and names the dead ones. All three dead
+leaves no writer: then the evidence is an ageing heartbeat on the founder's pinned line.
+
+    homes (legions/estate-clocks.json "pacemaker"):  github-cron, cloudflare, mac
+
+Decider: machine. Same runs, same `now`, same verdicts. Exit 0 nothing to do, 1 acted or found a
+silent home (a finding), 2 BLIND (GitHub unreadable: a pacemaker that cannot see must not pass).
+
+    bin/estate-pacemaker --home github-cron              plan only
+    bin/estate-pacemaker --home cloudflare --apply       dispatch + ticket
+    bin/estate-pacemaker --json --runs-json F --pacemaker-runs-json G --now T   pinned, for tests
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import importlib.machinery
+import importlib.util
+import json
+import re
+import subprocess  # noqa: S404 -- gh is the estate's GitHub door
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+TITLE = re.compile(r"^pacemaker · (?P<home>[a-z0-9-]+)$")
+SELF = "estate-pacemaker.yml"
+
+
+def _chronos():
+    src = IDP / "bin" / "idp-estate-clocks"
+    loader = importlib.machinery.SourceFileLoader("idp_estate_clocks_pm", str(src))
+    spec = importlib.util.spec_from_loader("idp_estate_clocks_pm", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+class NotFound(RuntimeError):
+    """GitHub answered 404: the workflow is not registered yet. That is a fact (no runs), not
+    blindness."""
+
+
+def _gh(args: list[str], timeout: int = 45) -> str:
+    try:
+        proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["gh", *args],  # noqa: S607 -- gh resolved on PATH like every estate door
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"gh: {exc}") from exc
+    if proc.returncode != 0 and "HTTP 404" in (proc.stderr or ""):
+        raise NotFound(args[1] if len(args) > 1 else "")
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh {' '.join(args[:2])}: {(proc.stderr or proc.stdout).strip()[:200]}"
+        )
+    return proc.stdout
+
+
+def dispatchable(workflow: str) -> bool:
+    path = IDP / ".github" / "workflows" / workflow
+    return (
+        path.exists()
+        and re.search(r"^\s*workflow_dispatch:", path.read_text(errors="replace"), re.M)
+        is not None
+    )
+
+
+def silent_homes(homes: dict, runs: list[dict], now: dt.datetime) -> list[dict]:
+    """Newest run per home from the pacemaker's own run titles; a home past its tolerance, or
+    never seen, is silent. Pure."""
+    newest: dict = {}
+    for r in runs:
+        m = TITLE.match(r.get("title") or "")
+        if not m:
+            continue
+        try:
+            at = dt.datetime.fromisoformat(
+                (r.get("created") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        h = m.group("home")
+        if h not in newest or at > newest[h]:
+            newest[h] = at
+    out = []
+    for home, tol in sorted(homes.items()):
+        at = newest.get(home)
+        age = None if at is None else round((now - at).total_seconds() / 60.0, 1)
+        if at is None or age > tol:
+            out.append(
+                {
+                    "home": home,
+                    "age_minutes": age,
+                    "tolerance": tol,
+                    "note": "never seen"
+                    if at is None
+                    else f"last knock {age} min ago, tolerance {tol}",
+                }
+            )
+    return out
+
+
+def plan(manifest: dict, rows: list[dict], recent_runs) -> list[dict]:
+    """Which MISSED obligations to dispatch. `recent_runs(workflow)` -> minutes since the newest
+    run of ANY event (a run already in flight or just finished is not run twice). Pure given it."""
+    cooldown = int(manifest.get("pacemaker", {}).get("cooldown_minutes", 30))
+    acts = []
+    for row in rows:
+        if row.get("verdict") != "MISSED_CYCLE" or row.get("state") == "retired":
+            continue
+        wf = row["workflow"]
+        if wf == SELF:
+            continue
+        if not dispatchable(wf):
+            acts.append(
+                {
+                    "id": row["id"],
+                    "workflow": wf,
+                    "action": "cannot-dispatch",
+                    "note": "no workflow_dispatch trigger: Chronos sees it, nobody can run it",
+                }
+            )
+            continue
+        since = recent_runs(wf)
+        if since is not None and since < cooldown:
+            acts.append(
+                {
+                    "id": row["id"],
+                    "workflow": wf,
+                    "action": "cooldown",
+                    "note": f"a run started {since} min ago (cooldown {cooldown})",
+                }
+            )
+            continue
+        acts.append(
+            {
+                "id": row["id"],
+                "workflow": wf,
+                "action": "dispatch",
+                "note": row.get("note", ""),
+            }
+        )
+    return acts
+
+
+def _recent_live(repo: str, now: dt.datetime):
+    def f(wf: str):
+        try:
+            raw = _gh(
+                [
+                    "api",
+                    f"repos/{repo}/actions/workflows/{wf}/runs?per_page=1",
+                    "--jq",
+                    ".workflow_runs[0].created_at // empty",
+                ]
+            )
+        except NotFound:
+            return None
+        if not raw.strip():
+            return None
+        at = dt.datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        return round((now - at).total_seconds() / 60.0, 1)
+
+    return f
+
+
+def _pacemaker_runs_live(repo: str) -> list[dict] | None:
+    try:
+        raw = _gh(
+            [
+                "api",
+                f"repos/{repo}/actions/workflows/{SELF}/runs?per_page=100",
+                "--jq",
+                "[.workflow_runs[] | {title: .display_title, created: .created_at}]",
+            ]
+        )
+    except NotFound:
+        return None  # not registered on GitHub yet: homes are graded from the first landed run
+    return json.loads(raw)
+
+
+def _ticket(repo: str, home: dict) -> str:
+    title = f"[pacemaker] home {home['home']} is silent"
+    body = (
+        f"Measured by bin/estate-pacemaker: {home['note']}. ADR 0037: a pacemaker home that does "
+        "not knock is a dead lane. The other homes keep running missed clocks meanwhile."
+    )
+    found = _gh(
+        [
+            "api",
+            f"repos/{repo}/issues?state=open&per_page=100",
+            "--jq",
+            f'[.[] | select(.title == "{title}")][0].number // empty',
+        ]
+    ).strip()
+    if found:
+        return _gh(
+            [
+                "api",
+                f"repos/{repo}/issues/{found}/comments",
+                "-f",
+                f"body={body}",
+                "--jq",
+                ".html_url",
+            ]
+        ).strip()
+    return _gh(
+        [
+            "api",
+            f"repos/{repo}/issues",
+            "-f",
+            f"title={title}",
+            "-f",
+            f"body={body}",
+            "--jq",
+            ".html_url",
+        ]
+    ).strip()
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        description="Run what Chronos says missed; ticket a silent home."
+    )
+    ap.add_argument("--home", default="manual")
+    ap.add_argument("--repo", default="chidionyema/idp")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--now", default="")
+    ap.add_argument(
+        "--runs-json", default="", help="Chronos fixture: workflow -> scheduled runs"
+    )
+    ap.add_argument(
+        "--recent-json",
+        default="",
+        help="fixture: workflow -> minutes since newest run",
+    )
+    ap.add_argument(
+        "--pacemaker-runs-json", default="", help="fixture: the pacemaker's own runs"
+    )
+    args = ap.parse_args(argv[1:])
+
+    chronos = _chronos()
+    now = chronos._parse_iso(args.now) if args.now else chronos._utcnow()
+    try:
+        manifest = chronos.load_registry(chronos.DEFAULT_REGISTRY)
+    except chronos.RegistryBlind as exc:
+        print(f"BLIND pacemaker: {exc}", file=sys.stderr)
+        return 2
+    homes = manifest.get("pacemaker", {}).get("homes", {})
+
+    runs_for = None
+    if args.runs_json:
+        fx = json.loads(Path(args.runs_json).read_text())
+
+        def runs_for(wf: str, _f=fx):  # noqa: F811
+            return [r for r in _f.get(wf, []) if r.get("event") == "schedule"]
+
+    try:
+        rows = [
+            chronos.grade(o, args.repo, now, runs_for) for o in manifest["obligations"]
+        ]
+        # A clock Chronos cannot read is reported and makes the run exit 2, but it does not stop
+        # the pacemaker running the clocks it CAN see: blindness on one must not starve the rest.
+        blind = [
+            {"id": r["id"], "note": r.get("note", "")}
+            for r in rows
+            if r["verdict"] == chronos.UNKNOWN and r.get("state") != "retired"
+        ]
+        if args.recent_json:
+            rec = json.loads(Path(args.recent_json).read_text())
+            recent = rec.get
+        else:
+            recent = _recent_live(args.repo, now)
+        acts = plan(manifest, rows, recent)
+        pm_runs = (
+            json.loads(Path(args.pacemaker_runs_json).read_text())
+            if args.pacemaker_runs_json
+            else _pacemaker_runs_live(args.repo)
+        )
+        unregistered = pm_runs is None
+        silent = [] if unregistered else silent_homes(homes, pm_runs, now)
+        if args.apply:
+            for a in acts:
+                if a["action"] == "dispatch":
+                    _gh(
+                        [
+                            "api",
+                            "-X",
+                            "POST",
+                            f"repos/{args.repo}/actions/workflows/{a['workflow']}/dispatches",
+                            "-f",
+                            "ref=main",
+                        ]
+                    )
+                    a["action"] = "dispatched"
+            for s in silent:
+                s["ticket"] = _ticket(args.repo, s)
+    except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"BLIND pacemaker: {exc}", file=sys.stderr)
+        return 2
+
+    out = {
+        "home": args.home,
+        "observed_at": now.isoformat().replace("+00:00", "Z"),
+        "applied": args.apply,
+        "actions": acts,
+        "silent_homes": silent,
+        "blind": blind,
+        "homes_graded": not unregistered,
+    }
+    if args.json:
+        print(json.dumps(out, indent=2))
+    else:
+        print(
+            f"pacemaker ({args.home}) at {out['observed_at']}{'' if args.apply else ' [plan only]'}"
+        )
+        for a in acts:
+            print(f"  {a['action'].upper():15} {a['id']:24} {a['note']}")
+        for s in silent:
+            print(f"  SILENT HOME     {s['home']:24} {s['note']} {s.get('ticket', '')}")
+        if unregistered:
+            print(
+                f"  HOMES NOT YET   {SELF} is not registered on GitHub; homes are graded from its first run"
+            )
+        for b in blind:
+            print(f"  BLIND           {b['id']:24} {b['note'][:120]}")
+        if not acts and not silent and not blind:
+            print("  nothing missed, every home knocking")
+    if blind:
+        return 2
+    return (
+        1
+        if (
+            any(
+                a["action"] in ("dispatch", "dispatched", "cannot-dispatch")
+                for a in acts
+            )
+            or silent
+        )
+        else 0
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
