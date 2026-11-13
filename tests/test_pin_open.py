@@ -360,4 +360,48 @@ def test_legacy_open_issue_never_shadows_scoped_case_in_ledger(ledger):
 def test_pretool_hook_binds_trusted_tool_session_not_agent_supplied_environment():
     source = (REPO / "bin" / "estate-memory-enforce").read_text()
     assert 'env={**os.environ, "ESTATE_PIN_SESSION": sid}' in source
-    assert "pin_ok, pin_why = pin_verdict(sid)" in source
+    assert "pin_ok, pin_why = pin_verdict(sid, path)" in source
+
+
+
+def test_targeted_repair_requires_matching_live_issue_and_file(tmp_path):
+    """Extract the shipped pure function: no mocked pass from a different issue."""
+    import ast
+    import fnmatch
+
+    source = (REPO / "bin" / "estate-memory-enforce").read_text()
+    tree = ast.parse(source)
+    node = next(n for n in tree.body
+                if isinstance(n, ast.FunctionDef)
+                and n.name == "pinned_repair_permitted")
+    module = ast.Module(body=[node], type_ignores=[])
+    namespace = {
+        "os": os,
+        "real": lambda path: path,
+        "git_root_if_idp": lambda path: "/repo",
+        "covers": lambda row, rel: any(
+            fnmatch.fnmatchcase(rel, name.strip())
+            for name in row.get("paths", "").split(",")
+        ),
+    }
+    exec(compile(module, "<shipped pinned-repair predicate>", "exec"), namespace)
+    allowed = namespace["pinned_repair_permitted"]
+    pin = {"issue": "#8030", "target_session": "signed-session-a"}
+    correct = [{
+        "claim": "idp#8030", "agent": "agent-a",
+        "live": True, "paths": "platform/estate/governance/*.py",
+    }]
+    path = "/repo/platform/estate/governance/founder_intake.py"
+    assert allowed(pin, path, "agent-a", correct)
+    assert not allowed(pin, path, "agent-b", correct)
+    assert not allowed(pin, path, "agent-a", [{
+        **correct[0], "claim": "idp#8031",
+    }])
+    assert not allowed(pin, path, "agent-a", [{
+        **correct[0], "live": False,
+    }])
+    assert not allowed(pin, "/repo/web/app/new-product.tsx", "agent-a", correct)
+    assert not allowed(pin, path, "agent-a", [])
+    assert not allowed({"issue": "#8030"}, path, "agent-a", correct)
+    assert not allowed({"issue": "not-an-issue", "target_session": "signed-session-a"},
+                       path, "agent-a", correct)
