@@ -248,6 +248,45 @@ def find_repeat(text: str, threshold: float = 0.6) -> Optional[Dict[str, Any]]:
     return None
 
 
+def retrieve_precedents(
+    text: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+    limit: int = 5,
+    threshold: float = 0.25,
+    verify_external: Any = None,
+) -> List[Dict[str, Any]]:
+    """Case-based retrieval from ONE existing prompt ledger, no new knowledge store.
+
+    Similarity proposes candidates, never root causes or a verified correction.
+    The only path to VERIFIED is an independently supplied external verifier.
+    Return bounded non-secret references; raw founder prompts stay in memory.
+    """
+    rows = stored_prompts() if history is None else history
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("text"), str):
+            continue
+        score = similarity(text, row["text"])
+        if score < threshold:
+            continue
+        verified = False
+        if verify_external is not None:
+            try:
+                verified = verify_external(row) is True
+            except Exception:
+                verified = False
+        candidates.append({
+            "case_id": row.get("case_id") or row.get("id") or "UNKNOWN",
+            "prompt_fingerprint": row.get("fingerprint") or fingerprint(row["text"]),
+            "similarity": round(score, 3),
+            "failure_class": row.get("failure_class") or "UNCLASSIFIED",
+            "correction_status": "INDEPENDENTLY_VERIFIED" if verified else "UNVERIFIED",
+            "source": row.get("source") or "UNKNOWN",
+        })
+    candidates.sort(key=lambda x: (-x["similarity"], str(x["case_id"])))
+    return candidates[:max(0, min(limit, 20))]
+
+
 def publish(record: Dict[str, Any]) -> Dict[str, Any]:
     """Store the structured prompt in unified memory, through the estate's memory door."""
     sys.path.insert(0, os.path.join(REPO_ROOT, "platform", "estate", "memory"))
@@ -310,6 +349,7 @@ def intake(
     record["source"] = source
     record["protocol_binding"] = bind_protocol(text, record)
     record["ts"] = ledger.now()
+    record["retrieved_cases"] = retrieve_precedents(text)
     repeat = find_repeat(text)
     record["repeat_of"] = repeat["earlier"].get("id") if repeat else None
     record["repeat_score"] = repeat["score"] if repeat else 0.0
