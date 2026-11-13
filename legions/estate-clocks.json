@@ -27,7 +27,6 @@
   "health": {
     "max_heartbeat_age_minutes": 45
   },
-
   "_comment": [
     "WHAT THIS FILE IS. Each entry under `obligations` is one clock the estate",
     "declares it runs. Nothing here schedules anything: Chronos reads the",
@@ -53,7 +52,6 @@
     "number here ever disagrees with the live board, the live board is right and",
     "this stanza is the thing to update -- that disagreement is itself a finding."
   ],
-
   "obligations": [
     {
       "id": "greenlane",
@@ -138,6 +136,18 @@
       "max_age_minutes": 180,
       "catch_up": "none - retired",
       "state": "retired"
+    },
+    {
+      "id": "argon-guardian-relay",
+      "kind": "github-workflow",
+      "workflow": "argon-guardian-relay.yml",
+      "declares": "*/10 * * * *",
+      "declares_human": "every 10 minutes",
+      "owner": "estate",
+      "evidence": "argon's own provenance guardians have not started since 2026-11-06 (metered minutes); this relay is the only thing checking argon main. Measured 2026-11-13 01:26Z: merged 22:45Z (PR #8023), zero scheduled runs in 2h40m, one manual dispatch (43326943278). A guard that does not run is consent; Chronos grades whether it ran.",
+      "max_age_minutes": 720,
+      "catch_up": "next tick",
+      "state": "active"
     }
   ]
 }
