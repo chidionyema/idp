@@ -217,12 +217,14 @@ def test_glob_is_anchored():
 
 
 def test_founder_control_modes_and_explicit_suspension():
-    assert gate.control_mode(REGISTRY) == "disabled"
+    # founder 2026-11-13: the live registry enforces DoF; the 2026-11-09 suspension is over.
+    assert gate.control_mode(REGISTRY) == "enforced"
     assert gate.control_mode({}) == "enforced"
     assert gate.control_mode({"control": {"mode": "unknown"}}) == "enforced"
     for mode in ("disabled", "observe", "enforced"):
         assert gate.control_mode({"control": {"mode": mode}}) == mode
-    result = gate.suspended_result(REGISTRY)
+    disabled = {**REGISTRY, "control": {**REGISTRY["control"], "mode": "disabled"}}
+    result = gate.suspended_result(disabled)
     assert result["ok"] is True
     assert result["enforcement"] == "DISABLED"
     assert result["open_incidents"] is None
