@@ -121,11 +121,11 @@ jobs:
       - name: Prove it answers on its own hostname
         run: |
           set -uo pipefail
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do  # a new custom domain waits for its edge certificate (run 43351278166: >150 s)
             h=$(curl -sS -m 5 "https://$HOST/healthz" 2>/dev/null || true)
             [ "$h" = ok ] && break; sleep 5
           done
-          [ "$h" = ok ] || { echo "FAIL    passkey  https://$HOST/healthz did not answer ok within 150s"; exit 1; }
+          [ "$h" = ok ] || { echo "FAIL    passkey  https://$HOST/healthz did not answer ok within 300s"; exit 1; }
           curl -sS -m 10 "https://$HOST/" | grep -q 'Estate approval' || { echo "FAIL    passkey  page body missing"; exit 1; }
           echo "ok      passkey  https://$HOST answers (healthz ok, page served)" | tee -a "$GITHUB_STEP_SUMMARY"
 
