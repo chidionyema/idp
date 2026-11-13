@@ -91,7 +91,12 @@ jobs:
         run: |
           set -euo pipefail
           cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
-          ns=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" | jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' | head -1)
+          # Every answer is checked for success and its error codes printed (run 43350977453 died
+          # with jq exit 5 iterating a null result and printed nothing).
+          lst=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" || true)
+          jq -e '.success == true' <<<"$lst" >/dev/null 2>&1 || {
+            echo "FAIL    passkey  KV list refused: $(jq -c '.errors' <<<"$lst" 2>/dev/null || echo 'non-JSON answer')"; exit 1; }
+          ns=$(jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' <<<"$lst" | head -1)
           if [ -z "$ns" ]; then
             ns=$(cf -X POST -H 'Content-Type: application/json' -d "$(jq -nc --arg t "$KV_TITLE" '{title:$t}')" \
               "$API/accounts/$ACCOUNT/storage/kv/namespaces" | jq -r '.result.id // empty')
