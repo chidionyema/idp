@@ -162,3 +162,36 @@ def test_one_law_file_per_repo() -> None:
         "CLAUDE.md must be a symlink to AGENTS.md, not its own file"
     )
     assert claude.resolve() == (REPO / "AGENTS.md").resolve()
+
+
+# Vendor rule files that override or compete with AGENTS.md in some agent (Cline: .clinerules wins;
+# Zed: first file found wins; Gemini CLI: GEMINI.md; Pi: AGENTS.override.md replaces AGENTS.md).
+# None exists today. Creating one is a second law, so creating one needs the founder's signature.
+VENDOR_RULE_FILES = [
+    "GEMINI.md",
+    "AGENT.md",
+    "AGENTS.override.md",
+    ".agent.md",
+    ".rules",
+    ".clinerules",
+    ".clinerules/01-anything.md",
+    ".cline/rules/x.md",
+    ".cursorrules",
+    ".cursor/rules/x.mdc",
+    ".windsurfrules",
+    ".github/copilot-instructions.md",
+    ".claude/settings.json",
+    ".gemini/settings.json",
+    ".pi/SYSTEM.md",
+    ".kiro/steering/x.md",
+    ".continue/rules/x.md",
+    ".aider.conf.yml",
+]
+
+
+def test_no_vendor_rule_file_can_appear_unsigned() -> None:
+    guards = _guards()
+    open_paths = [p for p in VENDOR_RULE_FILES if not _guarded(p, guards)]
+    assert open_paths == [], (
+        f"a second law file could be created unsigned: {open_paths}"
+    )
