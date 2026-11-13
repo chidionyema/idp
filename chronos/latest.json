@@ -1,0 +1,136 @@
+{
+  "schema": "estate.chronos.snapshot/v1",
+  "observed_at": "2026-11-13T02:24:41.674670Z",
+  "run_url": "manual seed from lane/chronos-relay b5aaef1",
+  "woken_by": "manual",
+  "clocks": {
+    "graded": 10,
+    "ok": 6,
+    "missed": 2,
+    "unknown": 2,
+    "rows": [
+      {
+        "id": "greenlane",
+        "verdict": "MISSED_CYCLE",
+        "age_minutes": 4661.1,
+        "max_age_minutes": 240,
+        "declares_human": "every 15 minutes",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/42695724173"
+      },
+      {
+        "id": "ping",
+        "verdict": "MEASURED_OK",
+        "age_minutes": 163.9,
+        "max_age_minutes": 720,
+        "declares_human": "every 5 minutes",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/43330894303"
+      },
+      {
+        "id": "estate-homes-drill",
+        "verdict": "MEASURED_OK",
+        "age_minutes": 222.2,
+        "max_age_minutes": 720,
+        "declares_human": "twice hourly",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/43322410073"
+      },
+      {
+        "id": "estate-state",
+        "verdict": "MEASURED_OK",
+        "age_minutes": 117.5,
+        "max_age_minutes": 720,
+        "declares_human": "every 15 minutes",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/43337197749"
+      },
+      {
+        "id": "branch-archive",
+        "verdict": "MEASURED_OK",
+        "age_minutes": 5181.1,
+        "max_age_minutes": 11520,
+        "declares_human": "weekly (Mondays)",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/42613894348"
+      },
+      {
+        "id": "scorecard",
+        "verdict": "MEASURED_OK",
+        "age_minutes": 3795.2,
+        "max_age_minutes": 11520,
+        "declares_human": "weekly (Tuesdays)",
+        "last_url": "https://github.com/chidionyema/idp/actions/runs/42805171600"
+      },
+      {
+        "id": "conscience",
+        "verdict": "MEASURED_OK",
+        "age_minutes": null,
+        "max_age_minutes": 180,
+        "declares_human": "hourly (formerly)",
+        "last_url": null
+      },
+      {
+        "id": "argon-guardian-relay",
+        "verdict": "MISSED_CYCLE",
+        "age_minutes": null,
+        "max_age_minutes": 720,
+        "declares_human": "every 10 minutes",
+        "last_url": null
+      },
+      {
+        "id": "chronos-weekly",
+        "verdict": "UNKNOWN",
+        "age_minutes": null,
+        "max_age_minutes": 11520,
+        "declares_human": "weekly, Monday 07:13 UTC",
+        "last_url": null
+      },
+      {
+        "id": "estate-pacemaker",
+        "verdict": "UNKNOWN",
+        "age_minutes": null,
+        "max_age_minutes": 720,
+        "declares_human": "every 10 minutes (GitHub home; Cloudflare and mac homes knock by dispatch)",
+        "last_url": null
+      }
+    ]
+  },
+  "loops": {
+    "declared": 141,
+    "closed": 8,
+    "open": 133,
+    "floor": 8,
+    "by_home": {
+      "github-cron": {
+        "declared": 44,
+        "closed": 8
+      },
+      "laptop": {
+        "declared": 22,
+        "closed": 0
+      },
+      "cluster": {
+        "declared": 21,
+        "closed": 0
+      },
+      "dagster@mac": {
+        "declared": 41,
+        "closed": 0
+      },
+      "dagster@retire": {
+        "declared": 10,
+        "closed": 0
+      },
+      "dagster@cluster": {
+        "declared": 3,
+        "closed": 0
+      }
+    }
+  },
+  "pacemaker": {
+    "homes_graded": false,
+    "silent_homes": [],
+    "dispatched": [],
+    "blind": [
+      "chronos-weekly",
+      "estate-pacemaker"
+    ]
+  },
+  "line": "Clocks 6/10 ran on time \u00b7 loops 8/141 closed \u00b7 pacemaker ran 0 missed \u00b7 homes not yet graded"
+}
