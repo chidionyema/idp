@@ -45,7 +45,7 @@ jobs:
           RESULT: ${{ runner.temp }}/issue/intake.json
         run: |
           set -euo pipefail
-          bin/estate-founder-intake --file "$INPUT" --no-publish --json > "$RESULT"
+          bin/estate-founder-intake --file "$INPUT" --json > "$RESULT"
           python3 - <<'PY'
           import json
           import os
@@ -53,6 +53,15 @@ jobs:
 
           task = Path(os.environ["INPUT"])
           record = json.loads(Path(os.environ["RESULT"]).read_text())
+          publish = record.get("memory") or {}
+          if publish.get("ok") is not True:
+              print(json.dumps({
+                  "status": "BLIND",
+                  "reason": "UNIFIED_MEMORY_NOT_PUBLISHED",
+                  "scope": "this founder issue only",
+                  "instruction": "restore existing memory door; do not start another agent",
+              }, sort_keys=True))
+              raise SystemExit(2)
           candidates = record.get("retrieved_cases") or []
           # Do not disclose prior prompts; similarity never proves a cause.
           if candidates:
