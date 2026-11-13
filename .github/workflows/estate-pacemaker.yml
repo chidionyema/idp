@@ -48,6 +48,23 @@ jobs:
           { echo '```json'; cat beat.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
+      - name: Tell the founder once when a pacemaker home goes silent
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+        run: |
+          set -uo pipefail
+          # Loud only for a NEW ticket (a home that just went quiet); a repeat is a comment on the
+          # same ticket and stays silent, so this can never spam (rule: at most a few loud lines).
+          new=$(python3 -c 'import json; print(", ".join(h["home"] for h in json.load(open("beat.json")).get("silent_homes", []) if h.get("ticket_new")))' 2>/dev/null || true)
+          [ -n "$new" ] || { echo "no new silent home"; exit 0; }
+          [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT" ] || { echo "BLIND   telegram  bot token or chat not set"; exit 2; }
+          text="🔴 Pacemaker home stopped: ${new}. The other homes keep running missed jobs."$'\n'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
+          echo "telegram sendMessage $code"
+          test "$code" = 200
+
       - name: Publish the founder-surface snapshot (state/chronos, chronos/latest.json)
         env:
           GH_TOKEN: ${{ github.token }}

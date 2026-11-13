@@ -64,6 +64,25 @@ jobs:
           fi
           gh api "repos/$REPO/issues/$n/comments" -F body=@comment.md --jq .html_url
 
+      - name: One quiet Telegram line with the week's numbers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+        run: |
+          set -uo pipefail
+          [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT" ] || { echo "BLIND   telegram  bot token or chat not set"; exit 2; }
+          line=$(gh api "repos/$GITHUB_REPOSITORY/contents/chronos/latest.json?ref=state/chronos" --jq .content 2>/dev/null \
+                   | base64 -d 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["line"])' 2>/dev/null)
+          [ -n "$line" ] || line="Chronos snapshot unreadable (state/chronos): UNKNOWN"
+          issue=$(gh api "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" --jq '[.[] | select(.title == "[chronos] weekly loop review")][0].html_url // empty')
+          text="📊 Chronos weekly: ${line}"$'\n'"${issue:-$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID}"
+          # A receipt, not a decision: delivered silently (no phone buzz).
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}" --data-urlencode "disable_notification=true")
+          echo "telegram sendMessage $code"
+          test "$code" = 200
+
       - name: A blind review fails the run
         if: steps.grade.outputs.board_rc == '2' || steps.grade.outputs.loops_rc == '2'
         run: |
