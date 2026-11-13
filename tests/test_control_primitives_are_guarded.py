@@ -195,3 +195,28 @@ def test_no_vendor_rule_file_can_appear_unsigned() -> None:
     assert open_paths == [], (
         f"a second law file could be created unsigned: {open_paths}"
     )
+
+
+def test_every_existing_vendor_rule_file_is_a_link_to_agents_md() -> None:
+    """A vendor rule file that exists must carry no words of its own (one law, founder 2026-11-13).
+
+    .cursorrules held a third memory instruction (estate-core Neo4j on :8787) that contradicts
+    AGENTS.md section 1, and Zed and Cline read .cursorrules before or beside AGENTS.md.
+    """
+    law = (REPO / "AGENTS.md").resolve()
+    own_text = []
+    for name in [
+        "CLAUDE.md",
+        "GEMINI.md",
+        "AGENT.md",
+        ".agent.md",
+        ".rules",
+        ".cursorrules",
+        ".windsurfrules",
+        ".clinerules",
+        "AGENTS.override.md",
+    ]:
+        f = REPO / name
+        if f.exists() and f.is_file() and f.resolve() != law:
+            own_text.append(name)
+    assert own_text == [], f"second law files with their own text: {own_text}"
