@@ -86,3 +86,18 @@ def test_live_probe_does_not_certify_unproven_or_glm_model():
             {"modelUsage": {"claude-sonnet-5-5-20261101": {}}}
         )
         assert module.live_probe("claude", module.direct_env({})) == 0
+
+
+def test_live_probe_never_certifies_provider_error_even_with_claude_model_usage():
+    # A provider may report a model name while the underlying request fails.
+    # Model provenance is not a successful authenticated operation.
+    with mock.patch.object(module.subprocess, "run") as run:
+        run.return_value.returncode = 0
+        run.return_value.stdout = json.dumps(
+            {
+                "is_error": True,
+                "modelUsage": {"claude-sonnet-5": {}},
+                "result": "authentication_error",
+            }
+        )
+        assert module.live_probe("claude", module.direct_env({})) == 2
