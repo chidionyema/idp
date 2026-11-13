@@ -50,6 +50,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--file", default="")
     ap.add_argument("--stdin", action="store_true")
     ap.add_argument("--repeat", default="")
+    ap.add_argument("--cases", action="store_true", help="read existing similar cases, no mutation")
     ap.add_argument("--session", default="")
     ap.add_argument("--no-publish", action="store_true")
     ap.add_argument("--json", action="store_true")
@@ -74,6 +75,14 @@ def main(argv: list[str]) -> int:
         text = sys.stdin.read()
     if not text.strip():
         ap.error("no prompt given (--text, --file or --stdin)")
+
+    if args.cases:
+        print(json.dumps({
+            "schema": "estate.knowledge-case-retrieval.v1",
+            "authority": "CANDIDATE_RETRIEVAL_NOT_CAUSAL_PROOF",
+            "cases": founder_intake.retrieve_precedents(text),
+        }, indent=2))
+        return 0
 
     record = founder_intake.intake(
         text, session=args.session, publish_to_memory=not args.no_publish
