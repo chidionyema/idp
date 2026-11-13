@@ -6,7 +6,7 @@
 #
 # The payload contract MUST match bin/idp-auth exactly:
 #   line 1: X-Idp-Auth-Timestamp value
-#   line 2: HEAD sha at signing time (from git rev-parse HEAD when signing)
+#   line 2: content digest of the signed paths in the commit's tree (bin/idp-auth-digest)
 #   line 3: X-Idp-Auth-Reason value
 #   line 4..: paths from X-Idp-Auth-Paths, one per line
 set -euo pipefail
@@ -61,13 +61,23 @@ paths_csv=$(printf '%s\n' "$msg" | awk -F': ' '/^X-Idp-Auth-Paths: /{ $1=""; sub
 [ -n "$ts" ] || { echo "REFUSE: no X-Idp-Auth-Timestamp trailer on $commit" >&2; exit 1; }
 [ -n "$paths_csv" ] || { echo "REFUSE: no X-Idp-Auth-Paths trailer on $commit" >&2; exit 1; }
 
-# The commit that carries the signature is the same commit whose sha the founder signed; but the
-# sha changes when a trailer is added. So we require that the founder signed the PARENT commit's
-# sha (git rev-parse HEAD when they ran idp-auth is by definition the parent of THIS commit).
-parent_sha=$(git rev-parse "$commit^" 2>/dev/null || echo no-head)
-
 paths_lines=$(printf '%s' "$paths_csv" | tr ',' '\n')
-payload=$(printf '%s\n%s\n%s\n%s' "$ts" "$parent_sha" "$reason" "$paths_lines")
+# 2026-11-13: line 2 is the content digest of the signed paths in THIS commit's tree (bin/idp-auth-digest).
+# Survives the Greenlane squash; refuses any byte changed under a signed path after signing.
+# shellcheck disable=SC2086
+content=$("$(dirname "$0")/idp-auth-digest" "$commit" $paths_lines) || { echo "REFUSE: cannot digest $commit" >&2; exit 1; }
+payload=$(printf '%s\n%s\n%s\n%s' "$ts" "$content" "$reason" "$paths_lines")
+# Every guarded file the caller names (args after the commit) must sit under a signed path: a
+# signature over README.md must not license a change to AGENTS.md.
+shift || true
+for need in "$@"; do
+  covered=""
+  while IFS= read -r sp; do
+    [ -z "$sp" ] && continue
+    case "$need" in "$sp"|"$sp"/*) covered=1 ;; esac
+  done <<< "$paths_lines"
+  [ -n "$covered" ] || { echo "REFUSE: $need changed but is not among the signed paths ($paths_csv)" >&2; exit 1; }
+done
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 printf '%s' "$sig" | base64 -d > "$tmp/sig" 2>/dev/null || {

@@ -13,7 +13,7 @@
 #   bin/idp-auth "unblock rotation-canary" platform/edge/otel-endpoint-exception.yaml \
 #     | git interpret-trailers --in-place --if-exists=addIfDifferent HEAD
 #
-# The signature covers: UTC iso timestamp, current HEAD sha (or 'no-head'), the reason, and the
+# The signature covers: UTC iso timestamp, the content digest of the signed paths (bin/idp-auth-digest), the reason, and the
 # newline-joined guarded paths. bin/idp-auth-verify reconstructs and verifies against the
 # founder public key at docs/keys/founder.pub.
 set -euo pipefail
@@ -46,7 +46,9 @@ KEY="${IDP_FOUNDER_KEY:-$HOME/.idp/founder.key}"
 [ -f "$KEY" ] || { echo "BLIND: founder key not present at $KEY" >&2; exit 3; }
 
 # Mode check works on macOS (stat -f) and Linux (stat -c).
-mode="$(stat -f '%Lp' "$KEY" 2>/dev/null || stat -c '%a' "$KEY" 2>/dev/null || echo unknown)"
+# GNU stat first: on Linux `stat -f` is the FILESYSTEM report and exits 0, so trying it first read a
+# page of filesystem text as the mode and refused every key (2026-11-13). BSD stat rejects -c.
+mode="$(stat -c '%a' "$KEY" 2>/dev/null || stat -f '%Lp' "$KEY" 2>/dev/null || echo unknown)"
 [ "$mode" = "600" ] || { echo "REFUSE: $KEY must be mode 600 (got $mode)" >&2; exit 4; }
 
 reason="${1:?usage: idp-auth '<reason>' <path> [<path>...]}"
@@ -54,9 +56,12 @@ shift
 [ "$#" -ge 1 ] || { echo "REFUSE: at least one guarded path required" >&2; exit 4; }
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-head_sha="$(git rev-parse HEAD 2>/dev/null || echo no-head)"
+# 2026-11-13: the signature binds the CONTENT of the signed paths, not a commit sha. A parent sha
+# never survives the Greenlane squash (the queue commit's parent is main, not the lane), so a
+# sha-bound signature could never land; and it said nothing about what the files contain.
+content="$("$(dirname "$0")/idp-auth-digest" HEAD "$@")" || { echo "REFUSE: cannot digest signed paths" >&2; exit 5; }
 payload="$ts
-$head_sha
+$content
 $reason
 $(printf '%s\n' "$@")"
 

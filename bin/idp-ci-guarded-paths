@@ -40,6 +40,7 @@ if ! changed="$(git diff --name-only "$BASE...$HEAD_REV" 2>&1)"; then
   exit 1
 fi
 guard_hit=""
+guard_files=""
 while IFS= read -r g; do
   [ -z "$g" ] && continue
   # A prefix match: exact file, or any file under a guarded directory.
@@ -47,12 +48,15 @@ while IFS= read -r g; do
   matches="$(printf '%s\n' "$changed" | grep -E "^${g}" || true)"
   if [ -n "$matches" ]; then
     guard_hit="$guard_hit $g"
+    guard_files="$guard_files
+$matches"
   fi
 done < <("$IDP/bin/idp-guarded-paths")
 guard_hit="${guard_hit# }"
 
 if [ -n "$guard_hit" ]; then
-  if "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  if "$IDP/bin/idp-auth-verify" "$HEAD_REV" $guard_files >/dev/null 2>&1; then
     echo "ok    guarded-paths  founder signature valid; touched: $guard_hit"
   else
     echo "FAIL  guarded-paths  guarded paths touched WITHOUT valid X-Idp-Auth trailer:"

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/idp-auth-digest <commit> <path>... -- the content a founder signature binds.
+# sha256 over the sorted "mode type blob<TAB>path" lines of every file under each path in the
+# commit's tree. Same bytes under the signed paths -> same digest, whatever the parent sha.
+set -euo pipefail
+commit="${1:?usage: idp-auth-digest <commit> <path>...}"; shift
+[ "$#" -ge 1 ] || { echo "usage: idp-auth-digest <commit> <path>..." >&2; exit 2; }
+{ git ls-tree -r "$commit" -- "$@" | LC_ALL=C sort; } | { sha256sum 2>/dev/null || shasum -a 256; } | awk '{print "content:" $1}'
