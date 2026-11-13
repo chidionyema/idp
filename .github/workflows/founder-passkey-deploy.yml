@@ -71,10 +71,15 @@ jobs:
           jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
           value=$(jq -r .result.value <<<"$out"); echo "::add-mask::$value"
           echo "id=$(jq -r .result.id <<<"$out")" >> "$GITHUB_OUTPUT"
-          zid=""; for i in 1 2 3 4 5 6; do  # a fresh token can take a few seconds to propagate
-            zid=$(curl -sS -H "Authorization: Bearer $value" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+          zid=""; zr=""; for i in 1 2 3 4 5 6; do  # a fresh token can take a few seconds to propagate
+            zr=$(curl -sS -H "Authorization: Bearer $value" "$API/zones?name=$ZONE" || true)
+            zid=$(jq -r 'if (.result|type)=="array" then (.result[0].id // empty) else empty end' <<<"$zr" 2>/dev/null || true)
             [ -n "$zid" ] && break; sleep 5; done
-          [ -n "$zid" ] || { echo "FAIL    cloudflare  zone $ZONE not in account (minted token sees no such zone)"; exit 1; }
+          if [ -z "$zid" ]; then
+            # Codes and messages only: Cloudflare error bodies carry no token material.
+            echo "FAIL    cloudflare  zone $ZONE not visible to the minted token: $(jq -c '{success, errors, n: (.result|length?)}' <<<"$zr" 2>/dev/null || echo 'non-JSON answer')"
+            exit 1
+          fi
           { echo "token=$value"; echo "zone_id=$zid"; } >> "$GITHUB_OUTPUT"
           echo "ok      cloudflare  Workers token minted, expires $expires"
 
