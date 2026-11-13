@@ -48,9 +48,22 @@ def glob_match(pattern: str, path: str) -> bool:
     return fnmatch.fnmatchcase(path, pattern) and pattern.count("/") == path.count("/")
 
 
+# The drill decides every incident from these files (bin/idp-estate-homes reads
+# platform/ladder/critical-lanes.json). A repair scope that excludes them makes the incident
+# impossible to close: the only exits are refused by the gate that waits for them (2026-11-13,
+# llm-router: the lifeboat deploy and the leg rename were both outside repairScope).
+# So every incident's scope is derived to include what decides it, plus the service's own
+# deploy workflows and directory. Protocol, not a list: every red state keeps a legal exit.
+DRILL_INPUTS = ("platform/ladder/critical-lanes.json", "bin/idp-estate-homes", ".github/workflows/estate-homes-drill.yml")
+
+
+def derived_scope(comp_id: str) -> list:
+    return [*DRILL_INPUTS, f".github/workflows/{comp_id}-*.yml", f"platform/{comp_id}/**"]
+
+
 def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
     comp = registry["components"].get(comp_id) or {"repairScope": registry.get("defaultRepairScope", [])}
-    out = []
+    out = derived_scope(comp_id)
     for p in comp["repairScope"]:
         # '@substrate' is the whole deploy surface. It is only honest when the substrate
         # ITSELF is what is broken; for a single named service it is a universal key.
