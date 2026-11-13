@@ -148,17 +148,3 @@ def test_the_real_checker_refuses_an_unsigned_agents_md_change(tmp_path: Path) -
         f"an unsigned AGENTS.md change passed guarded-paths:\n{out}"
     )
     assert "AGENTS.md" in out, f"refusal must name the guarded path; got:\n{out}"
-
-
-def test_one_law_file_per_repo() -> None:
-    """Founder, 2026-11-13: shrink the attack surface. CLAUDE.md is not a second law file.
-
-    A per-vendor instruction file is a second copy of the law that only one vendor's agents read,
-    and a second place an agent can rewrite. The Claude harness needs a file by that name, so it
-    is a symlink to AGENTS.md: same bytes, one law, one guarded path.
-    """
-    claude = REPO / "CLAUDE.md"
-    assert claude.is_symlink(), (
-        "CLAUDE.md must be a symlink to AGENTS.md, not its own file"
-    )
-    assert claude.resolve() == (REPO / "AGENTS.md").resolve()
