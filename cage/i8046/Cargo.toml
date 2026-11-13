@@ -1,0 +1,16 @@
+[package]
+name = "genesis-kernel"
+version = "0.8.1-SOVEREIGN-CAGE"
+edition = "2021"
+description = "I-8046 Universal Fleet Cage, Founder Surface Control Plane & Deterministic Auto-Main Kernel"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws", "macros"] }
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+sha2 = "0.10"
+hex = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
