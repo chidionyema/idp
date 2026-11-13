@@ -298,3 +298,66 @@ def test_removing_the_duplicate_refusal_makes_the_suite_red(ledger, tmp_path):
     assert mut.returncode != EXIT_REFUSED, (
         "the mutant must ACCEPT the duplicate, or the guard is not what this suite grades"
     )
+
+
+
+# ---- complaint DoF canary: scope by trusted harness session ---------------------------
+def test_targeted_complaint_refuses_only_accountable_session(ledger):
+    _, env = ledger
+    r = run(
+        env, "open", "#8030", "--err", "machine-work handback",
+        "--do", "reproduce and verify correction",
+        "--target-session", "signed-session-a",
+    )
+    assert r.returncode == EXIT_PINNED
+    implicated = dict(env, ESTATE_PIN_SESSION="signed-session-a")
+    independent = dict(env, ESTATE_PIN_SESSION="signed-session-b")
+    denied = run(implicated, "--json")
+    allowed = run(independent, "--json")
+    assert denied.returncode == EXIT_PINNED
+    assert json.loads(denied.stdout)["open"][0]["target_session"] == "signed-session-a"
+    assert allowed.returncode == EXIT_OK
+    assert json.loads(allowed.stdout)["open"] == []
+
+
+def test_unbound_session_never_reports_scoped_complaint_as_verified_clear(ledger):
+    _, env = ledger
+    run(env, "open", "#8030", "--err", "x", "--do", "y",
+        "--target-session", "signed-session-a")
+    result = run(env, "--json")
+    assert result.returncode == EXIT_OK
+    report = json.loads(result.stdout)
+    assert report["session_bound"] is False
+    assert report["scoped_unobserved"] == 1
+    assert report["pinned"] is False  # no global outage invented
+
+
+def test_legacy_unscoped_pins_continue_to_block_every_session(ledger):
+    _, env = ledger
+    run(env, "open", "#7351", "--err", "x", "--do", "y")
+    for sid in ("signed-session-a", "signed-session-b", ""):
+        result = run(dict(env, ESTATE_PIN_SESSION=sid), "--json")
+        assert result.returncode == EXIT_PINNED
+
+
+def test_scoped_duplicate_is_refused_and_original_issue_retained(ledger):
+    p, env = ledger
+    args = ("open", "#8030", "--err", "repeated handback",
+            "--do", "machine fix", "--target-session", "signed-session-a")
+    assert run(env, *args).returncode == EXIT_PINNED
+    assert run(env, *args).returncode == EXIT_REFUSED
+    assert len(json.loads(p.read_text())["entries"]) == 1
+
+
+def test_legacy_open_issue_never_shadows_scoped_case_in_ledger(ledger):
+    p, env = ledger
+    run(env, "open", "#7351", "--err", "legacy", "--do", "repair")
+    run(env, "open", "#8030", "--err", "new complaint",
+        "--do", "repair", "--target-session", "signed-session-b")
+    assert len(json.loads(p.read_text())["entries"]) == 2
+
+
+def test_pretool_hook_binds_trusted_tool_session_not_agent_supplied_environment():
+    source = (REPO / "bin" / "estate-memory-enforce").read_text()
+    assert 'env={**os.environ, "ESTATE_PIN_SESSION": sid}' in source
+    assert "pin_ok, pin_why = pin_verdict(sid)" in source
