@@ -29982,7 +29982,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-issueops"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -57762,8 +57764,7 @@
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
