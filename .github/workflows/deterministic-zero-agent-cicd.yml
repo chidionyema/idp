@@ -1,0 +1,79 @@
+name: deterministic-zero-agent-cicd
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  control-primitive-freeze:
+    name: deterministic-gate / control-primitive-freeze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject Trojan Commit 937dda9d and Unauthorized Control Edits
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet 937dda9d >/dev/null; then
+            if git merge-base --is-ancestor 937dda9d HEAD; then
+              echo "FATAL: Breach B2 commit 937dda9d (dof-registry tamper) detected in ancestry."
+              exit 1
+            fi
+          fi
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED=$(git diff --name-only "$BASE_REF"...HEAD)
+            for protected in "dof-registry" ".github/workflows/" "catalog/genesis-protocols.json" ".github/CODEOWNERS"; do
+              if echo "$CHANGED" | grep -q "^${protected}"; then
+                COMMIT_MSG=$(git log -1 --format=%B HEAD)
+                if ! echo "$COMMIT_MSG" | grep -q "^X-Founder-Passkey-Seal: "; then
+                  echo "FATAL: Protected control primitive (${protected}) modified without Founder Passkey seal."
+                  exit 1
+                fi
+              fi
+            done
+          fi
+
+  rust-and-bdd-verify:
+    name: deterministic-gate / rust-and-bdd-verify
+    runs-on: ubuntu-latest
+    needs: [control-primitive-freeze]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Deterministic Workspace Check & BDD Suite
+        run: |
+          set -euo pipefail
+          if [ -f Cargo.toml ]; then
+            cargo check --workspace --locked
+            cargo test --workspace --locked
+          fi
+
+  argon-gitops-handoff:
+    name: deterministic-gate / argon-gitops-handoff
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [control-primitive-freeze, rust-and-bdd-verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Record Deterministic Digest for Greenlane / Flux Pull
+        run: |
+          set -euo pipefail
+          DIGEST=$(git rev-parse HEAD)
+          echo "Verified main commit ${DIGEST} ready for Argon pull reconciliation."
