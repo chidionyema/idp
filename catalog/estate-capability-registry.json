@@ -29951,6 +29951,7 @@
       "summary": "estate-founder-intake -- every founder prompt, analysed and retrievable.",
       "contract": {
         "inputs": [
+          "--cases",
           "--file",
           "--json",
           "--no-publish",
@@ -53055,7 +53056,8 @@
           "--do",
           "--err",
           "--json",
-          "--proof"
+          "--proof",
+          "--target-session"
         ],
         "outputs": [
           "stdout",
@@ -57750,7 +57752,12 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-issueops.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-founder-intake",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
