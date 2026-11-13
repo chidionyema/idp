@@ -50,8 +50,10 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  root token or account id is not set"; exit 2; }
-          zid=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
-          [ -n "$zid" ] || { echo "FAIL    cloudflare  zone $ZONE not visible to the root token"; exit 1; }
+          # The root token MINTS tokens; it cannot read zones itself (run 43333268564: "zone
+          # mumchimp.com not visible to the root token"). router-recovery.yml, green 2026-11-07, mints
+          # first with the account's zones as the resource and looks the zone up with the minted
+          # token. Same order here.
           groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
           gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
           acct=(); for n in "Workers Scripts Write" "Workers KV Storage Write"; do
@@ -59,16 +61,21 @@ jobs:
           zone=(); for n in "Workers Routes Write" "DNS Write" "Zone Read"; do
             g=$(gid "$n" com.cloudflare.api.account.zone); [ -n "$g" ] || { echo "FAIL    cloudflare  no zone permission group '$n'"; exit 1; }; zone+=("$g"); done
           expires=$(date -u -d '+2 hours' +%FT%TZ)
-          body=$(jq -nc --arg n "founder-passkey-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg e "$expires" \
+          body=$(jq -nc --arg n "founder-passkey-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg e "$expires" \
             --argjson ag "$(printf '%s\n' "${acct[@]}" | jq -R '{id:.}' | jq -s .)" \
             --argjson zg "$(printf '%s\n' "${zone[@]}" | jq -R '{id:.}' | jq -s .)" \
             '{name:$n, expires_on:$e, policies:[
                {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:$ag},
-               {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:$zg}]}')
+               {effect:"allow", resources:{("com.cloudflare.api.account."+$a):{"com.cloudflare.api.account.zone.*":"*"}}, permission_groups:$zg}]}')
           out=$(curl -sS -X POST -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' -d "$body" "$API/user/tokens")
           jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
           value=$(jq -r .result.value <<<"$out"); echo "::add-mask::$value"
-          { echo "id=$(jq -r .result.id <<<"$out")"; echo "token=$value"; echo "zone_id=$zid"; } >> "$GITHUB_OUTPUT"
+          echo "id=$(jq -r .result.id <<<"$out")" >> "$GITHUB_OUTPUT"
+          zid=""; for i in 1 2 3 4 5 6; do  # a fresh token can take a few seconds to propagate
+            zid=$(curl -sS -H "Authorization: Bearer $value" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+            [ -n "$zid" ] && break; sleep 5; done
+          [ -n "$zid" ] || { echo "FAIL    cloudflare  zone $ZONE not in account (minted token sees no such zone)"; exit 1; }
+          { echo "token=$value"; echo "zone_id=$zid"; } >> "$GITHUB_OUTPUT"
           echo "ok      cloudflare  Workers token minted, expires $expires"
 
       - name: Deploy the Worker on passkey.<zone>

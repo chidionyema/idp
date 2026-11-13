@@ -100,3 +100,17 @@ def test_approvals_are_kept_capped_and_validated(results: dict) -> None:
     assert results["apFull"]["status"] == 429
     assert len(json.loads(results["apRead"]["text"])) == 5
     assert results["apJunk"]["status"] == 400
+
+
+def test_the_deploy_never_asks_the_root_token_for_a_zone():
+    """Run 43333268564 failed at "zone mumchimp.com not visible to the root token": the root token
+    mints tokens and cannot read zones. The zone is looked up with the minted token, which is
+    scoped to every zone in the account (router-recovery.yml's proven order)."""
+    wf = (
+        Path(__file__).resolve().parent.parent
+        / ".github/workflows/founder-passkey-deploy.yml"
+    ).read_text()
+    assert 'Bearer $ROOT" "$API/zones' not in wf
+    assert 'Bearer $value" "$API/zones?name=$ZONE"' in wf
+    assert '"com.cloudflare.api.account.zone.*":"*"' in wf
+    assert wf.index('"$API/user/tokens")') < wf.index('Bearer $value" "$API/zones')
