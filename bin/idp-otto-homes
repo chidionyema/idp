@@ -240,6 +240,43 @@ def wrangler(args: list[str], stdin: str | None = None) -> None:
                    stdout=subprocess.DEVNULL if stdin else None)
 
 
+def cf_get(url: str, token: str) -> dict | None:
+    """One Cloudflare API read. None when it cannot be read (network, auth, malformed)."""
+    req = urllib.request.Request(url, headers={"authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = json.load(resp)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def resolve_account(z: str, reader: str, token: str, get=cf_get) -> tuple[str, str]:
+    """Which Cloudflare account the lifeboat deploys into, and how it is reached. Total:
+    every input ends in exactly one of three outcomes.
+
+      ("<id>", "zone")        the reader token sees the zone: deploy on lifeboat-llm.<zone>
+      ("<id>", "workers.dev") the zone is in another account (idp#7814); the Workers token sees
+                              exactly one account: deploy there on workers.dev
+      exit                    the token sees no account, or several (ambiguous): refuse, naming
+                              which, because guessing an account is deploying into the wrong one
+    """
+    zones = (get(f"https://api.cloudflare.com/client/v4/zones?name={z}", reader) if reader else None) or {}
+    result = zones.get("result") if isinstance(zones.get("result"), list) else []
+    account = ((result[0] if result else {}).get("account") or {}).get("id", "")
+    if account:
+        return account, "zone"
+    accounts = get("https://api.cloudflare.com/client/v4/accounts", token) or {}
+    ids = [a.get("id") for a in (accounts.get("result") or []) if isinstance(a, dict) and a.get("id")]
+    if len(ids) == 1:
+        return ids[0], "workers.dev"
+    if not ids:
+        sys.exit(f"cloudflare: zone {z} is not readable with the reader token and the Workers token "
+                 "sees no account; re-mint with bin/idp-bootstrap-cloudflare --rotate")
+    sys.exit(f"cloudflare: zone {z} is not readable and the Workers token sees {len(ids)} accounts; "
+             "refusing to guess which one to deploy into")
+
+
 def deploy() -> int:
     z = zone()
     if not shutil.which("npx"):
@@ -251,32 +288,34 @@ def deploy() -> int:
     # dashboard, so there is no console step to put in a runbook.
     reader = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token",
                                                                  "CLOUDFLARE_API_TOKEN")
-    if not reader:
-        sys.exit("the vault holds no cloudflare-api-token; run bin/idp-bootstrap-cloudflare "
-                 "(Backstage -> Run the estate bootstrap -> scope cloudflare)")
     token = vault_get("cloudflare-workers-token", "CLOUDFLARE_API_TOKEN") or reader
+    if not token:
+        sys.exit("the vault holds neither cloudflare-workers-token nor cloudflare-api-token; run "
+                 "bin/idp-bootstrap-cloudflare (Backstage -> Run the estate bootstrap -> scope cloudflare)")
 
     # The account id is DERIVED, never written down -- the same read bin/idp-bootstrap-cloudflare
     # does at line 155. This is what retires the note at platform/vendors/consoles.yaml:387,
     # which refuses a Workers lane on the grounds that no file in the estate holds an account id.
-    req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones?name={z}",
-                                 headers={"authorization": f"Bearer {reader}"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = (json.load(resp).get("result") or [{}])[0]
-        account = (result.get("account") or {}).get("id", "")
-    except (urllib.error.URLError, OSError, ValueError, KeyError):
-        account = ""
-    if not account:
-        sys.exit(f"cloudflare-api-token cannot read zone {z}, so the account id cannot be derived; "
-                 "re-mint with bin/idp-bootstrap-cloudflare --rotate")
-
+    account, target = resolve_account(z, reader, token, cf_get)
     os.environ["CLOUDFLARE_API_TOKEN"] = token
     os.environ["CLOUDFLARE_ACCOUNT_ID"] = account
 
-    # The route is passed here rather than written in wrangler.toml, because a route in that
-    # file would name the estate's DNS zone as a literal (LAW 46).
-    wrangler(["deploy", "--route", f"lifeboat-llm.{z}/*"])
+    if target == "zone":
+        # The route is passed here rather than written in wrangler.toml, because a route in that
+        # file would name the estate's DNS zone as a literal (LAW 46).
+        wrangler(["deploy", "--route", f"lifeboat-llm.{z}/*"])
+        print(f"  deployed on the zone route lifeboat-llm.{z}")
+    else:
+        # The zone lives in another Cloudflare account than the token (idp#7814, the
+        # "two-account stitch"), which is exactly what failed runs 42385416630, 42489994627 and
+        # 42602043437 ("mumchimp.com is not a zone of this account"). The lifeboat does not need
+        # the zone to think: it is deployed on the token's own account at workers.dev, and its
+        # address is printed so the ladder and the crew can dial it.
+        wrangler(["deploy"])
+        sub = cf_get(f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/subdomain", token)
+        name = ((sub or {}).get("result") or {}).get("subdomain", "")
+        where = f"https://estate-lifeboat.{name}.workers.dev" if name else "UNKNOWN (no workers.dev subdomain on this account)"
+        print(f"  deployed on workers.dev: {where}")
 
     # Home 2's secrets, piped on stdin so no value is ever an argument, an environment
     # variable or a line in this session's scrollback (LAW 21).
