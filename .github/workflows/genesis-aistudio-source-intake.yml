@@ -1,0 +1,101 @@
+# PRIVATE SOURCE ONLY: never upload Google AI Studio archive or extracted code
+# to the public IDP repository, Actions artifacts or job summaries.
+# Trusted main workflow definition; no pull_request/branch-token execution.
+name: Genesis AI Studio private source intake
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/genesis-aistudio-source-intake.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: genesis-aistudio-private-source-intake
+  cancel-in-progress: false
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify source-intake trust contract before obtaining credentials
+        run: python3 -m unittest -q tests/test_genesis_aistudio_intake_contract.py
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          lane: agent-workforce
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: Import the independently SHA-pinned private AI Studio source into Argon
+        env:
+          GH_APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_APP_TOKEN:-}" || { echo "::error::PRIVATE_GITHUB_APP_TOKEN_ABSENT"; exit 2; }
+          root="$(mktemp -d "${RUNNER_TEMP}/genesis-intake.XXXXXXXX")"
+          trap 'rm -rf "$root"' EXIT
+          # Transient Git config: the GitHub App credential is never written to
+          # a checkout, .git/config, artifact or stdout.
+          auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git clone --quiet --depth 1 --single-branch \
+            --branch lane/aistudio-io-import-probe-20261112 \
+            https://github.com/chidionyema/argon.git "$root/argon"
+          cd "$root/argon"
+          test "$(git hash-object ops/io/recover_aistudio_preview.py)" = "3ecc81d097b33ee2a34e5bdad49d36ad28125477" || {
+            echo "::error::ARGON_IMPORTER_SOURCE_DRIFT"; exit 2; }
+          test "$(git hash-object ops/io/recover_aistudio_preview.test.py)" = "5cc44861da3e362a0dc946568f7d0e0657e43284" || {
+            echo "::error::ARGON_IMPORTER_TEST_SOURCE_DRIFT"; exit 2; }
+          # These tests execute only pinned, previously inspected importer code;
+          # never execute untrusted package scripts with the App token.
+          python3 ops/io/recover_aistudio_preview.test.py
+          if test -f ops/io/aistudio-import-receipt.json; then
+            jq -e --arg sha '310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389' \
+              '.archive_sha256==$sha' ops/io/aistudio-import-receipt.json >/dev/null || {
+              echo "::error::EXISTING_SOURCE_RECEIPT_CONFLICT"; exit 2; }
+            echo "ALREADY_IMPORTED_SHA256=310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389"
+            exit 0
+          fi
+          GITHUB_TOKEN="$GH_APP_TOKEN" python3 ops/io/recover_aistudio_preview.py \
+            --url 'https://api.github.com/repos/chidionyema/argon/releases/assets/739187944' \
+            --sha256 '310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389'
+          test -f packages/io-engine/package.json
+          test -f bin/io
+          test -f packages/beast-governor/package.json
+          test -f bin/beast
+          test -f ops/io/aistudio-import-receipt.json
+          # No source file content or archive bytes are emitted to the public job.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('ops/io/aistudio-import-receipt.json').read_text())
+          assert r['archive_sha256']=='310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389'
+          assert len(r['files']) >= 4
+          print('PRIVATE_ARGON_INTAKE: verified archive digest, files:', len(r['files']))
+          PY
+          for candidate in packages/io-engine packages/beast-governor omega-core bin/io bin/beast api/io api/beast api/synchrony ops/io/aistudio-candidates ops/io/aistudio-import-receipt.json; do
+            if test -e "$candidate"; then git add -- "$candidate"; fi
+          done
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)" || {
+            echo "NO_NEW_SOURCE_CHANGES"; exit 0; }
+          git config user.name 'meridian-aistudio-intake[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -qm 'feat(io): import pinned AI Studio private release into existing Argon integration lane
+
+          Source-Applet: fe43cf69-d529-4d49-ad17-e2d3a79ce7eb
+          Source-Archive-SHA256: 310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389
+          Integration-State: SOURCE_QUARANTINED_NOT_PRODUCTION'
+          git push --quiet origin HEAD:refs/heads/lane/aistudio-io-import-probe-20261112
+          echo "PRIVATE_ARGON_SOURCE_LANE_COMMIT=$(git rev-parse HEAD)"
