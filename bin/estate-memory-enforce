@@ -274,7 +274,30 @@ def focus_verdict(path: str, rows, agent: str):
 PIN_DOOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pin-open")
 
 
-def pin_verdict(sid: str = ""):
+def pinned_repair_permitted(entry: dict, path: str, agent: str, rows) -> bool:
+    """Positive scope proof: matching live GitHub claim for the SAME issue and file.
+
+    Only targeted complaint pins use this. A separate live claim plus the
+    existing file/agent focus gate must agree; issue text and local pin data
+    alone never authorize a repair.
+    """
+    issue = str(entry.get("issue") or "").lstrip("#")
+    if not entry.get("target_session") or not issue.isdigit() or not rows:
+        return False
+    root = git_root_if_idp(real(path))
+    if root is None:
+        return False
+    rel = os.path.relpath(real(path), root)
+    return any(
+        row.get("live") is True
+        and str(row.get("claim")) == f"idp#{issue}"
+        and (not agent or row.get("agent") == agent)
+        and covers(row, rel)
+        for row in rows
+    )
+
+
+def pin_verdict(sid: str = "", path: str = ""):
     """(ok, reason): may this session start any work other than its open issue?
 
     Founder, 2026-11-10: "any agent that tried to report an issue already logged once must be
@@ -311,6 +334,8 @@ def pin_verdict(sid: str = ""):
     if not open_e:
         return True, "no open pin"
     e = open_e[0]
+    if path and pinned_repair_permitted(e, path, os.environ.get("ESTATE_AGENT", ""), focus.live_focus()):
+        return True, "pin scoped to this issue: authenticated live claim covers repair path"
     return False, (
         f"issue {e.get('issue') or e.get('id')} is open and is now your only work. "
         f"THE ERROR: {str(e.get('error', ''))[:300]} "
@@ -507,7 +532,7 @@ def pre(data: dict) -> int:
         record("pre", "refuse", dof_why, session=sid, tool=tool, path=path)
         deny_pre(f"Refused by the DoF repair lock. {dof_why}")
         return 0
-    pin_ok, pin_why = pin_verdict(sid)
+    pin_ok, pin_why = pin_verdict(sid, path)
     if pin_ok is False:
         record("pre", "refuse", pin_why, session=sid, tool=tool, path=path)
         deny_pre(pin_why)
