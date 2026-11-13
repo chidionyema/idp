@@ -1,0 +1,119 @@
+# button: Deploy the founder passkey approval page
+# founder: Publishes the page your phone uses to approve guarded changes with Face ID (passkey.<estate zone>), then proves it answers. It holds no authority: every approval is checked against your registered passkey by the guard.
+#
+# founder-passkey-deploy (idp#8022). Placement: ADR 0034 rung 4, Cloudflare Workers free tier. Same
+# shape as bytesync-web-deploy.yml: the Cloudflare root stays a repository secret here, this run
+# mints a token scoped to Workers + the estate zone that expires in two hours, uses it, and deletes
+# it whatever happened. The hostname is passkey.${ESTATE_ZONE}, read from
+# clusters/oke/estate-config.yaml, never written as a literal.
+name: founder-passkey-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - platform/founder-passkey/**
+      - .github/workflows/founder-passkey-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founder-passkey-deploy
+  cancel-in-progress: false
+
+env:
+  API: https://api.cloudflare.com/client/v4
+  SCRIPT: founder-passkey
+  KV_TITLE: founder-passkey-approvals
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Hostname from the estate zone
+        run: |
+          set -euo pipefail
+          zone=$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' clusters/oke/estate-config.yaml | head -1)
+          [ -n "$zone" ] || { echo "FAIL    passkey  ESTATE_ZONE missing from clusters/oke/estate-config.yaml"; exit 1; }
+          { echo "ZONE=$zone"; echo "HOST=passkey.$zone"; } >> "$GITHUB_ENV"
+
+      - name: Mint a Workers token for this run only
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  root token or account id is not set"; exit 2; }
+          zid=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+          [ -n "$zid" ] || { echo "FAIL    cloudflare  zone $ZONE not visible to the root token"; exit 1; }
+          groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
+          acct=(); for n in "Workers Scripts Write" "Workers KV Storage Write"; do
+            g=$(gid "$n" com.cloudflare.api.account); [ -n "$g" ] || { echo "FAIL    cloudflare  no account permission group '$n'"; exit 1; }; acct+=("$g"); done
+          zone=(); for n in "Workers Routes Write" "DNS Write" "Zone Read"; do
+            g=$(gid "$n" com.cloudflare.api.account.zone); [ -n "$g" ] || { echo "FAIL    cloudflare  no zone permission group '$n'"; exit 1; }; zone+=("$g"); done
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "founder-passkey-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg e "$expires" \
+            --argjson ag "$(printf '%s\n' "${acct[@]}" | jq -R '{id:.}' | jq -s .)" \
+            --argjson zg "$(printf '%s\n' "${zone[@]}" | jq -R '{id:.}' | jq -s .)" \
+            '{name:$n, expires_on:$e, policies:[
+               {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:$ag},
+               {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:$zg}]}')
+          out=$(curl -sS -X POST -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          value=$(jq -r .result.value <<<"$out"); echo "::add-mask::$value"
+          { echo "id=$(jq -r .result.id <<<"$out")"; echo "token=$value"; echo "zone_id=$zid"; } >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Workers token minted, expires $expires"
+
+      - name: Deploy the Worker on passkey.<zone>
+        env:
+          TOKEN: ${{ steps.mint.outputs.token }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          ZONE_ID: ${{ steps.mint.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
+          ns=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" | jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' | head -1)
+          if [ -z "$ns" ]; then
+            ns=$(cf -X POST -H 'Content-Type: application/json' -d "$(jq -nc --arg t "$KV_TITLE" '{title:$t}')" \
+              "$API/accounts/$ACCOUNT/storage/kv/namespaces" | jq -r '.result.id // empty')
+            [ -n "$ns" ] || { echo "FAIL    passkey  KV namespace could not be created"; exit 1; }
+            echo "ok      passkey  KV namespace $KV_TITLE created"
+          fi
+          meta=$(jq -nc --arg ns "$ns" '{main_module:"worker.js", compatibility_date:"2026-11-01",
+            bindings:[{type:"kv_namespace", name:"APPROVALS", namespace_id:$ns}]}')
+          out=$(cf -X PUT -F "metadata=$meta;type=application/json" \
+            -F "worker.js=@platform/founder-passkey/worker.js;type=application/javascript+module" \
+            "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    passkey  script upload refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          echo "ok      passkey  Worker $SCRIPT uploaded"
+          out=$(cf -X PUT -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg h "$HOST" --arg s "$SCRIPT" --arg z "$ZONE_ID" '{hostname:$h, service:$s, zone_id:$z, environment:"production"}')" \
+            "$API/accounts/$ACCOUNT/workers/domains")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    passkey  custom domain $HOST refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          echo "ok      passkey  $HOST routed to $SCRIPT"
+
+      - name: Prove it answers on its own hostname
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 30); do
+            h=$(curl -sS -m 5 "https://$HOST/healthz" 2>/dev/null || true)
+            [ "$h" = ok ] && break; sleep 5
+          done
+          [ "$h" = ok ] || { echo "FAIL    passkey  https://$HOST/healthz did not answer ok within 150s"; exit 1; }
+          curl -sS -m 10 "https://$HOST/" | grep -q 'Estate approval' || { echo "FAIL    passkey  page body missing"; exit 1; }
+          echo "ok      passkey  https://$HOST answers (healthz ok, page served)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the run's token
+        if: always() && steps.mint.outputs.id != ''
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $ROOT" "$API/user/tokens/${{ steps.mint.outputs.id }}" | jq -e '.success' >/dev/null \
+            && echo "ok      cloudflare  run token deleted" || echo "WARN    cloudflare  run token not deleted; it expires in two hours"
