@@ -68,7 +68,8 @@
     "handoff_receipt": "exact issue, source and target SHAs, modified paths, authoritative claim, tests executed with exit status, current lifecycle state, real runtime proof, next owner and replay-safe checkpoint; no comments as a substitute for issue lease.",
     "notification_policy": "One canonical existing issue and owner; changes in material operational state only, suppress unchanged repeated evidence; security-critical new cause remains unsuppressed.",
     "promotion": "Existing trusted origin and founder-passkey proof for protected workflow/policy changes; independent required checks on exact SHA; Greenlane only, then post-release live readback and telemetry.",
-    "assignee_selection": "Do not assign by role-label alone. Query actual GitHub collaborators/verified roster and currently active leases; use GitHub assignee only where login identity and availability are independently verified. If unavailable record UNASSIGNED and machine-enqueue with required capability, not a fake human owner."
+    "assignee_selection": "Do not assign by role-label alone. Query actual GitHub collaborators/verified roster and currently active leases; use GitHub assignee only where login identity and availability are independently verified. If unavailable record UNASSIGNED and machine-enqueue with required capability, not a fake human owner.",
+    "owner_reference_schema": "single_source_owner_index[].packets is an array of canonical ENG-XX packet IDs; each issue retains its independent GitHub state and claim lease."
   },
   "packets": [
     {
@@ -533,47 +534,68 @@
     {
       "issue": "#7940",
       "work": "trusted admission/Greenlane + red PR churn",
-      "packet": "ENG-01"
+      "packets": [
+        "ENG-01"
+      ]
     },
     {
       "issue": "#7794",
       "work": "normative universal Instruction Gateway and Temporal onboarding; supersedes legacy intent",
-      "packet": "ENG-01/02/03 integration"
+      "packets": [
+        "ENG-01",
+        "ENG-02",
+        "ENG-03"
+      ]
     },
     {
       "issue": "#7771",
       "work": "zero-touch handback and Concierge domain proof integration",
-      "packet": "ENG-02/05"
+      "packets": [
+        "ENG-02",
+        "ENG-05"
+      ]
     },
     {
       "issue": "#8111",
       "work": "founder Pydantic strict agent-record directive",
-      "packet": "ENG-03"
+      "packets": [
+        "ENG-03"
+      ]
     },
     {
       "issue": "#7089",
       "work": "existing three-boundary schema conformance",
-      "packet": "ENG-03"
+      "packets": [
+        "ENG-03"
+      ]
     },
     {
       "issue": "#7838",
       "work": "Meridian corporate website brand/domain launch",
-      "packet": "ENG-04"
+      "packets": [
+        "ENG-04"
+      ]
     },
     {
       "issue": "#7035",
       "work": "Meridian storefront brand UI",
-      "packet": "ENG-04 sibling"
+      "packets": [
+        "ENG-04"
+      ]
     },
     {
       "issue": "#6131",
       "work": "existing Concierge vendor intent failure",
-      "packet": "ENG-05 prerequisite"
+      "packets": [
+        "ENG-05"
+      ]
     },
     {
       "issue": "#7222",
       "work": "machine-first decision policy",
-      "packet": "ENG-06"
+      "packets": [
+        "ENG-06"
+      ]
     }
   ],
   "acceptance": "All packets have authenticated current assignee claim and zero overlapping scope; no PR or source-only work marked operating; exact protected approval and live evidence for each final closure."
