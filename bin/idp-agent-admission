@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Preflight BEFORE provider invocation and BEFORE any lane push.
+
+Uses the existing DoF decision engine, not an alternative policy implementation.
+Exit: 0 eligible for further checks; 1 refused; 2 blind. No new permissions.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PLAN = re.compile(r"^Planned-Paths:\s*(.+?)\s*$", re.I | re.M)
+
+
+def parse_plan(body: str, explicit: str = "") -> list[str]:
+    found = PLAN.search(body or "")
+    raw = explicit or (found.group(1) if found else "")
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def existing_dof(root: Path):
+    loader = importlib.machinery.SourceFileLoader("estate_existing_dof", str(root / "bin/dof-gate"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    if spec is None:
+        raise RuntimeError("missing existing DoF engine")
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def decide(paths: list[str], *, root: Path = ROOT, registry=None, incidents=None) -> dict:
+    if not paths:
+        return {"verdict": "BLIND", "reason": "planned paths absent"}
+    if any(not p or p.startswith(("/", ".", "~", "-")) or "\\" in p
+           or ".." in Path(p).parts or any(c.isspace() for c in p) for p in paths):
+        return {"verdict": "REFUSED", "reason": "unsafe path syntax", "paths": paths}
+    try:
+        dof = existing_dof(root)
+        reg = registry if registry is not None else json.loads(
+            (root / "catalog/dof-registry.json").read_text()
+        )
+        active = incidents if incidents is not None else dof.open_incidents(reg)
+        decision = dof.evaluate(reg, active, "", paths)
+    except (OSError, ValueError, KeyError, RuntimeError, AttributeError) as exc:
+        return {"verdict": "BLIND", "reason": "DoF authority unavailable: " + str(exc)[:160]}
+    if any(i.get("issue") is None for i in active):
+        return {"verdict": "BLIND", "reason": "incident inventory unobservable"}
+    return {
+        "verdict": "ADMISSIBLE_FOR_FURTHER_CHECKS" if decision.get("admitted") else "REFUSED",
+        "reason": decision.get("reason", "DoF refused"),
+        "paths": paths,
+        "incident_ids": [i.get("id") for i in active],
+    }
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--phase", choices=("before-agent", "before-commit"), required=True)
+    ap.add_argument("--issue-body", default="")
+    ap.add_argument("--planned-paths", default="")
+    ap.add_argument("--root", type=Path, default=ROOT)
+    args = ap.parse_args(argv)
+    root = args.root.resolve()
+    planned = parse_plan(args.issue_body, args.planned_paths)
+    if args.phase == "before-commit":
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--name-only", "--no-renames", "HEAD"],
+                cwd=root, text=True, capture_output=True, check=True, timeout=15
+            )
+            actual = result.stdout.splitlines()
+        except (OSError, subprocess.SubprocessError) as exc:
+            decision = {"verdict": "BLIND", "reason": "staged paths unreadable: " + str(exc)[:160]}
+        else:
+            decision = decide(actual, root=root)
+            if decision["verdict"] == "ADMISSIBLE_FOR_FURTHER_CHECKS":
+                if not planned:
+                    decision = {"verdict": "BLIND", "reason": "original plan absent"}
+                elif not set(actual).issubset(set(planned)):
+                    decision = {"verdict": "REFUSED", "reason": "patch exceeds plan",
+                                "unexpected": sorted(set(actual) - set(planned))}
+    else:
+        decision = decide(planned, root=root)
+    print(json.dumps({"contract": "idp.agent-admission.v1", "phase": args.phase,
+                      **decision, "authority": "existing DoF; claim/signing/CI still required"},
+                     sort_keys=True))
+    return {"ADMISSIBLE_FOR_FURTHER_CHECKS": 0, "REFUSED": 1, "BLIND": 2}[decision["verdict"]]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
