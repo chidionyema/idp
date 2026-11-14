@@ -37,7 +37,7 @@ edit unrelated guards, add trigger labels merely to show activity, or notify the
 repeatedly about the same failure class. Close the loop only with trusted main readback,
 independent CI, live real-caller evidence and measured recurrence/noise reduction.
 
-**Concrete precedents:**
+**Machine-first implementation register:** [25 evidence-classified executable requirements](docs/specs/2026-11-14-machine-first-execution-requirements.json), including owners, machine/model decisions, falsifiers, 20-worker admission, capacity, secure submission, telemetry, rollout waves and independent closure conditions. It is a requirements addendum to the existing Master Epic, not a second protocol or deployed policy. Consume the structured record before proposing new orchestration components.\n\n**Concrete precedents:**
 - [#8105](https://github.com/chidionyema/idp/pull/8105): preventable DoF/claim/
   guarded-path/BDD problems escaped into an open red PR.
 - [run 43629366222](https://github.com/chidionyema/idp/actions/runs/43629366222):
