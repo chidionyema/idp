@@ -28337,6 +28337,7 @@
       },
       "consumers": [
         "cap:tool/estate-memory-enforce",
+        "cap:workflow/gha-agent-sandbox",
         "cap:workflow/gha-submitqueue-speculative-advisory"
       ],
       "cost": {
@@ -35520,6 +35521,7 @@
         "cap:tool/port-gate",
         "cap:tool/process-census",
         "cap:tool/test-catalog-projection",
+        "cap:workflow/gha-agent-sandbox",
         "cap:workflow/gha-agent-trunk-batch",
         "cap:workflow/gha-ci",
         "cap:workflow/gha-fast-gate"
@@ -56084,11 +56086,23 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/dof-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/epistemic_firewall.py",
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/idp-agent-admission",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/idp-agent-base-apply.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
           "edge": "invokes"
         }
       ],
