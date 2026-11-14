@@ -1,7 +1,7 @@
 {
   "schema": "estate.engineering.delivery-packets.v1",
   "generated_at": "2026-11-14",
-  "status": "SPECIFIED_UNASSIGNED_NOT_DISPATCHED",
+  "status": "PACKETS_SPECIFIED_OWNERSHIP_OBSERVATIONS_RECORDED_NOT_FLEET_DISPATCHED",
   "authority": "Existing repo issues and their founder directives prevail. No schema research may silently override #8111 or admission spec #7794.",
   "source_head_at_authoring": "99e226e8a82fca7b0e90308453046e084003dab3",
   "founder_goal": "Maximise deterministic execution; preserve Meridian Intelligence identity; procure a short brand-safe domain through live Concierge; enforce first-class cross-language schemas; release the existing fleet admission fix without false claims.",
@@ -69,7 +69,8 @@
     "notification_policy": "One canonical existing issue and owner; changes in material operational state only, suppress unchanged repeated evidence; security-critical new cause remains unsuppressed.",
     "promotion": "Existing trusted origin and founder-passkey proof for protected workflow/policy changes; independent required checks on exact SHA; Greenlane only, then post-release live readback and telemetry.",
     "assignee_selection": "Do not assign by role-label alone. Query actual GitHub collaborators/verified roster and currently active leases; use GitHub assignee only where login identity and availability are independently verified. If unavailable record UNASSIGNED and machine-enqueue with required capability, not a fake human owner.",
-    "owner_reference_schema": "single_source_owner_index[].packets is an array of canonical ENG-XX packet IDs; each issue retains its independent GitHub state and claim lease."
+    "owner_reference_schema": "single_source_owner_index[].packets is an array of canonical ENG-XX packet IDs; each issue retains its independent GitHub state and claim lease.",
+    "last_assignee_audit": "2026-11-14: All inspected Github issue assignee lists empty, but #8111 has live-looking Claude CLAIM comments. GitHub assignees alone are not authoritative; check claim lease epoch and active worker session independently."
   },
   "packets": [
     {
@@ -598,5 +599,46 @@
       ]
     }
   ],
-  "acceptance": "All packets have authenticated current assignee claim and zero overlapping scope; no PR or source-only work marked operating; exact protected approval and live evidence for each final closure."
+  "acceptance": "All packets have authenticated current assignee claim and zero overlapping scope; no PR or source-only work marked operating; exact protected approval and live evidence for each final closure.",
+  "assignment_observations": [
+    {
+      "issue": "#8111",
+      "status": "CLAIM_OBSERVED",
+      "actor": "claude",
+      "source": "https://github.com/chidionyema/idp/issues/8111",
+      "heartbeat": "2026-11-14T20:52:12Z",
+      "scope": [
+        "estate_contract/__init__.py",
+        "estate_contract/models.py",
+        "estate_contract/rules/founder-voice.json",
+        "bin/estate-contract",
+        "schema/estate-contract/*",
+        "tests/test_estate_contract.py",
+        "tests/fixtures/estate_contract/argon-defects.json",
+        ".githooks/commit-msg",
+        "catalog/estate-capability-registry.json"
+      ],
+      "instruction": "Respect existing Claude claim and determine whether its lease is still valid before any assignment. Do not assign ENG-03 overlapping paths to another engineer."
+    },
+    {
+      "issue": "#7838",
+      "status": "WORKFLOW_QUEUED_NOT_EXECUTING",
+      "source": "https://github.com/chidionyema/idp/actions/runs/43641361383",
+      "run_id": 43641361383,
+      "observed_status": "queued",
+      "instruction": "Do not dispatch another Gemini or estate-run instance merely because the existing one is queued. Inspect runner and run state; assign ENG-04 read-only brand/domain research on disjoint paths when the real owner can claim."
+    },
+    {
+      "issue": "#7940",
+      "status": "SOURCE_UNPROMOTED",
+      "source": "https://github.com/chidionyema/idp/tree/work/agent-admission-shift-left-20261114",
+      "instruction": "No verified active executor claim for this candidate; previous ChatGPT claim heartbeat observed 2026-11-11 and must be revalidated live. Greenlane/CI promotion pending."
+    },
+    {
+      "issue": "#7771",
+      "status": "SCOPE_SHARED",
+      "source": "https://github.com/chidionyema/idp/issues/7771",
+      "instruction": "ENG-02 and ENG-05 share a strategic issue; require disjoint exact path claims and an authenticated supervisor/claim record before parallel work."
+    }
+  ]
 }
