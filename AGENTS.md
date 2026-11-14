@@ -7,7 +7,7 @@ consequential messages, task/agent handoffs, tool calls, execution intents, prov
 decisions, claims, evidence, repair receipts and promotion effects MUST bind to a
 versioned, machine-checkable contract that is independently validated by the trusted
 boundary receiving it. **Pydantic v2 is the default source and strict validator for NEW Python-owned
-contracts** (`strict=True`, `extra='forbid`), and its versioned, generated
+contracts** (`strict=True`, `extra='forbid'`), and its versioned, generated
 JSON Schema Draft 2020-12 is the canonical portable wire artifact. Non-Python-owned
 contracts retain their native authoritative source and must conform to the
 published wire shape. Never hand-maintain a competing schema. The existing
