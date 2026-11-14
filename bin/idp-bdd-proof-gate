@@ -23,7 +23,7 @@ WHICH PULL REQUEST IS UNDER TEST. Two exact sources, and never a guess:
      body and the head sha, so the common case -- a pull_request event -- is graded
      with no token at all;
   2. an explicit head branch (GITHUB_HEAD_REF, or the branch of GITHUB_REF when it is
-     not the repository's default branch), resolved through `gh pr list --head`.
+     not the repository's default branch), resolved through the REST pulls?head= listing.
 There is NO newest-pull-request fallback. That fallback graded whatever session opened
 a pull request last: it refused a correct branch because another branch's pull request
 had no proof block, and -- the worse direction -- it passed a pull request with no
@@ -40,7 +40,7 @@ Exit codes:
                     different facts.
 
 Input (JSON mode): a pull request as JSON on stdin or as a file path (the shape
-`gh pr view --json`).
+`gh pr view --json`, which the REST answer is reshaped to).
 """
 
 from __future__ import annotations
@@ -123,6 +123,15 @@ GREENLANE_EVIDENCE = re.compile(
 # reports -- never on a branch name or title an agent could choose -- and it grants
 # NOT APPLICABLE, not PROVED: the required `bdd` check still runs on the same head and is
 # the independent verifier of the bumped dependency.
+# REST, never GraphQL (2026-11-14). `gh pr list/view` are GraphQL calls; where GraphQL is
+# unavailable (cloud agent sessions answer it 403) every lane push graded BLIND and the
+# pre-push gate refused correct work. The REST pull request, reshaped by gh's own --jq into
+# the fields this gate has always read, answers everywhere the token can read the repository.
+PR_SHAPE = (
+    "{number, title, body, headRefOid: .head.sha, headRefName: .head.ref,"
+    " author: {login: .user.login}}"
+)
+
 DEPENDENCY_BOTS = frozenset({"dependabot[bot]", "app/dependabot"})
 
 
@@ -308,7 +317,12 @@ def explicit_branch(env: dict, event: dict | None) -> tuple[str, str]:
 def pr_by_number(number: int) -> tuple[str, dict | None, str]:
     """(kind, target, detail) with kind in {resolved, blind, none}."""
     rc, out, err = gh_json(
-        ["pr", "view", str(number), "--json", "number,title,body,headRefOid,author"]
+        [
+            "api",
+            f"repos/{{owner}}/{{repo}}/pulls/{number}",
+            "--jq",
+            PR_SHAPE,
+        ]
     )
     if rc != 0:
         why = (err or out or "").strip().replace("\n", " ")[:200]
@@ -346,16 +360,12 @@ def pr_by_branch(branch: str, owner: str) -> tuple[str, dict | None, str]:
     for head in queries:
         rc, out, err = gh_json(
             [
-                "pr",
-                "list",
-                "--head",
-                head,
-                "--state",
-                "all",
-                "--limit",
-                "20",
-                "--json",
-                "number,title,body,headRefOid,headRefName",
+                "api",
+                "repos/{owner}/{repo}/pulls?head="
+                + (head if ":" in head else "{owner}:" + head)
+                + "&state=all&per_page=20",
+                "--jq",
+                f"[.[] | {PR_SHAPE}]",
             ]
         )
         if rc != 0:

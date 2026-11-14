@@ -82,7 +82,7 @@ def fake_gh(tmp_path: Path, out: str = "", listing: str = "", rc: int = 0) -> Pa
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$FAKE_GH_LOG"\n'
         'case "$*" in\n'
-        '  *"pr list"*) f="$FAKE_GH_LIST" ;;\n'
+        '  *"pulls?head="*) f="$FAKE_GH_LIST" ;;\n'
         '  *) f="$FAKE_GH_OUT" ;;\n'
         "esac\n"
         '[ -n "$f" ] && [ -f "$f" ] && cat "$f"\n'
@@ -267,7 +267,7 @@ def test_live_mode_never_grades_the_newest_unrelated_pull_request(
     assert rc == 1, f"the gate passed an unproved pull request: {err}"
     calls = log.read_text().splitlines() if log.exists() else []
     for call in calls:
-        assert not (said(call, "pr list") and not said(call, "--head")), (
+        assert not (said(call, "pulls?") and not said(call, "pulls?head=")), (
             f"the gate fell back to a newest-pull-request listing: {call}"
         )
 
@@ -355,7 +355,9 @@ def test_live_mode_grades_the_pull_request_with_the_named_head_branch(
     env["PATH"] = f"{bindir}:{env['PATH']}"
     rc, _out, err = run_gate(["--live"], env)
     assert rc == 0, f"rc={rc} err={err}"
-    assert said(log.read_text(), "--head"), "the branch was not used to find the PR"
+    assert said(log.read_text(), "pulls?head=chidionyema:lane/demo"), (
+        "the branch was not used to find the PR"
+    )
 
 
 def test_live_mode_is_not_applicable_when_the_head_branch_has_no_pull_request(
@@ -573,14 +575,14 @@ def test_live_rerun_recovers_same_head_proof_corrected_after_event(
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake token for a fake gh, never a secret
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(log),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
         ),
     )
     assert rc == 0, f"{out} {err}"
-    assert log.read_text().count("pr view 4242") == 1
+    assert log.read_text().count("pulls/4242") == 1
 
 
 def test_live_rerun_never_accepts_changed_head_from_same_pr(tmp_path: Path) -> None:
@@ -601,7 +603,7 @@ def test_live_rerun_never_accepts_changed_head_from_same_pr(tmp_path: Path) -> N
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake token for a fake gh, never a secret
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -627,7 +629,7 @@ def test_live_rerun_never_accepts_foreign_pr_proof(tmp_path: Path) -> None:
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake token for a fake gh, never a secret
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -654,7 +656,7 @@ def test_live_rerun_github_lookup_failure_keeps_original_refusal(
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake token for a fake gh, never a secret
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -722,7 +724,7 @@ def test_live_mode_exempts_dependabot_read_through_gh(tmp_path: Path) -> None:
         FAKE_GH_LOG=str(tmp_path / "gh.log"),
         FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
         FAKE_GH_LIST=str(tmp_path / "gh-list.json"),
-        GH_TOKEN="x",
+        GH_TOKEN="x",  # noqa: S106 -- a fake token for a fake gh, never a secret
     )
     rc, out, err = run_gate(["--live"], env)
     assert rc == 3, (out, err)
