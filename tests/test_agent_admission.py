@@ -70,6 +70,29 @@ class AgentAdmissionContractTests(unittest.TestCase):
         self.assertLess(text.index("Claim the work on an issue"),
                         text.index("Commit through the estate's own hooks"))
 
+    def test_validator_is_pinned_before_untrusted_patch(self):
+        workflow = (ROOT / ".github/workflows/agent-sandbox.yml").read_text()
+        self.assertLess(
+            workflow.index('cp bin/idp-agent-admission "$RUNNER_TEMP/trusted-agent-admission"'),
+            workflow.index('python3 bin/idp-agent-base-apply.py --base-file'),
+        )
+        self.assertIn(
+            'python3 "$RUNNER_TEMP/trusted-agent-admission" --root "$GITHUB_WORKSPACE"',
+            workflow,
+        )
+
+    def test_agent_cannot_patch_policy_that_judges_it(self):
+        workflow = (ROOT / ".github/workflows/agent-sandbox.yml").read_text()
+        for protected in ("bin/dof-gate", "bin/idp-agent-admission",
+                          "catalog/dof-registry.json"):
+            self.assertIn(protected, workflow)
+
+    def test_all_new_dispatches_require_a_plan(self):
+        workflow = (ROOT / ".github/workflows/agent-sandbox.yml").read_text()
+        self.assertIn("planned_paths:", workflow)
+        self.assertIn('python3 bin/idp-agent-admission --phase before-agent', workflow)
+        self.assertEqual(admission.decide([])["verdict"], "BLIND")
+
     def test_plan_parsing(self):
         self.assertEqual(admission.parse_plan("Mission\nPlanned-Paths: tests/a.py,README.md\n"),
                          ["tests/a.py", "README.md"])
