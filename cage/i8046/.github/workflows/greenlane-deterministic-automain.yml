@@ -1,0 +1,26 @@
+name: greenlane-deterministic-automain
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "lane/**"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ring0-immutable-judge:
+    name: Ring 0 — Control Primitive Freeze & Trojan Quarantine
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout full lineage
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Local Deterministic Auto-Main Verifier
+        run: |
+          python3 scripts/deterministic_automain_drain.py --verify-ci
