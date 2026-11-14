@@ -11,6 +11,13 @@ export default function ContactPage() {
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const [availability, setAvailability] = useState<"checking" | "available" | "unavailable" | "unknown">("checking");
+  const [interest, setInterest] = useState<"general" | "investor" | "chronos">("general");
+  // Public audience context only. Never treats a query parameter as an investor credential.
+  useEffect(() => {
+    const topic = new URLSearchParams(window.location.search).get("topic");
+    setInterest(topic === "investor" ? "investor" : topic === "chronos" ? "chronos" : "general");
+  }, []);
+
 
   // Read-only readiness probe; no customer details are sent. If it fails, we
   // don't guess: keep the form available and let POST report delivery failure.
@@ -76,10 +83,10 @@ export default function ContactPage() {
     <div className="mi-interior">
       <section className="mi-page-hero mi-contact-hero" aria-labelledby="contact-heading">
         <div className="mi-shell">
-          <span className="mi-eyebrow">MERIDIAN / START A CONVERSATION</span>
-          <h1 id="contact-heading">LET&apos;S BUILD<br/><em>SOMETHING REAL.</em></h1>
+          <span className="mi-eyebrow">{interest === "investor" ? "MERIDIAN / INVESTOR CONVERSATION" : interest === "chronos" ? "MERIDIAN / DISCUSS CHRONOS" : "MERIDIAN / START A CONVERSATION"}</span>
+          <h1 id="contact-heading">{interest === "investor" ? <>LET&apos;S TALK ABOUT<br/><em>WHAT COMES NEXT.</em></> : interest === "chronos" ? <>LET&apos;S MAKE WORK<br/><em>BETTER FOR PEOPLE.</em></> : <>LET&apos;S BUILD<br/><em>SOMETHING REAL.</em></>}</h1>
           <div className="mi-page-hero-bottom">
-            <p>Bring the challenge. An architecture decision, an AI system to build, or a research question worth testing. We&apos;ll start with what matters.</p>
+            <p>{interest === "investor" ? "Interested in Meridian's research, the businesses we're building or the workplace of the future? Tell us a little about yourself and why you'd like to connect. Private access is granted separately after verification." : interest === "chronos" ? "Curious about Chronos? We'd love to understand how your team works and where coordination gets in the way. It's a product concept in development." : "Bring the challenge. An architecture decision, an AI system to build, or a research question worth testing. We'll start with what matters."}</p>
             <span className="mi-contact-hero-mark" aria-hidden="true">M / 004 ↗</span>
           </div>
         </div>
@@ -89,8 +96,8 @@ export default function ContactPage() {
         <div className="mi-shell mi-contact-grid">
           <aside className="mi-contact-aside">
             <span className="mi-eyebrow">01 / TELL US THE CHALLENGE</span>
-            <h2>Good work starts with a clear problem.</h2>
-            <p>What exists today? What needs to change? What would make the investment worthwhile?</p>
+            <h2>{interest === "investor" ? "Good partnerships start with a conversation." : interest === "chronos" ? "We'd like to hear about your working day." : "Good work starts with a clear problem."}</h2>
+            <p>{interest === "investor" ? "Who are you, what interests you about Meridian, and what would you like to explore together?" : interest === "chronos" ? "Where do updates, handovers and deadlines feel harder than they should?" : "What exists today? What needs to change? What would make the investment worthwhile?"}</p>
             <div className="mi-contact-aside-rule" />
             <span className="mi-contact-small-label">AREAS OF INTEREST</span>
             <p className="mi-contact-topics">AI strategy <span>/</span> Engineering <span>/</span> Autonomous systems <span>/</span> Research partnerships <span>/</span> Ventures</p>
@@ -123,7 +130,7 @@ export default function ContactPage() {
               <>
                 <div className="mi-contact-form-intro">
                   <span className="mi-eyebrow">PROJECT ENQUIRY / 001</span>
-                  <h2 id="enquiry-heading">Tell us what you&apos;re building.</h2>
+                  <h2 id="enquiry-heading">{interest === "investor" ? "Introduce yourself." : interest === "chronos" ? "Tell us about your team." : "Tell us what you're building."}</h2>
                   <p>Share enough context to make the first conversation useful.</p>
                 </div>
                 <form onSubmit={submit} noValidate aria-busy={status === "sending"} className="mi-contact-form">

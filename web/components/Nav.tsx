@@ -8,7 +8,7 @@ const links = [
   { href: "/research", label: "Laboratory" },
   { href: "/products", label: "Ventures" },
   { href: "/writing", label: "Insights" },
-  { href: "/tooling", label: "Tooling" },
+  { href: "/investors", label: "Investors" },
 ];
 export function Nav() {
   const pathname = usePathname();
