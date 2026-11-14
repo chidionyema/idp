@@ -217,12 +217,37 @@ export class BrainHub {
 
 const hub = env => env.HUB.get(env.HUB.idFromName('estate'));
 
+// Read-only cross-origin access for the founder's surfaces (GET only; writes are server-to-server
+// with the admin key and never need CORS). Exact origins, plus this account's Vercel previews.
+const ALLOWED_ORIGINS = new Set(['https://genesis-founder-surface.pages.dev', 'http://127.0.0.1:3000', 'http://localhost:3000']);
+export function allowedOrigin(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+  return /^https:\/\/otto-private-office(-[a-z0-9-]+)?-chidionyemas-projects\.vercel\.app$/.test(origin)
+    || origin === 'https://otto-private-office.vercel.app';
+}
+function withCors(response, request) {
+  const origin = request.headers.get('origin');
+  if (request.method !== 'GET' || !allowedOrigin(origin)) return response;
+  const h = new Headers(response.headers);
+  h.set('access-control-allow-origin', origin);
+  h.set('vary', 'origin');
+  h.set('access-control-expose-headers', 'content-type');
+  return new Response(response.body, { status: response.status, headers: h });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/healthz') return new Response('ok', { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } });
     if (!url.pathname.startsWith('/api/brain/')) return json({ error: 'not found' }, 404);
-    return hub(env).fetch(request);
+    if (request.method === 'OPTIONS') {
+      const origin = request.headers.get('origin');
+      if (!allowedOrigin(origin)) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': origin,
+        'access-control-allow-methods': 'GET', 'access-control-allow-headers': 'last-event-id, accept, cache-control', 'access-control-max-age': '600', vary: 'origin' } });
+    }
+    return withCors(await hub(env).fetch(request), request);
   },
   async scheduled(_event, env) {
     // hourly audit copy to R2; the hub itself is the live store

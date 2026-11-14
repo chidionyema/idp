@@ -85,6 +85,14 @@ out.streamLive = await pending;
 await worker.scheduled({}, env);
 out.r2 = [...r2.keys()];
 out.r2latest = JSON.parse(r2.get('brain/latest.json'));
+const cors = async (o, m = 'GET') => { const r = await worker.fetch(new Request('https://brain.example.com/api/brain/state', { method: m, headers: o ? { origin: o } : {} }), env);
+  return { status: r.status, acao: r.headers.get('access-control-allow-origin') }; };
+out.corsPreview = await cors('https://otto-private-office-git-lane-deade-462d2a-chidionyemas-projects.vercel.app');
+out.corsPages = await cors('https://genesis-founder-surface.pages.dev');
+out.corsEvil = await cors('https://evil.example.com');
+out.corsSpoof = await cors('https://otto-private-office-x-chidionyemas-projects.vercel.app.evil.com');
+out.preflightOk = await cors('https://genesis-founder-surface.pages.dev', 'OPTIONS');
+out.preflightEvil = await cors('https://evil.example.com', 'OPTIONS');
 console.log(JSON.stringify(out));
 process.exit(0);
 """
@@ -178,3 +186,10 @@ def test_hourly_snapshot_reaches_r2(run):
         k.startswith("brain/20") for k in run["r2"]
     )
     assert run["r2latest"]["status"] == "cloud-hub"
+
+
+def test_cors_only_for_the_founder_surfaces(run):
+    assert run["corsPreview"]["acao"].endswith("chidionyemas-projects.vercel.app")
+    assert run["corsPages"]["acao"] == "https://genesis-founder-surface.pages.dev"
+    assert run["corsEvil"]["acao"] is None and run["corsSpoof"]["acao"] is None
+    assert run["preflightOk"]["status"] == 204 and run["preflightEvil"]["status"] == 403
