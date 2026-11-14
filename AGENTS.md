@@ -1,5 +1,21 @@
 # AGENTS.md — estate-wide. Every agent on this machine, and every product.
 
+## Engineer delivery and allocation — structured packets, existing issue ownership
+
+**2026-11-14 assignment pointer.** The [six engineering work packets](docs/specs/2026-11-14-engineering-delivery-and-ownership.json)
+are the current read-only planning/dispatch inputs for deterministic admission, capacity/custody,
+cross-language Pedantic Schema, Meridian short-domain research, Concierge procurement and
+federated measurement. Use their exact issue number, required engineering capability, disjoint
+path scope, preflight dependencies, falsifiers and real receipts. **A packet is not an assigned
+agent, a lease, a dispatched workflow or a verified release.** Only the authenticated claim and
+trusted instruction/execution gateway can allocate it; read existing claims and queued workflow
+runs first. In particular, preserve Claude's existing claim on #8111 and do not retrigger
+Meridian #7838 merely because its estate-run is queued. Do not create duplicate issues,
+unverified GitHub assignees, legacy universal intent YAML, or conflicting Pydantic/JSON Schema
+registries. Cross-reference current issue state and policy before execution.
+
+---
+
 ## Pedantic Schema — first-class constitutional contract at every boundary
 
 **Founder directive, 2026-11-14.** Schemas are not optional documentation. All NEW
