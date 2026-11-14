@@ -1,3 +1,51 @@
+<!-- ESTATE_SUBSTRATE_AUTHORITY_START -->
+## Current infrastructure authority
+
+OKE is retired. The declared replacement is ARM k3s. A declared home is operational
+only after current inventory and a real service probe verify it. GitHub Actions and
+Greenlane handle delivery. Read this repository's agent instructions and the
+infrastructure decision before selecting an incident action. Historical runbooks,
+search matches, old incident labels, and stale catalog entries provide history only.
+Verify the target service, the current runtime, and the authorized action together.
+If they disagree, stop that action and verify the current authority.
+
+Current sources: IDP [infrastructure decision 0048](https://github.com/chidionyema/idp/blob/main/docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md) and [recovery authority #7387](https://github.com/chidionyema/idp/issues/7387).
+<!-- ESTATE_SUBSTRATE_AUTHORITY_END -->
+
+<!-- ESTATE_CAPABILITY_ADVERTISING_START -->
+## Capability advertising is operating law
+
+Advertise the right next action where agents choose tools and procedures. Put the
+outcome and first safe step first, together with the current owner, runtime,
+authorization, prerequisite, proof of success, and fallback. Use the existing
+capability registry, context compiler, and execution gateway. Match the language
+people actually use for the task, and let the approved route answer old names.
+
+Publish current and verified routes prominently. Label declared or unverified
+routes as such. Retire a route by withdrawing its active advertisement, refusing
+the obsolete action at its entry point, and pointing the old source to its
+successor. Preserve history as evidence. Put `<!-- estate:historical current=PATH -->`
+on the first line of retired Markdown so the context compiler withholds obsolete
+excerpts even when retrieval ranks them first. Use a repository-relative PATH to
+the current authority. A search result or advertisement does not grant authority.
+
+Follow the evidence when agents repeat a wrong turn. Record the observed failure
+class and fix the prompt, discovery result, default, or execution boundary that
+led there. Verify the correction by replaying the same lure and observing the
+selected action. Preserve the evidence under KARMA and test recurrence across
+harnesses before claiming fleet-wide improvement.
+<!-- ESTATE_CAPABILITY_ADVERTISING_END -->
+
+### Infrastructure incident first step
+
+For a service outage, run `bin/idp-estate-homes --no-file --service SERVICE`
+for `llm-router`, `otto`, or `estate-doors`. It probes the published endpoints
+without updating the issue tracker. Read the matching incident and confirm
+where the service runs before choosing a repair. A successful probe verifies
+the endpoint behavior it measured. If no current runtime can be verified,
+record the missing observation and continue read-only inventory.
+
+
 # AGENTS.md — estate-wide. Every agent on this machine, and every product.
 
 What the estate is and where things live. Enforcement is not in this file; it is in the executor,
@@ -721,7 +769,6 @@ could not be measured says so, never PASS.
 | the context broker | LANDED and proven | PR #7326, squash `0d9a8db4`, Greenlane-Head `09d8a476`; re-proved from the landed commit (verdict ALLOW, 8 excerpts, `/healthz` ok); issue #7262 closed with proof comment `6462965317` |
 | the OCI block storage | RECLAIMED | 7 dead TERMINATED CSI volumes (350GB) deleted through the `oci-reclaim` door; the compartment holds 5 volumes / 250GB against a 200GB allowance |
 | the estate memory door | DOWN | writes answer `written=false ... UNWITNESSED`, reads answer HTTP 500; the upstream (`unified-memory.estate.internal`) is in-cluster and the cluster is not up |
-| the cluster | BLOCKED on the node half | CI run `40684052518`, job `122801786864` fails at `bin/idp-oke-rebuild --apply` with `nodes-per-node-pool limit has been exceeded`; that half is owned by idp#7318 |
 | the laptop volume | RECLAIMED, continuously | the resident guardian (`ai.estate.disk-watch`) takes one bounded incremental step per cycle and prints a RESULT line with free space before and after; the old watcher freed 0M |
 | the critical-function spine | EXTENDED; the estate's metric is now ONE number | `catalog/critical-functions.json` (7 functions + 1 assumption, founder-critical first) + `platform/estate/libexec/critical-watch.py` + `platform/estate/libexec/critical-probe.py`: the metric is `estate_health` (ADR 0049), judged by `tests/test_critical_functions_registry.py`. Measured 2026-10-30: memory-plane DOWN (the door's TLS handshake fails), router-lanes DEGRADED (4 declared lanes not served), spend-bound ok, estate-substrate RED (the cluster-state receipt is 4160 min old) |
 
@@ -732,3 +779,111 @@ board). This block is dated **2026-10-28**: when it disagrees with those, they a
 ## P0 COMMAND CAP (2026-11-13)
 
 No synchronous command may run longer than 20 seconds; executor commands may run up to 100 seconds. Longer work runs as a background job with an id. No sleep greater than 10. No nohup daemon outside launchd.
+---
+
+## Instruction integrity — the model, in pure form (founder, 2026-11-14)
+
+**Binding on every agent, every runtime, every surface, without exception.**
+
+### Symbols
+
+```
+I   an instruction: (id, text, issuer, actor, accepted_at)
+E   an effect: any change outside the actor's own context — commit, push, API write,
+      message sent, file written outside the task sandbox, resource provisioned
+T   an integration test: a command that exercises E on its real path
+R   a receipt: (i, cmd, ran_at, exit, output_sha256, signer)
+Y   yield: E is live, T passes, and a named beneficiary derives the benefit
+```
+
+### Axioms
+
+```
+A1  Every founder prompt is an I. Its text is stored verbatim; a summary is a different I.
+A2  No E without a live I.     ∀E : ∃I  (actor(E) = actor(I)) ∧ live(I)
+A3  No closure without Y.      close(I) ⇒ ∃T, R, Y  with T(R(i)) = pass ∧ benefit(Y) ≠ ∅
+A4  No terminal by silence.    a turn ending is not a state; only Y, or an explicit refusal
+                               carrying (cmd, exit, line)
+A5  History is immutable.      records append-only; chain h = H(h_prev ‖ record);
+                               tip anchored outside the actor's write scope
+```
+
+### State machine
+
+```
+received --plan--> planned --dispatch--> executing --T passes∧R signed--> verified
+   |                  |                     |
+   +------------------+---------------------+--> refused(reason, cmd, exit)   [not terminal]
+                                                   |
+                                                   +--> re-enter executing with a new attempt
+verified is terminal. blocked/failed/abandoned are NOT states; they are attempts with evidence.
+```
+
+### Invariants and their falsifiers (all must exist as executable tests)
+
+```
+I1  an effect with no live I is refused ......... attempt an effect with no I -> expect refusal
+I2  closure without T∧R∧Y is refused ............ close with empty probe -> expect refusal
+I3  a no-op is not a terminal .................. end a turn with a question/summary -> expect refusal
+I4  replay of a closed/expired I is refused .... reuse a verified I -> expect refusal
+I5  a forged or edited record is refused ....... append/alter a record -> expect chain/signature fail
+I6  delegation carries the parent I ............ child with no parent I -> expect refusal
+```
+
+### The generalisation
+
+The model is not about commits. It applies to **any effect on any surface**: a Telegram message, an
+API write, a deploy, a provisioned resource, a payment. Each surface binds as:
+
+```
+surface  ->  door  ->  gate(I live, R signed, Y present)  ->  effect  |  refusal(reason, cmd)
+```
+
+A surface that cannot name its door, its instruction check, and its falsifier is not integrated;
+it is unguarded, and it is reported as unguarded rather than assumed safe.
+
+### Compensation (required, not optional)
+
+Every defect found under this model mandates, in the same change:
+**(a)** the fix, **(b)** the falsifier that would have caught it, **(c)** the sweep of sibling
+surfaces, and **(d)** a recorded recurrence check. A fix without (b)-(d) reopens the class.
+
+### The correction chain — one pattern, five links, no exceptions (founder, 2026-11-14)
+
+An error is corrected only when the whole chain completes **in the same change**:
+
+```
+CA1  instance      fix the thing that is actually wrong, now
+CA2  proof         an integration test that fails before the fix and passes after; run it
+CA3  class         a compensating action that plugs the GAP that allowed it -- not the symptom
+CA4  broadcast     tell the other agents in the same turn: what broke, where, what to do instead
+CA5  class ledger  register the class so a second occurrence is a governance failure
+```
+
+A fix without CA2 is a claim. Without CA3 it repairs one instance and leaves the class open.
+Without CA4 the fleet repeats it within hours. Without CA5 nobody can prove the class is closed.
+
+### The class ledger is the point
+
+`catalog/issue-classes.json`, one record per class:
+
+```
+{class, first_seen, instances[], gap, compensating_action, falsifier, owner,
+ surface(s), status: open|closed, recurrence_checks[]}
+```
+
+**A class may occur once.** A second instance of a registered open class is not an incident to
+triage; it is a governance failure that names the agent who closed CA1–CA3 without CA4–CA5.
+
+### Surfaces bound by this chain
+
+Every surface that can produce an effect, including the ones with no hook: commits, lanes, the
+Telegram spooler, MCP doors, cloud APIs, and **DSH web** — the session ingress where a founder
+prompt first becomes an instruction. A surface is bound when it can name its door, its falsifier
+and its class record; until then it is reported as UNBOUND, never assumed covered.
+
+### Why this is self-reinforcing
+
+CA3 changes the gate, CA5 makes the gate's silence visible, CA4 makes every agent carry the fix
+without being told. The next agent does not need to know the history: the door refuses, the ledger
+names the class, and the broadcast is already in the record it reads at session start.
