@@ -1,0 +1,64 @@
+{
+  "schema": "estate.lane.spec.v1",
+  "lane_id": "MERIDIAN-DOMAIN-20261114",
+  "title": "Short-domain acquisition and corporate identity preservation",
+  "owner": "Meridian corporate identity + Concierge procurement",
+  "priority": "P1",
+  "status": "SPECIFIED_NOT_EXECUTED",
+  "intent": "Keep Meridian Intelligence as company/public identity while acquiring a short, low-friction, defensible domain.",
+  "candidates": [
+    "meridianhq.ai",
+    "meridianintel.com",
+    "meridianintel.ai",
+    "meridianint.ai",
+    "mrdn.ai"
+  ],
+  "assumptions": [
+    "No candidate is declared available, owned or affordable until live authoritative evidence is retrieved",
+    "Naming similarity with other organisations triggers legal/trademark review; domain availability alone does not clear a brand"
+  ],
+  "requirements": [
+    {
+      "id": "DOM-01",
+      "decider": "machine",
+      "rule": "Normalize candidates via IDNA and canonical lowercase; exclude invalid/confusable/unsupported names before querying",
+      "falsifier": "Unicode confusable and empty or malformed names rejected"
+    },
+    {
+      "id": "DOM-02",
+      "decider": "machine",
+      "rule": "Discover TLD RDAP authority through IANA bootstrap/ICANN; record authoritative result, exact query, UTC observation and expiry",
+      "falsifier": "Network failure, RDAP 429/500, redaction or a non-authoritative seller result never becomes AVAILABLE"
+    },
+    {
+      "id": "DOM-03",
+      "decider": "machine",
+      "rule": "Retrieve confirmed registrar checkout quotes and renewal rates in USD/GBP incl taxes, currency and premium/transfer costs; expires_at and source URL",
+      "falsifier": "Standard .com list price cannot masquerade as a premium domain's actual price"
+    },
+    {
+      "id": "DOM-04",
+      "decider": "model",
+      "rule": "Compare identity fit, memorability, spelling, existing brand conflicts and investor credibility; cite independently checked UK and relevant international trademark/company sources",
+      "falsifier": "Model opinion cannot be labelled legal clearance or measured registration status"
+    },
+    {
+      "id": "DOM-05",
+      "decider": "judgment",
+      "rule": "Founder selects exact domain/registrar and approves spend ceiling after evidence; do not infer preference as purchase authorization",
+      "falsifier": "No purchase effect without explicit amount/payee/domain-specific approval"
+    }
+  ],
+  "effect_boundary": "No registration, resale bid, offer, broker contact, DNS mutation, public branding migration or spending without approval",
+  "acceptance": [
+    "A ranked short list with traceable live availability and price or explicit UNKNOWN",
+    "One recommended domain conditional on trademark review",
+    "A precise payment hold packet with itemized first-year and renewal obligations",
+    "Post-purchase independent registrar ownership, renewal lock, DNSSEC and DNS readback as separate proof phase"
+  ],
+  "dependency": "Concierge procurement lane",
+  "source_evidence": [
+    "ICANN RDAP definitive gTLD registration data",
+    "existing conversation domain identity preference"
+  ]
+}
