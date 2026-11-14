@@ -107,6 +107,8 @@
 .mi-footer-giant{font:800 clamp(95px,20.8vw,330px)/.77 var(--sans);letter-spacing:-.098em;color:#1a283a;white-space:nowrap;overflow:hidden;padding-bottom:40px;user-select:none}
 .mi-footer-giant span{color:#eac47e;font-size:.35em;vertical-align:top;margin-left:.14em}
 .mi-footer-bottom{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:24px 0 34px;border-top:1px solid rgba(255,255,255,.13);color:#7d8fa5;font:500 10px var(--mono);letter-spacing:.1em}
+.mi-footer-legal{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:0 0 18px;color:#5f7286;font:500 10px var(--mono);letter-spacing:.09em}
+.mi-footer-legal a{color:#5f7286;text-decoration:underline;text-underline-offset:3px}.mi-footer-legal a:hover{color:#c69a57}
 .mi-interior{background:#f8f7f2}
 .mi-page-hero{background:#0b1421;color:#fff;padding:75px 0 100px;position:relative;overflow:hidden}
 .mi-page-hero:before{content:"";position:absolute;width:550px;height:550px;right:-200px;top:-180px;background:radial-gradient(circle,rgba(42,94,135,.33),transparent 70%)}

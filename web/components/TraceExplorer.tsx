@@ -14,9 +14,9 @@ const TRACES: Trace[] = [
       kind: "server", color: "#1A56DB",
       children: [
         { id: "d1", name: "intent.classify", service: "agentgateway", duration: 42, status: "ok", attrs: { "intent.label": "complex_reasoning", "intent.confidence": 0.94 }, kind: "internal", color: "#059669", children: [
-          { id: "d1a", name: "llm.classify", service: "litellm-proxy", duration: 31, status: "ok", attrs: { "llm.model": "gpt-4o-mini", "llm.prompt_tokens": 38 }, kind: "client", color: "#7C3AED" }
+          { id: "d1a", name: "llm.classify", service: "litellm-proxy", duration: 31, status: "ok", attrs: { "llm.model": "gpt-6-luna", "llm.prompt_tokens": 38 }, kind: "client", color: "#7C3AED" }
         ] },
-        { id: "d2", name: "model.inference", service: "litellm-proxy", duration: 1842, status: "ok", attrs: { "llm.model": "gpt-4o", "llm.total_tokens": 1233, "llm.cost_usd": 0.00417 }, kind: "client", color: "#7C3AED", children: [
+        { id: "d2", name: "model.inference", service: "litellm-proxy", duration: 1842, status: "ok", attrs: { "llm.model": "gpt-6.1-terra", "llm.total_tokens": 1233, "llm.cost_usd": 0.00419 }, kind: "client", color: "#7C3AED", children: [
           { id: "d2a", name: "upstream.openai", service: "openai", duration: 1802, status: "ok", attrs: { "http.status_code": 200 }, kind: "client", color: "#D97706" }
         ] },
         { id: "d3", name: "tool.vector_search", service: "agentgateway", duration: 187, status: "ok", attrs: { "tool.hits": 5, "tool.latency_ms": 187 }, kind: "client", color: "#059669", children: [
@@ -36,9 +36,9 @@ const TRACES: Trace[] = [
       kind: "server", color: "#1A56DB",
       children: [
         { id: "z1", name: "intent.classify", service: "agentgateway", duration: 28, status: "ok", attrs: { "intent.label": "classification", "intent.confidence": 0.98 }, kind: "internal", color: "#059669", children: [
-          { id: "z1a", name: "llm.classify", service: "litellm-proxy", duration: 19, status: "ok", attrs: { "llm.model": "gpt-4o-mini", "llm.prompt_tokens": 18 }, kind: "client", color: "#7C3AED" }
+          { id: "z1a", name: "llm.classify", service: "litellm-proxy", duration: 19, status: "ok", attrs: { "llm.model": "gpt-6-luna", "llm.prompt_tokens": 18 }, kind: "client", color: "#7C3AED" }
         ] },
-        { id: "z2", name: "model.inference", service: "litellm-proxy", duration: 241, status: "ok", attrs: { "llm.model": "gpt-4o-mini", "llm.total_tokens": 32, "llm.cost_usd": 0.000008 }, kind: "client", color: "#7C3AED" }
+        { id: "z2", name: "model.inference", service: "litellm-proxy", duration: 241, status: "ok", attrs: { "llm.model": "gpt-6-luna", "llm.total_tokens": 32, "llm.cost_usd": 0.0000084 }, kind: "client", color: "#7C3AED" }
       ]
     }
   }

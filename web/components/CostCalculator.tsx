@@ -1,14 +1,6 @@
 "use client";
 import { useState } from "react";
-
-interface Model { key: string; label: string; inputPer1M: number; outputPer1M: number; provider: string; color: string; }
-const MODELS: Model[] = [
-  { key: "gpt-4o-mini", label: "GPT-4o Mini", inputPer1M: 0.15, outputPer1M: 0.60, provider: "OpenAI", color: "#1A56DB" },
-  { key: "gpt-4o", label: "GPT-4o", inputPer1M: 2.50, outputPer1M: 10.00, provider: "OpenAI", color: "#1A56DB" },
-  { key: "claude-sonnet-4", label: "Claude Sonnet 4", inputPer1M: 3.00, outputPer1M: 15.00, provider: "Anthropic", color: "#059669" },
-  { key: "gemini-2.0-flash", label: "Gemini 2.0 Flash", inputPer1M: 0, outputPer1M: 0, provider: "Google", color: "#D97706" },
-  { key: "deepseek-v3", label: "DeepSeek V3", inputPer1M: 0.27, outputPer1M: 1.10, provider: "DeepSeek", color: "#7C3AED" },
-];
+import { models as MODELS, type Model } from "@/content/models";
 
 function fmtUsd(n: number): string {
   if (n === 0) return "Free";
@@ -32,7 +24,7 @@ export function CostCalculator() {
   const [inputTokens, setInputTokens] = useState(500);
   const [outputTokens, setOutputTokens] = useState(800);
   const [dailyRequests, setDailyRequests] = useState(1000);
-  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+  const [selectedModel, setSelectedModel] = useState("gpt-6-luna");
   const model = MODELS.find((m) => m.key === selectedModel)!;
   const costPerReq = costFor(model, inputTokens, outputTokens);
   const costPerDay = costPerReq * dailyRequests;
