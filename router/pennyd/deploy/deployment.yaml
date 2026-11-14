@@ -12,6 +12,14 @@ spec:
       labels:
         app: pennyd
     spec:
+      # The image runs as `nobody` (Dockerfile USER nobody, uid/gid 65534); fsGroup keeps the
+      # decision-log PVC writable for that user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: pennyd
           image: ghcr.io/chidionyema/pennyd:v0.2.0
@@ -21,19 +29,24 @@ spec:
           ports: [{containerPort: 4000}]
           envFrom:
             - secretRef: {name: pennyd-keys}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: providers, mountPath: /etc/pennyd/providers, readOnly: true}
             - {name: config, mountPath: /app/config.toml, subPath: config.toml}
             - {name: keys, mountPath: /etc/pennyd/keys.toml, subPath: keys.toml, readOnly: true}
+            # the decision log (F-LOG-3) stays writable on its PVC; /tmp is the only other
+            # writable path, now that the root filesystem is read-only
             - {name: log, mountPath: /var/lib/pennyd}
+            - {name: tmp, mountPath: /tmp}
           readinessProbe:
             httpGet: {path: /health, port: 4000}
             periodSeconds: 10
           resources:
             requests: {cpu: "50m", memory: "64Mi"}
             limits: {cpu: "500m", memory: "256Mi"}
-        - name: keys
-          secret: {secretName: pennyd-edge-keys}
       volumes:
         - name: providers
           configMap: {name: pennyd-providers}
@@ -43,3 +56,5 @@ spec:
           persistentVolumeClaim: {claimName: pennyd-log}
         - name: keys
           secret: {secretName: pennyd-edge-keys}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
