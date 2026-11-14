@@ -54,6 +54,17 @@ const nextConfig = {
           { key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400" },
         ],
       },
+      // Never cache an investor's private room, OAuth handoff or session routes.
+      // This explicit override must follow the site's static-content cache rule.
+      ...["/investors/room", "/investors/access", "/investors/activate", "/investors/leave",
+          "/api/investors/:path*"].map(source => ({
+        source,
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      })),
     ];
   },
 };

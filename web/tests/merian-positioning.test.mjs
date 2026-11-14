@@ -56,3 +56,25 @@ test("The visible Meridian identity is consistent across all customer surfaces",
   }
   assert.ok(read("app/layout.tsx").includes("https://meridian-intelligence-uk.vercel.app"));
 });
+
+test("Meridian preserves research, experimentation and commercialisation while welcoming investors", () => {
+  const home=read("app/page.tsx");
+  const investors=read("app/investors/page.tsx");
+  const chronos=read("app/products/chronos/page.tsx");
+  const products=read("app/products/page.tsx");
+  const nav=read("components/Nav.tsx");
+  for(const term of ["Research","Experiment","Commercialise"]) {
+    assert.ok(investors.includes(term), "Meridian identity missing "+term);
+  }
+  for(const url of ["/investors","/products/chronos"]) assert.ok(nav.includes(url) || home.includes(url));
+  assert.match(products,/Chronos/);
+  assert.match(chronos,/IN DEVELOPMENT/);
+  assert.match(investors,/GENESIS/);
+  assert.match(investors,/OTTO/);
+  assert.match(investors,/read-only/);
+  assert.match(investors,/limited time/);
+  assert.doesNotMatch(investors,/<iframe|https:\/\/genesis-founder-surface\.pages\.dev/i);
+  assert.doesNotMatch(chronos,/already shipped|available to customers|reduced costs by/i);
+  assert.match(read("app/investors/room/page.tsx"),/index: false/);
+  assert.ok(!read("app/sitemap.ts").includes("/investors/room"),"private room must never appear in sitemap");
+});
