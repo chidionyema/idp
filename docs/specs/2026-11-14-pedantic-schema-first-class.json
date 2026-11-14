@@ -1,0 +1,101 @@
+{
+  "schema": "estate.lane.spec.v1",
+  "lane_id": "PEDANTIC-SCHEMA-20261114",
+  "title": "Pedantic Schema: mandatory first-class machine-executable contracts",
+  "owner": "Existing IDP schema-conformance and intent-compile owners; Argon protocol verifier for federated transport",
+  "priority": "P0",
+  "status": "SPECIFIED_RATCHET_FIRST",
+  "terminology": "Pedantic Schema is this estate's proposed stronger doctrine; it is not asserted to be a published industry standard or an existing product.",
+  "existing_authority": [
+    "docs/decisions/0042-one-schema-at-every-boundary.md",
+    "docs/specs/2026-10-25-one-schema-three-boundaries.md",
+    "bin/schema-conformance",
+    "bin/intent-compile",
+    "schema/intent/*.schema.json",
+    "platform/estate/protocolkit/SPEC.md",
+    "chidionyema/argon/policy/turn.rego"
+  ],
+  "principle": "Every consequential boundary uses a named versioned machine-validatable schema; no implicit defaults, loose unknown fields, silent coercion, forgotten migrations or semantic claims disguised as structural validity. Strict for new or migrated interfaces; measured ratchet for legacy interfaces. Schema authority cannot be supplied by the payload under evaluation.",
+  "requirements": [
+    {
+      "id": "PSC-01",
+      "decider": "machine",
+      "rule": "Central schema identity and registry: schema_id, semantic version, canonical digest, owner, producer, consumer, effect class, source policy SHA, expiry/deprecation and migrations. No second schema compiler.",
+      "falsifier": "Missing authority, unversioned payload, schema drift or duplicate schema owner is rejected/flagged"
+    },
+    {
+      "id": "PSC-02",
+      "decider": "machine",
+      "rule": "At DECODE enforce committed schema where supported; constrain model output and revalidate final value against exact digest; no model-only assertion.",
+      "falsifier": "Decoded JSON with unknown/missing fields fails independent validation"
+    },
+    {
+      "id": "PSC-03",
+      "decider": "machine",
+      "rule": "At EXECUTION door validate declared args, required, type, ranges, formats, enum, unknown fields, nested structures; never silently coerce bad input or interpolate absent values.",
+      "falsifier": "Undeclared argument, 'abc' for integer, missing required value or raw shell injection refuses before effect"
+    },
+    {
+      "id": "PSC-04",
+      "decider": "machine",
+      "rule": "At REPAIR boundary expose original-invalid result, failed field, attempt, transformed content and validated final digest; distinguish first-pass success, repaired and failed.",
+      "falsifier": "Repaired output cannot be counted as pristine/first-pass in Optimus"
+    },
+    {
+      "id": "PSC-05",
+      "decider": "machine",
+      "rule": "No silent schema evolution: check consumer compatibility, back/forward contract tests, version pinning and explicit migration/rollback on published protocol boundaries.",
+      "falsifier": "Producer adds field that strict consumer rejects; CI detects before consumer deploy"
+    },
+    {
+      "id": "PSC-06",
+      "decider": "machine",
+      "rule": "Canonical validators execute from trusted base in the authorised effect door; packet cannot modify validator, source schema or error policy used to judge itself.",
+      "falsifier": "Schema swap and validator injection cannot grant permission"
+    },
+    {
+      "id": "PSC-07",
+      "decider": "machine",
+      "rule": "All required execution and evidence envelopes include identity, instruction_id, effect scope, causal parent, source/policy/schema digests, timestamp, tri-state result, proof link and idempotency key. Private payloads remain encrypted/redacted.",
+      "falsifier": "Missing source or provenance never yields VERIFIED_YIELD"
+    },
+    {
+      "id": "PSC-08",
+      "decider": "machine",
+      "rule": "Conformance coverage inventory enumerates four existing payload families (intent call, receipt/envelope, doc/claim, catalog/graph) and producer-consumer cross-repo boundaries; apply one canonical schema per payload type.",
+      "falsifier": "A new producer can neither claim compatible nor pass gate with undocumented schema"
+    },
+    {
+      "id": "PSC-09",
+      "decider": "machine",
+      "rule": "Rollout: publish baseline of old violations; new violations refused now; fix existing by deterministic migration; turn strict only for clean cohorts with positive/negative canary and automated rollback of new scope if false denial.",
+      "falsifier": "Old known violations do not freeze all unrelated legitimate work"
+    },
+    {
+      "id": "PSC-10",
+      "decider": "machine",
+      "rule": "Every schema gate records PASS/FAIL/BLIND including source/version and failing JSON pointer, latency, coverage and mutation test witness; no silent skip.",
+      "falsifier": "Disabled validator or empty fixture cannot produce PASS"
+    },
+    {
+      "id": "PSC-11",
+      "decider": "model",
+      "rule": "For semantic quality (correct business meaning, entailment, safety), supply bounded schema-valid proposals but require independent factual verifier; schema correctness is necessary not sufficient.",
+      "falsifier": "Well-formed fabricated financial/domain evidence never certifies verified truth"
+    }
+  ],
+  "acceptance": [
+    "B1 decoder, B2 door, B3 repair tests anchored to ADR 0042",
+    "Actual baseline comparison, strict clean canary and no false denial spike",
+    "Cross-runtime schema/policy versions tracked and distributed from existing context compiler",
+    "Mutation tests that remove validation or swap schema fail",
+    "Live protocol ingress and effect egress show tri-state receipts"
+  ],
+  "explicit_non_goals": [
+    "No new Pydantic/BAML registry as parallel authority",
+    "No mandatory unproven legacy freeze",
+    "No schema format that includes payments/secrets in logs",
+    "No model treating valid syntax as verified truth"
+  ],
+  "reference_standard": "JSON Schema Draft 2020-12 for JSON payloads; fit to existing protocols and validators; formal syntax does not imply legal or epistemic correctness"
+}
