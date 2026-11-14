@@ -1,0 +1,580 @@
+{
+  "schema": "estate.engineering.delivery-packets.v1",
+  "generated_at": "2026-11-14",
+  "status": "SPECIFIED_UNASSIGNED_NOT_DISPATCHED",
+  "authority": "Existing repo issues and their founder directives prevail. No schema research may silently override #8111 or admission spec #7794.",
+  "source_head_at_authoring": "99e226e8a82fca7b0e90308453046e084003dab3",
+  "founder_goal": "Maximise deterministic execution; preserve Meridian Intelligence identity; procure a short brand-safe domain through live Concierge; enforce first-class cross-language schemas; release the existing fleet admission fix without false claims.",
+  "canonical_evidence": [
+    "docs/specs/2026-11-14-machine-first-execution-requirements.json",
+    "docs/specs/2026-11-14-pedantic-schema-first-class.json",
+    "docs/specs/2026-11-14-meridian-short-domain-acquisition.json",
+    "docs/specs/2026-11-14-concierge-domain-procurement.json",
+    "docs/research/2026-11-14-pedantic-schema-cross-language-deep-research.md"
+  ],
+  "assignment_contract": {
+    "ownership": "GitHub issue number is sole canonical accountable work item; one active executor lease/claim per disjoint changed-path scope, even under parallel assignment. Do not treat named team or source comment as assigned engineer.",
+    "admission": "Authenticated Instruction Gateway issues validated AdmissionRequest; existing Temporal SessionWorkflow when independently deployed; otherwise use currently proven trusted delivery route, with authority/claim/capacity/plan preflight. No extending legacy shell-template intent catalog, per #7794.",
+    "role_selection": "Deterministic match task.required_capabilities, allowed_tools, proven runtime, current model/provider capacity, trust/effect level, verified engineer identity and non-overlapping path lease. Optimise available budget and latency only after all gates pass. Prefer machine code for lookups, state transitions, checks, retries, scheduling, generation and telemetry.",
+    "work_claim_format": {
+      "issue": "owner/repo#N",
+      "actor": "authenticated principal",
+      "scope": "exact file-glob/path set",
+      "base_sha": "40-character verified current SHA",
+      "plan_digest": "sha256",
+      "lease_id": "authoritative active lease",
+      "lease_expiry": "server timestamp",
+      "required_proof_ids": [
+        "positive",
+        "negative",
+        "live"
+      ]
+    },
+    "states": [
+      "SPECIFIED",
+      "ADMISSION_PENDING",
+      "CLAIMED",
+      "BUILDING",
+      "FALSIFYING",
+      "CANDIDATE_READY",
+      "TRUSTED_SUBMISSION",
+      "PROMOTED",
+      "LIVE_VERIFY",
+      "VERIFIED_YIELD",
+      "BLOCKED_EVIDENCED"
+    ],
+    "blocked_state": {
+      "mandatory": [
+        "failed_action",
+        "exit_status",
+        "actual_diagnostic",
+        "owner",
+        "exact_sha",
+        "policy_or_auth_epoch",
+        "recoverable_candidate",
+        "next_authorised_action",
+        "retry_when_evidence_changes"
+      ],
+      "prohibited": [
+        "new duplicate ticket",
+        "unbounded retries",
+        "fake founder signature",
+        "forge GitHub author",
+        "write to protected main",
+        "scope bypass",
+        "send founder a terminal chore"
+      ]
+    },
+    "handoff_receipt": "exact issue, source and target SHAs, modified paths, authoritative claim, tests executed with exit status, current lifecycle state, real runtime proof, next owner and replay-safe checkpoint; no comments as a substitute for issue lease.",
+    "notification_policy": "One canonical existing issue and owner; changes in material operational state only, suppress unchanged repeated evidence; security-critical new cause remains unsuppressed.",
+    "promotion": "Existing trusted origin and founder-passkey proof for protected workflow/policy changes; independent required checks on exact SHA; Greenlane only, then post-release live readback and telemetry.",
+    "assignee_selection": "Do not assign by role-label alone. Query actual GitHub collaborators/verified roster and currently active leases; use GitHub assignee only where login identity and availability are independently verified. If unavailable record UNASSIGNED and machine-enqueue with required capability, not a fake human owner."
+  },
+  "packets": [
+    {
+      "packet": "ENG-01",
+      "title": "Deterministic estate admission / zero-red submission",
+      "priority": "P0",
+      "issue": "chidionyema/idp#7940",
+      "co_owners": [
+        "chidionyema/idp#7794",
+        "chidionyema/idp#7771"
+      ],
+      "leader_capability": "trusted IDP submission, Greenlane, CI/DoF/claims, GitHub ruleset, security",
+      "required_skills": [
+        "Python",
+        "GitHub Actions",
+        "test harness",
+        "trust boundary"
+      ],
+      "depends_on": [
+        "current incident/DoF visibility",
+        "fresh main and source SHA",
+        "authenticated protected-workflow maintenance route"
+      ],
+      "classification": "SOURCE_CANDIDATE_NOT_RELEASED",
+      "input_branch": "work/agent-admission-shift-left-20261114",
+      "current_candidate_files": [
+        "bin/idp-agent-admission",
+        ".github/workflows/agent-sandbox.yml",
+        "tests/test_agent_admission.py"
+      ],
+      "required_ids": [
+        "DET-001",
+        "DET-003",
+        "DET-004",
+        "DET-005",
+        "DET-010",
+        "DET-011",
+        "DET-012",
+        "DET-013",
+        "DET-016",
+        "DET-023",
+        "DET-025"
+      ],
+      "engineering_steps": [
+        "Reproduce exact known #8105 red candidate and run #43629366222; derive current denial reasons without inventing a new policy.",
+        "Audit all effect doors, including direct API/GitHub Actions/bot-commit, agent-sandbox, Greenlane, repo crosspaths, and protected founder-passkey maintenance.",
+        "Rebase and correct work branch from latest main. Candidate requires planned_paths and may break old founder issue missions; preserve backwards compatibility via authenticated plan compilation, not anonymous default ALLOW.",
+        "Use #7794 normative Instruction Gateway/Temporal admission (not deprecated legacy intent YAML) for new universal execution. Validate exact source/effect scope, live claim, trusted signing ability, current incident epoch and budget before allocating expensive providers.",
+        "Run validators from clean trusted base; untrusted model patch must not edit the gate/allowed schema/hook that adjudicates it.",
+        "Prepare BDD proof before source SHA exists, bind final attestation to the exact commit SHA after trusted signing, before PR; avoid circular proof requirement.",
+        "Ensure no direct PR is created on denial; submit only permitted lanes through existing Greenlane while obeying protected workflow founder approval.",
+        "Compare before/after failed PR counts, CI minutes, repeated attempts, founder notifications and valid-lane throughput."
+      ],
+      "paths_read": [
+        "AGENTS.md",
+        "bin/dof-gate",
+        "bin/claim-gate",
+        "bin/idp-ci",
+        "bin/idp-ci-guarded-paths",
+        "greenlane/engine.py",
+        "greenlane/github.py",
+        ".github/workflows/agent-sandbox.yml",
+        "catalog/dof-registry.json"
+      ],
+      "paths_own": [
+        "bin/idp-agent-admission",
+        ".github/workflows/agent-sandbox.yml",
+        "tests/test_agent_admission.py"
+      ],
+      "positive": "Authorised ordinary tests/** worker with genuine claim and allowed source proceeds through Greenlane; candidate passes independent exact SHA checks and actual runtime readback.",
+      "negative": "Replay PR #8105 denied before spending; forged signature; outside-claim file; stale incident; 20 simultaneous same failed source; missing BDD; untrusted policy change; source/main TOCTOU all fail or defer with one owner.",
+      "release_receipts": [
+        "signed/protected path proof",
+        "required check run urls",
+        "main SHA and live workflow file",
+        "real admission PASS+REFUSE traces",
+        "baseline and post-change CI and notification counts"
+      ],
+      "warnings": [
+        "Current work branch commits are via GitHub connector, not proven hook-signed.",
+        "Do not promote candidate workflow unchanged.",
+        "#8042 closed at last check but must be re-read at execution.",
+        "No GitHub tool workflow dispatch available in this chat; dispatch only from an authenticated executor."
+      ]
+    },
+    {
+      "packet": "ENG-02",
+      "title": "Capacity-aware routing, crash-safe custody and low-noise recovery",
+      "priority": "P0",
+      "issue": "chidionyema/idp#7771",
+      "co_owners": [
+        "chidionyema/idp#7794",
+        "chidionyema/idp#7940",
+        "chidionyema/idp#7222"
+      ],
+      "leader_capability": "provider and agent execution routing + durability",
+      "required_skills": [
+        "Rust/Python runtime",
+        "LiteLLM",
+        "Temporal",
+        "concurrency and telemetry"
+      ],
+      "depends_on": [
+        "ENG-01 trusted admission/lease contract (can develop in parallel)",
+        "provider health and quota API proof",
+        "verified session/agent identity"
+      ],
+      "required_ids": [
+        "DET-006",
+        "DET-007",
+        "DET-008",
+        "DET-009",
+        "DET-014",
+        "DET-015",
+        "DET-017",
+        "DET-019",
+        "DET-020",
+        "DET-021",
+        "DET-022",
+        "DET-024"
+      ],
+      "engineering_steps": [
+        "Read existing platform/llm/lane_registry.py provider states and bind capacity lease across all admitted models; classify 401/402/403/429/timeouts and genuine reset evidence.",
+        "Inventory exception routes: Argon-sync Otto direct providers explicitly bypass IDP LiteLLM, so build one federated capacity/receipt schema while preserving intentional routing authority.",
+        "Replace agent-sandbox hardcoded Gemini -> MiniMax blind fallback with a verified eligible route, or a durable DEFERRED decision when no eligible provider is available.",
+        "Use existing Temporal workflow where proven and existing durable instruction ownership; restore from last verified checkpoint with fencing epoch; never requeue same work simultaneously.",
+        "Use Greenlane learned failure fingerprint and critical-watch incident dedup/alert backoff; suppress identical evidence, never a fresh security fault.",
+        "Emit optimus.metric.v1 or already approved existing metric interface: provider attempt, cost/CI minutes, acknowledged owner, receipt and genuine verified yield, tagged unknown when unavailable."
+      ],
+      "paths_read": [
+        "platform/llm/lane_registry.py",
+        "platform/queue/dispatcher.py",
+        "platform/estate/libexec/critical-watch.py",
+        "greenlane/learning.py",
+        "greenlane/engine.py",
+        "docs/training/2026-11-12-karma-operating-doctrine.md"
+      ],
+      "paths_own": [
+        "platform/llm/**",
+        "platform/estate/** (nonoverlapping approved scope)",
+        "tests/test_queue_dispatcher.py",
+        "tests/test_greenlane_spends_no_cycle_twice.py"
+      ],
+      "positive": "20 distinct legitimate workers admitted under capacity; provider rate reset permits automatic readmission; killed worker yields once from verified checkpoint.",
+      "negative": "Gemini+MiniMax 429 results in no storm and one durable deferred task; two workers racing same claim cannot both effect; no metrics fabricate zero cost.",
+      "release_receipts": [
+        "20-worker logs",
+        "provider 429/reset evidence",
+        "stable obligation and fencing proof",
+        "before/after useful throughput+cost+alert counts"
+      ],
+      "warnings": [
+        "No extra router, queue, scheduler, memory store or incident ledger.",
+        "Treat actual cross-host topology and provider quota as UNKNOWN until probed."
+      ]
+    },
+    {
+      "packet": "ENG-03",
+      "title": "Pedantic Schema constitutional conformance and Pydantic/Rust/TypeScript parity",
+      "priority": "P0",
+      "issue": "chidionyema/idp#8111",
+      "co_owners": [
+        "chidionyema/idp#7089",
+        "chidionyema/idp#7794"
+      ],
+      "leader_capability": "Pydantic v2, JSON Schema, Rust Serde and TypeScript, contract testing",
+      "required_skills": [
+        "Pydantic v2",
+        "Serde/Schemars/jsonschema",
+        "JSON Schema 2020-12",
+        "Rego/OpenAPI",
+        "cross-language test harness"
+      ],
+      "depends_on": [
+        "Explicit confirmation of #8111 founder decree scope for Python source versus cross-language schema owner",
+        "intact existing ADR 0042 ratchet",
+        "live inspection of estate_contract source when actually landed"
+      ],
+      "required_ids": [
+        "PSC-01..PSC-17",
+        "DET-026",
+        "DET-029",
+        "DET-030"
+      ],
+      "engineering_steps": [
+        "Implement or reconcile #8111 source: strict Pydantic v2 models for AgentTurn, FounderAsk, ClaimComment, CommitTrailers, ProofBlock, DefectControl, ModelLane; source location estate_contract/, CLI bin/estate-contract and exported schema/estate-contract/. Keep explicit fidelity to founder directive.",
+        "Use #7089 ADR 0042 as established B1 decode/B2 validate/B3 repair lifecycle; do not duplicate schema-conformance/intent-compile or invent a new policy database.",
+        "Classify canonical schema authority per interface. Python-owned AgentRecord source is Pydantic under #8111; generated pinned JSON Schema is portable wire artifact, consumed by Rust/TypeScript. Other non-Python-native owners may retain their native authority, with explicit compatibility matrix.",
+        "Generate versioned portable schema, stable digest and semver metadata; validate producer output and consumer input at effect door; reject unknown fields/implicit coercion for clean new commands.",
+        "Build same valid/invalid fixture corpus across Python Pydantic, Rust Serde+jsonschema and TypeScript runtime validation; test null vs missing, money decimal, large int, datetime, Unicode/IDNA, discriminatory union, format assertion and policy digests.",
+        "Pin verifier and schema from trusted base, guard against model-owned rewrite; test cross-version compatibility and explicit migration/repair receipt.",
+        "Measure current baseline for legacy intents from today's actual corpus; maintain ratchet for old violations. Turn strict only on clean cohorts after legitimate-path canary; build negative mutation that removes validator.",
+        "Add Argon policy/turn.rego compatibility matrix; a model self-asserted verified rung is never evidence."
+      ],
+      "paths_read": [
+        "docs/decisions/0042-one-schema-at-every-boundary.md",
+        "bin/schema-conformance",
+        "bin/intent-compile",
+        "schema/intent/**",
+        "chidionyema/argon/policy/turn.rego"
+      ],
+      "paths_own": [
+        "estate_contract/**",
+        "schema/estate-contract/**",
+        "bin/estate-contract",
+        "tests/test_estate_contract*.py",
+        "tests/test_schema_conformance.py"
+      ],
+      "positive": "Each of 7 agent record classes validates strict Pydantic and exported schema; independently consistent same acceptance decisions Rust/TS for shared wire; real agent ingress and trusted claim gate read schema digest.",
+      "negative": "Unknown key, implicit type coercion, missing envelope field, secret in public proof, custom-validator disparity and swapped schema do not pass; old clean production operation remains allowed.",
+      "release_receipts": [
+        "reproducible generated schemas",
+        "cross-runtime differential test logs",
+        "runtime gate canary PASS and FAIL",
+        "policy digest on effect receipt",
+        "baseline violations and shrinking count"
+      ],
+      "warnings": [
+        "#8111 Pydantic mandate supersedes assistant's tentative recommendation to forbid Python source authority.",
+        "Prior schema spec had duplicate PSC-12/PSC-13 IDs; corrected before this packet.",
+        "No blanket strict enforcement on legacy corpus that breaks operations.",
+        "This is a specification, not production endorsement of a single universal library."
+      ]
+    },
+    {
+      "packet": "ENG-04",
+      "title": "Meridian short-domain research and corporate clearance",
+      "priority": "P1",
+      "issue": "chidionyema/idp#7838",
+      "co_owners": [
+        "chidionyema/idp#7035"
+      ],
+      "leader_capability": "corporate web operations, domain/DNS, trademark research and cost analysis",
+      "required_skills": [
+        "RDAP/DNS",
+        "registrar price audit",
+        "UK IPO/Companies House verification",
+        "commercial brand risk"
+      ],
+      "depends_on": [
+        "Founder preference Meridian Intelligence retained",
+        "ENG-05 to automate procurement evidence and checkout hold"
+      ],
+      "required_ids": [
+        "DOM-01",
+        "DOM-02",
+        "DOM-03",
+        "DOM-04",
+        "DOM-05"
+      ],
+      "engineering_steps": [
+        "Research meridianhq.ai, meridianintel.com, meridianintel.ai, meridianint.ai and mrdn.ai; accept new suggestions only with explicit source/candidate ID.",
+        "Get authoritative RDAP data with TLD bootstrap, UTC timestamp and exact registry outcome; distinguish registered, unregistered, reserved, premium and lookup-blind.",
+        "Get actual vendor-specific quote, year-one + renewal + premium and transfer fee, VAT/tax where applicable, registrar restrictions and supported security controls.",
+        "Check UK company/trademark and materially relevant international marks with authoritative links; never claim legal clearance from a domain lookup alone.",
+        "Score naming friction against brand Meridan Intelligence, confusion risk, spelling, TLD, privacy, DNSSEC, portability and total cost; return one informed recommendation and alternate.",
+        "Stop before purchase/bid/offer/vendor message; prepare bounded founder approval record for exact domain, registrar and spend."
+      ],
+      "paths_read": [
+        "docs/specs/2026-11-14-meridian-short-domain-acquisition.json",
+        "web/**",
+        "docs/standards/commercial-public-ui-quality.md"
+      ],
+      "paths_own": [
+        "docs/specs/2026-11-14-meridian-short-domain-acquisition.json",
+        "tests/** (scoped domain quote tests)"
+      ],
+      "positive": "One date-stamped authoritative availability or explicit BLIND, quote and brand-risk ledger per shortlisted name.",
+      "negative": "A generic $11.17 .com list price does not become meridianlabs.com ownership quote; unavailable RDAP or unverified brand conflict cannot return CLEAR.",
+      "release_receipts": [
+        "live RDAP and registrar quote URLs/time",
+        "shortlist and signed founder selection decision",
+        "optional post-approval actual order receipt"
+      ],
+      "warnings": [
+        "No buy/offer/branding production mutations until specific founder approval.",
+        "Do not register a similar name with material legal conflict unresolved."
+      ]
+    },
+    {
+      "packet": "ENG-05",
+      "title": "Concierge real domain procurement canary; enforce spending hold",
+      "priority": "P1",
+      "issue": "chidionyema/idp#7771",
+      "co_owners": [
+        "chidionyema/idp#7838",
+        "chidionyema/idp#6131"
+      ],
+      "leader_capability": "Concierge browser automation and secure commercial workflow",
+      "required_skills": [
+        "browser automation",
+        "payment security",
+        "API integration",
+        "observer events",
+        "Fleet UI"
+      ],
+      "depends_on": [
+        "ENG-04 shortlist input",
+        "verified Concierge execution host/browser/authorisation",
+        "existing concierge self-check #6131 health restored if required"
+      ],
+      "required_ids": [
+        "CON-01",
+        "CON-02",
+        "CON-03",
+        "CON-04",
+        "CON-05",
+        "CON-06",
+        "CON-07",
+        "CON-08"
+      ],
+      "engineering_steps": [
+        "Review existing source: backstage/plugins/fleetview-backend/src/fleetview_backend/concierge_tasks.py, platform/estate/intents/concierge-task.yaml, mums-concierge and production deployment; test current start and events state, do not assume available.",
+        "Implement only missing typed task payload and evidence capture through actual authenticated modern Instruction Gateway; maintain compatibility read-only with existing Concierge intent while #7794 legacy freeze is honoured. No new universal admission runner.",
+        "Read-only browser performs RDAP and price comparison with trustworthy timestamps, stable task_id, duplicate suppression, bounded provider/browser retry and one Fleet event stream.",
+        "Checkout stops at existing --never-pay, with exact payee/domain/fee/renewal/currency + expiration receipt; no PAN/CVV or secret ever enters model transcript.",
+        "Payment/bid, external contact, DNS update and registration require founder JIT approval tied to exact amount/item and time; cancellation and changed quote void approval.",
+        "After approval, independently verify actual registrar control, domain security and DNS state; distinguish PURCHASED from OPERATING, no invented receipt.",
+        "Live end-to-end canary and denial demonstrations visible on founder surface; classification of 503/BLIND if host not available."
+      ],
+      "paths_read": [
+        "backstage/plugins/fleetview-backend/src/fleetview_backend/concierge_tasks.py",
+        "platform/estate/intents/concierge-task.yaml",
+        ".github/workflows/concierge-deploy.yml",
+        "tests/test_fleet_concierge_tasks.py"
+      ],
+      "paths_own": [
+        "backstage/plugins/fleetview-backend/src/fleetview_backend/concierge_tasks.py",
+        "tests/test_fleet_concierge_tasks.py",
+        "mums-concierge procurement adapter only by its authenticated owner"
+      ],
+      "positive": "Real read-only search appears with task receipt in Fleet and ends at purchase hold without founder intervention.",
+      "negative": "Missing laptop runtime 503, browser failure BLIND, duplicate event, stale quote, approval replay or changed amount never triggers payment or claim of done.",
+      "release_receipts": [
+        "live Concierge task ID and event log digest",
+        "RDAP/quote evidence",
+        "payment hold screenshot/receipt",
+        "postapproved registrar/DNS proof where applicable"
+      ],
+      "warnings": [
+        "#6131 already documents Concierge model lane intent failures; do not blindly rerun until verified healthy.",
+        "#7771 is broad zero-touch contract; claim disjoint paths and keep procurement scoped.",
+        "No purchase requested or authorised by the founder in this conversation."
+      ]
+    },
+    {
+      "packet": "ENG-06",
+      "title": "Federated coverage, measurable automation and release ownership",
+      "priority": "P1",
+      "issue": "chidionyema/idp#7222",
+      "co_owners": [
+        "chidionyema/idp#7771",
+        "chidionyema/idp#7794",
+        "chidionyema/idp#7940"
+      ],
+      "leader_capability": "cross-repo source/telemetry architecture; independent QA",
+      "required_skills": [
+        "GitHub API",
+        "OpenTelemetry/Optimus",
+        "CI",
+        "schema conformance",
+        "release audit"
+      ],
+      "depends_on": [
+        "ENG-01..ENG-05 sources available",
+        "cross-repo ingress and effect doors inventoried"
+      ],
+      "required_ids": [
+        "DET-002",
+        "DET-017",
+        "DET-018",
+        "DET-021",
+        "DET-022",
+        "DET-026",
+        "DET-027",
+        "DET-028",
+        "DET-029",
+        "DET-030"
+      ],
+      "engineering_steps": [
+        "Generate current inventory of verified active capabilities, effects, claims, leases and schema versions in IDP, Argon, Argon-sync, Hermes, estate-core and estate-guards; classify source-only vs active runtime.",
+        "Check every agent startup context; dynamic AGENTS snapshots with old host paths are untrusted stale data, move them to ephemeral versioned observations rather than static policy.",
+        "Extend existing policy/agent-decisions decision register to track machine/model/human with irreducibility reasons, build actual call instrumentation instead of estimating percentages from prose.",
+        "Reconcile existing issue owners, source branches/PRs and exact historical SHAs; no duplicate tickets or unsupported manual owner assignment.",
+        "Design canary and truth-gate for 20 workers with measured provider 429, source/claim collision, protected approval, independent verification and rollback; ensure separate security fault can still page.",
+        "Publish metrics to existing Optimus/Genesis/Fleet: machine decision rate, agent cost per real yield, quote/checkout conversion, CI churn, deduped incidents, stale data and founder interruptions."
+      ],
+      "paths_read": [
+        "bin/capability-index",
+        "policy/agent-decisions.json",
+        "bin/estate-brief",
+        "docs/epics/2026-10-25-estate-master-epic.md",
+        "chidionyema/argon/policy/turn.rego"
+      ],
+      "paths_own": [
+        "tests/test_machine_first_requirements.py",
+        "docs/specs/2026-11-14-machine-first-execution-requirements.json",
+        "contract tests in existing telemetry owner paths"
+      ],
+      "positive": "Fresh real live event and policy readback from all applicable deployed runtimes; one verifiable per-mission causal chain and neutral after-state.",
+      "negative": "Stale AGENTS blocks, missing credentials or absent event producer cannot be treated as healthy/automated.",
+      "release_receipts": [
+        "source coverage register with owner",
+        "20 worker live/canary measured packet",
+        "three-source effect attestation where policy requires",
+        "before/after cost per verified yield"
+      ]
+    }
+  ],
+  "dependency_graph": [
+    {
+      "before": "ENG-06: inventory",
+      "after": "ENG-01: universal effect-door admission",
+      "type": "required discovery, can run independently first"
+    },
+    {
+      "before": "ENG-03: shared schemas",
+      "after": "ENG-01: strict admission envelope",
+      "type": "interface contract; implementation can progress with pinned v1 existing shape"
+    },
+    {
+      "before": "ENG-01: trusted admission",
+      "after": "ENG-02: provider/custody enforcement",
+      "type": "integration; provider state modelling can proceed in isolation"
+    },
+    {
+      "before": "ENG-04: researched shortlist",
+      "after": "ENG-05: procurement candidate research",
+      "type": "input data; can run in parallel with browser health check"
+    },
+    {
+      "before": "ENG-03: strict approval/receipt schema",
+      "after": "ENG-05: irreversible effect authority",
+      "type": "security gating; no payment in initial canary"
+    },
+    {
+      "before": "ENG-01..ENG-05 candidate and canaries",
+      "after": "ENG-06: independent release audit",
+      "type": "final readback, not a self-certification"
+    }
+  ],
+  "capacity_plan": {
+    "independent_first_wave": [
+      "ENG-03 strict Pydantic/schema exploration on clean isolated cohort",
+      "ENG-04 RDAP+trademark evidence research (read-only)",
+      "ENG-06 source/door inventory and baseline",
+      "ENG-02 provider capacity model read-only shadow mode"
+    ],
+    "second_wave": [
+      "ENG-01 authenticated admission correction and patch screening",
+      "ENG-05 Concierge real read-only browser canary"
+    ],
+    "final_wave": [
+      "Integrate #7794 instruction gateway and native cross-language schema validation",
+      "Trusted protected-release promotion and exact SHA live verification",
+      "20-way adversarial replay and optimiser baseline/after receipts"
+    ],
+    "max_parallelism_rule": "Concurrency limited by disjoint scoped claims, current provider capacity, trusted CI runner availability and actual release serialisation, not a guessed arbitrary number.",
+    "routing_fallback": "If no verified eligible executor or authority, persist as ADMISSION_PENDING with owner and wake conditions; do not auto-spawn blind LLM attempts or invent an assignee."
+  },
+  "single_source_owner_index": [
+    {
+      "issue": "#7940",
+      "work": "trusted admission/Greenlane + red PR churn",
+      "packet": "ENG-01"
+    },
+    {
+      "issue": "#7794",
+      "work": "normative universal Instruction Gateway and Temporal onboarding; supersedes legacy intent",
+      "packet": "ENG-01/02/03 integration"
+    },
+    {
+      "issue": "#7771",
+      "work": "zero-touch handback and Concierge domain proof integration",
+      "packet": "ENG-02/05"
+    },
+    {
+      "issue": "#8111",
+      "work": "founder Pydantic strict agent-record directive",
+      "packet": "ENG-03"
+    },
+    {
+      "issue": "#7089",
+      "work": "existing three-boundary schema conformance",
+      "packet": "ENG-03"
+    },
+    {
+      "issue": "#7838",
+      "work": "Meridian corporate website brand/domain launch",
+      "packet": "ENG-04"
+    },
+    {
+      "issue": "#7035",
+      "work": "Meridian storefront brand UI",
+      "packet": "ENG-04 sibling"
+    },
+    {
+      "issue": "#6131",
+      "work": "existing Concierge vendor intent failure",
+      "packet": "ENG-05 prerequisite"
+    },
+    {
+      "issue": "#7222",
+      "work": "machine-first decision policy",
+      "packet": "ENG-06"
+    }
+  ],
+  "acceptance": "All packets have authenticated current assignee claim and zero overlapping scope; no PR or source-only work marked operating; exact protected approval and live evidence for each final closure."
+}
