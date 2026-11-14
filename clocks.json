@@ -1,0 +1,110 @@
+{
+  "board": {
+    "legion": "estate-clocks",
+    "obligations": [
+      {
+        "age_minutes": null,
+        "declares": "*/15 * * * *",
+        "declares_human": "every 15 minutes",
+        "evidence": "THE FOUNDER'S DELIVERY PATH. This is the one workflow that moves main. Measured 2026-11-08 over its last 100 runs: 1 schedule, 56 workflow_run, 43 workflow_dispatch. The single scheduled run was 2026-11-08T07:20:45Z. So the cron is not carrying the lane -- the event path is. That is worth knowing rather than assuming: if the event path ever stops, the */15 was never the net everyone believes it is.",
+        "id": "greenlane",
+        "max_age_minutes": 240,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/greenlane.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "greenlane.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "*/5 * * * *",
+        "declares_human": "every 5 minutes",
+        "evidence": "The dead-man's switch that tells the founder the estate is dark. If it cannot fire, no other silence in the estate can be trusted -- which is exactly why its own delivery has to be measured. Observed gaps 2026-11-08: 190-400 min against a declared 5.",
+        "id": "ping",
+        "max_age_minutes": 720,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/ping.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "ping.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "17,47 * * * *",
+        "declares_human": "twice hourly",
+        "evidence": "Grades every critical lane against platform/ladder/critical-lanes.json from off the laptop. Observed gaps 2026-11-08: 172-427 min against a declared 30.",
+        "id": "estate-homes-drill",
+        "max_age_minutes": 720,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/estate-homes-drill.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "estate-homes-drill.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "*/15 * * * *",
+        "declares_human": "every 15 minutes",
+        "evidence": "Publishes the estate's own state page. Observed gaps 2026-11-08: 192-499 min against a declared 15.",
+        "id": "estate-state",
+        "max_age_minutes": 720,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/estate-state.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "estate-state.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "weekly",
+        "declares_human": "weekly (Mondays)",
+        "evidence": "Weekly, and measured to deliver weekly: scheduled runs 2026-09-14, 09-21, 09-28, 10-05, 10-12, 10-19, 10-26, 11-02 -- eight consecutive Mondays. This is the control case: a clock whose declared cadence and delivered cadence agree, so the detector is proved not to cry wolf.",
+        "id": "branch-archive",
+        "max_age_minutes": 11520,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/branch-archive.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "branch-archive.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "17 3 * * 2",
+        "declares_human": "weekly (Tuesdays)",
+        "evidence": "Measured 2026-11-08 over its last 100 runs: 99 push, 1 schedule (2026-11-03T10:50:30Z). A weekly clock with one scheduled fire visible. Graded rather than asserted -- if the run ages past tolerance the board says so.",
+        "id": "scorecard",
+        "max_age_minutes": 11520,
+        "note": "gh api repos/chidionyema/idp/actions/workflows/scorecard.yml/runs?per_page=100&event=schedule --jq [.workflow_runs[] | {event: .event, created: .created_at, conclusion: .conclusion, url: .html_url, status: .status}]: gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\n  env:\n    GH_TOKEN: ${{ github.token }}",
+        "owner": "estate",
+        "state": "active",
+        "verdict": "UNKNOWN",
+        "workflow": "scorecard.yml"
+      },
+      {
+        "age_minutes": null,
+        "declares": "23 * * * *",
+        "declares_human": "hourly (formerly)",
+        "evidence": "RETIRED, and recorded as retired rather than as a ghost. GitHub reports this workflow state=deleted; it ran hourly and its last scheduled run was 2026-09-23T00:46:25Z. Retiring a clock is a decision, so it is baselined here on purpose instead of being allowlisted into silence. Set state back to active to revive it.",
+        "id": "conscience",
+        "max_age_minutes": 180,
+        "note": "retired: silent on purpose, not graded",
+        "owner": "estate",
+        "state": "retired",
+        "verdict": "MEASURED_OK",
+        "workflow": "conscience.yml"
+      }
+    ],
+    "observed_at": "2026-11-14T14:57:44.012561Z",
+    "repo": "chidionyema/idp",
+    "summary": {
+      "graded": 7,
+      "missed": 0,
+      "not_here": 0,
+      "ok": 1,
+      "unknown": 6
+    }
+  },
+  "publishedAt": "2026-11-14T14:57:44Z",
+  "schema": "chronos/1",
+  "tickAt": 1794668264
+}
