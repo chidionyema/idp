@@ -81,12 +81,21 @@ SECRETS = [
     ("LIFEBOAT_KEY", [("otto-lifeboat", "LIFEBOAT_KEY")]),
     ("TELEGRAM_BOT_TOKEN", [("otto-staging-telegram", "token")]),
     ("TELEGRAM_WEBHOOK_SECRET", [("otto-staging-telegram", "webhook_secret")]),
-    ("GROQ_API_KEY", [("human-groq", "GROQ_API_KEY"),
-                      ("litellm-upstream", "GROQ_API_KEY")]),
-    ("GEMINI_API_KEY", [("human-gemini", "GEMINI_API_KEY"),
-                        ("litellm-upstream", "GEMINI_API_KEY")]),
-    ("OPENROUTER_API_KEY", [("human-openrouter", "OPENROUTER_API_KEY"),
-                            ("litellm-upstream", "OPENROUTER_API_KEY")]),
+    (
+        "GROQ_API_KEY",
+        [("human-groq", "GROQ_API_KEY"), ("litellm-upstream", "GROQ_API_KEY")],
+    ),
+    (
+        "GEMINI_API_KEY",
+        [("human-gemini", "GEMINI_API_KEY"), ("litellm-upstream", "GEMINI_API_KEY")],
+    ),
+    (
+        "OPENROUTER_API_KEY",
+        [
+            ("human-openrouter", "OPENROUTER_API_KEY"),
+            ("litellm-upstream", "OPENROUTER_API_KEY"),
+        ],
+    ),
 ]
 
 
@@ -103,8 +112,13 @@ def zone() -> str:
     sys.exit(f"no zone in {CFG}")
 
 
-def probe(home: str, what: str, url: str, expect: str = "",
-          headers: dict[str, str] | None = None) -> bool:
+def probe(
+    home: str,
+    what: str,
+    url: str,
+    expect: str = "",
+    headers: dict[str, str] | None = None,
+) -> bool:
     """One probe, one verdict. The body is captured before it is graded, never piped into a
     test -- a failing left-hand stage inverts the answer silently (LAW 55, bin/idp-pipeverdict).
 
@@ -118,8 +132,9 @@ def probe(home: str, what: str, url: str, expect: str = "",
     # estate looking for a Groq outage that was never there.
     head = {"user-agent": "idp-otto-homes/1 (+bin/idp-otto-homes)", **(headers or {})}
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=head),
-                                    timeout=10) as resp:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers=head), timeout=10
+        ) as resp:
             body = resp.read(65536).decode("utf-8", "replace")
             code = resp.status
     except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -127,7 +142,9 @@ def probe(home: str, what: str, url: str, expect: str = "",
         print(f"  {home:<16} {what:<26} {FAIL}  no answer from {url} ({why})")
         return False
     if expect and expect not in body:
-        print(f"  {home:<16} {what:<26} {FAIL}  HTTP {code}, no {expect!r} in the answer")
+        print(
+            f"  {home:<16} {what:<26} {FAIL}  HTTP {code}, no {expect!r} in the answer"
+        )
         return False
     print(f"  {home:<16} {what:<26} {OK}    HTTP {code}")
     return True
@@ -146,7 +163,12 @@ def status() -> int:
     # Home 2 is asked the one question that touches no vendor and reads no key, so no spent
     # free tier can take it red. Whether a lane can think is a different question, asked at
     # /v1/chat/completions.
-    green += probe("2 cloudflare", f"lifeboat-llm.{z}", f"https://lifeboat-llm.{z}/health", "afloat")
+    green += probe(
+        "2 cloudflare",
+        f"lifeboat-llm.{z}",
+        f"https://lifeboat-llm.{z}/health",
+        "afloat",
+    )
 
     # A model list, not a completion: it proves the account can reach the vendor and that the
     # free tier has not been shut off, without spending a token of it. The key comes out of the
@@ -155,17 +177,25 @@ def status() -> int:
     # neither a failure nor a pass: it means the question could not be asked from here.
     groq = os.environ.get("GROQ_API_KEY") or vault_first(dict(SECRETS)["GROQ_API_KEY"])
     if groq:
-        green += probe("3 groq", "api.groq.com (free tier)",
-                       "https://api.groq.com/openai/v1/models", "id",
-                       {"authorization": f"Bearer {groq}"})
+        green += probe(
+            "3 groq",
+            "api.groq.com (free tier)",
+            "https://api.groq.com/openai/v1/models",
+            "id",
+            {"authorization": f"Bearer {groq}"},
+        )
     else:
-        print(f"  {'3 groq':<16} {'-':<26} {UNKNOWN}        no GROQ_API_KEY reachable from here to ask with")
+        print(
+            f"  {'3 groq':<16} {'-':<26} {UNKNOWN}        no GROQ_API_KEY reachable from here to ask with"
+        )
 
     print()
     if green == 3:
         print("All three homes could take a turn.")
     else:
-        print(f"{green} of 3 homes could. Otto answers while any one of the three is green.")
+        print(
+            f"{green} of 3 homes could. Otto answers while any one of the three is green."
+        )
     return 0  # a red home is a report, not a failed command: this is a status board
 
 
@@ -176,8 +206,12 @@ def vault_get(entry: str, field: str = "") -> str:
     JSON object; a field name picks a key out of the second shape and is ignored for the first.
     """
     try:
-        out = subprocess.run([str(IDP / "bin/idp-cloud"), "secret", "get", entry],
-                             capture_output=True, text=True, timeout=60)
+        out = subprocess.run(
+            [str(IDP / "bin/idp-cloud"), "secret", "get", entry],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
     except (OSError, subprocess.SubprocessError):
         return ""
     raw = out.stdout.strip()
@@ -224,20 +258,38 @@ def lifeboat_key() -> str:
         json.dump({"LIFEBOAT_KEY": key}, fh)
         path = fh.name
     try:
-        out = subprocess.run([str(IDP / "bin/idp-cloud"), "secret", "put", "otto-lifeboat",
-                              "--file", path], capture_output=True, text=True, timeout=300)
+        out = subprocess.run(
+            [
+                str(IDP / "bin/idp-cloud"),
+                "secret",
+                "put",
+                "otto-lifeboat",
+                "--file",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
     finally:
         os.unlink(path)
     if out.returncode != 0:
-        sys.exit(f"could not mint otto-lifeboat in the vault: {out.stderr.strip()[-400:]}")
+        sys.exit(
+            f"could not mint otto-lifeboat in the vault: {out.stderr.strip()[-400:]}"
+        )
     print("  minted otto-lifeboat/LIFEBOAT_KEY in the estate vault (64 hex characters)")
     return key
 
 
 def wrangler(args: list[str], stdin: str | None = None) -> None:
-    subprocess.run(["npx", "--yes", "wrangler@latest", *args], cwd=LIFEBOAT,
-                   input=stdin, text=True, check=True,
-                   stdout=subprocess.DEVNULL if stdin else None)
+    subprocess.run(
+        ["npx", "--yes", "wrangler@latest", *args],
+        cwd=LIFEBOAT,
+        input=stdin,
+        text=True,
+        check=True,
+        stdout=subprocess.DEVNULL if stdin else None,
+    )
 
 
 def cf_get(url: str, token: str) -> dict | None:
@@ -261,20 +313,32 @@ def resolve_account(z: str, reader: str, token: str, get=cf_get) -> tuple[str, s
       exit                    the token sees no account, or several (ambiguous): refuse, naming
                               which, because guessing an account is deploying into the wrong one
     """
-    zones = (get(f"https://api.cloudflare.com/client/v4/zones?name={z}", reader) if reader else None) or {}
+    zones = (
+        get(f"https://api.cloudflare.com/client/v4/zones?name={z}", reader)
+        if reader
+        else None
+    ) or {}
     result = zones.get("result") if isinstance(zones.get("result"), list) else []
     account = ((result[0] if result else {}).get("account") or {}).get("id", "")
     if account:
         return account, "zone"
     accounts = get("https://api.cloudflare.com/client/v4/accounts", token) or {}
-    ids = [a.get("id") for a in (accounts.get("result") or []) if isinstance(a, dict) and a.get("id")]
+    ids = [
+        a.get("id")
+        for a in (accounts.get("result") or [])
+        if isinstance(a, dict) and a.get("id")
+    ]
     if len(ids) == 1:
         return ids[0], "workers.dev"
     if not ids:
-        sys.exit(f"cloudflare: zone {z} is not readable with the reader token and the Workers token "
-                 "sees no account; re-mint with bin/idp-bootstrap-cloudflare --rotate")
-    sys.exit(f"cloudflare: zone {z} is not readable and the Workers token sees {len(ids)} accounts; "
-             "refusing to guess which one to deploy into")
+        sys.exit(
+            f"cloudflare: zone {z} is not readable with the reader token and the Workers token "
+            "sees no account; re-mint with bin/idp-bootstrap-cloudflare --rotate"
+        )
+    sys.exit(
+        f"cloudflare: zone {z} is not readable and the Workers token sees {len(ids)} accounts; "
+        "refusing to guess which one to deploy into"
+    )
 
 
 def deploy() -> int:
@@ -286,12 +350,15 @@ def deploy() -> int:
     # account id is derived; the Workers token uploads the script and attaches the route. Both are
     # minted by bin/idp-bootstrap-cloudflare from the one root (R52) -- neither is ever made in a
     # dashboard, so there is no console step to put in a runbook.
-    reader = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token",
-                                                                 "CLOUDFLARE_API_TOKEN")
+    reader = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get(
+        "cloudflare-api-token", "CLOUDFLARE_API_TOKEN"
+    )
     token = vault_get("cloudflare-workers-token", "CLOUDFLARE_API_TOKEN") or reader
     if not token:
-        sys.exit("the vault holds neither cloudflare-workers-token nor cloudflare-api-token; run "
-                 "bin/idp-bootstrap-cloudflare (Backstage -> Run the estate bootstrap -> scope cloudflare)")
+        sys.exit(
+            "the vault holds neither cloudflare-workers-token nor cloudflare-api-token; run "
+            "bin/idp-bootstrap-cloudflare (Backstage -> Run the estate bootstrap -> scope cloudflare)"
+        )
 
     # The account id is DERIVED, never written down -- the same read bin/idp-bootstrap-cloudflare
     # does at line 155. This is what retires the note at platform/vendors/consoles.yaml:387,
@@ -312,9 +379,16 @@ def deploy() -> int:
         # the zone to think: it is deployed on the token's own account at workers.dev, and its
         # address is printed so the ladder and the crew can dial it.
         wrangler(["deploy"])
-        sub = cf_get(f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/subdomain", token)
+        sub = cf_get(
+            f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/subdomain",
+            token,
+        )
         name = ((sub or {}).get("result") or {}).get("subdomain", "")
-        where = f"https://estate-lifeboat.{name}.workers.dev" if name else "UNKNOWN (no workers.dev subdomain on this account)"
+        where = (
+            f"https://estate-lifeboat.{name}.workers.dev"
+            if name
+            else "UNKNOWN (no workers.dev subdomain on this account)"
+        )
         print(f"  deployed on workers.dev: {where}")
 
     # Home 2's secrets, piped on stdin so no value is ever an argument, an environment
@@ -331,8 +405,10 @@ def deploy() -> int:
     # Home 1's address, so the edge knows where to send a turn it should not be answering
     # itself. otto-origin is a second name for the same cluster ingress; it exists so that
     # otto.<zone> can move to the edge without the edge losing its way back.
-    wrangler(["secret", "put", "ORIGIN_WEBHOOK_URL"],
-             stdin=f"https://otto-origin.{z}/webhook/telegram")
+    wrangler(
+        ["secret", "put", "ORIGIN_WEBHOOK_URL"],
+        stdin=f"https://otto-origin.{z}/webhook/telegram",
+    )
     print("  set ORIGIN_WEBHOOK_URL\n")
     print("Home 2 deployed. Grade it with: bin/idp-otto-homes")
     return 0
