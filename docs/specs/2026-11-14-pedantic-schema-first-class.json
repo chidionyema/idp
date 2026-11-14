@@ -95,6 +95,30 @@
       "decider": "machine",
       "rule": "Test semantic parity where Pydantic-specific constraints are absent from generated JSON Schema: differential fixture corpus across Python and JS/Rust including strict typing, number coercion, timezone, Decimal, union, null/optional and custom validators.",
       "falsifier": "A value rejected by Pydantic but accepted downstream cannot be certified as cross-language equivalent."
+    },
+    {
+      "id": "PSC-12",
+      "decider": "machine",
+      "rule": "For new Python/Rust/TypeScript shared JSON commands, choose exactly one authoritative JSON Schema Draft 2020-12 wire artifact; generated native models and independently executed validators must agree on the supported subset.",
+      "falsifier": "Same wire payload yields different Rust/Python/TS accept/refuse/unknown-field/null decisions, or schema artifacts have different digests."
+    },
+    {
+      "id": "PSC-13",
+      "decider": "machine",
+      "rule": "A contract publication must pin schema digest, supported validation dialect, format assertion mode, compiler/tool versions and schema evolution policy. No runtime fetching of unpinned refs into an effect gate.",
+      "falsifier": "Replacing schema path with remote URL or changing format mode cannot silently change the admitted command set."
+    },
+    {
+      "id": "PSC-14",
+      "decider": "machine",
+      "rule": "For binary RPC-only exceptions, require explicit contract owner, .proto+Buf breaking baseline, ProtoJSON compatibility test and semantic validation; do not force legacy agent JSON through binary IDL.",
+      "falsifier": "Wire-compatible field rename but ProtoJSON-incompatible name change is detected before rollout."
+    },
+    {
+      "id": "PSC-15",
+      "decider": "machine",
+      "rule": "Test the exact native/wire semantic gap for monetary values, datetimes/offset, unknown-field handling, numeric limits, discriminator unions, unicode/IDNA, custom validators and schema repair status.",
+      "falsifier": "Large integer loses precision in JS or Pydantic coercion differs from Serde and passes without published semantic migration."
     }
   ],
   "acceptance": [
@@ -138,6 +162,26 @@
       "Differential cross-language contract tests and mutation tests",
       "Pin schema mode, generator and version",
       "Preserve native source owner for non-Python protocols"
+    ]
+  },
+  "research_evidence": "docs/research/2026-11-14-pedantic-schema-cross-language-deep-research.md",
+  "portable_architecture": {
+    "decision": "JSON Schema Draft 2020-12 normative for new shared JSON payloads, not Pydantic as universal language; language-native validators must conform to exact published wire artifacts.",
+    "wire_contract_authority": "One approved digested/versioned schema per message boundary. Existing IDP schema/intent and ADR 0042 are starting authority; no parallel registry.",
+    "python_native": "Pydantic v2 for Python-owned model implementation; strict extra forbid, strict types and explicit validation/serialization schema mode; output may propose schema but must be diffed against approved artifact.",
+    "rust_native": "Serde+Schemars for Rust-owned types; Garde/validator for extra semantics; jsonschema Draft 2020-12 for independent boundary validation; Typify to generate Rust types from published JSON Schema when wire-first.",
+    "typescript_native": "Generate compile-time types and use runtime JSON Schema validator configured to agreed dialect and format semantics; never treat TypeScript's static typechecking as runtime validation.",
+    "binary_service_exception": "Protocol Buffers + Buf when an explicitly approved low-latency typed RPC/event boundary merits a different wire encoding. Need proto/ProtoJSON compatibility and semantic validation fixtures.",
+    "configuration_exception": "Evaluate CUE only for compositional config/constraint tasks; no new global policy engine or automatic conversion to wire.",
+    "http_api": "OpenAPI 3.1+ for endpoint operations, referencing the approved JSON Schema dialect rather than duplicating request and response shapes.",
+    "semantic_proof": "Schema validation is necessary but not sufficient for evidence authenticity, authority, complete business invariants, truthful claims or causal delivery.",
+    "run_time_controls": [
+      "No dynamic remote $ref resolution on privileged paths",
+      "Pin schema file SHA/digest and compiler version",
+      "Explicit format assertions where required",
+      "Cross-language differential positive+negative fixtures",
+      "Schema compatibility migration against earlier version",
+      "Staged effect-scope rollout, preserve existing ratchet for legacy"
     ]
   }
 }
