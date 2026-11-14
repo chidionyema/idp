@@ -332,10 +332,12 @@ jobs:
           # ancestry against current main. The agent's work must not disappear when
           # another lane advances main while the model is working.
           # The Greenlane, not this stage, rebases and independently proves promotion.
+          cp bin/idp-agent-admission "$RUNNER_TEMP/trusted-agent-admission"
+          chmod 500 "$RUNNER_TEMP/trusted-agent-admission"
           python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
           # Read back what the index now holds, both sides of every rename included, rather than
           # parse the patch text.
-          refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
+          refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/|^(bin/dof-gate|bin/idp-agent-admission|catalog/dof-registry.json)$' || true)
           if [ -n "$refused" ]; then
             echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
           fi
@@ -353,7 +355,7 @@ jobs:
           PLANNED_PATHS: ${{ inputs.planned_paths }}
         run: |
           set -euo pipefail
-          python3 bin/idp-agent-admission --phase before-commit \
+          python3 "$RUNNER_TEMP/trusted-agent-admission" --root "$GITHUB_WORKSPACE" --phase before-commit \
             --issue-body "$ISSUE_BODY" --planned-paths "$PLANNED_PATHS"
           mapfile -d '' -t pyfiles < <(git diff --cached --name-only -z --diff-filter=ACM HEAD | grep -zE '[.]py$' || true)
           if [ "${#pyfiles[@]}" -gt 0 ]; then
