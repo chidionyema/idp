@@ -97,13 +97,13 @@
       "falsifier": "A value rejected by Pydantic but accepted downstream cannot be certified as cross-language equivalent."
     },
     {
-      "id": "PSC-12",
+      "id": "PSC-16",
       "decider": "machine",
       "rule": "For new Python/Rust/TypeScript shared JSON commands, choose exactly one authoritative JSON Schema Draft 2020-12 wire artifact; generated native models and independently executed validators must agree on the supported subset.",
       "falsifier": "Same wire payload yields different Rust/Python/TS accept/refuse/unknown-field/null decisions, or schema artifacts have different digests."
     },
     {
-      "id": "PSC-13",
+      "id": "PSC-17",
       "decider": "machine",
       "rule": "A contract publication must pin schema digest, supported validation dialect, format assertion mode, compiler/tool versions and schema evolution policy. No runtime fetching of unpinned refs into an effect gate.",
       "falsifier": "Replacing schema path with remote URL or changing format mode cannot silently change the admitted command set."
@@ -183,5 +183,12 @@
       "Schema compatibility migration against earlier version",
       "Staged effect-scope rollout, preserve existing ratchet for legacy"
     ]
+  },
+  "assignment_compatibility": {
+    "issue": "chidionyema/idp#8111",
+    "status": "Issue #8111 strict Pydantic models is a founder decree, but its estate_contract/ files were not visible in main tree read during this review. Do not overwrite or dismiss this directive. Use Pydantic v2 as strict authoritative Python model and publish versioned JSON Schema export with cross-language semantic parity; treat any different universal wire authority as a separate reconciliation decision needing founder sign-off.",
+    "universal_admission_issue": "chidionyema/idp#7794",
+    "constraint": "Issue #7794 supersedes extending legacy platform/estate/intents shell-template catalog for universal admission. Only use authenticated Instruction Gateway and existing Temporal sovereign boundary after proving they are deployed; otherwise keep as a dependency, not a claimed capability.",
+    "source": "Source research is a proposal, not superseding existing founder decree or live protected gate."
   }
 }
