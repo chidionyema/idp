@@ -37,7 +37,11 @@
         "clusters/**",
         "deploy/**",
         "flux/**",
-        "docs/diagnoses/**"
+        "docs/diagnoses/**",
+        "bin/idp-otto-homes",
+        "bin/idp-bootstrap-cloudflare",
+        "platform/lifeboat/**",
+        "tests/test_otto_homes_*.py"
       ]
     },
     "otto": {
