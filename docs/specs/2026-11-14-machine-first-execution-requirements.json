@@ -601,6 +601,113 @@
         "red_pr_class_rate",
         "interruptions_per_yield"
       ]
+    },
+    {
+      "id": "DET-026",
+      "priority": "P0",
+      "phase": "federation",
+      "decision": "machine",
+      "owner": "existing protocol governance / Argon and IDP source owners",
+      "classification": "integration_gap",
+      "source": [
+        "chidionyema/argon/AGENTS.md",
+        "chidionyema/argon-sync/AGENTS.md",
+        "chidionyema/idp/AGENTS.md",
+        "chidionyema/argon/policy/turn.rego"
+      ],
+      "contract": "Derive one federated conformance matrix of protocol version, authority chain, task/event packet, proof vocabulary, effect scope and source of truth for each runtime. Preserve intentionally distinct runtime identities and permissions; disagreement is an explicit policy migration, never silently coerced.",
+      "positive": "A valid source-verified instruction packet transfers IDP -> Argon under registered translation with unchanged intent/provenance and verifier.",
+      "negative": "Conflicting routing authority, stale local references or unregistered command are refused with owner and remediation.",
+      "measure": [
+        "cross_repo_conformance",
+        "protocol_version_drift",
+        "unsupported_runtime_translations"
+      ]
+    },
+    {
+      "id": "DET-027",
+      "priority": "P0",
+      "phase": "federation",
+      "decision": "machine",
+      "owner": "router capability registry / Otto/IDP owner",
+      "classification": "integration_gap",
+      "source": [
+        "chidionyema/argon-sync/AGENTS.md §Model authority",
+        "chidionyema/idp/platform/llm/lane_registry.py",
+        "chidionyema/idp/.github/workflows/agent-sandbox.yml"
+      ],
+      "contract": "Enumerate actual runtime routes and provider identities per service. Decide whether IDP LiteLLM is authoritative for each path using explicit registered capability policy, not a universal assertion. If a direct-provider route is intentionally allowed, require equivalent capacity reservation, 429 state, exact model identity and cost accounting through one policy interface.",
+      "positive": "IDP agent and Otto routing both report provider, requested/actual model, capacity reason and known owner through one schema.",
+      "negative": "An Otto direct provider 429 must not be misclassified as an IDP LiteLLM failure; no hidden direct fallback.",
+      "measure": [
+        "routing_exception_count",
+        "undocumented_direct_routes",
+        "quota_fault_classification_accuracy"
+      ]
+    },
+    {
+      "id": "DET-028",
+      "priority": "P0",
+      "phase": "federation",
+      "decision": "machine",
+      "owner": "Argon source guard + shared context compiler",
+      "classification": "integration_gap",
+      "source": [
+        "chidionyema/argon/AGENTS.md",
+        "chidionyema/idp/bin/estate-brief",
+        "chidionyema/idp/bin/capability-index"
+      ],
+      "contract": "Agent guidance may include stable policy but MUST NOT encode an old runtime state as current. Extract dynamic preflight snapshots into a signed/dated observation served by the existing capability/state page, with TTL and runtime host scope; every runtime renders present health and does not inherit stale local paths.",
+      "positive": "Two agents on different hosts read same authoritative policy with distinct fresh host observations.",
+      "negative": "The dated Argon 2026-11-12 preflight with local laptop paths cannot certify 2026-11-14 GitHub Actions/cluster state.",
+      "measure": [
+        "stale_context_rejections",
+        "live_context_coverage",
+        "cross_host_location_misroutes"
+      ]
+    },
+    {
+      "id": "DET-029",
+      "priority": "P1",
+      "phase": "federation",
+      "decision": "machine",
+      "owner": "Argon Rego packet gate and IDP protocol registry",
+      "classification": "code_present",
+      "source": [
+        "chidionyema/argon/policy/turn.rego",
+        "chidionyema/argon/tests/test_genesis_turn_rego.py",
+        "chidionyema/argon/.github/workflows/provenance-gate.yml"
+      ],
+      "contract": "Retain existing turn packet schema and Rego/Python differential tests as the deterministic transport format for claims/commands; version translations with schema migration; pin trusted verifier to independently approved SHA so patch cannot change its own judge.",
+      "positive": "Valid packet accepted by both Rego and Python with identical verdict and evidence source counts.",
+      "negative": "Missing/extra field, invalid action/role, fake verified rung or tampered policy verifier is rejected by both.",
+      "measure": [
+        "differential_disagreements",
+        "unsupported_packet_versions",
+        "invalid_claim_admissions"
+      ]
+    },
+    {
+      "id": "DET-030",
+      "priority": "P1",
+      "phase": "federation",
+      "decision": "machine",
+      "owner": "Hermes adapter / existing estate execution gateway",
+      "classification": "integration_gap",
+      "source": [
+        "chidionyema/hermes-agent/AGENTS.md",
+        "chidionyema/estate-guards/laws/AGENTS.md",
+        "chidionyema/estate-intents/ci.run.yaml"
+      ],
+      "contract": "Adapt Hermes CLI/gateway/desktop and other standalone harnesses to the estate's typed task/capability/effect receipt only at their boundary. Keep upstream Hermes narrow core and prompt cache stable; use skills/plugins or CLI adapter, not another hardwired core model tool.",
+      "positive": "Hermes session requests capability and returns verified effect without new duplicate authority; existing prompt caching unaffected.",
+      "negative": "A generic Hermes completion cannot claim estate verified yield without independent gate and genuine lease.",
+      "measure": [
+        "hermes_adapter_coverage",
+        "core_tool_growth",
+        "cache_invalidations",
+        "unverified_completion_claims"
+      ]
     }
   ],
   "release_gates": [
@@ -643,7 +750,12 @@
         "DET-002",
         "DET-018",
         "DET-023",
-        "DET-017"
+        "DET-017",
+        "DET-026",
+        "DET-027",
+        "DET-028",
+        "DET-029",
+        "DET-030"
       ],
       "deliverable": "Generate one machine-readable baseline showing every existing effect door, owner, active source version, read freshness and measurement gaps; no gates switched on."
     },
@@ -703,7 +815,55 @@
     "What proportion of every source writer across all estate repositories is actually forced through trusted-effect admission?",
     "Which current producer writes authoritative FLOW/QUAD obligation IDs and can they be joined to Greenlane, runner costs and effects without another database?",
     "Does the production 20-agent notification pathway have a single sink and a deduplicated incident identity?",
-    "Which CI checks are required by live GitHub rulesets at this exact timestamp; the code docs may be stale?"
+    "Which CI checks are required by live GitHub rulesets at this exact timestamp; the code docs may be stale?",
+    "Which Genesis/Argon/OTTO provider routes are deliberately independent, and how is their capacity policy harmonized without routing all requests through a dead dependency?",
+    "How will federated AGENTS/protocol versions be checked at startup on every checked-out repository and runtime, without broadcasting stale host facts?"
   ],
-  "change_policy": "This register must NOT be treated as proof of production or used to trigger a new PR, model run, GitHub workflow, provider spending, policy bypass or gate activation."
+  "change_policy": "This register must NOT be treated as proof of production or used to trigger a new PR, model run, GitHub workflow, provider spending, policy bypass or gate activation.",
+  "cross_repository_review": {
+    "as_of": "2026-11-14",
+    "surveyed": [
+      {
+        "repo": "chidionyema/idp",
+        "state": "canonical capability index, Greenlane and DoF code inspected; no live universal preflight proven",
+        "source": "AGENTS.md; bin/capability-index; greenlane/engine.py"
+      },
+      {
+        "repo": "chidionyema/argon",
+        "state": "Rego turn packet verification and separate runtime protocol; AGENTS contains a dated live preflight snapshot and host-local paths",
+        "source": "policy/turn.rego; AGENTS.md; .github/workflows/provenance-gate.yml"
+      },
+      {
+        "repo": "chidionyema/argon-sync",
+        "state": "DoF cloud lease exists; explicitly names direct Otto model providers and excludes LiteLLM/IDP router from Otto request path",
+        "source": "AGENTS.md; .github/workflows/dof-gate.yml"
+      },
+      {
+        "repo": "chidionyema/hermes-agent",
+        "state": "Upstream-style Hermes core and gateway; contributor rules emphasise prompt cache and narrow core",
+        "source": "AGENTS.md"
+      },
+      {
+        "repo": "chidionyema/hermes-operator",
+        "state": "Repository/workflows enumerated; runtime control mechanism not investigated",
+        "source": ".github/workflows/tests.yml"
+      },
+      {
+        "repo": "chidionyema/estate-intents",
+        "state": "Intent repository enumerated; command manifests include ci.run.yaml; execution parity not proven",
+        "source": "ci.run.yaml"
+      },
+      {
+        "repo": "chidionyema/estate-guards",
+        "state": "Separate guard laws/OPA rules exist; source instruction file emphasizes idp as one platform; runtime enforcement not proven",
+        "source": "laws/AGENTS.md"
+      },
+      {
+        "repo": "chidionyema/estate-core",
+        "state": "Repository enumerated but AGENTS.md unreadable using connector; no contents inferred",
+        "source": "AGENTS.md unavailable"
+      }
+    ],
+    "note": "A source file with requirements is not a verified installed/runtime policy. Preserve each runtime's deliberate trust and product boundaries."
+  }
 }
