@@ -270,6 +270,69 @@ def test_the_closing_comment_claims_only_what_was_asked(monkeypatch):
     assert any("closed #7" in a for a in actions)
 
 
+def _gh_with_open(issues, calls):
+    def fake_gh(args):
+        calls.append(args)
+        if args[:2] == ["issue", "list"]:
+            want = args[args.index("--search") + 1]
+            hits = [
+                i
+                for i in issues
+                if want == f'in:title "{door.ISSUE_PREFIX}"'
+                or want.split('"')[1] in i["title"]
+            ]
+            return 0, json.dumps(hits), ""
+        return 0, "", ""
+
+    return fake_gh
+
+
+def test_an_incident_for_a_retired_service_is_closed(monkeypatch):
+    # 2026-11-14: #8043 took estate-doors off the ladder; its incident #8042 stayed open and kept DoF repair-only.
+    calls = []
+    open_issues = [
+        {"number": 8042, "title": "[lane] estate-doors: a lane is down"},
+        {"number": 7, "title": "[lane] llm-router: a lane is down"},
+    ]
+    monkeypatch.setattr(door, "_gh", _gh_with_open(open_issues, calls))
+    rows = [
+        _row("floor", "groq", door.OK, service="llm-router"),
+        _row("edge", "cloudflare", door.OK, service="llm-router"),
+    ]
+    actions = door.file_issues(rows, declared={"llm-router", "otto"})
+    assert ["issue", "close", "8042"] in calls
+    assert any("closed #8042 (estate-doors, retired)" in a for a in actions)
+    note = next(c for c in calls if c[:3] == ["issue", "comment", "8042"])
+    assert "no longer declared on the ladder" in note[note.index("--body") + 1]
+
+
+def test_a_declared_service_is_never_closed_as_retired(monkeypatch):
+    calls = []
+    open_issues = [{"number": 7, "title": "[lane] llm-router: a lane is down"}]
+    monkeypatch.setattr(door, "_gh", _gh_with_open(open_issues, calls))
+    rows = [
+        _row("cloud", "oracle", door.FAIL, service="llm-router"),
+        _row("floor", "groq", door.OK, service="llm-router"),
+    ]
+    door.file_issues(rows, declared={"llm-router"})
+    assert ["issue", "close", "7"] not in calls, (
+        "a declared service with a lane down stays open"
+    )
+
+
+def test_a_partial_or_empty_drill_never_closes_what_it_did_not_grade(monkeypatch):
+    calls = []
+    open_issues = [{"number": 8042, "title": "[lane] estate-doors: a lane is down"}]
+    monkeypatch.setattr(door, "_gh", _gh_with_open(open_issues, calls))
+    rows = [
+        _row("floor", "groq", door.OK, service="llm-router"),
+        _row("edge", "cloudflare", door.OK, service="llm-router"),
+    ]
+    door.file_issues(rows)  # --service run: no declared set
+    door.file_issues([], declared={"llm-router"})  # a drill that graded nothing
+    assert ["issue", "close", "8042"] not in calls
+
+
 def test_a_single_provider_ladder_files_a_ticket_though_no_lane_failed(monkeypatch):
     calls = []
 
@@ -345,15 +408,19 @@ def test_the_json_board_carries_the_ladders(tmp_path, serve, capsys):
     cfg = _config(tmp_path, [_leg("a", "p1", port), _leg("b", "p2", port)])
     door.main(["--no-file", "--json", "--config", cfg])
     data = json.loads(capsys.readouterr().out)
-    assert data["ladders"] == [
-        {
-            "service": "svc",
-            "state": "REDUNDANT",
-            "providers_ok": ["p1", "p2"],
-            "down": [],
-            "unasked": [],
-        }
-    ]
+    assert (
+        data["ladders"]
+        == [
+            {
+                "service": "svc",
+                "state": "REDUNDANT",
+                "providers_ok": ["p1", "p2"],
+                "down": [],
+                "unasked": [],
+                "not_provisioned": [],  # ladder() reports declared-but-unprovisioned legs since the lifeboat row
+            }
+        ]
+    )
 
 
 def test_every_declared_ladder_keeps_adr_0037_r1_three_homes_two_providers():
