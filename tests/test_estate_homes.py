@@ -512,3 +512,53 @@ def test_the_estate_router_topology_is_declared_so_it_can_be_proved():
     got = door.prove(router)
     assert got["verdict"] in ("PROVEN", "FAILS"), got
     assert "host:laptop" in got["domains"]
+
+
+def _incidents_gh(calls, open_titles):
+    def fake_gh(args):
+        calls.append(args)
+        if args[:2] == ["issue", "list"]:
+            query = args[args.index("--search") + 1]
+            rows = [
+                {"number": n, "title": t}
+                for n, t in open_titles.items()
+                if query == f'in:title "{door.ISSUE_PREFIX}"'
+                or t.startswith(query.split('"')[1])
+            ]
+            return 0, json.dumps(rows), ""
+        return 0, "", ""
+
+    return fake_gh
+
+
+def test_an_incident_for_a_service_retired_from_the_ladder_is_closed(monkeypatch):
+    """#8042: estate-doors left the ladder (#8043) and its incident stayed open forever,
+    holding dof-gate at repair-only for every agent. A full drill now closes it."""
+    calls = []
+    monkeypatch.setattr(
+        door,
+        "_gh",
+        _incidents_gh(
+            calls,
+            {
+                8042: "[lane] estate-doors: a lane is down",
+                8100: "[lane] llm-router: a lane is down",
+            },
+        ),
+    )
+    rows = [_row("floor", "groq", door.OK, service="llm-router")]
+    actions = door.file_issues(rows, declared=["llm-router", "otto"])
+    assert ["issue", "close", "8042"] in calls
+    assert any("closed #8042 (estate-doors: retired" in a for a in actions)
+    # a declared service is never closed by retirement (its own verdict decides)
+    assert not any("8100" in a and "retired" in a for a in actions)
+
+
+def test_a_single_service_drill_never_closes_other_services(monkeypatch):
+    """--service grades one service; it cannot know the others are retired."""
+    calls = []
+    monkeypatch.setattr(
+        door, "_gh", _incidents_gh(calls, {8042: "[lane] estate-doors: a lane is down"})
+    )
+    door.file_issues([_row("floor", "groq", door.OK, service="llm-router")])
+    assert ["issue", "close", "8042"] not in calls
