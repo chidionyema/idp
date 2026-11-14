@@ -5,6 +5,12 @@ the gates and the hooks, which refuse.
 
 ---
 
+## Estate-wide adversarial assurance — mandatory future-work discipline
+
+**Founder directive, 2026-11-14.** Every agent, feature, workflow, deployment, incident and recovery must apply risk-proportionate **positive and adversarial falsifying tests** of its actual authority, effects, concurrency, recovery and independent outcome truth. Read [the canonical assurance standard](docs/standards/estate-adversarial-assurance.md) and [decision assurance #7452](https://github.com/chidionyema/idp/issues/7452#issuecomment-6882246393) before consequential work. Verify **who may change desired state**, refuse superseded mandates **at the effect boundary**, test delayed workers, conflicting external changes, replay/ABA, outages, bypass and lost receipts; independently confirm actual effects and permitted successor operation. A test that stays green after its target guard is removed is not evidence. Record exact revisions, traces, mutation results and independently observed state in existing FLOW/FCR/KARMA/Optimus/Genesis mechanisms. Begin with isolated executable tests and harmless live canaries; only activate broad enforcement after the new rule satisfies its own reflexive falsifiers and legitimate work remains possible. **Existing security, identity and protected-change gates remain authoritative; this text is a standing mandate, not production certification or a competing verifier.**
+
+---
+
 ## Programme of record and the tenets
 
 The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads
