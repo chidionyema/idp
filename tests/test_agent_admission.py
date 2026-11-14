@@ -93,6 +93,23 @@ class AgentAdmissionContractTests(unittest.TestCase):
         self.assertIn('python3 bin/idp-agent-admission --phase before-agent', workflow)
         self.assertEqual(admission.decide([])["verdict"], "BLIND")
 
+    def test_estate_startup_contract_is_present(self):
+        agents = (ROOT / "AGENTS.md").read_text()
+        claude = (ROOT / "CLAUDE.md").read_text()
+        self.assertIn("@AGENTS.md", claude)
+        title = "## Mandatory cloud delivery and failure-containment contract (all agents)"
+        self.assertIn(title, agents[:500])
+        for required in (
+            "existing `.github/workflows/bot-commit.yml`",
+            "founder-passkey",
+            "run 43629366222",
+            "#7940",
+            "REFUSED",
+            "BLIND",
+            "VERIFIED_YIELD",
+        ):
+            self.assertIn(required, agents)
+
     def test_plan_parsing(self):
         self.assertEqual(admission.parse_plan("Mission\nPlanned-Paths: tests/a.py,README.md\n"),
                          ["tests/a.py", "README.md"])
