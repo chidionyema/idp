@@ -661,3 +661,68 @@ def test_live_rerun_github_lookup_failure_keeps_original_refusal(
         ),
     )
     assert rc == 1, err
+
+
+# -- dependency bots: the claim-gate exemption, keyed on the author GitHub reports ------------
+
+
+def test_live_mode_is_not_applicable_for_a_dependabot_pull_request(
+    tmp_path: Path,
+) -> None:
+    """idp#8098/#8099: a Dependabot bump carried no proof block and failed fast-gate forever."""
+    ev = event_file(
+        tmp_path,
+        {
+            "pull_request": {
+                "number": 8099,
+                "body": "Bumps astro from 5.0.0 to 5.1.0.",
+                "head": {"sha": HEAD},
+                "user": {"login": "dependabot[bot]"},
+            }
+        },
+    )
+    rc, out, err = run_gate(["--live"], clean_env(GITHUB_EVENT_PATH=str(ev)))
+    assert rc == 3, err
+    assert said(out + err, "dependabot[bot]")
+    assert said(out + err, "bdd")
+
+
+def test_live_mode_still_refuses_an_agent_pull_request_with_no_block(
+    tmp_path: Path,
+) -> None:
+    """The falsifier: the exemption names an author, so an agent cannot borrow it."""
+    for login in ("chidionyema", "estate-agent", "dependabot", "dependabot[bot]x", ""):
+        ev = event_file(
+            tmp_path,
+            {
+                "pull_request": {
+                    "number": 4243,
+                    "body": "no proof here",
+                    "head": {"sha": HEAD},
+                    "user": {"login": login},
+                }
+            },
+        )
+        rc, _out, err = run_gate(["--live"], clean_env(GITHUB_EVENT_PATH=str(ev)))
+        assert rc == 1, (login, err)
+
+
+def test_live_mode_exempts_dependabot_read_through_gh(tmp_path: Path) -> None:
+    """The gh path reports the app as `app/dependabot`; same author, same verdict."""
+    bindir = fake_gh(
+        tmp_path,
+        out=json.dumps(
+            {**pr_payload(8098, "Bumps x."), "author": {"login": "app/dependabot"}}
+        ),
+    )
+    ev = event_file(tmp_path, {"pull_request": {"number": 8098, "head": {"sha": HEAD}}})
+    env = clean_env(
+        GITHUB_EVENT_PATH=str(ev),
+        PATH=f"{bindir}:{os.environ.get('PATH', '')}",
+        FAKE_GH_LOG=str(tmp_path / "gh.log"),
+        FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        FAKE_GH_LIST=str(tmp_path / "gh-list.json"),
+        GH_TOKEN="x",
+    )
+    rc, out, err = run_gate(["--live"], env)
+    assert rc == 3, (out, err)

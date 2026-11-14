@@ -116,6 +116,16 @@ GREENLANE_EVIDENCE = re.compile(
 )
 
 
+# Dependency bots open pull requests no agent session wrote, so no session can paste a
+# proof into them. bin/claim-gate already exempts exactly this author ($PR_AUTHOR); this
+# gate did not, so every Dependabot pull request failed fast-gate on `bddproof` forever
+# (idp#8098, idp#8099, 2026-11-14). The exemption is keyed on the author GitHub itself
+# reports -- never on a branch name or title an agent could choose -- and it grants
+# NOT APPLICABLE, not PROVED: the required `bdd` check still runs on the same head and is
+# the independent verifier of the bumped dependency.
+DEPENDENCY_BOTS = frozenset({"dependabot[bot]", "app/dependabot"})
+
+
 def extract_block(body: str) -> str | None:
     """The first BDD-PROOF ... END-BDD-PROOF block, or None."""
     m = re.search(
@@ -298,7 +308,7 @@ def explicit_branch(env: dict, event: dict | None) -> tuple[str, str]:
 def pr_by_number(number: int) -> tuple[str, dict | None, str]:
     """(kind, target, detail) with kind in {resolved, blind, none}."""
     rc, out, err = gh_json(
-        ["pr", "view", str(number), "--json", "number,title,body,headRefOid"]
+        ["pr", "view", str(number), "--json", "number,title,body,headRefOid,author"]
     )
     if rc != 0:
         why = (err or out or "").strip().replace("\n", " ")[:200]
@@ -319,6 +329,7 @@ def pr_by_number(number: int) -> tuple[str, dict | None, str]:
             "number": pr.get("number") or number,
             "body": pr.get("body") or "",
             "headRefOid": pr.get("headRefOid") or "",
+            "author": pr.get("author") or "",
             "source": "gh pr view",
         },
         "",
@@ -425,6 +436,7 @@ def resolve(env: dict) -> tuple[str, dict | None, str]:
                         "number": number,
                         "body": body or "",
                         "headRefOid": head,
+                        "author": ((pr.get("user") or {}).get("login")) or "",
                         "source": "the event payload",
                     },
                     "",
@@ -458,6 +470,16 @@ def live_grade(env: dict) -> tuple[int, str]:
         return EXIT_BLIND, f"BLIND: {detail}"
     if kind == "none" or target is None:
         return EXIT_NOT_APPLICABLE, f"no pull request under test: {detail}"
+    author = target.get("author")
+    if isinstance(author, dict):
+        author = author.get("login")
+    if (author or "") in DEPENDENCY_BOTS:
+        return (
+            EXIT_NOT_APPLICABLE,
+            f"pull request #{target.get('number')} was opened by {author}: no agent "
+            "session wrote it, so no proof block is graded; the required `bdd` check "
+            "on this head is its verifier",
+        )
     original = grade(
         target.get("body") or "",
         target.get("headRefOid") or "",
