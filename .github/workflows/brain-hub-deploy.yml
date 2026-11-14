@@ -1,0 +1,185 @@
+# button: Deploy the One-Brain cloud hub
+# founder: Puts the brain's live state and realtime stream on brain.<estate zone> (Cloudflare, free tier), so the cockpit no longer goes dark when the Mac sleeps, then proves it answers.
+#
+# brain-hub-deploy (founder 2026-11-14: "need to get it off Mac urgent"; chose Cloudflare + GitHub).
+# Placement: ADR 0034 rung 4, Cloudflare Workers free tier, one SQLite-backed Durable Object.
+# Same shape as founder-passkey-deploy.yml: the Cloudflare root stays a repository secret, this run
+# mints a token scoped to Workers + R2 + the estate zone that expires in two hours, uses it, deletes it.
+# The write key is born here once, delivered to estate-secrets (secrets/dev/BRAIN_HUB_ADMIN_KEY.yaml,
+# SOPS, the estate's one secret store) and set as the Worker secret; it is never printed.
+name: brain-hub-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - platform/brain-hub/**
+      - .github/workflows/brain-hub-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: brain-hub-deploy
+  cancel-in-progress: false
+
+env:
+  API: https://api.cloudflare.com/client/v4
+  SCRIPT: brain-hub
+  BUCKET: estate-brain-snapshots
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: nhedger/setup-sops@18e52f363488ed469d2e1855e542a1c651743bba # v3.0.0
+        with: { version: "3.10.2" }
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+
+      - name: The Worker's own tests
+        run: python3 -m pytest -q tests/test_brain_hub_worker.py
+
+      - name: Hostname from the estate zone
+        run: |
+          set -euo pipefail
+          zone=$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' clusters/oke/estate-config.yaml | head -1)
+          [ -n "$zone" ] || { echo "FAIL    brain-hub  ESTATE_ZONE missing from clusters/oke/estate-config.yaml"; exit 1; }
+          { echo "ZONE=$zone"; echo "HOST=brain.$zone"; } >> "$GITHUB_ENV"
+
+      - name: Mint a Workers + R2 token for this run only
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  root token or account id is not set"; exit 2; }
+          zid=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+          [ -n "$zid" ] || { echo "FAIL    cloudflare  zone $ZONE not visible to the root token"; exit 1; }
+          groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
+          acct=(); for n in "Workers Scripts Write" "Workers R2 Storage Write"; do
+            g=$(gid "$n" com.cloudflare.api.account); [ -n "$g" ] || { echo "FAIL    cloudflare  no account permission group '$n'"; exit 1; }; acct+=("$g"); done
+          zone=(); for n in "Workers Routes Write" "DNS Write" "Zone Read"; do
+            g=$(gid "$n" com.cloudflare.api.account.zone); [ -n "$g" ] || { echo "FAIL    cloudflare  no zone permission group '$n'"; exit 1; }; zone+=("$g"); done
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "brain-hub-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg e "$expires" \
+            --argjson ag "$(printf '%s\n' "${acct[@]}" | jq -R '{id:.}' | jq -s .)" \
+            --argjson zg "$(printf '%s\n' "${zone[@]}" | jq -R '{id:.}' | jq -s .)" \
+            '{name:$n, expires_on:$e, policies:[
+               {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:$ag},
+               {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:$zg}]}')
+          out=$(curl -sS -X POST -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          value=$(jq -r .result.value <<<"$out"); echo "::add-mask::$value"
+          { echo "id=$(jq -r .result.id <<<"$out")"; echo "token=$value"; echo "zone_id=$zid"; } >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Workers + R2 token minted, expires $expires"
+
+      - name: Deploy the Worker + Durable Object on brain.<zone>
+        env:
+          TOKEN: ${{ steps.mint.outputs.token }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          ZONE_ID: ${{ steps.mint.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
+          # R2 bucket for the hourly audit copy
+          if ! cf "$API/accounts/$ACCOUNT/r2/buckets/$BUCKET" | jq -e '.success' >/dev/null; then
+            cf -X POST -H 'Content-Type: application/json' -d "$(jq -nc --arg n "$BUCKET" '{name:$n}')" \
+              "$API/accounts/$ACCOUNT/r2/buckets" | jq -e '.success' >/dev/null || { echo "FAIL    brain-hub  R2 bucket $BUCKET could not be created"; exit 1; }
+            echo "ok      brain-hub  R2 bucket $BUCKET created"
+          fi
+          # first deploy creates the SQLite Durable Object class; later deploys keep it (no migration resent)
+          tag=$(cf "$API/accounts/$ACCOUNT/workers/scripts" | jq -r --arg s "$SCRIPT" '.result[]? | select(.id==$s) | .migration_tag // empty')
+          migrations='{"new_tag":"v1","new_sqlite_classes":["BrainHub"]}'; [ "$tag" = v1 ] && migrations=null
+          meta=$(jq -nc --arg b "$BUCKET" --arg sha "${GITHUB_SHA:0:12}" --argjson mig "$migrations" '{main_module:"worker.js",
+            compatibility_date:"2026-11-01", keep_bindings:["secret_text"],
+            bindings:[{type:"durable_object_namespace", name:"HUB", class_name:"BrainHub"},
+                      {type:"r2_bucket", name:"SNAPSHOTS", bucket_name:$b},
+                      {type:"plain_text", name:"HUB_BUILD", text:$sha}]} + (if $mig then {migrations:$mig} else {} end)')
+          out=$(cf -X PUT -F "metadata=$meta;type=application/json" \
+            -F "worker.js=@platform/brain-hub/worker.js;type=application/javascript+module" \
+            "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    brain-hub  script upload refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          echo "ok      brain-hub  Worker $SCRIPT uploaded (migration ${tag:-v1 created})"
+          cf -X PUT -H 'Content-Type: application/json' -d '[{"cron":"7 * * * *"}]' \
+            "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT/schedules" | jq -e '.success' >/dev/null \
+            || { echo "FAIL    brain-hub  hourly snapshot schedule refused"; exit 1; }
+          out=$(cf -X PUT -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg h "$HOST" --arg s "$SCRIPT" --arg z "$ZONE_ID" '{hostname:$h, service:$s, zone_id:$z, environment:"production"}')" \
+            "$API/accounts/$ACCOUNT/workers/domains")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    brain-hub  custom domain $HOST refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          echo "ok      brain-hub  $HOST routed to $SCRIPT"
+
+      - name: Write key, born once, held in estate-secrets and the Worker
+        env:
+          TOKEN: ${{ steps.mint.outputs.token }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
+          tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+          git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/es"
+          has_worker=$(cf "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT/secrets" | jq -r '[.result[]?.name] | index("BRAIN_ADMIN_KEY") != null')
+          if [ -f "$RUNNER_TEMP/es/secrets/dev/BRAIN_HUB_ADMIN_KEY.yaml" ] && [ "$has_worker" = true ]; then
+            echo "ok      brain-hub  write key already held in estate-secrets and the Worker"
+          else
+            key=$(openssl rand -base64 48 | tr -d '\n/+=' | cut -c1-48); echo "::add-mask::$key"
+            printf '%s' "$key" | SECRET_REPLACE=1 "$RUNNER_TEMP/es/scripts/secret-add" dev BRAIN_HUB_ADMIN_KEY BRAIN_HUB_ADMIN_KEY
+            git -C "$RUNNER_TEMP/es" add secrets/dev/BRAIN_HUB_ADMIN_KEY.yaml
+            git -C "$RUNNER_TEMP/es" -c user.name=brain-hub-deploy -c user.email=brain-hub-deploy@users.noreply.github.com \
+              commit -q -m "brain-hub write key (brain-hub-deploy run $GITHUB_RUN_ID)"
+            GH_TOKEN="$tok" git -C "$RUNNER_TEMP/es" push -q origin HEAD || { echo "FAIL    brain-hub  estate-secrets push refused; Worker key not changed"; exit 1; }
+            cf -X PUT -H 'Content-Type: application/json' -d "$(jq -nc --arg v "$key" '{name:"BRAIN_ADMIN_KEY", text:$v, type:"secret_text"}')" \
+              "$API/accounts/$ACCOUNT/workers/scripts/$SCRIPT/secrets" | jq -e '.success' >/dev/null \
+              || { echo "FAIL    brain-hub  Worker secret refused (estate-secrets already holds the new key; rerun to converge)"; exit 1; }
+            echo "ok      brain-hub  write key born: estate-secrets/secrets/dev/BRAIN_HUB_ADMIN_KEY.yaml + Worker secret"
+          fi
+          rm -rf "$RUNNER_TEMP/es"
+
+      - name: Prove it answers on its own hostname
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 30); do
+            h=$(curl -sS -m 5 "https://$HOST/healthz" 2>/dev/null || true)
+            [ "$h" = ok ] && break; sleep 5
+          done
+          [ "$h" = ok ] || { echo "FAIL    brain-hub  https://$HOST/healthz did not answer ok within 150s"; exit 1; }
+          s=$(curl -sS -m 10 "https://$HOST/api/brain/state")
+          jq -e '.status=="cloud-hub" and .laptopMayBeRequired==false and .provenanceWritable==true' <<<"$s" >/dev/null \
+            || { echo "FAIL    brain-hub  state not served as the writable cloud hub: $(jq -c '{status,provenanceWritable}' <<<"$s")"; exit 1; }
+          code=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "https://$HOST/api/brain/import")
+          [ "$code" = 401 ] || { echo "FAIL    brain-hub  an unauthenticated write answered $code, expected 401"; exit 1; }
+          curl -sS -m 6 -N "https://$HOST/api/brain/stream" 2>/dev/null | head -c 4000 | grep -q 'event: state' \
+            || { echo "FAIL    brain-hub  stream did not open with a state event"; exit 1; }
+          echo "ok      brain-hub  https://$HOST answers: state (cloud-hub, writable), stream, writes refused without the key" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the run's token
+        if: always() && steps.mint.outputs.id != ''
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $ROOT" "$API/user/tokens/${{ steps.mint.outputs.id }}" | jq -e '.success' >/dev/null \
+            && echo "ok      cloudflare  run token deleted" || echo "WARN    cloudflare  run token not deleted; it expires in two hours"
