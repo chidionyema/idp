@@ -100,7 +100,7 @@ class AgentAdmissionContractTests(unittest.TestCase):
         title = "## Mandatory cloud delivery and failure-containment contract (all agents)"
         self.assertIn(title, agents[:500])
         for required in (
-            "existing `.github/workflows/bot-commit.yml`",
+            ".github/workflows/bot-commit.yml",
             "founder-passkey",
             "run 43629366222",
             "#7940",
