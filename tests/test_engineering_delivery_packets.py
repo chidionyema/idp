@@ -67,7 +67,7 @@ class EngineerPacketTests(unittest.TestCase):
             self.assertEqual(len(ids), len(set(ids)))
 
     def test_no_side_effect_dispatch_in_spec(self):
-        self.assertEqual(self.doc["status"], "SPECIFIED_UNASSIGNED_NOT_DISPATCHED")
+        self.assertIn("NOT_FLEET_DISPATCHED", self.doc["status"])
         self.assertIn("founder-passkey", self.doc["assignment_contract"]["promotion"])
 
     def test_cross_packet_mapping(self):
@@ -76,6 +76,12 @@ class EngineerPacketTests(unittest.TestCase):
         for item in self.doc["single_source_owner_index"]:
             mapped.update(item["packets"])
         self.assertEqual(mapped, packet_ids)
+
+    def test_existing_claim_and_queued_runner_are_not_dropped(self):
+        rows = {x["issue"]: x for x in self.doc["assignment_observations"]}
+        self.assertEqual(rows["#8111"]["actor"], "claude")
+        self.assertEqual(rows["#7838"]["observed_status"], "queued")
+        self.assertIn("Do not", rows["#8111"]["instruction"])
 
     def test_native_source_and_portable_schema_requirements_preserved(self):
         p = next(x for x in self.doc["packets"] if x["packet"] == "ENG-03")
