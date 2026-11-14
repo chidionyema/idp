@@ -13,7 +13,7 @@
   "dependencies": {
     "@astrojs/react": "7.0.0",
     "@estate/ui-kit": "file:__KIT__",
-    "astro": "7.3.5",
+    "astro": "7.4.7",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
