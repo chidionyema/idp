@@ -1,5 +1,33 @@
 # AGENTS.md — estate-wide. Every agent on this machine, and every product.
 
+## Pedantic Schema — first-class constitutional contract at every boundary
+
+**Founder directive, 2026-11-14.** Schemas are not optional documentation. All NEW
+consequential messages, task/agent handoffs, tool calls, execution intents, provider
+decisions, claims, evidence, repair receipts and promotion effects MUST bind to a
+versioned, machine-checkable contract that is independently validated by the trusted
+boundary receiving it. The canonical implementation remains **ADR 0042**, existing
+`bin/intent-compile`, `schema/intent/**`, `bin/schema-conformance` and
+existing protocol gates. Do not introduce another schema owner, validator or database.
+
+Strictness means required fields, exact types, rejected unknown fields where the
+published contract is closed, explicit null/UNKNOWN semantics, schema digest and
+version, producer/consumer compatibility, typed errors, provenance and testable
+positive/negative fixtures. Repair MUST be marked repaired and may not masquerade
+as first-pass success. A schema-valid assertion is not necessarily true or verified.
+
+This is a **first-class mandate with effect-scoped migration**, not permission to
+flip an untested blanket gate. ADR 0042 already measures known legacy intent-shape
+violations: enforce zero NEW violations through its existing ratchet, eliminate old
+ones and turn strict enforcement on only for clean cohorts after a real positive
+canary proves permitted work continues. Keep security/authorization intact.
+See [Pedantic Schema source-backed contract](docs/specs/2026-11-14-pedantic-schema-first-class.json).
+The same workstream also specifies [Meridian short-domain research](docs/specs/2026-11-14-meridian-short-domain-acquisition.json)
+and [Concierge procurement test](docs/specs/2026-11-14-concierge-domain-procurement.json).
+The three are SPECIFIED, not yet deployed or dispatched.
+
+---
+
 ## Mandatory cloud delivery and failure-containment contract (all agents)
 
 **Estate incident lesson, 2026-11-14; canonical issue [#7940](https://github.com/chidionyema/idp/issues/7940).**
