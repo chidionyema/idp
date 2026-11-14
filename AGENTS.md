@@ -6,9 +6,15 @@
 consequential messages, task/agent handoffs, tool calls, execution intents, provider
 decisions, claims, evidence, repair receipts and promotion effects MUST bind to a
 versioned, machine-checkable contract that is independently validated by the trusted
-boundary receiving it. The canonical implementation remains **ADR 0042**, existing
-`bin/intent-compile`, `schema/intent/**`, `bin/schema-conformance` and
-existing protocol gates. Do not introduce another schema owner, validator or database.
+boundary receiving it. **Pydantic v2 is the default source and strict validator for NEW Python-owned
+contracts** (`strict=True`, `extra='forbid`), and its versioned, generated
+JSON Schema Draft 2020-12 is the canonical portable wire artifact. Non-Python-owned
+contracts retain their native authoritative source and must conform to the
+published wire shape. Never hand-maintain a competing schema. The existing
+ADR 0042, `bin/intent-compile`, `schema/intent/**`, `bin/schema-conformance` and
+protocol gates remain the implementation/migration path—not a second registry or
+validator framework. Conformance tests MUST catch drift and validation differences
+between Python and TypeScript/Rust/Rego, particularly custom validators.
 
 Strictness means required fields, exact types, rejected unknown fields where the
 published contract is closed, explicit null/UNKNOWN semantics, schema digest and
