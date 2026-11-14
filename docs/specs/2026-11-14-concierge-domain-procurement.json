@@ -1,0 +1,74 @@
+{
+  "schema": "estate.lane.spec.v1",
+  "lane_id": "CONCIERGE-DOMAIN-20261114",
+  "title": "Concierge autonomous domain procurement with human spending boundary",
+  "owner": "Existing concierge-task intent / Fleet Concierge Tasks + mums-concierge operator",
+  "priority": "P0",
+  "status": "SPECIFIED_NOT_DISPATCHED",
+  "authoritative_runtime": [
+    "platform/estate/intents/concierge-task.yaml",
+    "backstage/plugins/fleetview-backend/src/fleetview_backend/concierge_tasks.py",
+    "tests/test_fleet_concierge_tasks.py"
+  ],
+  "requirements": [
+    {
+      "id": "CON-01",
+      "decider": "machine",
+      "rule": "Accept one idempotent task_id, structured domain candidates, max budget, jurisdiction, source and founder session; use existing concierge-task and avoid duplicate tasks",
+      "falsifier": "Two concurrent identical requests cannot produce two checkout commitments"
+    },
+    {
+      "id": "CON-02",
+      "decider": "machine",
+      "rule": "Preflight actual executor availability, browser session, authentication scope, DNS/RDAP lookup ability and evidence storage before announcing RUNNING; unavailable reports BLIND with recovery route",
+      "falsifier": "Missing laptop executor returns 503 and must not show running or done"
+    },
+    {
+      "id": "CON-03",
+      "decider": "machine",
+      "rule": "Perform domain registration lookup from authoritative registry plus current registrar quote; attach UTC time, request identity, response semantics, credibility and TTL",
+      "falsifier": "NXDOMAIN/DNS failure, masked RDAP, stale quote or failed vendor login never certifies purchasability"
+    },
+    {
+      "id": "CON-04",
+      "decider": "model",
+      "rule": "Explain naming/trademark collisions and compare registrars using cited source evidence; structured proposed choice only, no authority to purchase",
+      "falsifier": "Unsupported legal-clearance claim rejected"
+    },
+    {
+      "id": "CON-05",
+      "decider": "machine",
+      "rule": "At checkout stop at existing --never-pay hold; produce exact domain, registry period, payee, price, tax, auto-renew, privacy, registrar, checkout URL and approval expiry",
+      "falsifier": "Zero payment steps, zero stored PAN/CVV and zero offer/bid from an unapproved task"
+    },
+    {
+      "id": "CON-06",
+      "decider": "judgment",
+      "rule": "Founder explicitly approves vendor/domain/amount/period in an authenticated bounded channel; authorization expires and cannot transfer to another domain or amount",
+      "falsifier": "Approval replay, changed amount or different item invalidated"
+    },
+    {
+      "id": "CON-07",
+      "decider": "machine",
+      "rule": "After legitimately approved transaction, verify order/registrar account control, domain status, registrant identity/privacy, renewal and DNS readback using independent channels; mark unknown fields UNKNOWN",
+      "falsifier": "A payment receipt alone never becomes owned-and-operational status"
+    },
+    {
+      "id": "CON-08",
+      "decider": "machine",
+      "rule": "Append signed/digested events with task_id and causal evidence; deduplicate retries and founder notifications; return to Fleet as tri-state receipt",
+      "falsifier": "Truncated event log or missing final receipt cannot be shown as success"
+    }
+  ],
+  "acceptance": [
+    "Read-only search completes without human/browser payment",
+    "Purchase pathway always holds until founder approval",
+    "Task remains observable in Fleet including BLIND and stale states",
+    "Actual domain purchase and DNS effects validated independently only after explicit approval"
+  ],
+  "dependencies": [
+    "MERIDIAN-DOMAIN-20261114",
+    "existing Concierge runner credentials/browser and payment boundary"
+  ],
+  "scope": "One real dry research run, no purchase permitted in spec phase"
+}
