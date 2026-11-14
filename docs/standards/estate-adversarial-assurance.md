@@ -1,0 +1,21 @@
+# Estate-wide adversarial assurance — standing mandate
+
+**Founder directive (2026-11-14). Applies to every future estate agent, feature, service, change, release, incident and recovery, calibrated to actual effect risk.** Canonical governance [IDP #7452](https://github.com/chidionyema/idp/issues/7452#issuecomment-6882246393). Extend AGENTS.md, FLOW, Greenlane, QUAD, DoF, Legion, OPA/OPAL (if actually deployed), FCR, KARMA, Optimus, Genesis — never create a competing controller, ledger, policy decision service, verifier or mandatory gate.
+
+## Invariants
+- Consequential effects must identify independently authenticated mandate/issuer, scope, validity, authority epoch, policy revision, actual enforcing door, bypass routes, idempotency, independent observer and real expected outcome. Controller or agent assertions are not authority.
+- Authorised change of desired state cannot be overwritten by stale reconciliation. Revalidate authority at the **actual effect commit boundary** using monotonic fencing/version checks or explicit safe HOLD and compensation semantics. Previously committed effects require independent recording and readback; revocation does not undo history.
+- New work must include a **positive legitimate execution** and **discriminating negative falsifier** chosen for its failure class. If disabling the claimed guard does not fail the negative test, coverage is insufficient.
+- Test relevant races and faults: mid-flight revocation plus delayed result, concurrent writers, ABA/replayed authorisation, old lease/offline takeover, external intervention, controller/PEP/verifier outage or compromise, bypass, forged proof, lost receipt after external effect, safe recovery, cross-runtime failure recurrence and legitimate successor liveness.
+- Choose rigorous evidence methods proportionate to stakes: state-machine/model checking, stateful property-based generation, controlled scheduling/linearizability, mutation testing, fault/chaos injection, independent oracles and harmless authorised production canaries. Preserve seeds/event traces and explicit uncertainty.
+- **Proof requires independent effect evidence** bound to exact source SHA, configuration, principal, mandate/epoch, policy revision, event trace, effect ID, verifier, observed business state and time; UNKNOWN/BLIND/STALE are not PASS. Distinguish CANDIDATE, ISOLATED_PROVEN, INTEGRATED_PROVEN, LIVE_CANARY_PROVEN and OPERATIONAL.
+- Feed failure classes to existing FCR/ FLOW / KARMA, measurements to Optimus and independently witnessed current state to Genesis. Resolve recurrence as a prevention-control failure, not repeated diagnostic narration.
+- Every new control must pass its own falsifiers (**reflexive integrity**); no estate-wide compulsory gates before a valid small canary proves denial of forbidden effects **and** continuity of legitimate work. Existing identity/protected change controls always remain.
+
+## First executable milestone
+Execute V7 authorised mandate → pause worker A before actual effect → revoke V7/authorise V8 → release delayed worker result → confirm real effect door rejects A's new effect → V8 worker B succeeds → independent observer confirms business state. Deliberately remove fencing in isolated mutation test and prove the test catches it. Use a harmless live effect with permission. Report trace, exact SHA, PEP decision, committed effect receipt, independence and negative control on #7452. Reference-only tests are **not** live acceptance.
+
+## Governance and coverage
+Inventory actual effect doors and independent evidence across GitHub/CI/Greenlane, cloud/deployment/credentials, agent tools/sandboxes/opaque sessions, policy leases, Temporal/Chronos, finances/spend, memory/data, Hermes/comms, Genesis/Otto/investor access and recovery. Risk-rank uncovered paths and report verified/total, denied forbidden effects, permitted success, mutation kill rate, recovery/false denial rates, latency and cost per verified yield. No invented operational claim, unproven universal percentage or global execution freeze.
+
+**Standing future-work rule:** incorporate pertinent positive/negative scientific tests at the *existing* project/CI/verification seam, with independently confirmed release effects. Do not treat this Markdown file or its merge as proof of operational compliance.
