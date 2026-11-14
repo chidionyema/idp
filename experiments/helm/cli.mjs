@@ -22,6 +22,12 @@ try {
     write("cartridge.json", packed);
     console.log(JSON.stringify({ status: "CARTRIDGE_COMPILED", bytes: packed.bytes,
       dropped: packed.dropped, digest: packed.sha256 }));
+  } else if (command === "live" && process.env.GITHUB_REF_NAME?.startsWith("research/helm-shot-")) {
+    // The existing helm-research workflow runs this exact branch via its
+    // normal push trigger; no new workflow, credentials, authority or
+    // deployment route. Other branches retain the original four-arm run.
+    const {shotTrialMain} = await import("./shot-trial.mjs");
+    process.exitCode = await shotTrialMain();
   } else if (command === "live") {
     const {tasks, evidence} = read("fixtures/tasks.json");
     const url = process.env.HELM_INFERENCE_URL;

@@ -119,3 +119,9 @@ test("Paired eval records model-call errors honestly, applies bounded schema ret
     model:"fixture",url:"https://example.test",token:"fixture",infer,maxCalls:1}),
     /call ceiling/);
 });
+
+// HELM founder shot-control falsifiers exercise the real research acceptance path.
+import "./shot-control.test.mjs";
+import "./shot-trial.test.mjs";
+import "./shot-ground-adapter.test.mjs";
+import "./shot-argon-sqlite.test.mjs";
