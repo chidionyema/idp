@@ -68,13 +68,13 @@ class EngineerPacketTests(unittest.TestCase):
 
     def test_no_side_effect_dispatch_in_spec(self):
         self.assertEqual(self.doc["status"], "SPECIFIED_UNASSIGNED_NOT_DISPATCHED")
-        self.assertIn("AUTH", self.doc["assignment_contract"]["promotion"].upper())
+        self.assertIn("founder-passkey", self.doc["assignment_contract"]["promotion"])
 
     def test_cross_packet_mapping(self):
         packet_ids = {x["packet"] for x in self.doc["packets"]}
         mapped = set()
         for item in self.doc["single_source_owner_index"]:
-            mapped.update(item["packet"].split("/"))
+            mapped.update(item["packets"])
         self.assertEqual(mapped, packet_ids)
 
     def test_native_source_and_portable_schema_requirements_preserved(self):
