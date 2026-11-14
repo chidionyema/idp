@@ -28,6 +28,7 @@ violations: enforce zero NEW violations through its existing ratchet, eliminate 
 ones and turn strict enforcement on only for clean cohorts after a real positive
 canary proves permitted work continues. Keep security/authorization intact.
 See [Pedantic Schema source-backed contract](docs/specs/2026-11-14-pedantic-schema-first-class.json).
+**Cross-language research decision:** [Rust/Pydantic/JSON Schema/Protobuf/CUE study](docs/research/2026-11-14-pedantic-schema-cross-language-deep-research.md) recommends one published JSON Schema 2020-12 wire artifact per shared JSON interface with native Rust/Python/TypeScript validation; no universal Pydantic runtime and no second schema registry. Binary RPC/Protobuf and configuration/CUE remain explicitly bounded exceptions subject to compatibility and differential tests.
 The same workstream also specifies [Meridian short-domain research](docs/specs/2026-11-14-meridian-short-domain-acquisition.json)
 and [Concierge procurement test](docs/specs/2026-11-14-concierge-domain-procurement.json).
 The three are SPECIFIED, not yet deployed or dispatched.
