@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""door-gate -- no instruction, no effect.
+
+Every runtime reaches the estate through a door: a commit, a Telegram task, an MCP call, an
+approval. Harnesses can be hooked; a web agent cannot. So the gate lives at the doors, and it asks
+one question of the acting identity: is there a live instruction behind this action?
+
+    door-gate check [--actor NAME] [--max-age-h 12]   exit 0 admitted, 1 refused, 2 blind
+    door-gate require -- <command...>                run the command only if admitted
+
+A live instruction is one whose latest state is planned or executing (not verified, failed or
+abandoned) and which was accepted within the window. Refusal names the command that opens one.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+LEDGER = Path(os.environ.get("ESTATE_INSTRUCTIONS", Path.home() / ".estate/instructions/ledger.jsonl"))
+LIVE = {"planned", "executing", "received"}
+
+
+def state(max_age_h: float, actor: str) -> tuple[int, str]:
+    if not LEDGER.exists():
+        return 2, "BLIND: no instruction ledger on this host"
+    rows = []
+    for line in LEDGER.read_text(errors="replace").splitlines():
+        if line.strip():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
+    cur: dict[str, dict] = {}
+    for r in rows:
+        i = r.get("id")
+        if not i:
+            continue
+        if r.get("type") == "instruction":
+            cur[i] = {"id": i, "state": "received", "at": r.get("at", ""), "text": r.get("text", ""),
+                      "actor": r.get("session", "")}
+        elif i in cur and r.get("type") == "state":
+            cur[i]["state"] = r.get("state", cur[i]["state"])
+    cutoff = time.time() - max_age_h * 3600
+    for i, c in cur.items():
+        if c["state"] not in LIVE:
+            continue
+        if actor and actor not in (c.get("actor") or "") and actor not in c["text"]:
+            continue
+        try:
+            ts = time.mktime(time.strptime(c["at"], "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            continue
+        if ts >= cutoff:
+            return 0, f"admitted on {i} ({c['state']}, {c['at']}): {c['text'][:60]}"
+    return 1, ("REFUSED: no live instruction behind this action. Open one:\n"
+               "  ~/.estate/bin/instruction new --text \"<what you were told>\" --session <id>")
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("check"); c.add_argument("--actor", default=""); c.add_argument("--max-age-h", type=float, default=12)
+    r = sub.add_parser("require"); r.add_argument("command", nargs=argparse.REMAINDER)
+    a = ap.parse_args(argv)
+    if a.cmd == "check":
+        rc, msg = state(a.max_age_h, a.actor)
+        print(msg)
+        return rc
+    rc, msg = state(12, "")
+    if rc != 0:
+        print(msg, file=sys.stderr)
+        return rc
+    cmd = a.command[1:] if a.command and a.command[0] == "--" else a.command
+    if not cmd:
+        print("nothing to run", file=sys.stderr)
+        return 2
+    return subprocess.call(cmd)  # noqa: S603 - explicit argv from the caller
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
