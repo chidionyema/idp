@@ -1,0 +1,709 @@
+{
+  "schema": "estate.deterministic-workforce-requirements.v1",
+  "as_of": "2026-11-14",
+  "authority": {
+    "issue": "chidionyema/idp#7940",
+    "programme": "docs/epics/2026-10-25-estate-master-epic.md",
+    "agent_entry": "AGENTS.md",
+    "decision_register": "policy/agent-decisions.json",
+    "note": "Research requirements, not evidence of deployed controls or authorization to bypass gates"
+  },
+  "principles": [
+    "Prefer machine decision where input, policy and observable evidence can determine an outcome",
+    "Use model only for irreducibly semantic or uncertain decisions; require typed output and independent verification",
+    "Human judgement only for value-tradeoff, irreversible, novel or low-confidence decisions",
+    "Do not create a second queue, router, memory ledger, scheduler, incident manager or policy engine",
+    "All consequential decisions include provenance, clock, version and an independent falsifier",
+    "A FAIL and a BLIND are distinct; neither is PASS",
+    "Experiment first on an isolated non-effectful path; promote only after valid canary and live receipt"
+  ],
+  "evidence_classification": {
+    "code_present": "File or implemented function inspected on main; not a claim of live health or complete wiring",
+    "observed_failure": "Specific observed GitHub run/issue/repo state",
+    "historical_proposal": "Earlier written requirement; actual implementation and liveness not established by this research",
+    "integration_gap": "Necessary behaviour not demonstrated across the actual entry and effect doors"
+  },
+  "baseline": {
+    "as_of": "2026-11-14",
+    "github_main_observed": "bff37dd53ea704c8401bc953c524ec36ac39facc",
+    "unpromoted_work": "work/agent-admission-shift-left-20261114",
+    "agent_failure": "https://github.com/chidionyema/idp/actions/runs/43629366222",
+    "agent_failure_type": "hardcoded Gemini plus MiniMax fallback both capacity refused; firewall and submit-lane skipped",
+    "prior_red_pr": "https://github.com/chidionyema/idp/pull/8105",
+    "greenlane_sample_issue": "chidionyema/idp#7940",
+    "sample_2026_11_11": {
+      "landed": 43,
+      "red": 90,
+      "land_refused": 59,
+      "other": 8,
+      "sample_batches": 200,
+      "retry_cycles": 102,
+      "batch_occupancy_minutes_approx": 525,
+      "note": "Historical batch outcomes, not unique-change failure rate or CI billing"
+    },
+    "health": "Current production health, provider balances, plan coverage and CI-success rate NOT established by this register"
+  },
+  "domain": {
+    "entities": [
+      "FounderIntent",
+      "Instruction",
+      "Obligation",
+      "Task",
+      "Claim",
+      "AgentSession",
+      "Capability",
+      "ProviderDeployment",
+      "CapacityReservation",
+      "PolicyDecision",
+      "Incident",
+      "FailureClass",
+      "SourceCandidate",
+      "VerificationReceipt",
+      "Effect",
+      "RecoveryLease",
+      "Notification",
+      "VerifiedYield"
+    ],
+    "key_relations": [
+      "FounderIntent -> derives Instruction -> creates accepted Obligation",
+      "Obligation -> owns Task -> is leased to AgentSession under Claim",
+      "Task -> requires Capability -> consumes CapacityReservation",
+      "Candidate -> is evaluated against PolicyDecision at exact source/base/policy versions",
+      "Failure -> has FailureClass -> creates or updates one Incident and RecoveryLease",
+      "VerificationReceipt -> proves Effect -> can settle Obligation",
+      "Notification -> summarizes Incident/Outcome, never defines truth"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "DET-001",
+      "priority": "P0",
+      "phase": "ingress",
+      "decision": "machine",
+      "owner": "FLOW instruction intake + existing identity door",
+      "classification": "historical_proposal",
+      "source": [
+        "docs/epics/2026-10-25-estate-master-epic.md §6.4 and §12",
+        "AGENTS.md §12"
+      ],
+      "contract": "For each accepted founder intent issue stable intent_id, immutable source quote/digest, authorised issuer, expected outcome, constraints, scope, accepted_at and policy revision. De-duplicate event replay using idempotency key.",
+      "positive": "One accepted event creates one durable obligation with causal identity.",
+      "negative": "Replay, contradictory override, unsigned issuer and missing outcome cannot mint duplicate/accepted obligation.",
+      "measure": [
+        "accepted_unique",
+        "duplicate_suppressed",
+        "unattributed_intents"
+      ]
+    },
+    {
+      "id": "DET-002",
+      "priority": "P0",
+      "phase": "discovery",
+      "decision": "machine",
+      "owner": "capability-index registry",
+      "classification": "code_present",
+      "source": [
+        "bin/capability-index",
+        "catalog/estate-capability-registry.json",
+        "AGENTS.md §6"
+      ],
+      "contract": "Before selecting an executor resolve existing capability id, version, authority, cost, effect class, endpoint, owner, proof window and known alternate execution doors from the ONE registry.",
+      "positive": "Known bot-commit/Greenlane/intent route is discovered without asking a model to improvise a new tool.",
+      "negative": "Undeclared, stale or duplicate capability must not be treated as live or replace an existing control.",
+      "measure": [
+        "capability_discovery_coverage",
+        "stale_registry_reads",
+        "duplicate_capability_findings"
+      ]
+    },
+    {
+      "id": "DET-003",
+      "priority": "P0",
+      "phase": "admission",
+      "decision": "machine",
+      "owner": "existing authenticated execution gateway",
+      "classification": "integration_gap",
+      "source": [
+        "AGENTS.md §2 §5 §7",
+        "bin/dof-gate",
+        "bin/claim-gate",
+        ".github/workflows/agent-sandbox.yml"
+      ],
+      "contract": "Before costly generation bind candidate task+actor+intended changed paths+effect class+current main SHA+incident epoch+claim lease+policy revision; return ALLOW, REFUSE or BLIND with exact reason and executable bounded next route.",
+      "positive": "Allow independent test-only task with valid scope, capacity and claim.",
+      "negative": "The precise #8105 protected AGENTS.md and docs/standards paths while critical incident is open are refused BEFORE provider invocation or PR.",
+      "measure": [
+        "pre_model_refusals",
+        "late_ci_predictable_refusals",
+        "false_denials"
+      ]
+    },
+    {
+      "id": "DET-004",
+      "priority": "P0",
+      "phase": "admission",
+      "decision": "machine",
+      "owner": "existing DoF incident authority",
+      "classification": "code_present",
+      "source": [
+        "bin/dof-gate",
+        "catalog/dof-registry.json",
+        "chidionyema/idp#8042"
+      ],
+      "contract": "Read current authenticated incident inventory; evaluate entire planned aggregate scope against exact policy base; UNKNOWN inventory is BLIND, not an inferred grant. Re-evaluate after changes in incident state or source base.",
+      "positive": "A closed independently resolved incident re-arms admissible nonprotected tasks.",
+      "negative": "Synthetic dof-probe and protected changed path with forged Genesis-Resolves do not authorize effect.",
+      "measure": [
+        "incident_policy_freshness",
+        "unsafe_admissions",
+        "safe_work_false_denials"
+      ]
+    },
+    {
+      "id": "DET-005",
+      "priority": "P0",
+      "phase": "admission",
+      "decision": "machine",
+      "owner": "claim-open / claim-gate / shared ownership ledger",
+      "classification": "code_present",
+      "source": [
+        "bin/claim-open",
+        "bin/claim-gate",
+        "AGENTS.md §5"
+      ],
+      "contract": "Claim exact path set once with atomic ownership lease and overlap check; no claim without workspace allocation; heartbeat and compare-and-swap on renew/transfer.",
+      "positive": "Twenty disjoint tasks claim concurrently without overlap.",
+      "negative": "Two agents racing same path cannot both own it; expired claim cannot silently keep ownership.",
+      "measure": [
+        "overlap_collisions",
+        "claim_wait_ms",
+        "orphan_claims"
+      ]
+    },
+    {
+      "id": "DET-006",
+      "priority": "P0",
+      "phase": "admission",
+      "decision": "machine",
+      "owner": "single estate provider router + lane_registry",
+      "classification": "integration_gap",
+      "source": [
+        "platform/llm/lane_registry.py",
+        "AGENTS.md §7a",
+        "docs/epics/2026-10-25-estate-master-epic.md §6.3",
+        ".github/workflows/agent-sandbox.yml"
+      ],
+      "contract": "Before model allocation resolve provider deployment capability and healthy state, quotas, request windows, Retry-After, estimated tokens/cost, concurrent reservations and task criticality; grant a short TTL capacity lease or durable DEFERRED decision. A router-unavailable state is explicit and does not license blind hardcoded fallback.",
+      "positive": "Healthy capable deployment reserved under limit and released on completion.",
+      "negative": "Simulate both Gemini and MiniMax 429: zero duplicate provider calls until eligible capacity changes, obligation retained for resume.",
+      "measure": [
+        "capacity_admission_rate",
+        "avoided_429s",
+        "unproductive_provider_calls",
+        "deferred_recovery_age"
+      ]
+    },
+    {
+      "id": "DET-007",
+      "priority": "P0",
+      "phase": "execution",
+      "decision": "machine",
+      "owner": "provider lane registry + router policy",
+      "classification": "code_present",
+      "source": [
+        "platform/llm/lane_registry.py"
+      ],
+      "contract": "Map vendor 401/403 to auth fault, 402 to credit, 429 to quota exhaustion/reset, timeout to degraded; persist deployment-specific state and circuit breaker; recover on independently observed reset/probe, never timer-only assumption.",
+      "positive": "Single 429 with trusted reset header parks one deployment and redirects only to independently available capable deployment.",
+      "negative": "Multiple simultaneous sessions cannot overwhelm an exhausted deployment by independently retrying it.",
+      "measure": [
+        "bad_route_count",
+        "provider_quota_retries",
+        "capacity_probe_freshness"
+      ]
+    },
+    {
+      "id": "DET-008",
+      "priority": "P0",
+      "phase": "execution",
+      "decision": "machine",
+      "owner": "Legion execution gateway / agent-sandbox",
+      "classification": "observed_failure",
+      "source": [
+        ".github/workflows/agent-sandbox.yml",
+        "https://github.com/chidionyema/idp/actions/runs/43629366222"
+      ],
+      "contract": "Remove direct provider-specific choice from privileged agent task admission; select through existing router by capability/price/health/authorization; preserve fully isolated worktrees and transcripts on provider switch. Operator still may specify explicitly authorised provider when policy permits.",
+      "positive": "Provider changes preserve original obligation and exact evidence chain.",
+      "negative": "No surviving filesystem modifications, private transcript, secret or conversation state from a failed provider reach fallback.",
+      "measure": [
+        "provider_switches",
+        "fallback_success",
+        "provider_isolation_failures"
+      ]
+    },
+    {
+      "id": "DET-009",
+      "priority": "P0",
+      "phase": "execution",
+      "decision": "machine",
+      "owner": "existing durable task/obligation custody",
+      "classification": "integration_gap",
+      "source": [
+        "platform/queue/dispatcher.py",
+        "docs/training/2026-11-12-karma-operating-doctrine.md"
+      ],
+      "contract": "Every accepted obligation has durable state, lease expiry, heartbeat, checkpoint, retry cause and last verified effect; session death cannot mark it complete or lose custody. Atomic CAS transition and append-only effects; no duplicate work on crash/restart.",
+      "positive": "Crash after capacity reservation but before output resumes once or releases capacity.",
+      "negative": "Simultaneous zombie sweeper and late worker cannot both commit completion or erase unique uncommitted work.",
+      "measure": [
+        "orphan_obligations",
+        "duplicate_executions",
+        "recovered_work",
+        "lost_work"
+      ]
+    },
+    {
+      "id": "DET-010",
+      "priority": "P0",
+      "phase": "source",
+      "decision": "machine",
+      "owner": "trusted submit-lane/Greenlane source gate",
+      "classification": "integration_gap",
+      "source": [
+        ".github/workflows/agent-sandbox.yml",
+        "bin/idp-agent-base-apply.py",
+        "bin/idp-ci --check"
+      ],
+      "contract": "Reconstruct exact staged diff against trusted base outside untrusted runtime; reject policy/validator/hook/workflow edits without independent protected-change authority. Run relevant deterministic lint, parse, type, test and path checks before remote branch/PR, from protected policy sources, with explicit SKIPPED/BLIND.",
+      "positive": "Valid independently allowlisted patch reaches canonical lane with exact SHA and all applicable fast proof.",
+      "negative": "Missing formatter, altered validator, nonexistent test runner, syntax error, staged path outside plan or changed main fails before PR.",
+      "measure": [
+        "prepush_detected_defects",
+        "preventable_red_prs",
+        "skipped_gates",
+        "false_passes"
+      ]
+    },
+    {
+      "id": "DET-011",
+      "priority": "P0",
+      "phase": "source",
+      "decision": "machine",
+      "owner": "founder-passkey protected effect gate",
+      "classification": "code_present",
+      "source": [
+        ".github/workflows/deterministic-zero-agent-cicd.yml",
+        "bin/idp-ci-guarded-paths",
+        ".github/workflows/founder-passkey-deploy.yml"
+      ],
+      "contract": "Use exact authenticated authorization proof tied to actor, patch digest, path scope, expiry and policy version for protected changes. GitHub bot committer identity and X-Idp-Signed presence do not themselves grant protected workflow founder authority.",
+      "positive": "Genuine founder-authorized protected patch passes independent gate.",
+      "negative": "Invented trailer, API commit, unauthorised workflow path or expired approval cannot effect trusted workflow modification.",
+      "measure": [
+        "protected_denials",
+        "unauthorized_control_attempts",
+        "approved_changes_landed"
+      ]
+    },
+    {
+      "id": "DET-012",
+      "priority": "P0",
+      "phase": "source",
+      "decision": "machine",
+      "owner": "Greenlane engine and GitHub backend",
+      "classification": "code_present",
+      "source": [
+        "greenlane/engine.py",
+        "greenlane/github.py",
+        "bin/idp-greenlane",
+        "docs/runbooks/greenlane.md"
+      ],
+      "contract": "Only trusted engine promotes tested candidate; required checks refer to exact SHA, main base and current policy epoch; preserve lane when red and use bisection; no hand-raised red PR as agent delivery.",
+      "positive": "Single passing candidate reaches main with independent readback.",
+      "negative": "Mutated head, stale base, missing required check or unsigned protected file never lands.",
+      "measure": [
+        "lane_throughput",
+        "candidate_check_minutes",
+        "main_green_ratio",
+        "open_red_pr_count"
+      ]
+    },
+    {
+      "id": "DET-013",
+      "priority": "P0",
+      "phase": "source",
+      "decision": "machine",
+      "owner": "Greenlane learned hold",
+      "classification": "code_present",
+      "source": [
+        "greenlane/learning.py",
+        "greenlane/engine.py lines 610-677"
+      ],
+      "contract": "Fingerprint canonical (failure class, candidate SHA, base SHA, policy/incident epoch); unchanged deterministic failure parks without re-consuming same CI. Reset only on genuinely new evidence, edited patch, base/policy or incident state. Record cost of retries per failure class.",
+      "positive": "Twenty identical failure reporters aggregate to one held cause.",
+      "negative": "Unchanged failing head cannot spend more identical checks or issue twenty new alerts.",
+      "measure": [
+        "retry_suppression",
+        "duplicate_ci_runs",
+        "false_holds"
+      ]
+    },
+    {
+      "id": "DET-014",
+      "priority": "P0",
+      "phase": "signals",
+      "decision": "machine",
+      "owner": "critical-watch existing incident loop",
+      "classification": "code_present",
+      "source": [
+        "platform/estate/libexec/critical-watch.py",
+        "catalog/critical-functions.json"
+      ],
+      "contract": "Probe liveness AND goal; tri-state verdict; update one canonical incident per failure-class/scope; bound alert and auto-remediation backoff; do not infer recovery from a process alive or HTTP 200.",
+      "positive": "One actual recovery closes the incident with fresh independent receipt.",
+      "negative": "A healthy process with unmet objective must remain FAIL; 20 repeated observations must not create 20 incidents.",
+      "measure": [
+        "dedup_incidents",
+        "detector_to_owner_latency",
+        "unproven_recoveries",
+        "alert_count"
+      ]
+    },
+    {
+      "id": "DET-015",
+      "priority": "P0",
+      "phase": "signals",
+      "decision": "machine",
+      "owner": "existing Genesis/Optimus notifications and critical-watch",
+      "classification": "integration_gap",
+      "source": [
+        ".github/workflows/lane-feedback.yml",
+        "platform/estate/libexec/critical-watch.py",
+        "docs/epics/2026-10-25-estate-master-epic.md §0"
+      ],
+      "contract": "One severity-ranked notification per active owner/failure-class/time-window; routine CI repeats update structured evidence, not user inbox. Never silence materially new security fault; deliver one founder digest based on verified state and links.",
+      "positive": "Same failure across 20 agents yields one founder-visible incident card and one bounded digest, no comment storm.",
+      "negative": "A novel critical breach still pages even during active suppression.",
+      "measure": [
+        "founder_interruptions",
+        "duplicate_notices",
+        "critical_alert_latency"
+      ]
+    },
+    {
+      "id": "DET-016",
+      "priority": "P0",
+      "phase": "verification",
+      "decision": "machine",
+      "owner": "CI + independently trusted proof gateway",
+      "classification": "code_present",
+      "source": [
+        "bin/idp-ci",
+        "bin/claim-gate",
+        "greenlane/github.py",
+        "docs/training/2026-11-12-karma-operating-doctrine.md"
+      ],
+      "contract": "Every gate emits PASS, FAIL or BLIND with instrument SHA, input SHA, elapsed, effect scope and falsifier proof; no silent skip. Candidate green is distinct from main green and production verified.",
+      "positive": "Real deploy produces independent callback/effect/readback receipt.",
+      "negative": "Gate disabled, absent tool, fabricated transcript or missing telemetry cannot settle obligation.",
+      "measure": [
+        "gate_execution_coverage",
+        "false_green_mutants",
+        "verified_yield_ratio"
+      ]
+    },
+    {
+      "id": "DET-017",
+      "priority": "P1",
+      "phase": "verification",
+      "decision": "machine",
+      "owner": "Optimus metrics + existing ledger",
+      "classification": "integration_gap",
+      "source": [
+        "bin/idp-ci",
+        "greenlane/engine.py",
+        "docs/training/2026-11-12-karma-operating-doctrine.md"
+      ],
+      "contract": "Join intent/task/agent/provider/candidate/check/runtime effect into one causal measurement chain with event/source versions and unknown dimensions; compute cost per verified yield, retry time, CI minutes, alert counts, false refusals and throughput from independent sources.",
+      "positive": "Every completed obligation traces to cost and independently observed production effect.",
+      "negative": "Missing invoice/runner timings marked UNKNOWN rather than zero or free.",
+      "measure": [
+        "trace_linkage_coverage",
+        "unknown_cost_share",
+        "cost_per_yield",
+        "time_to_yield"
+      ]
+    },
+    {
+      "id": "DET-018",
+      "priority": "P1",
+      "phase": "verification",
+      "decision": "machine",
+      "owner": "capability-index + state page + estate-brief",
+      "classification": "code_present",
+      "source": [
+        "bin/capability-index",
+        "bin/estate-brief",
+        "AGENTS.md §1 §12"
+      ],
+      "contract": "Expose current source, owner, freshness and authoritative control status in one machine-readable view at session start and before dispatch; stale memory is tagged CONTEXT, never AUTHORITY. Ensure all runtimes/CLI/Genesis read same record.",
+      "positive": "New model session sees current incident/lease/capacity before attempting work.",
+      "negative": "Old cached AGENTS text or out-of-window cluster state cannot certify live health.",
+      "measure": [
+        "session_context_coverage",
+        "stale_decisions",
+        "context_read_latency"
+      ]
+    },
+    {
+      "id": "DET-019",
+      "priority": "P1",
+      "phase": "coordination",
+      "decision": "machine",
+      "owner": "FLOW/Chronos durable scheduler",
+      "classification": "historical_proposal",
+      "source": [
+        "docs/epics/2026-10-25-estate-master-epic.md §6.2 §7",
+        "docs/training/2026-11-12-karma-operating-doctrine.md"
+      ],
+      "contract": "Every loop declares sense, decide, act, prove, remember with trigger, bound, recurrence key, responsible owner and rollback. One existing schedule/event trigger per loop; wake on fresh evidence, not arbitrary polling if avoidable.",
+      "positive": "Blocked mission is automatically reconsidered when quota resets or policy changes.",
+      "negative": "No infinite recursive wakeups, duplicate schedules or model called just to read a clock/status.",
+      "measure": [
+        "machine_handled_events",
+        "agent_calls_avoided",
+        "wakeups_per_cause",
+        "stagnation_age"
+      ]
+    },
+    {
+      "id": "DET-020",
+      "priority": "P1",
+      "phase": "coordination",
+      "decision": "machine",
+      "owner": "existing task queue + quarantine",
+      "classification": "code_present",
+      "source": [
+        "platform/queue/dispatcher.py",
+        "tests/test_queue_dispatcher.py"
+      ],
+      "contract": "Reserve worktree before finalizing task claim; heartbeat on claim; preserve uncommitted work in quarantine on cleanup; audit all worktrees/branches/stashes as owned outcomes with TTL and proof.",
+      "positive": "After worker death work is recoverable from archive or untouched worktree.",
+      "negative": "No silent deletion, ghost running task, duplicate CAS completion or unowned orphan lane.",
+      "measure": [
+        "quarantined_artifacts",
+        "orphan_worktrees",
+        "rollback_success"
+      ]
+    },
+    {
+      "id": "DET-021",
+      "priority": "P1",
+      "phase": "governance",
+      "decision": "machine",
+      "owner": "policy/agent-decisions + registry-gate",
+      "classification": "code_present",
+      "source": [
+        "policy/agent-decisions.json",
+        "AGENTS.md §12",
+        "bin/capability-index"
+      ],
+      "contract": "Classify each action machine/model/judgment using actual executable rule and source. Explicit irreducibility for human, model confidence for probabilistic output, no self-declared authority. Build once and retire duplicated decision logic.",
+      "positive": "Deterministic branch/rate-limit/claim decisions never require an LLM.",
+      "negative": "Claim 'human needed' without value-tradeoff/irreversible/novel/low-confidence reason fails registry validation.",
+      "measure": [
+        "machine_decision_share",
+        "model_calls_by_reducible_class",
+        "human_interruption_rate"
+      ]
+    },
+    {
+      "id": "DET-022",
+      "priority": "P1",
+      "phase": "verification",
+      "decision": "machine",
+      "owner": "CI mutation gate + evaluation harness",
+      "classification": "integration_gap",
+      "source": [
+        "bin/idp-ci",
+        ".github/workflows/mutation-pr-gate.yml",
+        "docs/epics/2026-10-25-estate-master-epic.md §6.6"
+      ],
+      "contract": "For each admission policy assert positive and negative fixtures, concurrency falsifier, removal-of-gate mutation and real decision readback. Shadow/canary before broad enforcement; if legitimate work falsely denied, rollback only new scope while retaining security invariants.",
+      "positive": "A/B canary lowers predictable red PR rate without dropping authorised throughput.",
+      "negative": "Removing admission hook makes the negative test fail, and no-op 'green' cannot pass.",
+      "measure": [
+        "mutation_kill_rate",
+        "false_denial_rate",
+        "p95_admission_ms"
+      ]
+    },
+    {
+      "id": "DET-023",
+      "priority": "P1",
+      "phase": "governance",
+      "decision": "machine",
+      "owner": "repository controls/rulesets",
+      "classification": "integration_gap",
+      "source": [
+        "AGENTS.md §2",
+        "bin/idp-greenlane",
+        ".github/workflows/deterministic-zero-agent-cicd.yml"
+      ],
+      "contract": "Enumerate all code-producing and promoting doors (agent-sandbox, direct GitHub API, bot-commit, agent-trunk, Greenlane, maintenance, alternate repos). Classify the actor and enforce invariant at the genuine side-effect boundary, not by instructions alone.",
+      "positive": "Same known-red patch is refused consistently regardless of harness or connector.",
+      "negative": "A direct API-created PR or bot commit does not silently evade DoF, claim or protected-source scope.",
+      "measure": [
+        "covered_write_doors",
+        "unmediated_write_attempts",
+        "drifted_policy_controls"
+      ]
+    },
+    {
+      "id": "DET-024",
+      "priority": "P2",
+      "phase": "science",
+      "decision": "model",
+      "owner": "HELM evaluation + Legion orchestrator",
+      "classification": "historical_proposal",
+      "source": [
+        "docs/training/2026-11-12-karma-operating-doctrine.md",
+        "AGENTS.md KARMA"
+      ],
+      "contract": "Reserve language models for planning, semantic code generation, diagnosis of novel cases and tradeoff alternatives; require typed bounded proposals, source evidence and deterministic admission/verification around every output. Compare model combinations with controlled negative results.",
+      "positive": "Model supplies novel repair proposal and machine independently proves outcome.",
+      "negative": "A model's self-rated confidence or narrative cannot certify release or vendor budget.",
+      "measure": [
+        "model_added_value",
+        "novel_case_resolution",
+        "cost_per_verified_solution"
+      ]
+    },
+    {
+      "id": "DET-025",
+      "priority": "P0",
+      "phase": "rollout",
+      "decision": "machine",
+      "owner": "estate release/assurance owner",
+      "classification": "integration_gap",
+      "source": [
+        "AGENTS.md §3",
+        "docs/runbooks/greenlane.md",
+        "chidionyema/idp#7940"
+      ],
+      "contract": "Rollout sequence: read-only coverage baseline; 20-worker adverse replay; isolated canary through trusted promotion; independent actual main SHA; measured live admission decisions; expand by explicit effect scope; watch false denials and rollback. Do not convert an unverified branch into mandatory enforcement.",
+      "positive": "Legitimate safe lane lands; known invalid candidate never creates PR; matched before/after metrics independently confirm improvement.",
+      "negative": "Live visitor/caller evidence absent, source not merged, audit trail missing, or provider reroute hardcoded means status remains NOT_DELIVERED.",
+      "measure": [
+        "production_adoption",
+        "verified_fleet_coverage",
+        "red_pr_class_rate",
+        "interruptions_per_yield"
+      ]
+    }
+  ],
+  "release_gates": [
+    {
+      "id": "RG-1",
+      "name": "Evidence",
+      "test": "Each source-backed requirement must point to current source artifact and have explicit historical/live confidence."
+    },
+    {
+      "id": "RG-2",
+      "name": "Canary",
+      "test": "A correct safe candidate proceeds with real claim/capacity/signing/CI and no new broad outage."
+    },
+    {
+      "id": "RG-3",
+      "name": "Falsification",
+      "test": "Known 8105 invalid patch, forged authority, 429, stale incident and interrupted worker are all rejected or deferred before costly effect."
+    },
+    {
+      "id": "RG-4",
+      "name": "Concurrency",
+      "test": "20 simultaneous workers and duplicate event replay: no duplicate execution/claim ownership, repeated CI or alert storm."
+    },
+    {
+      "id": "RG-5",
+      "name": "Promotion",
+      "test": "Trusted App/Founder authorized exact SHA on main; Greenlane/CI checks and real caller evidence read independently."
+    },
+    {
+      "id": "RG-6",
+      "name": "Learning",
+      "test": "Optimus/Genesis show distinct BEFORE/AFTER outcomes plus UNKNOWN accounting and correction ownership."
+    }
+  ],
+  "operational_sequence": [
+    {
+      "wave": 0,
+      "name": "Inventory and truth",
+      "requirements": [
+        "DET-002",
+        "DET-018",
+        "DET-023",
+        "DET-017"
+      ],
+      "deliverable": "Generate one machine-readable baseline showing every existing effect door, owner, active source version, read freshness and measurement gaps; no gates switched on."
+    },
+    {
+      "wave": 1,
+      "name": "Safe admission",
+      "requirements": [
+        "DET-001",
+        "DET-003",
+        "DET-004",
+        "DET-005",
+        "DET-011",
+        "DET-010"
+      ],
+      "deliverable": "Read-only admission verdict -> isolated deny/allow canary -> authenticated promotion and identical verdict at all write doors."
+    },
+    {
+      "wave": 2,
+      "name": "Capacity and custody",
+      "requirements": [
+        "DET-006",
+        "DET-007",
+        "DET-008",
+        "DET-009",
+        "DET-020"
+      ],
+      "deliverable": "One router decision with reservation/failover/429 circuit breaker; durable recoverable tasks; no unchanged retries."
+    },
+    {
+      "wave": 3,
+      "name": "Churn reduction and closure",
+      "requirements": [
+        "DET-012",
+        "DET-013",
+        "DET-014",
+        "DET-015",
+        "DET-016"
+      ],
+      "deliverable": "One canonical cause, no red PRs from predictable faults, bounded alerts, independent effect proofs."
+    },
+    {
+      "wave": 4,
+      "name": "Optimisation and research",
+      "requirements": [
+        "DET-019",
+        "DET-021",
+        "DET-022",
+        "DET-024",
+        "DET-025"
+      ],
+      "deliverable": "Measured machine-decision share, evaluated model residual, 20-way regression and cost per verified yield."
+    }
+  ],
+  "open_questions_requiring_machine_evidence": [
+    "Does current deployed model router offer a remotely reachable admission/capacity API from Github Actions? Source implementation alone cannot establish network reachability.",
+    "What principal can issue protected-workflow founder passkey approvals tied to a patch digest? No approval may be inferred from GitHub admin rights.",
+    "What proportion of every source writer across all estate repositories is actually forced through trusted-effect admission?",
+    "Which current producer writes authoritative FLOW/QUAD obligation IDs and can they be joined to Greenlane, runner costs and effects without another database?",
+    "Does the production 20-agent notification pathway have a single sink and a deduplicated incident identity?",
+    "Which CI checks are required by live GitHub rulesets at this exact timestamp; the code docs may be stale?"
+  ],
+  "change_policy": "This register must NOT be treated as proof of production or used to trigger a new PR, model run, GitHub workflow, provider spending, policy bypass or gate activation."
+}
