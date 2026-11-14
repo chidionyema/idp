@@ -523,10 +523,71 @@ def _closing_note(service: str, rows: list) -> str:
     return note
 
 
-def file_issues(results: list, dry_run: bool = False) -> list:
-    """One ticket per service with a lane down. Comment on the open one; close it when
-    the lane comes back. A drill that only prints is a report."""
+def _close_retired(declared: set, dry_run: bool) -> list:
+    """Close open `[lane] <service>:` incidents whose service the ladder no longer declares."""
+    code, out, err = _gh(
+        [
+            "issue",
+            "list",
+            "--search",
+            f'in:title "{ISSUE_PREFIX}"',
+            "--state",
+            "open",
+            "--json",
+            "number,title",
+            "--limit",
+            "100",
+        ]
+    )
+    if code != 0:
+        return [f"could not read the open lane incidents: {err}"]
+    try:
+        issues = json.loads(out or "[]")
+    except json.JSONDecodeError:
+        return ["could not read the open lane incidents: unreadable JSON"]
     actions = []
+    for issue in issues:
+        title = issue.get("title") or ""
+        if not title.startswith(f"{ISSUE_PREFIX} ") or ":" not in title:
+            continue
+        service = title[len(ISSUE_PREFIX) + 1 :].split(":", 1)[0].strip()
+        if not service or service in declared:
+            continue
+        n = str(issue["number"])
+        if dry_run:
+            actions.append(f"would close #{n} ({service}: retired from the ladder)")
+            continue
+        note = (
+            f"Closed by the drill: `{service}` is no longer declared in "
+            "platform/ladder/critical-lanes.json, so no drill can measure it and this "
+            "incident could never be answered. Re-declare the service to measure it again."
+        )
+        code, _, err = _gh(["issue", "comment", n, "--body", note])
+        if code == 0:
+            code, _, err = _gh(["issue", "close", n])
+        actions.append(
+            f"closed #{n} ({service}: retired from the ladder)"
+            if code == 0
+            else f"FAILED #{n}: {err}"
+        )
+    return actions
+
+
+def file_issues(
+    results: list, dry_run: bool = False, declared: list | None = None
+) -> list:
+    """One ticket per service with a lane down. Comment on the open one; close it when
+    the lane comes back. A drill that only prints is a report.
+
+    `declared` is every service the ladder names, passed only by a full drill (never with
+    --service). An open incident for a service the ladder no longer names can never be
+    measured again, so nothing would ever close it, and dof-gate would hold every agent at
+    repair-only for good: on 2026-11-14 the retired OKE doors left the ladder (#8043) and
+    `[lane] estate-doors` (#8042) stayed open with no drill able to answer it. Retiring a
+    service from the ladder retires its incident, in the same drill, with the reason."""
+    actions = []
+    if declared is not None:
+        actions += _close_retired(set(declared), dry_run)
     services = []
     for row in results:
         if row["service"] not in services:
@@ -883,7 +944,12 @@ def main(argv: list) -> int:
             print(render_diagnostics(details, show_remedy=args.remedy))
 
     if not (args.no_file or args.why or args.remedy):
-        for action in file_issues(results):
+        declared = (
+            None
+            if args.service
+            else [svc.get("service") for svc in config.get("services", [])]
+        )
+        for action in file_issues(results, declared=declared):
             print(f"  filed  {action}")
     if args.gate:
         states = {lad["state"] for lad in ladders(results)}
