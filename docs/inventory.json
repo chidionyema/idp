@@ -13,7 +13,7 @@
    "DRIFTED": 0,
    "GHOST": 0,
    "MANAGED": 0,
-   "ORPHAN": 39,
+   "ORPHAN": 40,
    "UNKNOWN": false,
    "read": "yes"
   },
@@ -58,7 +58,7 @@
    "read": "UNKNOWN"
   }
  },
- "generated_at": "2026-11-12T09:55:30Z",
+ "generated_at": "2026-11-14T09:03:44Z",
  "rows": [
   {
    "declared_in": "",
@@ -323,6 +323,15 @@
   },
   {
    "declared_in": "",
+   "id": "86e33f954f96a1860a5631f0d2d55275",
+   "name": "mumchimp.com TXT",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "cfb1ef3d38eedbba5e578cb0200c66ce",
    "name": "mumchimp.com A",
    "plane": "cloudflare",
@@ -350,8 +359,8 @@
   },
   {
    "declared_in": "",
-   "id": "86e33f954f96a1860a5631f0d2d55275",
-   "name": "mumchimp.com TXT",
+   "id": "8346a0703b2a7400c9214e530775c106",
+   "name": "otto.mumchimp.com A",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -359,8 +368,8 @@
   },
   {
    "declared_in": "",
-   "id": "8346a0703b2a7400c9214e530775c106",
-   "name": "otto.mumchimp.com A",
+   "id": "f048d102497d4491f493a8e6867803c4",
+   "name": "passkey.mumchimp.com AAAA",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",

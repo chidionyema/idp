@@ -1,40 +1,100 @@
 # Delivery: right first time
 
-Generated 2026-11-12T09:56:02Z, window since 2026-10-29 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
+Generated 2026-11-14T09:04:21Z, window since 2026-10-31 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
 
 ## chidionyema/idp
 
-Merged pull requests: 81; with checks on the first commit: 81; no checks recorded: 0.
-**Green on the first push** (one commit, every check passed): 62/81 = 77%.
-Commits per merged pull request: median 1, most 41; needing a second commit: 9/81.
+Merged pull requests: 79; with checks on the first commit: 79; no checks recorded: 0.
+**Green on the first push** (one commit, every check passed): 61/79 = 77%.
+Commits per merged pull request: median 1, most 44; needing a second commit: 7/79.
 
 Runs on main, completed, passed on the first attempt (workflows with three or more runs):
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| greenlane-common-failure-reaction | 238 | 310 | 77% | 0 |
-| greenlane | 75 | 298 | 25% | 0 |
-| merge-when-green | 76 | 83 | 92% | 0 |
-| deploy-when-green | 72 | 82 | 88% | 0 |
-| lane-feedback | 47 | 80 | 59% | 0 |
-| factory-ci | 9 | 9 | 100% | 0 |
-| estate-issueops | 0 | 8 | 0% | 0 |
-| portal-app | 5 | 7 | 71% | 0 |
-| ci | 7 | 7 | 100% | 0 |
-| build-multiarch | 0 | 7 | 0% | 0 |
-| no-harness-folders | 7 | 7 | 100% | 0 |
-| guarded-paths | 7 | 7 | 100% | 0 |
-| scorecard | 7 | 7 | 100% | 0 |
-| context-index | 6 | 7 | 86% | 0 |
-| ticket-verification | 0 | 5 | 0% | 0 |
-| ruff-required | 5 | 5 | 100% | 0 |
+| estate-issueops | 0 | 200 | 0% | 0 |
+| greenlane-common-failure-reaction | 25 | 181 | 14% | 0 |
+| greenlane | 19 | 173 | 11% | 0 |
+| merge-when-green | 22 | 24 | 92% | 0 |
+| deploy-when-green | 23 | 24 | 96% | 0 |
+| lane-feedback | 13 | 20 | 65% | 0 |
+| ticket-verification | 0 | 7 | 0% | 0 |
+| estate-homes-drill | 5 | 5 | 100% | 0 |
+| factory-ci | 5 | 5 | 100% | 0 |
+| agent (gemini): LEGION #8046 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8047 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8048 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8049 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8050 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8051 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8052 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8053 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8054 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8055 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8056 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8057 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8058 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8059 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8060 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8061 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8062 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8063 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8064 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8065 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8066 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8067 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8068 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8069 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8070 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8071 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8072 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8073 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8074 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8075 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8076 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8077 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8078 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8079 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8080 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8081 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8082 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8083 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8084 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8085 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8086 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8087 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8088 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8089 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8090 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8091 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8092 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8093 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8094 | 0 | 5 | 0% | 0 |
+| agent (gemini): LEGION #8095 | 0 | 5 | 0% | 0 |
+| wake-blocked | 4 | 4 | 100% | 0 |
+| estate-state | 0 | 4 | 0% | 0 |
+| estate-truth | 4 | 4 | 100% | 0 |
+| verdict-signoz | 0 | 4 | 0% | 0 |
+| otto-parity | 0 | 4 | 0% | 0 |
 | Merdian public release assurance | 0 | 4 | 0% | 0 |
-| verdict-signoz | 0 | 3 | 0% | 0 |
-| estate-homes-drill | 0 | 3 | 0% | 0 |
-| estate-watch | 0 | 3 | 0% | 0 |
-| agent (gemini): LEGION #7467 | 1 | 3 | 33% | 0 |
+| ping | 0 | 4 | 0% | 0 |
+| argon-guardian-relay | 0 | 4 | 0% | 0 |
+| estate-watch | 1 | 4 | 25% | 0 |
+| verdict-surfaces | 0 | 3 | 0% | 0 |
+| verdict-backstage | 0 | 3 | 0% | 0 |
+| verdict-langfuse | 0 | 3 | 0% | 0 |
+| vault-reads | 0 | 3 | 0% | 0 |
+| pr-age | 0 | 3 | 0% | 0 |
+| objective-miner | 3 | 3 | 100% | 0 |
+| login-drill | 0 | 3 | 0% | 0 |
+| router-catalog-gate | 0 | 3 | 0% | 0 |
+| estate-progress | 3 | 3 | 100% | 0 |
+| flux-board-reconcile | 0 | 3 | 0% | 0 |
+| demo-sandbox | 3 | 3 | 100% | 0 |
+| dependabot-rebase-nudge | 3 | 3 | 100% | 0 |
+| build-multiarch | 0 | 3 | 0% | 0 |
 
-**All runs on main: 562/945 = 59% passed on the first attempt; 0 re-runs.**
+**All runs on main: 133/964 = 14% passed on the first attempt; 0 re-runs.**
 
 ## chidionyema/prospector
 
@@ -45,10 +105,10 @@ Runs on main, completed, passed on the first attempt (workflows with three or mo
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| PR keeper | 60 | 84 | 71% | 0 |
-| Approve parked runs | 59 | 59 | 100% | 0 |
-| Live storefront smoke | 0 | 37 | 0% | 0 |
+| PR keeper | 58 | 81 | 72% | 0 |
+| Approve parked runs | 58 | 58 | 100% | 0 |
+| Live storefront smoke | 0 | 36 | 0% | 0 |
 | stale | 14 | 14 | 100% | 0 |
 | DNS drift drill | 0 | 14 | 0% | 0 |
 
-**All runs on main: 133/208 = 64% passed on the first attempt; 0 re-runs.**
+**All runs on main: 130/203 = 64% passed on the first attempt; 0 re-runs.**
