@@ -1,5 +1,55 @@
 # AGENTS.md — estate-wide. Every agent on this machine, and every product.
 
+## Mandatory cloud delivery and failure-containment contract (all agents)
+
+**Estate incident lesson, 2026-11-14; canonical issue [#7940](https://github.com/chidionyema/idp/issues/7940).**
+Read this section at session start and before GitHub source writes, workflow dispatches or
+claims of operational yield. It applies to every agent, runtime, provider and delegated session.
+These instructions describe expected behaviour; actual authority resides in trusted execution
+doors and independent checks. A document, branch, passing isolated test or issue comment
+is **not** enforcement or deployment.
+
+**No known-red submissions.** Before model generation or GitHub write, derive the intended
+effect and exact changed paths; query the current main SHA, open incident inventory and
+DoF scope, existing issue ownership/claim and path overlap, guarded-file and founder-passkey
+requirements, applicable checks, provider capacity and supported authenticated submission
+route. Use the existing `bin/dof-gate`, `bin/claim-open`/`bin/claim-gate`, Greenlane,
+and signing/CI machinery. If the available connector cannot trigger a trusted workflow,
+look up the **existing** `.github/workflows/bot-commit.yml`, `agent-sandbox.yml`,
+`bin/estate-brief`, `estate-execute` intents and permissions before declaring the
+mission impossible; never invent access or bypass a real denial. A bot-commit exemption
+is **not** founder-passkey approval for protected workflow changes.
+
+**No blind retry storms.** A provider 429, exhausted budget or disabled router is a
+capacity-admission failure, not a reason to blindly try two hardcoded providers and flood
+GitHub. Prefer the estate's authoritative routing and measured capacity availability.
+Where routing is unavailable, preserve recoverable work, identify the failed dependency
+and owner, and suppress unchanged repeated attempts until capacity, policy, candidate
+or independent evidence changes. Do not use a second unaudited router or pretend a model
+fallback is healthy without a receipt.
+
+**No abandoned work.** FLOW/KARMA ownership survives a session, failure, handover or
+provider switch. A refusal must name the failed real action, exact SHA, policy decision,
+diagnostic evidence and **one** next authorised recovery route. Separate `REFUSED` from
+`BLIND` and from `VERIFIED_YIELD`. Keep the candidate off auto-admitted `lane/` until
+trusted eligibility is established; do not open direct red PRs, create duplicate issues,
+edit unrelated guards, add trigger labels merely to show activity, or notify the founder
+repeatedly about the same failure class. Close the loop only with trusted main readback,
+independent CI, live real-caller evidence and measured recurrence/noise reduction.
+
+**Concrete precedents:**
+- [#8105](https://github.com/chidionyema/idp/pull/8105): preventable DoF/claim/
+  guarded-path/BDD problems escaped into an open red PR.
+- [run 43629366222](https://github.com/chidionyema/idp/actions/runs/43629366222):
+  Gemini failed on capacity, then MiniMax returned HTTP 429; firewall and submission
+  were skipped. The incident was in the agent-sandbox routing boundary, not evidence of
+  a fixed model or completed mission.
+- [#7940](https://github.com/chidionyema/idp/issues/7940): the one continuing
+  implementation/ownership record. Source on an unpromoted branch is not fleet-wide
+  enforcement. Check the actual current state before making any claim.
+
+---
+
 What the estate is and where things live. Enforcement is not in this file; it is in the executor,
 the gates and the hooks, which refuse.
 
