@@ -34516,6 +34516,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/idp-otto-homes",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/idp-vault-put",
           "edge": "invokes"
         }
@@ -44754,6 +44758,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-bootstrap-cloudflare",
         "cap:tool/idp-estate-homes",
         "cap:workflow/gha-otto-lifeboat"
       ],
