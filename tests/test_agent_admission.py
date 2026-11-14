@@ -63,9 +63,9 @@ class AgentAdmissionContractTests(unittest.TestCase):
 
     def test_workflow_runs_gate_before_provider_install(self):
         text = (ROOT / ".github/workflows/agent-sandbox.yml").read_text()
-        self.assertLess(text.index("Admit declared work BEFORE spending provider capacity"),
+        self.assertLess(text.index("Admit declared paths before any provider spending"),
                         text.index("Install the harness and age"))
-        self.assertLess(text.index("Re-admit EXACT staged patch before creating a claim or commit"),
+        self.assertLess(text.index("Verify staged effect scope before issue claim or commit"),
                         text.index("Claim the work on an issue"))
         self.assertLess(text.index("Claim the work on an issue"),
                         text.index("Commit through the estate's own hooks"))
