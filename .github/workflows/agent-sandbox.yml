@@ -55,7 +55,7 @@ on:
         required: true
         type: string
       planned_paths:
-        description: "Exact comma-separated paths planned BEFORE provider execution"
+        description: "Exact comma-separated approved paths before model work"
         required: true
         type: string
       model:
@@ -101,7 +101,7 @@ jobs:
       - name: Refuse tampered age bootstrap before running an agent
         run: bash tests/test_agent_sandbox_age.sh
 
-      - name: Admit declared work BEFORE spending provider capacity
+      - name: Admit declared paths before any provider spending
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ISSUE_BODY: ${{ github.event_name == 'issues' && github.event.issue.body || '' }}
@@ -346,7 +346,7 @@ jobs:
           pip install -q ruff==0.15.18 yamllint==1.37.1
           sudo apt-get install -y -qq shellcheck
 
-      - name: Re-admit EXACT staged patch before creating a claim or commit
+      - name: Verify staged effect scope before issue claim or commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ISSUE_BODY: ${{ github.event_name == 'issues' && github.event.issue.body || '' }}
@@ -355,58 +355,10 @@ jobs:
           set -euo pipefail
           python3 bin/idp-agent-admission --phase before-commit \
             --issue-body "$ISSUE_BODY" --planned-paths "$PLANNED_PATHS"
-          # Reuse the pinned lint version already installed by the previous step.
-          mapfile -d '' -t changed_python < <(git diff --cached --name-only -z --diff-filter=ACM HEAD | grep -zE '\\.py
-        id: claim
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
-          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
-          ISSUE: ${{ github.event_name == 'issues' && github.event.issue.number || inputs.issue }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          agent="$HARNESS"
-          # Every path the change touches, both sides of a rename: bin/claim-gate refuses a file
-          # outside the claim's paths=, and a rename touches two.
-          paths=$(git diff --cached --name-only --no-renames HEAD | paste -sd, -)
-          [ -n "$paths" ] || { echo "::error::nothing staged to claim"; exit 1; }
-          num="$ISSUE"
-          if [ -z "$num" ]; then
-            title="agent-sandbox (${HARNESS}): $(printf '%s' "$TASK" | head -1 | cut -c1-80)"
-            url=$(gh issue create --title "$title" --body "Opened by agent-sandbox to claim this run's work. Run: ${RUN_URL}")
-            num="${url##*/}"
-          fi
-          hb=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          gh issue comment "$num" --body "CLAIM agent=${agent} paths=${paths} heartbeat=${hb}"
-          { echo "num=$num"; echo "agent=$agent"; } >> "$GITHUB_OUTPUT"
-
-      - name: Commit through the estate's own hooks and push the lane
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
-          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
-          NUM: ${{ steps.claim.outputs.num }}
-          AGENT: ${{ steps.claim.outputs.agent }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          branch="lane/agent-${HARNESS}-${GITHUB_RUN_ID}"
-          git config user.name "estate-agent-sandbox"
-          git config user.email "estate-agent-sandbox@users.noreply.github.com"
-          git config core.hooksPath .githooks
-          git checkout -q -b "$branch"
-          subject="agent-sandbox (${HARNESS}): $(printf '%s' "$TASK" | head -1 | cut -c1-72)"
-          printf '%s\n\nRun: %s\n\nClaim: #%s\nAgent: %s\n' "$subject" "$RUN_URL" "$NUM" "$AGENT" > "$RUNNER_TEMP/msg"
-          git commit -q -F "$RUNNER_TEMP/msg"
-          git log -1 --format=%B | grep -q '^X-Idp-Signed: ' || { echo "::error::the commit-msg hook did not stamp the commit"; exit 1; }
-          git push -q origin "$branch"
-          gh issue comment "$NUM" --body "Submitted \`${branch}\` (harness ${HARNESS}). The Greenlane lands it when it is green. Run: ${RUN_URL}"
-          echo "submitted $branch for claim #$NUM"
- || true)
-          if [ "${#changed_python[@]}" -gt 0 ]; then
-            ruff format --check -- "${changed_python[@]}"
-            ruff check -- "${changed_python[@]}"
+          mapfile -d '' -t pyfiles < <(git diff --cached --name-only -z --diff-filter=ACM HEAD | grep -zE '[.]py$' || true)
+          if [ "${#pyfiles[@]}" -gt 0 ]; then
+            ruff format --check -- "${pyfiles[@]}"
+            ruff check -- "${pyfiles[@]}"
           fi
           bin/idp-ci --check
 
