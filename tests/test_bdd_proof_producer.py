@@ -107,3 +107,57 @@ def test_the_producers_evidence_names_a_commit_and_a_check() -> None:
     body = produced_body()
     assert f"required checks green on candidate {CANDIDATE}" in body
     assert "bdd" in body
+
+
+def test_a_retry_rewrites_the_stale_proof_of_an_open_pull_request() -> None:
+    """2026-11-14: #8110, #8115 and #8117 each kept the first attempt's proof after a retry
+    re-squashed the lane, so the grader refused every retry of a lane proven green."""
+    backend = GitHubBackend(
+        repo="chidionyema/idp",
+        required=["bdd", "ci-success"],
+        run_url="https://github.com/chidionyema/idp/actions/runs/2",
+    )
+    stale = produced_body()  # names REBASED: the previous attempt
+    retried = "d" * 40
+    patched: dict[str, str] = {}
+
+    def fake_gh(path: str, method: str = "GET", fields: dict | None = None):
+        if method == "PATCH":
+            patched["path"] = path
+            patched["body"] = (fields or {}).get("body", "")
+            return {}
+        if path.startswith("pulls?state=open"):
+            return [{"number": 8117, "body": stale}]
+        raise AssertionError(f"unexpected call {method} {path}")
+
+    backend.gh = fake_gh  # type: ignore[method-assign]
+    backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
+
+    assert grade(stale, retried)[0] != 0, (
+        "precondition: the stale proof must be refused"
+    )
+    assert backend._ensure_pr("lane/demo", LANE_HEAD, retried, CANDIDATE) == 8117
+    assert patched.get("path") == "pulls/8117", (
+        "the open PR's stale proof was not rewritten"
+    )
+    code, out = grade(patched["body"], retried)
+    assert code == 0, out
+
+
+def test_an_unchanged_proof_is_not_rewritten() -> None:
+    backend = GitHubBackend(
+        repo="chidionyema/idp",
+        required=["bdd", "ci-success"],
+        run_url="https://github.com/chidionyema/idp/actions/runs/1",
+    )
+    current = produced_body()
+    calls: list[str] = []
+
+    def fake_gh(path: str, method: str = "GET", fields: dict | None = None):
+        calls.append(method)
+        return [{"number": 4242, "body": current}] if method == "GET" else {}
+
+    backend.gh = fake_gh  # type: ignore[method-assign]
+    backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
+    assert backend._ensure_pr("lane/demo", LANE_HEAD, REBASED, CANDIDATE) == 4242
+    assert "PATCH" not in calls
