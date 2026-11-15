@@ -1347,6 +1347,7 @@ class GitHubBackend:
                 f"proven on candidate {tip[:12]}",
             )
             subject = self.git("log", "-1", "--format=%s", merge_sha)
+            self._approve(pr["number"], merge_sha, tip)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
                     result = self.gh(
@@ -1495,6 +1496,40 @@ class GitHubBackend:
         # costs a round trip and races with GitHub's own listing lag; the POST already carries
         # it. `None` still means "no PR" and the caller refuses rather than guessing.
         return (created or {}).get("number")
+
+    def _approve(self, number: int, sha: str, tip: str) -> None:
+        """The second identity's review on a head the Greenlane itself proved green.
+
+        main's ruleset requires one approving review (I-8046, 2026-11-13). The App that opens
+        every lane PR cannot approve its own, so from that day no lane could land without the
+        founder (#8117 sat refused: "At least 1 approving review is required"). The workflow's
+        own token (github-actions[bot], GREENLANE_STATUS_TOKEN) is a different identity: it
+        approves exactly the sha being merged, and only here, after the candidate was proven
+        green on top of main. A refusal is printed, never fatal: the merge that follows reports
+        the rule itself.
+        """
+        if not self.status_token:
+            return
+        try:
+            _run(
+                "gh",
+                "api",
+                f"repos/{self.repo}/pulls/{number}/reviews",
+                "-X",
+                "POST",
+                "--input",
+                "-",
+                input=json.dumps(
+                    {
+                        "event": "APPROVE",
+                        "commit_id": sha,
+                        "body": f"Greenlane machine review: candidate {tip[:12]} proven green on top of main.",
+                    }
+                ),
+                env={**os.environ, "GH_TOKEN": self.status_token},
+            )
+        except RuntimeError as e:
+            print(f"greenlane: machine review of #{number} refused: {str(e)[-200:]}")
 
     def _status(self, sha: str, fields: dict) -> None:
         if self.status_token:
