@@ -1469,9 +1469,6 @@ class GitHubBackend:
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
-        if existing:
-            return existing[0]["number"]
-        subject = self.git("log", "-1", "--format=%s", rebased)
         body = (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
             f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
@@ -1479,6 +1476,16 @@ class GitHubBackend:
             f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
+        if existing:
+            # A retry re-squashes the lane, so the open PR's head moves to `rebased`. Its proof
+            # must move with it: a body still naming the previous attempt's sha is refused by
+            # bin/idp-bdd-proof-gate on every retry (2026-11-14: #8110, #8115, #8117 -- a lane
+            # proven green could never land). Rewrite it whenever it no longer says this.
+            number = existing[0]["number"]
+            if (existing[0].get("body") or "") != body:
+                self.gh(f"pulls/{number}", "PATCH", {"body": body})
+            return number
+        subject = self.git("log", "-1", "--format=%s", rebased)
         created = self.gh(
             "pulls",
             "POST",
