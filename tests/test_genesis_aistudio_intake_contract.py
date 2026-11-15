@@ -32,8 +32,8 @@ class PrivateIntakeContract(unittest.TestCase):
         self.assertIn(
             "310af77679f440681150a11787966fb9c53e36683d588452a5b4c9aad2dc7389", s
         )
-        self.assertIn("3ecc81d097b33ee2a34e5bdad49d36ad28125477", s)
-        self.assertIn("5cc44861da3e362a0dc946568f7d0e0657e43284", s)
+        self.assertIn("513f7695b0e57498b813974f26e4c4017d13f300", s)
+        self.assertIn("b042a0d999881e77a9a08142d6539418f7be53b8", s)
         self.assertIn("EXISTING_SOURCE_RECEIPT_CONFLICT", s)
         self.assertNotIn("tar -x", s)
         self.assertNotIn("npm ci", s)
