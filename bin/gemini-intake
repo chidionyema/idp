@@ -60,12 +60,7 @@ def main(argv: list[str]) -> int:
     stamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     dest = args.dest or os.path.join(args.quarantine, f"gemini-{stamp}")
 
-    counts = {
-        "SAFE-COPIED": 0,
-        "SKIPPED-IDENTICAL": 0,
-        "ON-DISK-DIFFERS": 0,
-        "DRY-RUN": 0,
-    }
+    counts = {"SAFE-COPIED": 0, "SKIPPED-IDENTICAL": 0, "ON-DISK-DIFFERS": 0, "DRY-RUN": 0}
     files: list[dict] = []
     for root, _dirs, names in os.walk(source):
         for name in names:
@@ -84,6 +79,19 @@ def main(argv: list[str]) -> int:
                 verdict = "SAFE-COPIED"
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
+                # BIND THE DIGEST TO THE BYTES THAT LANDED (2026-11-15). The manifest used to
+                # record the SOURCE hash and never look at the copy, so a short write left an
+                # entry asserting a hash the quarantined file did not have -- the same defect that
+                # got the recovered Gemini Rust middleware quarantined: a claimed digest that was
+                # never bound to the payload. Recovery cannot ship that at its front door.
+                copied_sha = sha256(dst)
+                if copied_sha != src_sha:
+                    print(
+                        f"gemini-intake: {rel} copied as {copied_sha[:12]}, not {src_sha[:12]} "
+                        f"-- refusing; the manifest would assert a hash the file does not have",
+                        file=sys.stderr,
+                    )
+                    return 1
             counts[verdict] += 1
             files.append({"rel": rel, "sha256": src_sha, "verdict": verdict})
 
@@ -100,18 +108,14 @@ def main(argv: list[str]) -> int:
         # overwrite, a source file that also happens to be named MANIFEST.json/SHA256SUMS.
         records = os.path.join(dest, ".intake")
         os.makedirs(records, exist_ok=True)
-        with open(
-            os.path.join(records, "MANIFEST.json"), "w", encoding="utf-8"
-        ) as handle:
+        with open(os.path.join(records, "MANIFEST.json"), "w", encoding="utf-8") as handle:
             handle.write(json.dumps(manifest, indent=2) + "\n")
         with open(os.path.join(records, "SHA256SUMS"), "w", encoding="utf-8") as handle:
             for entry in files:
                 if entry["verdict"] in ("SAFE-COPIED", "SKIPPED-IDENTICAL"):
                     handle.write(f"{entry['sha256']}  {entry['rel']}\n")
 
-    print(
-        json.dumps({"source": source, "dest": dest, "counts": counts}, sort_keys=True)
-    )
+    print(json.dumps({"source": source, "dest": dest, "counts": counts}, sort_keys=True))
     return 0
 
 

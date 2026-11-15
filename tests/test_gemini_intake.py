@@ -99,3 +99,42 @@ def test_a_dry_run_copies_nothing(tmp_path: Path) -> None:
     result = _run(src, dest, "--dry-run")
     assert result["counts"]["DRY-RUN"] == 2
     assert not (dest / "a.txt").exists()
+
+
+def test_a_short_copy_is_refused_and_never_recorded_as_copied(tmp_path):
+    """The quarantine class: a manifest digest must bind the bytes that LANDED.
+
+    The intake recorded the SOURCE hash and never re-hashed the copy, so a truncated write left an
+    entry asserting a hash the quarantined file did not have. That is the defect that got the
+    recovered Gemini Rust middleware quarantined, and recovery may not ship it at its front door.
+    """
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader("gemini_intake", str(INTAKE))
+    spec = importlib.util.spec_from_loader("gemini_intake", loader)
+    intake = importlib.util.module_from_spec(spec)
+    loader.exec_module(intake)
+
+    source = tmp_path / "handover"
+    source.mkdir()
+    (source / "packet.bin").write_bytes(b"x" * 4096)
+    dest = tmp_path / "quarantine"
+
+    real_copy = intake.shutil.copy2
+
+    def short_copy(src, dst, *a, **k):
+        real_copy(src, dst, *a, **k)
+        Path(dst).write_bytes(Path(dst).read_bytes()[:1024])
+
+    intake.shutil.copy2 = short_copy
+    try:
+        rc = intake.main(["--source", str(source), "--dest", str(dest)])
+    finally:
+        intake.shutil.copy2 = real_copy
+
+    assert rc == 1, "a short copy was accepted as SAFE-COPIED"
+    manifest = dest / ".intake" / "MANIFEST.json"
+    if manifest.exists():
+        entries = json.loads(manifest.read_text())["files"]
+        assert not [e for e in entries if e["verdict"] == "SAFE-COPIED"], entries
