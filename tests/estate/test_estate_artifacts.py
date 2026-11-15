@@ -3,6 +3,7 @@
 The live falsifiers (dispatch battery, sync benches, grade bench) run on the host; these tests keep
 the repository copy honest in CI: every script is present, executable and compiles.
 """
+
 import py_compile
 from pathlib import Path
 
