@@ -1,0 +1,128 @@
+{
+  "packet": "W0",
+  "requirement": "FR-001",
+  "generated_at": "2026-11-15T22:05:00Z",
+  "idp_revision": "306ce092530f4f35b85cafb48b7129670c53fa51",
+  "build": {
+    "probe": "sha256 of each path with /usr/bin/sha256sum or hashlib.sha256",
+    "commands": [
+      "git -C <idp> rev-parse origin/main",
+      "python3: hashlib.sha256(open(path,'rb').read()).hexdigest()",
+      "gh issue view 6164 --json state",
+      "gh issue view 7955 --json state"
+    ],
+    "note": "External-store hashes are observations of this host; CI does not assert their presence."
+  },
+  "authority": {
+    "canonical_issues": [
+      "chidionyema/idp#6164",
+      "chidionyema/idp#7955"
+    ],
+    "issue_state": {
+      "#6164": "OPEN",
+      "#7955": "OPEN"
+    },
+    "adr": "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+    "substrate": "ARM k3s is the declared home; OKE is retired. A declared home is not an operating claim."
+  },
+  "components": [
+    {
+      "id": "memory-door",
+      "kind": "store-door",
+      "path": "platform/estate/memory/door.py",
+      "owner": "platform/estate/memory",
+      "sha256": "009dcf808982bd6793ef89c293cbb12b9e3ac945c6c919cb4993b5beca007100",
+      "bytes": 13172,
+      "status": "present"
+    },
+    {
+      "id": "memory-mcp",
+      "kind": "mcp-tools",
+      "path": "mcp/plugins/estate_memory.py",
+      "owner": "mcp/plugins",
+      "sha256": "a45a8e5e5702cf106b6e5d404352516943f12d89da8d091acd8c54d90c7d91c7",
+      "bytes": 28608,
+      "status": "present"
+    },
+    {
+      "id": "plan-lock",
+      "kind": "plan",
+      "path": "platform/estate/memory/plan.py",
+      "owner": "platform/estate/memory",
+      "sha256": "13e71d316b0bb0bc0b6ca750ae2cda96897e2799eab066b127e717c2921fe4da",
+      "bytes": 54642,
+      "status": "present"
+    },
+    {
+      "id": "brief",
+      "kind": "inject",
+      "path": "bin/estate-brief",
+      "owner": "platform/estate/memory",
+      "sha256": "a38315264ef714f0629c3d9cc08e4077ae1d913903c95cd8cccd67fe4c5f756e",
+      "bytes": 5632,
+      "status": "present",
+      "successor": "chidionyema/idp#8156 adds a graph-lessons section (measured 7512 bytes on the lane); not merged at this revision"
+    }
+  ],
+  "external_stores": [
+    {
+      "path": "~/.estate/memory/memory.db",
+      "owner": "memory-door",
+      "sha256": "0c1a1fc8e4cf2e072114e4fda87425cf6e2a0ca4a11280a3f562b2eba6285d7e",
+      "bytes": 704512,
+      "status": "observed-on-host"
+    },
+    {
+      "path": "~/.estate/graph/estate-graph/.growmos/entities.jsonl",
+      "owner": "estate-graph",
+      "sha256": "ebb0b2f748147366216d3ac8c35aa7623eae09a56e226ba52924212f7d412bbc",
+      "bytes": 5327387,
+      "status": "observed-on-host"
+    },
+    {
+      "path": "~/.estate/packs/registry.json",
+      "owner": "estate-session",
+      "sha256": "8fed518d92bda42064ee4ee168a394acdaceb77e2f1e9fef119ee043ecb1f855",
+      "bytes": 6827,
+      "status": "observed-on-host"
+    },
+    {
+      "path": "~/Documents/code/crew/STATE.md",
+      "owner": "crew",
+      "sha256": "ce05b91a2326bcc4c6d2bfa540a10ce52ce911e9470d536ff442e6463a807874",
+      "bytes": 15929,
+      "status": "observed-on-host"
+    }
+  ],
+  "surfaces": [
+    {"class": "opencode", "route": "~/.config/opencode/plugin/estate-memory.js", "status": "present"},
+    {"class": "claude_code", "route": "~/.claude/settings.json SessionStart -> estate-session", "status": "present"},
+    {"class": "codex", "route": null, "status": "no memory injection found in this pass"},
+    {"class": "gemini_cli", "route": null, "status": "no memory injection found in this pass"}
+  ],
+  "unresolved": [
+    {
+      "item": "independent builder reviewer",
+      "owner": null,
+      "why": "author review 2026-11-15: the authorized session-start route was not exposed (sb absent; sessions MCP lists/reads only)"
+    },
+    {
+      "item": "codex and gemini memory injection",
+      "owner": null,
+      "why": "no installed hook/plugin writing or injecting memory was found for these surfaces"
+    },
+    {
+      "item": "graph->memory-door drain",
+      "owner": "estate-graph-drain",
+      "why": "log 2026-11-15T21:06Z ingest_rc=2 Connection refused via GROWMOS_BASE_URL=127.0.0.1:4000"
+    }
+  ],
+  "obsolete": [
+    {
+      "match": "oke",
+      "kind": "substrate",
+      "reason": "ADR 0048 retires OKE; ARM k3s is the declared home. An OKE runbook is history, not authority.",
+      "source": "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md"
+    }
+  ]
+}
