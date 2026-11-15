@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""OMNIFLOW GitHub survival relay: authenticated coordination, NEVER an execution door.
+
+No external dependencies. GitHub Issues is a durable transport, not an authority.
+Use --repo owner/name --issue N --actor label. GitHub API credential via
+GH_TOKEN or GITHUB_TOKEN; do not put credentials in CLI flags or files.
+"""
+from __future__ import annotations
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import sqlite3
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+PREFIX = "OMNIFLOW-EVENT/v1\n"
+MAX_BYTES = 8192
+EVENT_TYPES = frozenset({"ASK", "ANSWER", "OFFER", "PATCH_REF", "EVIDENCE_REF",
+                         "BLOCKED", "RECOVERY", "STATUS", "NOTIFY", "DECLINE"})
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SHA_RE = re.compile(r"^[a-f0-9]{64}$")
+UTC = dt.timezone.utc
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def validate(event):
+    if not isinstance(event, dict):
+        raise ValueError("event must be an object")
+    keys = {"version", "event_id", "mission_id", "correlation_id", "actor_label",
+            "kind", "created_at", "expires_at", "payload_digest", "payload"}
+    if set(event) != keys:
+        raise ValueError("missing or unexpected event keys")
+    if event["version"] != 1 or event["kind"] not in EVENT_TYPES:
+        raise ValueError("unsupported version or kind")
+    for key in ("event_id", "mission_id", "correlation_id", "actor_label"):
+        if not isinstance(event[key], str) or not 1 <= len(event[key]) <= 128:
+            raise ValueError("invalid " + key)
+    if not isinstance(event["payload"], dict):
+        raise ValueError("payload must be object")
+    payload = canonical(event["payload"]).encode()
+    if len(payload) > 4096 or hashlib.sha256(payload).hexdigest() != event["payload_digest"]:
+        raise ValueError("payload too large or digest mismatch")
+    for key in ("created_at", "expires_at"):
+        if not isinstance(event[key], str):
+            raise ValueError("invalid timestamp")
+        parsed = dt.datetime.fromisoformat(event[key].replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("naive timestamp")
+    if dt.datetime.fromisoformat(event["expires_at"].replace("Z", "+00:00")) <= dt.datetime.fromisoformat(event["created_at"].replace("Z", "+00:00")):
+        raise ValueError("expired at creation")
+    if len(PREFIX.encode() + canonical(event).encode()) > MAX_BYTES:
+        raise ValueError("oversized comment")
+    return event
+
+
+def make_event(mission, actor, kind, payload, ttl=3600, correlation=None):
+    now = dt.datetime.now(UTC)
+    event = {"version": 1, "event_id": str(uuid.uuid4()), "mission_id": mission,
+             "correlation_id": correlation or str(uuid.uuid4()), "actor_label": actor,
+             "kind": kind, "created_at": now.isoformat(),
+             "expires_at": (now + dt.timedelta(seconds=ttl)).isoformat(),
+             "payload_digest": hashlib.sha256(canonical(payload).encode()).hexdigest(),
+             "payload": payload}
+    return validate(event)
+
+
+def parse_comment(body):
+    if not isinstance(body, str) or not body.startswith(PREFIX):
+        return None
+    if len(body.encode()) > MAX_BYTES:
+        raise ValueError("oversized inbound event")
+    return validate(json.loads(body[len(PREFIX):]))
+
+
+class GitHub:
+    def __init__(self, repo, token=None, transport=None):
+        if not REPO_RE.fullmatch(repo):
+            raise ValueError("invalid repository")
+        self.repo = repo
+        self.token = token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+        if not self.token:
+            raise ValueError("GH_TOKEN or GITHUB_TOKEN required")
+        self.transport = transport or urllib.request.urlopen
+
+    def request(self, method, path, data=None, etag=None):
+        url = "https://api.github.com/repos/" + self.repo + path
+        headers = {"Accept": "application/vnd.github+json",
+                   "Authorization": "Bearer " + self.token,
+                   "X-GitHub-Api-Version": "2022-11-28",
+                   "User-Agent": "omniflow-survival-relay/1"}
+        if etag:
+            headers["If-None-Match"] = etag
+        body = canonical(data).encode() if data is not None else None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with self.transport(req, timeout=20) as response:
+                raw = response.read()
+                return response.status, json.loads(raw) if raw else None, response.headers.get("ETag")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 304:
+                return 304, None, etag
+            if exc.code in (403, 429, 500, 502, 503, 504):
+                retry = exc.headers.get("Retry-After", "unknown")
+                raise RuntimeError(f"GitHub temporarily unavailable HTTP {exc.code}; Retry-After={retry}") from None
+            raise RuntimeError(f"GitHub rejected request HTTP {exc.code}") from None
+
+    def post(self, issue, event):
+        validate(event)
+        status, result, _ = self.request("POST", f"/issues/{issue}/comments",
+                                          {"body": PREFIX + canonical(event)})
+        if status != 201 or not isinstance(result, dict) or "id" not in result:
+            raise RuntimeError("GitHub did not confirm durable comment creation")
+        return {"transport": "GITHUB_ACCEPTED", "comment_id": result["id"],
+                "event_id": event["event_id"], "url": result.get("html_url")}
+
+    def fetch_page(self, issue, page, per_page=100):
+        status, data, _ = self.request("GET", f"/issues/{issue}/comments?per_page={per_page}&page={page}")
+        if status != 200 or not isinstance(data, list):
+            raise RuntimeError("invalid GitHub comment page")
+        return data
+
+
+class Cursor:
+    def __init__(self, path):
+        self.db = sqlite3.connect(path)
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("CREATE TABLE IF NOT EXISTS cursor (repo TEXT, issue INTEGER, last_id INTEGER NOT NULL, PRIMARY KEY(repo, issue))")
+        self.db.execute("CREATE TABLE IF NOT EXISTS seen (repo TEXT, issue INTEGER, event_id TEXT, digest TEXT NOT NULL, PRIMARY KEY(repo, issue, event_id))")
+        self.db.commit()
+
+    def last(self, repo, issue):
+        row = self.db.execute("SELECT last_id FROM cursor WHERE repo=? AND issue=?", (repo, issue)).fetchone()
+        return row[0] if row else 0
+
+    def accept(self, repo, issue, comment_id, event):
+        """Commit only after callback succeeds. Reject conflicting duplicate event IDs."""
+        with self.db:
+            row = self.db.execute("SELECT digest FROM seen WHERE repo=? AND issue=? AND event_id=?",
+                                  (repo, issue, event["event_id"])).fetchone()
+            if row and row[0] != event["payload_digest"]:
+                raise ValueError("conflicting event ID")
+            if not row:
+                self.db.execute("INSERT INTO seen VALUES (?,?,?,?)",
+                                (repo, issue, event["event_id"], event["payload_digest"]))
+            self.db.execute("INSERT INTO cursor VALUES (?,?,?) ON CONFLICT(repo,issue) DO UPDATE SET last_id=max(last_id,excluded.last_id)",
+                            (repo, issue, comment_id))
+            return row is None
+
+    def skip(self, repo, issue, comment_id):
+        with self.db:
+            self.db.execute("INSERT INTO cursor VALUES (?,?,?) ON CONFLICT(repo,issue) DO UPDATE SET last_id=max(last_id,excluded.last_id)",
+                            (repo, issue, comment_id))
+
+
+def drain(api, issue, cursor, handle, limit_pages=100):
+    """Read in GitHub ascending comment-ID order. Never skip unhandled event."""
+    last = cursor.last(api.repo, issue)
+    page = 1
+    count = 0
+    while page <= limit_pages:
+        comments = api.fetch_page(issue, page)
+        if not comments:
+            break
+        for comment in comments:
+            cid = comment["id"]
+            if cid <= last:
+                continue
+            try:
+                event = parse_comment(comment.get("body"))
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"quarantined malformed event comment={cid}: {exc}") from exc
+            if event is None:
+                cursor.skip(api.repo, issue, cid)
+                last = cid
+                continue
+            if dt.datetime.fromisoformat(event["expires_at"]) <= dt.datetime.now(UTC):
+                cursor.skip(api.repo, issue, cid)
+                last = cid
+                continue
+            handle(event, {"comment_id": cid, "github_author": comment.get("user", {}).get("login")})
+            cursor.accept(api.repo, issue, cid, event)
+            last = cid
+            count += 1
+        if len(comments) < 100:
+            break
+        page += 1
+    if page > limit_pages:
+        raise RuntimeError("pagination limit reached: backlog not exhausted")
+    return count
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--repo", required=True)
+    p.add_argument("--issue", type=int, required=True)
+    p.add_argument("--actor", default="unverified-actor-label")
+    p.add_argument("--cursor", default=os.path.expanduser("~/.estate/omniflow-github-cursor.sqlite"))
+    sub = p.add_subparsers(dest="command", required=True)
+    send = sub.add_parser("send")
+    send.add_argument("--mission", required=True)
+    send.add_argument("--kind", choices=sorted(EVENT_TYPES), default="ASK")
+    send.add_argument("--text", required=True)
+    send.add_argument("--correlation")
+    sub.add_parser("read")
+    watch = sub.add_parser("watch")
+    watch.add_argument("--interval", type=float, default=10)
+    args = p.parse_args(argv)
+    if args.issue < 1:
+        p.error("--issue must be positive")
+    api = GitHub(args.repo)
+    if args.command == "send":
+        # text is coordination DATA ONLY, never a trusted executable instruction
+        print(canonical(api.post(args.issue, make_event(args.mission, args.actor, args.kind,
+                           {"text": args.text}, correlation=args.correlation))))
+        return 0
+    os.makedirs(os.path.dirname(os.path.abspath(args.cursor)), mode=0o700, exist_ok=True)
+    cursor = Cursor(args.cursor)
+    def show(event, meta):
+        print(canonical({"receipt": "ADAPTER_OBSERVED_UNTRUSTED",
+                         "event": event, "transport": meta}), flush=True)
+    while True:
+        try:
+            drain(api, args.issue, cursor, show)
+        except (RuntimeError, urllib.error.URLError) as exc:
+            print("DEGRADED " + str(exc), file=sys.stderr, flush=True)
+            if args.command == "read":
+                return 2
+        if args.command == "read":
+            return 0
+        time.sleep(max(5, min(args.interval, 120)))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
