@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Deterministic, fail-closed estate admission preflight.
+
+Run before creating a PR or handing work to CI. This is a reusable producer-side
+contract, not a substitute for the independent server-side gates.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+HEX = re.compile(r"^[0-9a-f]{40}$")
+PROOF_HEAD = re.compile(r"(?im)^\\s*head\\s*[:=]\\s*([0-9a-f]{7,40})\\s*$")
+PASS = (
+    re.compile(r"\\b[1-9]\\d*\\s+passed\\s+in\\s+[\\d.]+s", re.I),
+    re.compile(r"Tests:\\s*[1-9]\\d*\\s+passed", re.I),
+    re.compile(r"\\b[1-9]\\d*\\s+scenarios?\\b[^\\n]{0,40}\\b[1-9]\\d*\\s+passed", re.I),
+    re.compile(r"^---\\s*PASS:\\s*\\w", re.M),
+)
+def run(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, text=True, capture_output=True, check=False)
+
+def validate(head: str, message: str, committer: str, body: str | None) -> list[str]:
+    failures: list[str] = []
+    if not HEX.fullmatch(head):
+        failures.append("HEAD_UNKNOWN")
+    # A GitHub server-authored commit has no local hook. Never infer trusted
+    # identity from the author field (which is freely forgeable).
+    server_commit = committer == "noreply@github.com" or bool(
+        re.fullmatch(r"[^\\s]+\\[bot\\]@users\\.noreply\\.github\\.com", committer)
+    )
+    if not server_commit and not re.search(r"(?m)^X-Idp-Signed:\\s*\\S+", message) and not re.search(
+        r"(?m)^X-Idp-Auth:\\s*\\S+", message
+    ):
+        failures.append("COMMIT_UNSTAMPED")
+    if re.search(r"(?m)^X-Idp-Merge-Strategy:\\s*(?:ours|theirs)\\s*$", message):
+        failures.append("BLIND_MERGE")
+    if body is not None:
+        block = re.search(r"BDD-PROOF(.*?)END-BDD-PROOF", body, re.I | re.S)
+        if not block:
+            failures.append("BDD_BLOCK_MISSING")
+        else:
+            content = block.group(1)
+            proved = PROOF_HEAD.search(content)
+            if not proved or not head.startswith(proved.group(1).lower()):
+                failures.append("BDD_HEAD_MISMATCH")
+            if not any(pattern.search(content) for pattern in PASS):
+                failures.append("BDD_RUN_EVIDENCE_MISSING")
+    return failures
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pr-body-file", type=pathlib.Path)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    head = run("git", "rev-parse", "HEAD")
+    msg = run("git", "log", "-1", "--format=%B")
+    committer = run("git", "log", "-1", "--format=%ce")
+    failures = []
+    if any(x.returncode for x in (head, msg, committer)):
+        failures.append("GIT_CONTEXT_UNAVAILABLE")
+    body = None
+    if args.pr_body_file is not None:
+        try:
+            body = args.pr_body_file.read_text(encoding="utf-8")
+        except OSError:
+            failures.append("PR_BODY_UNREADABLE")
+    if not failures:
+        failures.extend(validate(head.stdout.strip(), msg.stdout, committer.stdout.strip(), body))
+    result = {"verdict": "REFUSE" if failures else "ADMIT", "failures": failures,
+              "head": head.stdout.strip() if head.returncode == 0 else None}
+    print(json.dumps(result, sort_keys=True) if args.json else
+          f"{result['verdict']} admission: {', '.join(failures) if failures else 'local contract satisfied'}")
+    return 1 if failures else 0
+
+if __name__ == "__main__":
+    sys.exit(main())
