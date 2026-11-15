@@ -1,5 +1,7 @@
 # Otto — the complete reference
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Everything about Otto, Backstage, and the Telegram pin, in one page, so nothing has to be asked
 twice. Every fact names the file it was read from; if a row and its file disagree, the file wins
 and this page has drifted — fix the page. Facts verified 2026-08-31.

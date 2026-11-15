@@ -1,5 +1,7 @@
 # Demo: the money is built, and it is switched off
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 The commerce primitive is in the repository and it is dark. Four separate things hold it
 off, and each one is a command you can run yourself.
 

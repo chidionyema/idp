@@ -1,5 +1,7 @@
 # Otto staging
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Otto is the estate's new agent platform, built as its own process rather than another mode of
 the existing Architect gateway. This page is the staging pod that runs it ahead of production: a
 second, separate area of the cluster from `hermes-agent`, its own webhook door, wired the same way

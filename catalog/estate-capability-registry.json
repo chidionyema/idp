@@ -3,11 +3,11 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 121,
+    "intent": 120,
     "layer": 261,
     "service": 121,
-    "tool": 495,
-    "workflow": 106
+    "tool": 499,
+    "workflow": 105
   },
   "records": [
     {
@@ -4109,55 +4109,6 @@
       "mirrors": []
     },
     {
-      "id": "cap:intent/oci-kubeconfig-refresh",
-      "schema_version": 1,
-      "kind": "intent",
-      "summary": "Refresh the OKE kubeconfig token. Run this when kubectl returns \"server asked for credentials\" or token expired. tools: [] halt_on_failure: true steps: - cmd: > bash ~/.estate/libexec/oci-kubeconfig-refresh.sh",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "executor job record"
-        ],
-        "errors": [
-          "non-zero step exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "seconds"
-      },
-      "owner": "estate-runtime",
-      "plane": "estate",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform/estate/intents"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "intents",
-      "path": "platform/estate/intents/oci-kubeconfig-refresh.yaml",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics",
-        "dependencies"
-      ],
-      "known_issues": [],
-      "mirrors": [
-        "platform/estate/libexec/oci-kubeconfig-refresh.sh"
-      ]
-    },
-    {
       "id": "cap:intent/oci-reclaim",
       "schema_version": 1,
       "kind": "intent",
@@ -5994,7 +5945,7 @@
       "id": "cap:intent/voice-doctor",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Is voice working end to end, and if not, which link broke? Walks the chain a spoken turn meets -- machine load, speech models, router up, router `voice` lane, voice-router /readyz, speech synthesis errors, a real spoken turn through cmd/talk -- then OKE's image policy and voice-router deployments, and names the first broken link with the action that fixes it. Use this first whenever voice is not answering. args: scope: {type: string, default: \"all\"} steps: # Step bound removed 2026-10-25: time is declared once, as this intent's budget # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a # guess about someone else's work, and where it fired it invented a failure. - name: diagnose cmd: | case \"{{scope}}\" in laptop) python3 ~/.estate/libexec/voice-doctor.py --laptop-only ;; oke) python3 ~/.estate/libexec/voice-doctor.py --oke-only ;; *) python3 ~/.estate/libexec/voice-doctor.py ;; esac",
+      "summary": "Measure the laptop voice path. Cloud placement requires current runtime evidence.",
       "contract": {
         "inputs": [
           "scope"
@@ -27805,6 +27756,64 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/claude-anthropic",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Launch authentic Claude Code without inherited GLM/Z.ai gateway overrides.",
+      "contract": {
+        "inputs": [
+          "--allow-vaulted-anthropic-api-key",
+          "--api-key",
+          "--append-system-prompt",
+          "--model",
+          "--output-format",
+          "--settings",
+          "--system-prompt",
+          "--verify-live"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "metered",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-agent-sandbox"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/claude-anthropic",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/cloud-agnostic-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -31970,6 +31979,66 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-stranded",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-stranded -- a local commit that sits unpushed is work the estate cannot see.",
+      "contract": {
+        "inputs": [
+          "--abbrev-ref",
+          "--git-dir",
+          "--json",
+          "--max-age",
+          "--not",
+          "--now",
+          "--path",
+          "--porcelain",
+          "--remotes",
+          "--root",
+          "--short",
+          "--symbolic-full-name"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-stranded",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-supervisor",
       "schema_version": 1,
       "kind": "tool",
@@ -32293,6 +32362,61 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-unblock",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-unblock -- one command that clears every blocked delivery item it is authorised to clear.",
+      "contract": {
+        "inputs": [
+          "--admin",
+          "--apply",
+          "--delete-branch",
+          "--json",
+          "--repo",
+          "--squash",
+          "--target"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-unblock",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -34405,9 +34529,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:workflow/gha-oke-check"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -34703,7 +34825,6 @@
         "cap:tool/idp-oci-session",
         "cap:tool/idp-otto-homes",
         "cap:workflow/gha-estate-bootstrap",
-        "cap:workflow/gha-oke-check",
         "cap:workflow/gha-otto-lifeboat"
       ],
       "cost": {
@@ -34846,8 +34967,7 @@
       },
       "consumers": [
         "cap:tool/idp-mac-adopt-otto",
-        "cap:tool/idp-mac-secret-deliver",
-        "cap:workflow/gha-oke-check"
+        "cap:tool/idp-mac-secret-deliver"
       ],
       "cost": {
         "estimate": null,
@@ -34914,8 +35034,7 @@
       },
       "consumers": [
         "cap:tool/idp-bootstrap-macrun",
-        "cap:tool/idp-cloud",
-        "cap:workflow/gha-oke-check"
+        "cap:tool/idp-cloud"
       ],
       "cost": {
         "estimate": null,
@@ -34977,8 +35096,7 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-oci-session",
-        "cap:workflow/gha-estate-bootstrap",
-        "cap:workflow/gha-oke-check"
+        "cap:workflow/gha-estate-bootstrap"
       ],
       "cost": {
         "estimate": null,
@@ -35054,8 +35172,7 @@
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-estate-state-build",
         "cap:tool/intent-compile",
-        "cap:workflow/gha-estate-bootstrap",
-        "cap:workflow/gha-oke-check"
+        "cap:workflow/gha-estate-bootstrap"
       ],
       "cost": {
         "estimate": null,
@@ -35717,7 +35834,6 @@
         "cap:tool/idp-kubeconform",
         "cap:tool/idp-kyverno-dirs",
         "cap:tool/idp-kyverno-render",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-pipeverdict",
         "cap:tool/idp-stray-checkout",
         "cap:tool/idp-up",
@@ -36590,7 +36706,6 @@
         "cap:tool/idp-oci-s3",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
-        "cap:tool/idp-oke-surge-node",
         "cap:tool/idp-otlp-headers",
         "cap:tool/idp-otto-homes",
         "cap:tool/idp-prove",
@@ -36705,7 +36820,6 @@
         "cap:tool/idp-kini-state",
         "cap:tool/idp-oci-bootstrap",
         "cap:tool/idp-oci-whoami",
-        "cap:tool/idp-oke-surge-node",
         "cap:tool/idp-realm-diff",
         "cap:tool/idp-shop-backup",
         "cap:tool/idp-telemetry-coverage",
@@ -37660,60 +37774,6 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-disk-guard",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-disk-watch",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:tool/idp-disk-watch",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "!/bin/sh",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [
-        "cap:tool/idp-disk-guard"
-      ],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/idp-disk-watch",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -38803,8 +38863,7 @@
         "cap:tool/idp-prove",
         "cap:tool/idp-router-key",
         "cap:tool/idp-workstation-bootstrap",
-        "cap:workflow/gha-estate-bootstrap",
-        "cap:workflow/gha-oke-check"
+        "cap:workflow/gha-estate-bootstrap"
       ],
       "cost": {
         "estimate": null,
@@ -39746,7 +39805,6 @@
       },
       "consumers": [
         "cap:tool/idp-envsubst-gate",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-recreate-guard"
       ],
       "cost": {
@@ -40014,7 +40072,6 @@
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-tailscale-policy",
         "cap:tool/idp-workstation-bootstrap",
-        "cap:workflow/gha-oke-check",
         "cap:workflow/gha-ticket-verification",
         "cap:workflow/gha-vault-seed",
         "cap:workflow/gha-verdict-surfaces"
@@ -40566,8 +40623,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-hc-enroll",
-        "cap:workflow/gha-oke-check"
+        "cap:tool/idp-hc-enroll"
       ],
       "cost": {
         "estimate": null,
@@ -41076,8 +41132,7 @@
       },
       "consumers": [
         "cap:tool/idp-login-drill",
-        "cap:tool/idp-verify",
-        "cap:workflow/gha-oke-check"
+        "cap:tool/idp-verify"
       ],
       "cost": {
         "estimate": null,
@@ -42399,7 +42454,6 @@
         "cap:tool/idp-kyverno-audit-promote",
         "cap:tool/idp-mcp-first-gate",
         "cap:tool/idp-oci-login",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-prove",
         "cap:tool/idp-signoz-key",
         "cap:tool/idp-verdict",
@@ -42784,7 +42838,6 @@
         "cap:tool/idp-kyverno-dirs",
         "cap:tool/idp-kyverno-own-policies",
         "cap:tool/idp-kyverno-render-keep",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-repo-root",
         "cap:tool/scheduler-up"
       ],
@@ -44225,7 +44278,6 @@
         "cap:tool/idp-oci-bootstrap",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-verify",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-router-recovery",
@@ -44541,7 +44593,7 @@
       "id": "cap:tool/idp-oke-break-glass",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "!/bin/sh",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -44574,36 +44626,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-oke-break-glass",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-ci",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-flux-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-kube",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-kyverno-render",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-login",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-rebuild",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -44645,10 +44668,8 @@
       "consumers": [
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-oci-login",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-vault-reads",
         "cap:tool/idp-vault-refs",
-        "cap:workflow/gha-oke-check",
         "cap:workflow/gha-otto-homes"
       ],
       "cost": {
@@ -44672,7 +44693,7 @@
       "id": "cap:tool/idp-oke-surge-node",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "!/bin/sh",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -44705,16 +44726,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-oke-surge-node",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-cloud",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-cluster-state",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -49056,8 +49068,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-bootstrap-tailscale",
-        "cap:workflow/gha-oke-check"
+        "cap:tool/idp-bootstrap-tailscale"
       ],
       "cost": {
         "estimate": null,
@@ -49688,7 +49699,6 @@
         "cap:tool/idp-signoz-key",
         "cap:tool/idp-vault-split-guard",
         "cap:tool/idp-vendor-setup",
-        "cap:workflow/gha-oke-check",
         "cap:workflow/gha-router-recovery",
         "cap:workflow/gha-vault-seed"
       ],
@@ -54571,6 +54581,56 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/sdo-probe",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "sdo-probe -- is the Sovereign Dispatch Orchestrator's shared bus actually here?",
+      "contract": {
+        "inputs": [
+          "--db",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/sdo-probe",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/security-policy-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -54875,7 +54935,6 @@
         "cap:tool/idp-linear-dispatch",
         "cap:tool/idp-login-drill",
         "cap:tool/idp-machine-submit",
-        "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-pipeverdict",
         "cap:tool/idp-portal",
         "cap:tool/idp-pr-age",
@@ -55768,6 +55827,59 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/verify_three_proofs.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--commit-sha",
+          "--files",
+          "--founder-seal",
+          "--repo-root",
+          "--timestamp"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/verify_three_proofs.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/vm-shared-path",
       "schema_version": 1,
       "kind": "tool",
@@ -56331,6 +56443,10 @@
       "depends_on": [
         {
           "id": "cap:tool/agent-sandbox-age",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claude-anthropic",
           "edge": "invokes"
         },
         {
@@ -60267,118 +60383,6 @@
       "depends_on": [
         {
           "id": "cap:tool/idp-oidc-trust",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:workflow/gha-oke-check",
-      "schema_version": 1,
-      "kind": "workflow",
-      "summary": "oke-check -- the GitHub Actions workflow oke-check.yml.",
-      "contract": {
-        "inputs": [
-          "schedule",
-          "workflow_dispatch",
-          "pull_request"
-        ],
-        "outputs": [
-          "job verdicts",
-          "artifacts"
-        ],
-        "errors": [
-          "non-zero exit",
-          "a required check that never reports"
-        ],
-        "cost_class": "free",
-        "latency_class": "batch",
-        "uses": [
-          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
-          "fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b",
-          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
-          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4"
-        ]
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:.github/workflows"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": ".github/workflows/oke-check.yml",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-autoscaler-seed",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bootstrap-cloudflare",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bootstrap-macrun",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bootstrap-sunshine",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bootstrap-tailscale",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bootstrap-vendors",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-estate-seed",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-github-app",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-hc-publish",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-identity-apply",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-rebuild",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-tailscale-policy",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-vault-put",
           "edge": "invokes"
         }
       ],

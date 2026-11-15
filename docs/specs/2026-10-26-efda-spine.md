@@ -1,5 +1,7 @@
 # EFDA-SPINE: the event spine, reviewed against the estate and built
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder-supplied specification, reviewed and implemented. 2026-10-26.
 
 **Provenance.** The build kit in Appendix A was supplied as a reference document and marked

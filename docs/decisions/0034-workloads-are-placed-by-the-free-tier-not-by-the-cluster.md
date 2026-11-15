@@ -1,5 +1,7 @@
 # 0034. Workloads are placed by the free tier, not by the cluster
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: DECIDED 2026-09-26. Founder: "we must never exceed the free tier", "mathematical
   guarantees only", "we lack creativity and common sense", "document this so this problem is
   solved forever".

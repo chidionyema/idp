@@ -1,5 +1,7 @@
 # Demo: scheduling immunity (crew#539)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 On 2026-08-27 the oke-check surge swapped the node, the survivor was CPU-starved, telemetry-coverage,
 cluster-state and the gateway sat Pending on `Insufficient cpu`, langfuse answered 503 for nine
 minutes and nothing paged. Founder: "how come monitoring and alerts and traces didn't detect this,

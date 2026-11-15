@@ -1,5 +1,7 @@
 # Onboarding: keeping the platform cloud-agnostic
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder ruling R36 (2026-08-25, crew#250): the platform must not know or care who owns the servers it runs on. This page is what that means when you add or change a manifest.
 
 ## Where a cloud may be named

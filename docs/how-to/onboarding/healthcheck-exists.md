@@ -1,5 +1,7 @@
 # Onboarding: a health check must name an object something creates
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 `bin/idp-healthcheck-exists`, graded by the rule `healthcheck-names-a-real-object`.
 
 ## What it is for

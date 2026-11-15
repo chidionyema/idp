@@ -1,5 +1,7 @@
 # Incident report: the Calico cutover turned the fences on, and every public site answered 504
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Date: 2026-09-06. Board: crew#102. Founder record that named the cause:
 `~/.claude/docs/founder/2026-09-06T2037Z-the-gateway-timeout-504-confirms-that-calico-is-fac00c2b.md`.
 Later founder record from the same evening, cited by the lockdown follow-up:

@@ -1,5 +1,7 @@
 # Otto's wish map -- every founder wish, and what satisfies it
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 The spec [`2026-10-29-otto-is-the-estates-front-door.md`](../specs/2026-10-29-otto-is-the-estates-front-door.md)
 reconstructs **31 founder wishes** from the estate's own record, in six families (A never
 silent, B everywhere, C superpowers, D truth, E the human-in-the-loop plane, F the estate's

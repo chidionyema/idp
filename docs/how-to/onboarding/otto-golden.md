@@ -1,5 +1,7 @@
 # Onboarding: Otto staging
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 This page is for anyone picking up work on the new Otto agent platform's deployment, or reviewing
 it for the first time. It names where the pieces live and what each one is responsible for.
 

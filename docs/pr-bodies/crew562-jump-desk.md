@@ -5,6 +5,8 @@ Founder, 2026-08-29: "founder wanted a much better experience ... search ... hea
 The one answer, read from the vendor's own pages on 2026-08-29 (support.jumpdesktop.com "Setup Unattended Remote Access", "Using the Display menu and virtual displays in Fluid sessions", "Cloudless Fluid"; changelog.jumpdesktop.com): Jump Desktop on the phone, the free Jump Desktop Connect on the Mac, Fluid in between. One virtual display sized to the phone is on every plan; unattended access is "add your account as a remote access user"; no ports, no VPN, end-to-end encrypted; Connect for Mac 10.15.22 shipped 2026-08-27. The Brewfile is now one line (`cask "jump-desktop-connect"`, Homebrew cask verified locally). What is left for the founder's hands: two privacy grants and one sign-in.
 
 ## Options considered
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 - Keep Sunshine + DeskPad + Moonlight and polish the checklist: four projects, no owner of the seam, PIN pairing and a vault password to babysit; rejected on THE HEADLINE.
 - Screens 5 (VNC over Tailscale): the nicest Apple client, but VNC streaming on a phone is the laggy path and its Tailscale link needs an OAuth secret; rejected on experience.
 - Chosen: Jump Desktop (Fluid). Risk, one sentence: on the standard plan signalling goes through Jump's cloud (cloudless Fluid is Teams Enterprise), so the founder's desk depends on his Jump sign-in; Otto's road to the Mac (SSH over Tailscale, crew#561) shares nothing with it.

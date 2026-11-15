@@ -1,5 +1,7 @@
 # Scope the verdict signing key to the prover
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 crew#631 CP2. The verdict signing key `verdict-hmac-key` may be read by the prover identity
 (service user `estate-ci`, group `estate-provers`) and by nobody else. Agents on a laptop act as
 `estate-operators`; pods act as the worker nodes. Both grants now carry

@@ -1,5 +1,7 @@
 # Backstage as a product: catalogue.\<zone\> for a buyer, not a link farm
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## Why (founder's own words, 2026-09-05)
 
 > "a lot of backstage is rubbish and not useful containing github links instead of actual thing,

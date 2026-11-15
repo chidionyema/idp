@@ -1,5 +1,7 @@
 # The identity and secrets architecture, reviewed against a buyer's diligence
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Measured 2026-09-04, 14:22Z, before building anything on top of it. The founder asked for the
 review because the next build — one-shot secret ingestion for an enterprise customer — sits
 directly on this layer, and a design is only as sound as the floor it stands on.

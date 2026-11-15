@@ -1,5 +1,7 @@
 # Onboarding: money
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## What it is for
 
 The application must never touch money. Today the store's own code builds payment sessions

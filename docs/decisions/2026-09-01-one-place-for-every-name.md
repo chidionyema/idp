@@ -1,5 +1,7 @@
 # 2026-09-01. Every estate name lives in one place, and a literal anywhere else is refused
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-09-01, in order: "where are the domains mumchimp-, we need to plan change of domain,
 should be seamless and cause least disruption ... let's look at the surface area of changes required
 and find ways to shrink"; "this pattern needs to be platform wide, we need to reduce surface area

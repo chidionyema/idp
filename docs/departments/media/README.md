@@ -1,5 +1,7 @@
 # The Media Department — M0 baseline and M1 contract
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Governing issue: [idp#7395](https://github.com/chidionyema/idp/issues/7395). Charter: *IDP Autonomous Media
 Department — implementation charter v1* (2026-10-28, status **PROPOSED**). This change is the charter's first
 PR (§10): **M0 measured baseline + M1 department contract and BDD only**. It adds no runtime, starts no

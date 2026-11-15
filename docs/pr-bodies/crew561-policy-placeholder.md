@@ -5,6 +5,8 @@ oke-check apply run 33280019151 (2026-08-29 23:08Z) minted Otto's key (`bin/idp-
 Fix: two comment lines reworded so the only `${` in the file is the group:founder member; a test pins that (exactly one placeholder, none in a comment) so the shape cannot come back.
 
 ## Options considered
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 - Teach the applier to strip comments before the grep: a second parser of hujson comments in shell for one file; rejected on LAW 23 (smaller road).
 - Chosen: the file carries one placeholder and the test says so.
 

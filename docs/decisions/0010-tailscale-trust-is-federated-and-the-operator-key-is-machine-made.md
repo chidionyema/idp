@@ -1,5 +1,7 @@
 # 0010. Tailscale trust is federated from GitHub; the operator's key is machine-made; the no-secret road is parked at £58 a month
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: ACCEPTED 2026-08-29 (founder: "ok that's fine, we need to document all this ... every single thing we do is hard won knowledge").
 - Date: 2026-08-29
 - Deciders: founder (the money and the one-way step), session 2d8b3bd0 (the research)

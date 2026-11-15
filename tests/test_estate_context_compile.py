@@ -642,3 +642,86 @@ def test_the_real_engine_answers_and_the_plan_is_stable():
     assert a["items"]
     assert a["used_tokens"] <= a["budget_tokens"]
     assert a["provenance"]["engine"]["door"] == "laptop-fallback-daemon"
+
+
+def test_historical_rank_one_match_cannot_supply_operating_instructions(tmp_path):
+    historical = "docs/old-recovery.md"
+    current = "docs/current-recovery.md"
+    (tmp_path / "docs").mkdir()
+    (tmp_path / historical).write_text(
+        "<!-- estate:historical current=docs/current-recovery.md -->\n"
+        "An obsolete cluster rebuild command.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / current).write_text(
+        "Verify the replacement runtime first.\n", encoding="utf-8"
+    )
+    payload = {
+        "working_set": [{"file": name} for name in (historical, current)],
+        "files_to_edit": [historical, current],
+        "relevant_symbols": [
+            {
+                "file_path": historical,
+                "start_line": 2,
+                "source": "Run the obsolete cluster rebuild.",
+            }
+        ],
+    }
+    args = cc.PLAN.PlanInput(
+        task="recover the service",
+        surface="codex",
+        tier="free",
+        budget_tokens=100,
+        repo_root=str(tmp_path),
+        commit="candidate",
+        index_commit="candidate",
+        engine_payload=payload,
+        chars_per_token=4,
+    )
+    plan = cc.PLAN.assemble(args)
+
+    assert [item["source"] for item in plan["items"]] == [current]
+    assert plan["dropped"][0]["reason"] == "historical"
+    assert plan["dropped"][0]["current"] == current
+    assert plan["coverage"]["engine_files_to_edit"] == [current]
+    assert "obsolete cluster rebuild" not in json.dumps(plan)
+
+
+def test_history_redirect_is_available_when_retrieval_omits_current_source(tmp_path):
+    (tmp_path / "current.md").write_text("Current procedure.\n", encoding="utf-8")
+    (tmp_path / "old.md").write_text(
+        "<!-- estate:historical current=current.md -->\nRetired command.\n",
+        encoding="utf-8",
+    )
+    args = cc.PLAN.PlanInput(
+        task="recover the service",
+        surface="codex",
+        tier="free",
+        budget_tokens=1,
+        repo_root=str(tmp_path),
+        commit="candidate",
+        index_commit="candidate",
+        chars_per_token=4,
+        engine_payload={"working_set": [{"file": "old.md"}]},
+    )
+    plan = cc.PLAN.assemble(args)
+    assert plan["items"] == []
+    assert plan["used_tokens"] == 0
+    assert plan["dropped"] == [
+        {"source": "old.md", "reason": "historical", "current": "current.md"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["../outside.md", "missing.md", "old.md", "/etc/hosts", "docs/../current.md"],
+)
+def test_invalid_history_redirect_still_withholds_retired_excerpt(tmp_path, target):
+    (tmp_path / "old.md").write_text(
+        f"<!-- estate:historical current={target} -->\nRetired command.\n",
+        encoding="utf-8",
+    )
+    assert cc.PLAN.historical_reference(str(tmp_path), "old.md") == {
+        "source": "old.md",
+        "reason": "historical",
+    }
