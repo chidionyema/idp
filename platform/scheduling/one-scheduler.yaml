@@ -32,12 +32,6 @@ still_outside_dagster:
 - job: .github/workflows/matrix-review.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
-- job: .github/workflows/messaging-drill.yml
-  kind: GitHub Actions cron
-  fold: 'pending: to be declared as a Dagster schedule'
-- job: .github/workflows/models-drill.yml
-  kind: GitHub Actions cron
-  fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/router-events/backup.yaml
   kind: Kubernetes CronJob
   fold: 'permanent exception: it is the DISASTER-RECOVERY copy of the router lanes, so it must not
@@ -63,9 +57,6 @@ still_outside_dagster:
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/scorecard.yml
-  kind: GitHub Actions cron
-  fold: 'pending: to be declared as a Dagster schedule'
-- job: .github/workflows/storefront-drill.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/ticket-verification.yml
@@ -114,9 +105,6 @@ still_outside_dagster:
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/agent-workforce/cronjob.yaml
-  kind: Kubernetes CronJob
-  fold: 'pending: to be declared as a Dagster schedule'
-- job: platform/drills/drill-dispatcher.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/identity/front-door-heartbeat.yaml
@@ -176,6 +164,123 @@ still_outside_dagster:
 - job: platform/state/cluster-state.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
-- job: platform/temporal/kini-state.yaml
+- job: .github/workflows/advisory-remediation.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/agent-trunk-batch.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/argon-guardian-relay.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/build-multiarch.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/bytesync-web-deploy.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/dependabot-rebase-nudge.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-db-backup.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-homes-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-progress.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-truth.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-watch.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/flux-board-reconcile.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/merdian-public-release.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/mutation-nightly.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/objective-miner.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/oidc-trust.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/recovery-data.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/router-catalog-gate.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/shadow-image-bundle.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-surfaces.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.cockpit.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.critical-watch.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: host-local safety check; must run while the cluster/network is down'
+- job: launchd/ai.estate.disk-watch.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.fleetview-backend.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.graph-drain.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: migrate to Dagster (Mac runner)'
+- job: launchd/ai.estate.incident-watch.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: host-local safety check; must run while the cluster/network is down'
+- job: launchd/ai.estate.litellm-watchdog.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: host-local safety check; must run while the cluster/network is down'
+- job: launchd/ai.estate.memory-forward.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.nats.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.research-tunnel.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.router-doctor.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: host-local safety check; must run while the cluster/network is down'
+- job: launchd/ai.estate.sovereign-worker.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.truth.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: migrate to Dagster (Mac runner)'
+- job: launchd/ai.estate.voice-router.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: persistent host-local service; must survive cluster/network outage'
+- job: launchd/ai.estate.voice-watch.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'retain: host-local safety check; must run while the cluster/network is down'
+- job: platform/catalog/schema-cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/estate-db/backup/cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/quad/ledger/ledger.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/research-engine/exa-credit-probe.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/unified-memory-server/oke-unified-memory.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
