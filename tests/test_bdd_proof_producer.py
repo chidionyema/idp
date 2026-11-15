@@ -161,3 +161,50 @@ def test_an_unchanged_proof_is_not_rewritten() -> None:
     backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
     assert backend._ensure_pr("lane/demo", LANE_HEAD, REBASED, CANDIDATE) == 4242
     assert "PATCH" not in calls
+
+
+def _git(cwd, *a):
+    return subprocess.run(
+        ["git", *a], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_the_proof_names_the_real_head_when_it_is_the_proven_tree(
+    tmp_path, monkeypatch
+):
+    """#8117 and #8124: the lane on origin held an earlier squash of the SAME work (same tree,
+    same parent) while the proof named the candidate, so the gate refused a proven change."""
+    r = tmp_path / "r"
+    r.mkdir()
+    _git(r, "init", "-q", "-b", "main")
+    _git(r, "config", "user.email", "t@t")
+    _git(r, "config", "user.name", "t")
+    _git(r, "config", "commit.gpgsign", "false")
+    (r / "a").write_text("1\n")
+    _git(r, "add", "a")
+    _git(r, "commit", "-q", "-m", "base")
+    (r / "b").write_text("work\n")
+    _git(r, "add", "b")
+    _git(r, "commit", "-q", "-m", "lane squash, attempt 1")
+    actual = _git(r, "rev-parse", "HEAD")
+    tree = _git(r, "rev-parse", "HEAD^{tree}")
+    parent = _git(r, "rev-parse", "HEAD^")
+    rebased = _git(r, "commit-tree", tree, "-p", parent, "-m", "lane squash, attempt 2")
+    (r / "c").write_text("other\n")
+    _git(r, "add", "c")
+    _git(r, "commit", "-q", "-m", "different work")
+    different = _git(r, "rev-parse", "HEAD")
+    monkeypatch.chdir(r)
+
+    backend = GitHubBackend(repo="o/r", required=["bdd"], run_url="u")
+    backend.gh = lambda *a, **k: []  # type: ignore[method-assign]
+    backend._ref = lambda name: actual  # type: ignore[method-assign]
+    assert backend._proof_head("lane/x", rebased) == actual, (
+        "same tree + parent: name the head"
+    )
+    backend._ref = lambda name: different  # type: ignore[method-assign]
+    assert backend._proof_head("lane/x", rebased) == rebased, (
+        "other tree: never vouch for it"
+    )
+    backend._ref = lambda name: ""  # type: ignore[method-assign]
+    assert backend._proof_head("lane/x", rebased) == rebased
