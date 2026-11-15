@@ -15,12 +15,12 @@ import subprocess
 import sys
 
 HEX = re.compile(r"^[0-9a-f]{40}$")
-PROOF_HEAD = re.compile(r"(?im)^\\s*head\\s*[:=]\\s*([0-9a-f]{7,40})\\s*$")
+PROOF_HEAD = re.compile(r"(?im)^\s*head\s*[:=]\s*([0-9a-f]{7,40})\s*$")
 PASS = (
-    re.compile(r"\\b[1-9]\\d*\\s+passed\\s+in\\s+[\\d.]+s", re.I),
-    re.compile(r"Tests:\\s*[1-9]\\d*\\s+passed", re.I),
-    re.compile(r"\\b[1-9]\\d*\\s+scenarios?\\b[^\\n]{0,40}\\b[1-9]\\d*\\s+passed", re.I),
-    re.compile(r"^---\\s*PASS:\\s*\\w", re.M),
+    re.compile(r"\b[1-9]\d*\s+passed\s+in\s+[\d.]+s", re.I),
+    re.compile(r"Tests:\s*[1-9]\d*\s+passed", re.I),
+    re.compile(r"\b[1-9]\d*\s+scenarios?\b[^\n]{0,40}\b[1-9]\d*\s+passed", re.I),
+    re.compile(r"^---\s*PASS:\s*\w", re.M),
 )
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, text=True, capture_output=True, check=False)
@@ -32,13 +32,13 @@ def validate(head: str, message: str, committer: str, body: str | None) -> list[
     # A GitHub server-authored commit has no local hook. Never infer trusted
     # identity from the author field (which is freely forgeable).
     server_commit = committer == "noreply@github.com" or bool(
-        re.fullmatch(r"[^\\s]+\\[bot\\]@users\\.noreply\\.github\\.com", committer)
+        re.fullmatch(r"[^\s]+\[bot\]@users\.noreply\.github\.com", committer)
     )
-    if not server_commit and not re.search(r"(?m)^X-Idp-Signed:\\s*\\S+", message) and not re.search(
-        r"(?m)^X-Idp-Auth:\\s*\\S+", message
+    if not server_commit and not re.search(r"(?m)^X-Idp-Signed:\s*\S+", message) and not re.search(
+        r"(?m)^X-Idp-Auth:\s*\S+", message
     ):
         failures.append("COMMIT_UNSTAMPED")
-    if re.search(r"(?m)^X-Idp-Merge-Strategy:\\s*(?:ours|theirs)\\s*$", message):
+    if re.search(r"(?m)^X-Idp-Merge-Strategy:\s*(?:ours|theirs)\s*$", message):
         failures.append("BLIND_MERGE")
     if body is not None:
         block = re.search(r"BDD-PROOF(.*?)END-BDD-PROOF", body, re.I | re.S)
