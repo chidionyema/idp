@@ -658,6 +658,18 @@ jobs:
           # judged by BASE's gate when it has one, so a change cannot rewrite its own judge
           if git show "$base:bin/dof-gate" > /tmp/dof-gate 2>/dev/null; then python3 /tmp/dof-gate "$base" "$HEAD"; else python3 bin/dof-gate "$base" "$HEAD"; fi
 
+  production-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: '3.12' }
+      - run: python3 -m pip install 'pytest==8.4.2'
+      - run: bin/idp-production-readiness
+
   ci-success:
     if: always()
     # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
@@ -679,7 +691,7 @@ jobs:
     # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
     # The loop now judges every key of `needs`, so this is the one list, and
     # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
-    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate]
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate, production-readiness]
     runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped
@@ -691,6 +703,11 @@ jobs:
           fail=0
           for job in $(echo "$NEEDS_JSON" | jq -r 'keys[]'); do
             result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
+            if [[ "$job" == production-readiness && "$result" != success ]]; then
+              echo "$job: FAIL ($result)"
+              fail=1
+              continue
+            fi
             case "$result" in
               success|skipped) echo "$job: pass ($result)" ;;
               *) echo "$job: FAIL ($result)"; fail=1 ;;
