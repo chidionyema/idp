@@ -15,7 +15,8 @@ rather than inventing a spec or a receipt.
 Resolution order:
   1. $ESTATE_SPEC_FACTORY  -- an explicit path to spec_factory.py
   2. $ESTATE_ARGON/tools/estate-spec-factory/spec_factory.py
-  3. ~/Documents/code/argon/tools/estate-spec-factory/spec_factory.py
+  3. ~/.estate/tools/estate-spec-factory/spec_factory.py  (pinned deployment)
+  4. ~/Documents/code/argon/tools/estate-spec-factory/spec_factory.py
 
 The wrapper never grants authority: a generated packet is a candidate, not a command.
 """
@@ -38,6 +39,7 @@ def candidates() -> list[pathlib.Path]:
         out.append(
             pathlib.Path(argon) / "tools" / "estate-spec-factory" / "spec_factory.py"
         )
+    out.append(home / ".estate" / "tools" / "estate-spec-factory" / "spec_factory.py")
     out.append(
         home
         / "Documents"
