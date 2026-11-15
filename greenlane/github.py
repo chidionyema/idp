@@ -1347,6 +1347,7 @@ class GitHubBackend:
                 f"proven on candidate {tip[:12]}",
             )
             subject = self.git("log", "-1", "--format=%s", merge_sha)
+            self._approve(pr["number"], merge_sha, tip)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
                     result = self.gh(
@@ -1469,9 +1470,6 @@ class GitHubBackend:
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
-        if existing:
-            return existing[0]["number"]
-        subject = self.git("log", "-1", "--format=%s", rebased)
         body = (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
             f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
@@ -1479,6 +1477,16 @@ class GitHubBackend:
             f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
+        if existing:
+            # A retry re-squashes the lane, so the open PR's head moves to `rebased`. Its proof
+            # must move with it: a body still naming the previous attempt's sha is refused by
+            # bin/idp-bdd-proof-gate on every retry (2026-11-14: #8110, #8115, #8117 -- a lane
+            # proven green could never land). Rewrite it whenever it no longer says this.
+            number = existing[0]["number"]
+            if (existing[0].get("body") or "") != body:
+                self.gh(f"pulls/{number}", "PATCH", {"body": body})
+            return number
+        subject = self.git("log", "-1", "--format=%s", rebased)
         created = self.gh(
             "pulls",
             "POST",
@@ -1488,6 +1496,40 @@ class GitHubBackend:
         # costs a round trip and races with GitHub's own listing lag; the POST already carries
         # it. `None` still means "no PR" and the caller refuses rather than guessing.
         return (created or {}).get("number")
+
+    def _approve(self, number: int, sha: str, tip: str) -> None:
+        """The second identity's review on a head the Greenlane itself proved green.
+
+        main's ruleset requires one approving review (I-8046, 2026-11-13). The App that opens
+        every lane PR cannot approve its own, so from that day no lane could land without the
+        founder (#8117 sat refused: "At least 1 approving review is required"). The workflow's
+        own token (github-actions[bot], GREENLANE_STATUS_TOKEN) is a different identity: it
+        approves exactly the sha being merged, and only here, after the candidate was proven
+        green on top of main. A refusal is printed, never fatal: the merge that follows reports
+        the rule itself.
+        """
+        if not self.status_token:
+            return
+        try:
+            _run(
+                "gh",
+                "api",
+                f"repos/{self.repo}/pulls/{number}/reviews",
+                "-X",
+                "POST",
+                "--input",
+                "-",
+                input=json.dumps(
+                    {
+                        "event": "APPROVE",
+                        "commit_id": sha,
+                        "body": f"Greenlane machine review: candidate {tip[:12]} proven green on top of main.",
+                    }
+                ),
+                env={**os.environ, "GH_TOKEN": self.status_token},
+            )
+        except RuntimeError as e:
+            print(f"greenlane: machine review of #{number} refused: {str(e)[-200:]}")
 
     def _status(self, sha: str, fields: dict) -> None:
         if self.status_token:
