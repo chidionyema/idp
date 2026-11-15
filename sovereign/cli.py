@@ -62,6 +62,13 @@ def cmd_start(args: argparse.Namespace) -> int:
 
         args.repo = args.repo or args.estate
     if getattr(args, "branches", None) and int(args.branches) > 1:
+        if getattr(args, "instruction_id", None):
+            print(
+                "one instruction_id cannot identify multiple independent branch workflows; "
+                "use a bounded parent/child identity contract",
+                file=sys.stderr,
+            )
+            return config.CLI_EXIT_USAGE_ERROR
         from sovereign.shadow import branching
 
         res = asyncio.run(
@@ -83,6 +90,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             by=args.by,
             budget=int(budget_resolved.value),
             critical=bool(getattr(args, "critical", False)),
+            instruction_id=getattr(args, "instruction_id", None),
         )
     )
     _emit(res, args.json)
@@ -552,7 +560,8 @@ def _spawn(cmd: list[str], log_path: Path, pid_path: Path) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as log_f:
-        proc = subprocess.Popen(
+        # Both callers construct the executable and argument list internally.
+        proc = subprocess.Popen(  # noqa: S603
             cmd,
             stdout=log_f,
             stderr=subprocess.STDOUT,
@@ -770,6 +779,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("start", help="start a session")
     p.add_argument("--task", required=True)
+    p.add_argument(
+        "--instruction-id",
+        default=None,
+        help="stable, ingress-issued ID; Temporal refuses replay even after completion",
+    )
     p.add_argument("--runner", default=config.SB_DEFAULT_RUNNER)
     p.add_argument("--repo", default=None)
     p.add_argument("--by", default="cli")
