@@ -6,6 +6,10 @@ sovereign/CONTRACT.md, "Engine API").
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import logging
+import re
 import uuid
 from typing import Any, Literal
 
@@ -14,8 +18,58 @@ from sovereign.engine import fsm
 from sovereign.engine import receipts as receipts_mod
 
 _client: Any = None
+_LOG = logging.getLogger(__name__)
 
 WORKFLOW = "SessionWorkflow"
+
+# An instruction ID comes from authenticated ingress, never from a model or
+# a new UUID minted on each delivery retry. Temporal is the existing durable
+# workflow database; do not build a competing instruction table here.
+# Match Argon's existing ProvenanceLedger.openInstruction() ID contract.
+_INSTRUCTION_ID = re.compile(r"^[A-Za-z0-9._-]{3,100}$")
+_FOUNDER_INGRESS = frozenset({"founder", "genesis", "telegram"})
+
+
+def _checked_instruction_id(value: str | None, *, by: str) -> str | None:
+    if value is None:
+        if by.lower() in _FOUNDER_INGRESS:
+            raise ValueError(
+                "Founder instructions require a stable instruction_id from authenticated ingress"
+            )
+        return None  # legacy ad-hoc CLI sessions are not founder instructions
+    if not isinstance(value, str) or not _INSTRUCTION_ID.fullmatch(value):
+        raise ValueError(
+            "instruction_id must match Argon instruction_ledger: 3-100 ASCII letters, "
+            "digits, '.', '_', '-'"
+        )
+    return value
+
+
+def _instruction_fingerprint(
+    instruction_id: str,
+    *,
+    task: str,
+    runner: str,
+    repo: str | None,
+    by: str,
+    budget: int,
+    critical: bool,
+) -> str:
+    # A stable, non-secret description of what this identity was asked to do.
+    # A duplicate workflow ID is refused by Temporal, even with a different
+    # payload. This digest is retained in Temporal memo for later readback.
+    payload = {
+        "instruction_id": instruction_id,
+        "task": task,
+        "runner": runner,
+        "repo": repo,
+        "by": by,
+        "budget": budget,
+        "critical": critical,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 async def get_client() -> Any:
@@ -40,11 +94,18 @@ async def start(
     by: str = "cli",
     budget: int = 0,
     critical: bool = False,
+    instruction_id: str | None = None,
 ) -> dict[str, Any]:
+    # Validation precedes any network call, and a replay retains the same
+    # Temporal workflow ID instead of minting an independent execution.
+    instruction_id = _checked_instruction_id(instruction_id, by=by)
+    if instruction_id is not None and (not isinstance(task, str) or not task.strip()):
+        raise ValueError("a durable instruction cannot have an empty task")
+    session_id = instruction_id or _new_session_id()
     client = await get_client()
-    session_id = _new_session_id()
     params = {
         "session_id": session_id,
+        "instruction_id": instruction_id,
         "task": task,
         "runner": runner,
         "repo": repo,
@@ -75,12 +136,68 @@ async def start(
         "budget_retry_max_attempts": config.RECEIPT_RETRY_MAX_ATTEMPTS,
         "approval_timeout_min": config.APPROVAL_TIMEOUT_MIN,
     }
-    await client.start_workflow(
-        WORKFLOW,
-        params,
-        id=session_id,
-        task_queue=config.TEMPORAL_TASK_QUEUE,
-    )
+    admission_options: dict[str, Any] = {}
+    if instruction_id is not None:
+        from temporalio.common import WorkflowIDReusePolicy
+
+        # REJECT_DUPLICATE matters after the first run has completed too:
+        # Temporal's default allows a completed workflow ID to be reused,
+        # which would repeat an already-delivered founder instruction.
+        admission_options["id_reuse_policy"] = WorkflowIDReusePolicy.REJECT_DUPLICATE
+        admission_options["memo"] = {
+            "instruction_id": instruction_id,
+            "instruction_fingerprint": _instruction_fingerprint(
+                instruction_id,
+                task=task,
+                runner=runner,
+                repo=repo,
+                by=by,
+                budget=budget,
+                critical=bool(critical),
+            ),
+        }
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+
+    replayed = False
+    try:
+        await client.start_workflow(
+            WORKFLOW,
+            params,
+            id=session_id,
+            task_queue=config.TEMPORAL_TASK_QUEUE,
+            **admission_options,
+        )
+    except WorkflowAlreadyStartedError as exc:
+        if instruction_id is None:
+            raise
+        # A duplicate response is not proof that this payload was admitted.
+        # Read the existing run's identity and memo before acknowledging a retry.
+        handle = client.get_workflow_handle(session_id, run_id=exc.run_id)
+        async with asyncio.timeout(config.CLIENT_QUERY_TIMEOUT_S):
+            description = await handle.describe()
+            existing_id = await description.memo_value("instruction_id", None)
+            existing_fingerprint = await description.memo_value(
+                "instruction_fingerprint", None
+            )
+        if (
+            existing_id != instruction_id
+            or existing_fingerprint
+            != admission_options["memo"]["instruction_fingerprint"]
+        ):
+            raise ValueError(
+                "instruction_id is already bound to a different or unverifiable request"
+            ) from exc
+        replayed = True
+    # This acknowledges admission or its verified readback, never operational yield.
+    if instruction_id is not None:
+        result: dict[str, Any] = {
+            "session_id": session_id,
+            "instruction_id": instruction_id,
+            "state": "TEMPORAL_ACCEPTED_UNVERIFIED",
+        }
+        if replayed:
+            result["replayed"] = True
+        return result
     return {"session_id": session_id}
 
 
@@ -97,14 +214,14 @@ async def _state_of(handle: Any) -> dict[str, Any] | None:
         # A running workflow's `result()` would only block further, so
         # degrade to "unknown" rather than stacking a second wait.
         return None
-    except Exception:
-        pass
+    except Exception as exc:
+        _LOG.debug("Temporal state query fallback: %s", type(exc).__name__)
     try:
         result = await asyncio.wait_for(handle.result(), timeout=timeout)
         if isinstance(result, dict):
             return result
-    except Exception:
-        pass
+    except Exception as exc:
+        _LOG.debug("Temporal result unavailable: %s", type(exc).__name__)
     return None
 
 
@@ -112,6 +229,7 @@ def _to_row(state: dict[str, Any] | None, session_id: str) -> dict[str, Any]:
     if state is None:
         return {
             "session_id": session_id,
+            "instruction_id": None,
             "repo": None,
             "task": "",
             "step": 0,
@@ -143,6 +261,7 @@ async def list_sessions() -> list[dict[str, Any]]:
         out.append(
             {
                 "session_id": row.get("session_id", wf.id),
+                "instruction_id": row.get("instruction_id"),
                 "repo": row.get("repo"),
                 "task": row.get("task", ""),
                 "step": row.get("step", 0),
