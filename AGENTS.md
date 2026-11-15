@@ -55,6 +55,32 @@ hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#79
 
 ---
 
+## Job-bound authority — action-door enforcement (founder, 2026-11-14)
+
+Before any agent changes credentials, permissions, GitHub write access or privileged routing,
+read [the job-bound capability standard](docs/standards/job-bound-capability-leases.md).
+Use existing IDP #7787 (action-door leases), #7771 (FLOW), #7800 (trusted-base repair),
+QUAD, the executor and KARMA. No second broker, scheduler, authority ledger or untested gate.
+
+- Agent-generated text cannot issue, approve, attest, refresh or restore its own authority.
+  Exact actor, job, action, target, payload digest, trusted issuer, policy revision, one-use
+  consumption, deadline and revocation belong to the independent execution boundary.
+- Provider credentials stay outside model access. Restrict repository and permission scopes
+  at issuance, recheck each consequential operation, deny replay and terminate lease expiry
+  independently of the session. Preserve safe diagnostics and explicitly scoped recovery.
+- Settlement requires BOTH independent real-effect proof and verified termination of the
+  residual privilege. Revocation does not undo already accepted remote effects or exfiltration.
+- Chesed then Geburah: exercise an isolated real canary, falsify cross-repository access,
+  wrong-action attempts, forged issuers, duplicates, races, expiry, failure and post-job
+  token reuse; only then promote with exact-SHA CI, independent reviewer and live readback.
+- The current ticket-verifier repository-scope canary is limited source code; it is NOT a
+  job-bound broker, verified revocation or an estate-wide enforcement guarantee.
+  New controls must not freeze unrelated work or create their own recovery deadlock.
+
+Claim: chidionyema/idp#7787.
+
+---
+
 ## KARMA — accountable instruction-to-yield intelligence (founder, 2026-11-12)
 
 **KARMA is an estate operating capability, not a new ledger, memory store, currency,

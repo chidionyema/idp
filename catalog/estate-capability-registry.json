@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 121,
-    "layer": 261,
+    "layer": 262,
     "service": 121,
     "tool": 495,
     "workflow": 106
@@ -13253,6 +13253,56 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/executor/sandbox.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-github-app-job_token_request",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Compile a scoped GitHub App token request from reviewed lane policy.",
+      "contract": {
+        "inputs": [
+          "--verify-response"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/github-app/job_token_request.py",
       "depends_on": [],
       "metrics": [],
       "blind": [

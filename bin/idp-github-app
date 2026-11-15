@@ -138,6 +138,7 @@ token)
   TMPDIR_ERR=$(mktemp); trap 'rm -f "$TMPDIR_ERR"' EXIT
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
+  token_request=$(python3 "$D/job_token_request.py" "$lane") || exit 3
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
@@ -146,9 +147,28 @@ token)
   [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
   # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
   [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
-  raw=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" -w $'\nhttp_code=%{http_code}' 2>"$TMPDIR_ERR" || true)
+  raw=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$token_request" -w $'\nhttp_code=%{http_code}' 2>"$TMPDIR_ERR" || true)
   code=${raw##*http_code=}; body=${raw%$'\n'http_code=*}
   tok=$(jq -r '.token // empty' <<<"$body" 2>/dev/null || true)
+  # Job-bound issuance canary: a request is not proof of scope. Verify the actual
+  # provider receipt BEFORE exposing the token to a workload. Legacy unenrolled
+  # lanes preserve their current flow until their consumers are independently inventoried.
+  if jq -e 'has("repository_ids")' <<<"$token_request" >/dev/null 2>&1; then
+    if [ "${code:-}" != 201 ] || ! printf %s "$body" | python3 "$D/job_token_request.py" "$lane" --verify-response; then
+      # GitHub may have issued a bearer despite a mismatching receipt. Revoke it
+      # without putting the credential in process argv, an artifact, or a log.
+      revoke_http=not-issued
+      if [[ "$tok" =~ ^ghs_[A-Za-z0-9_.-]+$ ]]; then
+        revoke_http=$(printf 'header = "Authorization: Bearer %s"\n' "$tok" |
+          curl -sS -o /dev/null -w '%{http_code}' -X DELETE --config - \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/installation/token) || revoke_http=unknown
+      fi
+      echo "REFUSED github-app token lane $lane: provider scope not attested; mint_http=${code:-none} revoke_http=$revoke_http" >&2
+      exit 3
+    fi
+  fi
   # run 33097577404: whatever gh printed was passed on as a token; a token has a shape. Run 33098351833: the
   # reason it had none was lost, so GitHub's own message travels on stderr where the drill reads it.
   # run 33099762534: the token GitHub mints is 390 bytes with `_` and `.` in it (the long installation-token

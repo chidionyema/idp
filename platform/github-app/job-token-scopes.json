@@ -1,0 +1,12 @@
+{
+  "schema": "job-token-scopes/v1",
+  "why": "Canary-first provider repository scoping with verified ticket-verifier consumers: IDP Actions verdict reads (1344360654), crew issue labels/comments and reporting (1342523800). These two repository IDs are required; outside repositories must remain denied. Not a per-job lease. Unenrolled lanes retain legacy scope pending consumer census and positive live canary.",
+  "enrolled_lanes": {
+    "ticket-verifier": {
+      "repository_ids": [
+        1342523800,
+        1344360654
+      ]
+    }
+  }
+}
