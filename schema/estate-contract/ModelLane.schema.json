@@ -1,0 +1,23 @@
+{
+ "additionalProperties": false,
+ "description": "One lane of genesis-agent-policy.json `models`: the only place a model ID may be written.",
+ "properties": {
+  "model": {
+   "maxLength": 120,
+   "minLength": 1,
+   "title": "Model",
+   "type": "string"
+  },
+  "provider": {
+   "pattern": "^[a-z0-9][a-z0-9-]{1,40}$",
+   "title": "Provider",
+   "type": "string"
+  }
+ },
+ "required": [
+  "provider",
+  "model"
+ ],
+ "title": "ModelLane",
+ "type": "object"
+}

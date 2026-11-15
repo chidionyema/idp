@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""The estate's one record check: strict Pydantic contracts (estate_contract).
+
+    estate-contract validate <Kind> <file|->   exit 0 and `ok <Kind>`, or exit 1 and the field errors as JSON
+    estate-contract kinds                      the kinds there are
+    estate-contract schema <dir>               write each kind's JSON Schema to <dir>/<Kind>.schema.json
+
+Text kinds (ClaimComment, CommitTrailers, ProofBlock) read the exact text the gates read; the others read JSON.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pydantic import ValidationError  # noqa: E402
+
+from estate_contract import KINDS  # noqa: E402
+
+TEXT = {"ClaimComment", "CommitTrailers", "ProofBlock"}
+
+
+def validate(kind: str, src: str) -> int:
+    model = KINDS.get(kind)
+    if model is None:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "kind": kind,
+                    "errors": [f"unknown kind; one of {sorted(KINDS)}"],
+                }
+            )
+        )
+        return 2
+    text = sys.stdin.read() if src == "-" else Path(src).read_text()
+    try:
+        if kind in TEXT:
+            model.parse(text)
+        else:
+            model.model_validate(json.loads(text))
+    except ValidationError as e:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "kind": kind,
+                    "errors": [
+                        {"at": ".".join(map(str, x["loc"])), "why": x["msg"]}
+                        for x in e.errors()
+                    ],
+                }
+            )
+        )
+        return 1
+    except (ValueError, json.JSONDecodeError) as e:
+        print(json.dumps({"ok": False, "kind": kind, "errors": [str(e)]}))
+        return 1
+    print(f"ok {kind}")
+    return 0
+
+
+def schema(out: str) -> int:
+    d = Path(out)
+    d.mkdir(parents=True, exist_ok=True)
+    for name, model in sorted(KINDS.items()):
+        (d / f"{name}.schema.json").write_text(
+            json.dumps(model.model_json_schema(by_alias=True), indent=1, sort_keys=True)
+            + "\n"
+        )
+    print(f"wrote {len(KINDS)} schemas to {d}")
+    return 0
+
+
+if __name__ == "__main__":
+    a = sys.argv[1:]
+    if a[:1] == ["validate"] and len(a) == 3:
+        sys.exit(validate(a[1], a[2]))
+    if a[:1] == ["kinds"]:
+        print("\n".join(sorted(KINDS)))
+        sys.exit(0)
+    if a[:1] == ["schema"] and len(a) == 2:
+        sys.exit(schema(a[1]))
+    print(__doc__)
+    sys.exit(64)

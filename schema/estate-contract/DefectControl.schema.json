@@ -1,0 +1,122 @@
+{
+ "$defs": {
+  "DefectStatus": {
+   "enum": [
+    "OPEN",
+    "CORRECTED",
+    "CONTROL_PROPOSED",
+    "CONTROL_VERIFIED",
+    "CLOSED"
+   ],
+   "title": "DefectStatus",
+   "type": "string"
+  }
+ },
+ "additionalProperties": false,
+ "description": "One record of argon genesis-defect-controls.json (GEN-PROTO-005).",
+ "properties": {
+  "class": {
+   "minLength": 1,
+   "title": "Class",
+   "type": "string"
+  },
+  "compensatingControl": {
+   "minLength": 1,
+   "title": "Compensatingcontrol",
+   "type": "string"
+  },
+  "discoveredAt": {
+   "format": "date-time",
+   "title": "Discoveredat",
+   "type": "string"
+  },
+  "discoveryEvidence": {
+   "minLength": 1,
+   "title": "Discoveryevidence",
+   "type": "string"
+  },
+  "estateWideScope": {
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1,
+   "title": "Estatewidescope",
+   "type": "array"
+  },
+  "id": {
+   "pattern": "^DEF-\\d{8}-[A-Z0-9]+-\\d{3}$",
+   "title": "Id",
+   "type": "string"
+  },
+  "immediateCorrection": {
+   "minLength": 1,
+   "title": "Immediatecorrection",
+   "type": "string"
+  },
+  "impact": {
+   "minLength": 1,
+   "title": "Impact",
+   "type": "string"
+  },
+  "recurrenceGuards": {
+   "default": [],
+   "items": {
+    "type": "string"
+   },
+   "title": "Recurrenceguards",
+   "type": "array"
+  },
+  "recurrenceProof": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "title": "Recurrenceproof"
+  },
+  "recurrenceTest": {
+   "pattern": "^[a-z0-9-]+:\\S+$",
+   "title": "Recurrencetest",
+   "type": "string"
+  },
+  "residualRisk": {
+   "minLength": 1,
+   "title": "Residualrisk",
+   "type": "string"
+  },
+  "rolloutEvidence": {
+   "minLength": 1,
+   "title": "Rolloutevidence",
+   "type": "string"
+  },
+  "rootCause": {
+   "minLength": 1,
+   "title": "Rootcause",
+   "type": "string"
+  },
+  "status": {
+   "$ref": "#/$defs/DefectStatus"
+  }
+ },
+ "required": [
+  "id",
+  "class",
+  "discoveredAt",
+  "discoveryEvidence",
+  "impact",
+  "rootCause",
+  "immediateCorrection",
+  "compensatingControl",
+  "recurrenceTest",
+  "recurrenceProof",
+  "estateWideScope",
+  "rolloutEvidence",
+  "residualRisk",
+  "status"
+ ],
+ "title": "DefectControl",
+ "type": "object"
+}

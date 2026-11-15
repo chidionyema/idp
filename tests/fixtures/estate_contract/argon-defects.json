@@ -1,0 +1,87 @@
+[
+ {
+  "id": "DEF-20261114-FOUNDERLINK-001",
+  "class": "red-change-reaches-founder",
+  "discoveredAt": "2026-11-14T00:00:00Z",
+  "discoveryEvidence": "Founder 2026-11-14 11:35: two failing pull requests were sent to him.",
+  "impact": "a pull request link that is not green reaches the founder",
+  "rootCause": "pull requests were opened and linked outside the green-gated producer; no sender checked the head's checks",
+  "immediateCorrection": "Guard tests added and run by the pre-commit hook.",
+  "compensatingControl": "argon .githooks/pre-commit runs every recurrenceGuards test of every defect (tests/test_failure_classes.py); a removed, renamed or failing guard refuses the commit.",
+  "recurrenceTest": "argon:tests/test_founder_gate_coverage.py",
+  "recurrenceProof": null,
+  "recurrenceGuards": [
+   "tests.test_founder_gate_coverage.Coverage.test_every_sender_is_gated",
+   "tests.test_founder_gate_coverage.Coverage.test_detector_catches_an_ungated_sender",
+   "tests.test_founder_gate_coverage.GateDecides.test_admit_truth_table",
+   "tests.test_founder_ask_integration.NoRedLinkEverReachesTheFounder.test_red_check_is_refused"
+  ],
+  "estateWideScope": [
+   "argon",
+   "estate-guards",
+   "hermes-agent",
+   "hermes-config",
+   "hermes-v2",
+   "idp",
+   "idp-archive",
+   "sentinel-loop",
+   "survival-stack",
+   "maestro",
+   "crew",
+   "prospector",
+   "estate-graph"
+  ],
+  "rolloutEvidence": "argon lane/flow-guarantees-20261114 (pull request 112); the hook refused a commit when a guard failed.",
+  "residualRisk": "Only argon's 7 Telegram senders pass the gate. A sweep on 2026-11-14 found 106 more in 12 repositories (estate-guards:5 hermes-agent:13 hermes-config:7 hermes-v2:4 idp:35 idp-archive:28 sentinel-loop:6 survival-stack:2 maestro:2 crew:2 prospector:1 estate-graph:1) and 4 private repositories unscanned; until one egress holds the founder's bot tokens, those paths can still deliver a red link.",
+  "status": "CONTROL_PROPOSED"
+ },
+ {
+  "id": "DEF-20261114-REDPUSH-001",
+  "class": "push-without-predicted-green",
+  "discoveredAt": "2026-11-14T14:50:00Z",
+  "discoveryEvidence": "idp#8101 was pushed while a local run of bin/dof-gate on the same range was already known to refuse it; the agent announced the push and stopped watching.",
+  "impact": "Red builds reach review and the founder; failures that recur hundreds of times are normalised.",
+  "rootCause": "Nothing ran the repository's CI checks before the push, and nothing required the pushing agent to watch its checks to a verdict.",
+  "immediateCorrection": "bin/genesis-pr-door.py predicts every required check locally from .genesis/pr-door.json and refuses on the first red; argon's pre-push hook runs it; watch reports GREEN, RED or PENDING and nothing is announced before GREEN.",
+  "compensatingControl": "argon .githooks/pre-push runs the door on every pushed ref; tests/test_genesis_pr_door.py proves a predicted red is never pushed and that idp's mirrors cover every check that turned idp#8101 red.",
+  "recurrenceTest": "argon:tests/test_genesis_pr_door.py",
+  "recurrenceProof": null,
+  "recurrenceGuards": [
+   "tests.test_genesis_pr_door"
+  ],
+  "estateWideScope": [
+   "argon",
+   "idp",
+   "crew"
+  ],
+  "rolloutEvidence": "argon lane/flow-guarantees-20261114; the door refused this lane's own push when the lineage floor dropped.",
+  "residualRisk": "A hook runs only where it is installed; idp's pre-push cannot take the door while idp is repair-only. Pushes from clones without hooks are caught after the fact by watch, not prevented.",
+  "status": "CONTROL_PROPOSED"
+ },
+ {
+  "id": "DEF-20261114-HARDMODEL-001",
+  "class": "model-id-typed-into-code",
+  "discoveredAt": "2026-11-14T20:39:00Z",
+  "discoveryEvidence": "An agent answered exhausted provider lanes by rewriting model names into router config; argon itself carried the policy's model IDs typed into 6 code and launch files, and genesis-lead read a lane the policy never declared then used a typed-in name every time.",
+  "impact": "A provider change, outage or quota breaks every place a name was typed, and the policy stops being the authority on which model a lane uses.",
+  "rootCause": "Code took model names as literals with the policy as an optional override, so nothing forced one source.",
+  "immediateCorrection": "bin/genesis_models.py reads lanes from genesis-agent-policy.json; the concierge, lead, launch config, server and panel no longer carry model IDs; an undeclared lane is an error, and the lead no longer calls the Gemini API the policy marks subscription-only.",
+  "compensatingControl": "tests/test_no_hardcoded_models.py refuses a model ID in any tracked code or launch file outside the policy; its allowance (the router's catalog seed) may only shrink.",
+  "recurrenceTest": "argon:tests/test_no_hardcoded_models.py",
+  "recurrenceProof": null,
+  "recurrenceGuards": [
+   "tests.test_no_hardcoded_models"
+  ],
+  "estateWideScope": [
+   "argon",
+   "idp",
+   "hermes-v2",
+   "hermes-config",
+   "prospector",
+   "crew"
+  ],
+  "rolloutEvidence": "argon lane/flow-guarantees-20261114.",
+  "residualRisk": "Covers argon only; the same scan over the other estate repositories has not run. Agents in third-party web chats are outside any estate gate until their work enters through an estate door.",
+  "status": "CONTROL_PROPOSED"
+ }
+]

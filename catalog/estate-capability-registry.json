@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 261,
     "service": 121,
-    "tool": 499,
+    "tool": 500,
     "workflow": 105
   },
   "records": [
@@ -29096,6 +29096,53 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-contract",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "The estate's one record check: strict Pydantic contracts (estate_contract).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-contract",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

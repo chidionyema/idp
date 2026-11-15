@@ -1,0 +1,351 @@
+{
+ "$defs": {
+  "Claim": {
+   "additionalProperties": false,
+   "properties": {
+    "evidence": {
+     "items": {
+      "$ref": "#/$defs/Evidence"
+     },
+     "maxItems": 8,
+     "minItems": 1,
+     "title": "Evidence",
+     "type": "array"
+    },
+    "rung": {
+     "enum": [
+      "configured",
+      "committed",
+      "pushed",
+      "deployed",
+      "healthy",
+      "verified"
+     ],
+     "title": "Rung",
+     "type": "string"
+    },
+    "subject": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Subject",
+     "type": "string"
+    }
+   },
+   "required": [
+    "subject",
+    "rung",
+    "evidence"
+   ],
+   "title": "Claim",
+   "type": "object"
+  },
+  "Evidence": {
+   "additionalProperties": false,
+   "properties": {
+    "command": {
+     "maxLength": 300,
+     "minLength": 1,
+     "title": "Command",
+     "type": "string"
+    },
+    "sha256": {
+     "pattern": "^sha256:[0-9a-f]{64}$",
+     "title": "Sha256",
+     "type": "string"
+    },
+    "source": {
+     "enum": [
+      "git",
+      "ci",
+      "http",
+      "runtime",
+      "telegram",
+      "ledger",
+      "test"
+     ],
+     "title": "Source",
+     "type": "string"
+    }
+   },
+   "required": [
+    "source",
+    "command",
+    "sha256"
+   ],
+   "title": "Evidence",
+   "type": "object"
+  },
+  "FounderAsk": {
+   "additionalProperties": false,
+   "properties": {
+    "choices": {
+     "items": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/PhoneApproval"
+       },
+       {
+        "$ref": "#/$defs/LinkChoice"
+       }
+      ]
+     },
+     "maxItems": 3,
+     "minItems": 1,
+     "title": "Choices",
+     "type": "array"
+    },
+    "if_no_answer": {
+     "title": "If No Answer",
+     "type": "string"
+    },
+    "question": {
+     "title": "Question",
+     "type": "string"
+    },
+    "why": {
+     "title": "Why",
+     "type": "string"
+    }
+   },
+   "required": [
+    "question",
+    "why",
+    "choices",
+    "if_no_answer"
+   ],
+   "title": "FounderAsk",
+   "type": "object"
+  },
+  "LinkChoice": {
+   "additionalProperties": false,
+   "properties": {
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "url": {
+     "maxLength": 400,
+     "pattern": "^https://\\S+$",
+     "title": "Url",
+     "type": "string"
+    }
+   },
+   "required": [
+    "label",
+    "url"
+   ],
+   "title": "LinkChoice",
+   "type": "object"
+  },
+  "PhoneApproval": {
+   "additionalProperties": false,
+   "description": "One tap on the founder's phone: an approval the agent already raised; he picks this number.",
+   "properties": {
+    "code": {
+     "pattern": "^[0-9]{1,3}$",
+     "title": "Code",
+     "type": "string"
+    },
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "url": {
+     "maxLength": 400,
+     "pattern": "^https://\\S+$",
+     "title": "Url",
+     "type": "string"
+    }
+   },
+   "required": [
+    "label",
+    "url",
+    "code"
+   ],
+   "title": "PhoneApproval",
+   "type": "object"
+  },
+  "YieldPayload": {
+   "additionalProperties": false,
+   "properties": {
+    "branch": {
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,118}$",
+     "title": "Branch",
+     "type": "string"
+    },
+    "commit": {
+     "pattern": "^[0-9a-f]{7,40}$",
+     "title": "Commit",
+     "type": "string"
+    },
+    "demo_manifest": {
+     "title": "Demo Manifest",
+     "type": "string"
+    },
+    "instruction_id": {
+     "pattern": "^I-\\d{4}$",
+     "title": "Instruction Id",
+     "type": "string"
+    },
+    "proof_hash": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Proof Hash"
+    },
+    "remote_verified": {
+     "const": true,
+     "title": "Remote Verified",
+     "type": "boolean"
+    },
+    "status": {
+     "const": "DEMO_STAGED",
+     "title": "Status",
+     "type": "string"
+    },
+    "tests_failed": {
+     "const": 0,
+     "title": "Tests Failed",
+     "type": "integer"
+    },
+    "tests_passed": {
+     "minimum": 1,
+     "title": "Tests Passed",
+     "type": "integer"
+    },
+    "yield_endpoint": {
+     "title": "Yield Endpoint",
+     "type": "string"
+    }
+   },
+   "required": [
+    "status",
+    "instruction_id",
+    "branch",
+    "commit",
+    "remote_verified",
+    "tests_passed",
+    "tests_failed",
+    "demo_manifest",
+    "yield_endpoint",
+    "proof_hash"
+   ],
+   "title": "YieldPayload",
+   "type": "object"
+  }
+ },
+ "additionalProperties": false,
+ "properties": {
+  "act": {
+   "enum": [
+    "inform",
+    "request",
+    "propose",
+    "refuse",
+    "failure",
+    "confirm"
+   ],
+   "title": "Act",
+   "type": "string"
+  },
+  "action_url": {
+   "anyOf": [
+    {
+     "maxLength": 400,
+     "pattern": "^https://\\S+$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "title": "Action Url"
+  },
+  "ask": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/FounderAsk"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "claims": {
+   "items": {
+    "$ref": "#/$defs/Claim"
+   },
+   "title": "Claims",
+   "type": "array"
+  },
+  "command": {
+   "anyOf": [
+    {
+     "enum": [
+      "PR.CLOSE",
+      "PR.SWEEP"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "title": "Command"
+  },
+  "instruction": {
+   "pattern": "^I-\\d{4}$",
+   "title": "Instruction",
+   "type": "string"
+  },
+  "payload": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/YieldPayload"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "protocol": {
+   "enum": [
+    "GEN-PROTO-001",
+    "GEN-PROTO-002",
+    "GEN-PROTO-003",
+    "GEN-PROTO-004",
+    "GEN-PROTO-005"
+   ],
+   "title": "Protocol",
+   "type": "string"
+  },
+  "role": {
+   "enum": [
+    "founder",
+    "agent",
+    "peer",
+    "machine"
+   ],
+   "title": "Role",
+   "type": "string"
+  }
+ },
+ "required": [
+  "protocol",
+  "instruction",
+  "role",
+  "act",
+  "command",
+  "claims",
+  "action_url",
+  "payload",
+  "ask"
+ ],
+ "title": "AgentTurn",
+ "type": "object"
+}

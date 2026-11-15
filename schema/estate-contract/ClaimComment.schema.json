@@ -1,0 +1,32 @@
+{
+ "additionalProperties": false,
+ "description": "`CLAIM agent=<name> paths=<a,b> heartbeat=<UTC>` on an issue (bin/claim-gate, bin/claim-open).",
+ "properties": {
+  "agent": {
+   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$",
+   "title": "Agent",
+   "type": "string"
+  },
+  "heartbeat": {
+   "format": "date-time",
+   "title": "Heartbeat",
+   "type": "string"
+  },
+  "paths": {
+   "items": {
+    "type": "string"
+   },
+   "maxItems": 200,
+   "minItems": 1,
+   "title": "Paths",
+   "type": "array"
+  }
+ },
+ "required": [
+  "agent",
+  "paths",
+  "heartbeat"
+ ],
+ "title": "ClaimComment",
+ "type": "object"
+}

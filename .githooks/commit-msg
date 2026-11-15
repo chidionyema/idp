@@ -34,6 +34,16 @@ repo_root="$(git rev-parse --show-toplevel)"
 }
 python3 "$repo_root/bin/language-gate" --message-file "$msg_file" || exit 1
 
+# Estate contract (founder 2026-11-14: strict schemas for everything): a message that carries the
+# agent trailers must carry them in the exact shape the gates read, or the commit stops here
+# instead of at claim-gate in CI. Messages with no Claim:/Agent: line are not agent work orders.
+if grep -qE '^(Claim|Agent):' "$msg_file"; then
+  python3 "$repo_root/bin/estate-contract" validate CommitTrailers "$msg_file" >&2 || {
+    echo "REFUSE: the commit trailers do not match the estate contract (estate_contract.CommitTrailers)" >&2
+    exit 1
+  }
+fi
+
 # Do not stamp merge commits produced by git itself; the parent commits already carry stamps.
 # Do not double-stamp if the trailer is already present (idempotent for amend flows).
 if grep -qE '^X-Idp-Signed: ' "$msg_file"; then

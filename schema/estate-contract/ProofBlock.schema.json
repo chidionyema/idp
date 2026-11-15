@@ -1,0 +1,25 @@
+{
+ "additionalProperties": false,
+ "description": "`BDD-PROOF ... END-BDD-PROOF`: a head and a runner's own counts (bin/idp-bdd-proof-gate).",
+ "properties": {
+  "evidence": {
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1,
+   "title": "Evidence",
+   "type": "array"
+  },
+  "head": {
+   "pattern": "^[0-9a-f]{7,40}$",
+   "title": "Head",
+   "type": "string"
+  }
+ },
+ "required": [
+  "head",
+  "evidence"
+ ],
+ "title": "ProofBlock",
+ "type": "object"
+}

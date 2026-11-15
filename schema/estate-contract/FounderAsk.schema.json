@@ -1,0 +1,92 @@
+{
+ "$defs": {
+  "LinkChoice": {
+   "additionalProperties": false,
+   "properties": {
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "url": {
+     "maxLength": 400,
+     "pattern": "^https://\\S+$",
+     "title": "Url",
+     "type": "string"
+    }
+   },
+   "required": [
+    "label",
+    "url"
+   ],
+   "title": "LinkChoice",
+   "type": "object"
+  },
+  "PhoneApproval": {
+   "additionalProperties": false,
+   "description": "One tap on the founder's phone: an approval the agent already raised; he picks this number.",
+   "properties": {
+    "code": {
+     "pattern": "^[0-9]{1,3}$",
+     "title": "Code",
+     "type": "string"
+    },
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "url": {
+     "maxLength": 400,
+     "pattern": "^https://\\S+$",
+     "title": "Url",
+     "type": "string"
+    }
+   },
+   "required": [
+    "label",
+    "url",
+    "code"
+   ],
+   "title": "PhoneApproval",
+   "type": "object"
+  }
+ },
+ "additionalProperties": false,
+ "properties": {
+  "choices": {
+   "items": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/PhoneApproval"
+     },
+     {
+      "$ref": "#/$defs/LinkChoice"
+     }
+    ]
+   },
+   "maxItems": 3,
+   "minItems": 1,
+   "title": "Choices",
+   "type": "array"
+  },
+  "if_no_answer": {
+   "title": "If No Answer",
+   "type": "string"
+  },
+  "question": {
+   "title": "Question",
+   "type": "string"
+  },
+  "why": {
+   "title": "Why",
+   "type": "string"
+  }
+ },
+ "required": [
+  "question",
+  "why",
+  "choices",
+  "if_no_answer"
+ ],
+ "title": "FounderAsk",
+ "type": "object"
+}

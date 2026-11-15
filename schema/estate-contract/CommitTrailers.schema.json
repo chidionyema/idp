@@ -1,0 +1,48 @@
+{
+ "additionalProperties": false,
+ "description": "The trailers the gates read (bin/claim-gate CLAIM_REF/AGENT, bin/dof-gate, .githooks/commit-msg).",
+ "properties": {
+  "agent": {
+   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$",
+   "title": "Agent",
+   "type": "string"
+  },
+  "claims": {
+   "items": {
+    "pattern": "^(?:[\\w.-]+/[\\w.-]+)?#[1-9][0-9]*$",
+    "type": "string"
+   },
+   "minItems": 1,
+   "title": "Claims",
+   "type": "array"
+  },
+  "genesis_resolves": {
+   "anyOf": [
+    {
+     "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "title": "Genesis Resolves"
+  },
+  "x_idp_signed": {
+   "items": {
+    "pattern": "^[0-9a-f]{16,128}$",
+    "type": "string"
+   },
+   "title": "X Idp Signed",
+   "type": "array"
+  }
+ },
+ "required": [
+  "claims",
+  "agent",
+  "genesis_resolves",
+  "x_idp_signed"
+ ],
+ "title": "CommitTrailers",
+ "type": "object"
+}
