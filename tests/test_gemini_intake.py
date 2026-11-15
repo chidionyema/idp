@@ -18,7 +18,15 @@ INTAKE = REPO / "bin" / "gemini-intake"
 
 def _run(source: Path, dest: Path, *extra: str) -> dict:
     out = subprocess.run(
-        [sys.executable, str(INTAKE), "--source", str(source), "--dest", str(dest), *extra],
+        [
+            sys.executable,
+            str(INTAKE),
+            "--source",
+            str(source),
+            "--dest",
+            str(dest),
+            *extra,
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -40,11 +48,15 @@ def test_first_run_copies_and_writes_manifest(tmp_path: Path) -> None:
     result = _run(src, dest)
     assert result["counts"]["SAFE-COPIED"] == 2
     assert (dest / "a.txt").read_text(encoding="utf-8") == "alpha\n"
-    manifest = json.loads((dest / ".intake" / "MANIFEST.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (dest / ".intake" / "MANIFEST.json").read_text(encoding="utf-8")
+    )
     assert manifest["counts"]["SAFE-COPIED"] == 2
     assert len(manifest["files"]) == 2
     assert all(len(f["sha256"]) == 64 for f in manifest["files"])
-    assert (dest / ".intake" / "SHA256SUMS").read_text(encoding="utf-8").count("\n") == 2
+    assert (dest / ".intake" / "SHA256SUMS").read_text(encoding="utf-8").count(
+        "\n"
+    ) == 2
 
 
 def test_second_run_copies_zero(tmp_path: Path) -> None:
@@ -76,7 +88,9 @@ def test_source_files_named_like_the_records_do_not_collide(tmp_path: Path) -> N
     second = _run(src, dest)
     assert second["counts"]["ON-DISK-DIFFERS"] == 0
     assert second["counts"]["SKIPPED-IDENTICAL"] == 4
-    assert (dest / "SHA256SUMS").read_text(encoding="utf-8") == "source-owned manifest\n"
+    assert (dest / "SHA256SUMS").read_text(
+        encoding="utf-8"
+    ) == "source-owned manifest\n"
 
 
 def test_a_dry_run_copies_nothing(tmp_path: Path) -> None:
