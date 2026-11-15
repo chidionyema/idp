@@ -1,0 +1,107 @@
+# button: Check that work the agents claim was delivered really reached the estate
+# founder: Every 15 minutes, with no agent and no model in the loop, proves that the AI Studio work
+# the estate pinned is really in argon; reaches the founder on Telegram on the first red tick and on recovery.
+# 2026-11-14: Gemini reported a GitHub branch, an R2 upload and "100% coverage" for applet fe43cf69;
+# none existed (git ls-remote, the applet's own code, and the transcript all said so), and the
+# private intake pinned below had never produced an import. Nothing noticed, because the only
+# witness was the agent that made the claim, and it ran out of tokens. This ledger is a GitHub
+# runner on a schedule: it outlives any session, any model and the laptop. The pin is read from
+# genesis-aistudio-source-intake.yml, never copied, so one file states what must have landed.
+# Same egress and edge rule as ping.yml (SEED_HERMES_TELEGRAM_* secrets, breach + recovery only).
+name: delivery-ledger
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: delivery-ledger
+  cancel-in-progress: false
+jobs:
+  ledger:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: read the pin from the intake workflow (one source of truth)
+        id: pin
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/genesis-aistudio-source-intake.yml
+          asset=$(grep -oE 'releases/assets/[0-9]+' "$wf" | head -1 | cut -d/ -f3)
+          sha=$(grep -oE -- "--sha256 '[0-9a-f]{64}'" "$wf" | grep -oE '[0-9a-f]{64}' | head -1)
+          lane=$(grep -oE 'lane/aistudio-[a-z0-9-]+' "$wf" | head -1)
+          test -n "$asset" && test -n "$sha" && test -n "$lane"
+          { echo "asset=$asset"; echo "sha=$sha"; echo "lane=$lane"; } >> "$GITHUB_OUTPUT"
+          echo "pin asset=$asset sha=${sha:0:12} lane=$lane"
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          lane: agent-workforce
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: grade every delivery the estate pinned
+        id: grade
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ASSET: ${{ steps.pin.outputs.asset }}
+          SHA: ${{ steps.pin.outputs.sha }}
+          LANE: ${{ steps.pin.outputs.lane }}
+        run: |
+          set -uo pipefail
+          red=""
+          # D1 the pinned archive still exists in argon with the pinned digest
+          digest=$(gh api "repos/chidionyema/argon/releases/assets/$ASSET" --jq '.digest // ""' 2>/dev/null || echo "")
+          if [ "$digest" = "sha256:$SHA" ]; then echo "ok   D1 asset $ASSET digest matches";
+          else echo "FAIL D1 asset $ASSET digest '${digest:-unreadable}'"; red="${red}D1 pinned archive $ASSET missing or digest drift"$'\n'; fi
+          # D2 the import landed: the lane holds a receipt for exactly this digest
+          receipt=$(gh api "repos/chidionyema/argon/contents/ops/io/aistudio-import-receipt.json?ref=$LANE" \
+            -H 'Accept: application/vnd.github.raw' 2>/dev/null | jq -r '.archive_sha256 // ""' 2>/dev/null || echo "")
+          if [ "$receipt" = "$SHA" ]; then echo "ok   D2 receipt on $LANE";
+          else echo "FAIL D2 no receipt for ${SHA:0:12} on $LANE"; red="${red}D2 AI Studio archive ${SHA:0:12} never imported to argon $LANE"$'\n'; fi
+          # D3 the importer itself is not failing silently
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow genesis-aistudio-source-intake.yml --limit 1 \
+            --json conclusion --jq '.[0].conclusion // "never-run"' 2>/dev/null || echo "unreadable")
+          case "$last" in
+            success) echo "ok   D3 intake last run success" ;;
+            *) echo "FAIL D3 intake last run: $last"; red="${red}D3 intake workflow last run: $last"$'\n' ;;
+          esac
+          { echo "red<<EOF"; printf '%s' "$red"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          test -z "$red"
+      - name: previous tick's verdict
+        if: ${{ always() }}
+        id: prev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prev=$(gh run list -R "$GITHUB_REPOSITORY" --workflow delivery-ledger.yml --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "none"')
+          echo "prev=$prev"; echo "conclusion=$prev" >> "$GITHUB_OUTPUT"
+      - name: telegram on breach and on recovery
+        if: ${{ always() && ((steps.grade.outcome != 'success' && steps.prev.outputs.conclusion != 'failure') || (steps.grade.outcome == 'success' && steps.prev.outputs.conclusion == 'failure')) }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+          RED: ${{ steps.grade.outputs.red }}
+          OUTCOME: ${{ steps.grade.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ "$OUTCOME" = success ]; then
+            text="🟢 delivery ledger: every pinned AI Studio delivery is in argon"$'\n'"$RUN_URL"
+          else
+            text="🔴 delivery ledger: claimed work is not in the estate"$'\n'"${RED:-the ledger could not read argon}"$'\n'"$RUN_URL"
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
+          echo "telegram sendMessage $code"
+          test "$code" = 200
