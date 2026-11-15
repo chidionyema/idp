@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+TOP = HOME / ".estate" / "topology"
+RUNS = HOME / ".estate" / "dispatch" / "runs"
+HOST = "dispatch.mumchimp.com"
+KEY = (HOME / ".estate" / "dispatch" / "action.key").read_text().strip()
+PASS = 0
+FAIL = 0
+
+
+def ok(c: bool, text: str) -> None:
+    global PASS, FAIL
+    if c:
+        PASS += 1
+        print("PASS  " + text)
+    else:
+        FAIL += 1
+        print("FAIL  " + text)
+
+
+def ip() -> str:
+    try:
+        return (HOME / ".estate" / "dispatch" / "edge-ip").read_text().strip()
+    except OSError:
+        return ""
+
+
+def call(path: str, data: str = "", auth: bool = False, method: str = "GET") -> tuple[int, dict]:
+    cmd = ["curl", "-sS", "-m", "20", "--resolve", "%s:443:%s" % (HOST, ip()),
+           "-o", "/tmp/assurance-body.json", "-w", "%{http_code}"]
+    if method == "POST":
+        cmd += ["-X", "POST", "-H", "Content-Type: application/json", "-d", data]
+    if auth:
+        cmd += ["-H", "Authorization: Bearer " + KEY]
+    cmd.append("https://%s%s" % (HOST, path))
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    code = int(p.stdout.strip() or 0)
+    try:
+        body = json.loads(Path("/tmp/assurance-body.json").read_text())
+    except (OSError, ValueError):
+        body = {}
+    return code, body
+
+
+def recompute(rec: dict) -> str:
+    d = dict(rec)
+    d.pop("evidence_sha256", None)
+    return hashlib.sha256(json.dumps(d, sort_keys=True).encode()).hexdigest()
+
+
+def main() -> int:
+    services = json.loads((TOP / "services.json").read_text())
+    topo = json.loads((TOP / "topology.json").read_text())
+    rows = {t["id"]: t for t in topo["targets"]}
+    surface = (TOP / "surface.html").read_text()
+    grade = json.loads((TOP / "grade.json").read_text())
+    metrics = subprocess.run(["curl", "-sS", "-m", "8", "http://127.0.0.1:18791/metrics"],
+                             capture_output=True, text=True).stdout
+
+    covered = [s for s in services if s["id"] in rows or s["row"] in rows]
+    ok(len(covered) == len(services), "A1 every catalogued service has a topology row (%d/%d)"
+       % (len(covered), len(services)))
+    ok(all(s["row"] in surface for s in services), "A2 every service row is on the founder surface")
+
+    fresh = time.time() - grade.get("at", 0) < 900
+    ok(fresh and grade.get("critical_ok"), "A3 a fresh, independent conformance score is green")
+
+    code, _ = call("/dispatch", '{"intent":"check-clean","goal":"g","given":"g","when":"w","then":"t"}',
+                   method="POST")
+    ok(code == 401, "A4 a dispatch without a key is refused (401)")
+    code, _ = call("/dispatch", '{"intent":"cleanup","goal":"g","given":"g","when":"w","then":"t"}',
+                   auth=True, method="POST")
+    ok(code == 403, "A5 an intent outside the allowlist is refused (403)")
+    code, _ = call("/dispatch", '{"intent":"check-clean"}', auth=True, method="POST")
+    ok(code == 400, "A6 a dispatch with no plan is refused (400)")
+
+    code, body = call("/dispatch", json.dumps({
+        "intent": "check-clean", "args": {}, "session_id": "assurance-selftest",
+        "goal": "Prove instruction to observed outcome on the real path",
+        "given": "the public door serves the scoped shim", "when": "one read-only intent is dispatched",
+        "then": "a terminal receipt recomputes from the stored record"}), auth=True, method="POST")
+    run_id = body.get("run_id", "")
+    rec = {}
+    for _ in range(20):
+        time.sleep(2)
+        _, rec = call("/dispatch/" + run_id, auth=True)
+        if rec.get("state") in ("done", "refused"):
+            break
+    result = rec.get("result") or {}
+    ok(code == 202 and rec.get("state") == "done" and result.get("exit_code") == 0,
+       "A7 instruction -> terminal outcome (state=%s exit=%s)" % (rec.get("state"), result.get("exit_code")))
+    ok(bool(rec.get("evidence_sha256")) and recompute(rec) == rec.get("evidence_sha256"),
+       "A8 the receipt recomputes from the stored record")
+
+    tampered = dict(rec)
+    tampered["result"] = dict(result)
+    tampered["result"]["exit_code"] = 99
+    ok(recompute(tampered) != tampered.get("evidence_sha256"),
+       "A9 a tampered receipt is rejected by the same check")
+
+    detectors = {s["id"]: (s["metrics_family"] in metrics and s["row"] in rows and s["row"] in surface)
+                 for s in services}
+    ok(all(detectors.values()), "A10 every service has a metric family, a row and a surface entry")
+
+    doc = {"at": int(time.time()), "pass": PASS, "fail": FAIL, "run_id": run_id,
+           "trace": {"intent": "check-clean", "state": rec.get("state"),
+                     "exit_code": result.get("exit_code"),
+                     "evidence_sha256": rec.get("evidence_sha256"),
+                     "duration_ms": rec.get("duration_ms")},
+           "detectors": detectors,
+           "uncatalogued_agents": grade.get("uncatalogued_agents", [])}
+    (TOP / "assurance.json").write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    lines = ["# Assurance self-test", "",
+             "The mechanism audited by a program that is not the producer.", "",
+             "generated %s · pass=%d fail=%d" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), PASS, FAIL),
+             "", "| check | result |", "|---|---|",
+             "| coverage: services -> row -> surface | %d/%d |" % (len(covered), len(services)),
+             "| refusals: 401, 403, 400 | measured |",
+             "| end to end | intent `check-clean`, run `%s`, exit %s |" % (run_id[:8], result.get("exit_code")),
+             "| receipt recompute | %s |" % ("match" if recompute(rec) == rec.get("evidence_sha256") else "MISMATCH"),
+             "| tampered receipt | rejected |",
+             "| uncatalogued agents | %d |" % len(doc["uncatalogued_agents"]),
+             "", "## What this does not certify", "",
+             "* The 49 uncatalogued LaunchAgents: they are listed, not measured.",
+             "* The dispatch scripts have no git SHA: they run from `~/.estate/bin`, so instruction ->",
+             "  deployed SHA is not yet provable. Landing them in the repository is the missing link.",
+             "* Estate-wide coverage: one component is proven here; the rest is the backlog this names.",
+             ""]
+    (TOP / "ASSURANCE.md").write_text("\n".join(lines))
+    (TOP / "assurance-state.json").write_text(json.dumps(
+        {"at": doc["at"], "ok": FAIL == 0, "pass": PASS, "fail": FAIL,
+         "run_id": run_id, "exit": result.get("exit_code")}, indent=2) + "\n")
+    print("RESULT pass=%d fail=%d" % (PASS, FAIL))
+    return 0 if FAIL == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

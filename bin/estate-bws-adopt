@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import getpass
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+TARGET = HOME / ".estate" / "secrets" / "dev" / "bitwarden-machine.yaml"
+AGE_KEY = HOME / ".config" / "prospector" / "age-key.txt"
+SOPS = "/usr/local/bin/sops"
+STATUS = HOME / ".estate" / "secrets" / "bws" / "status.json"
+IDENTITIES = ["identity.bitwarden.com", "identity.bitwarden.eu"]
+
+
+def verify(tok: str) -> tuple[str, str]:
+    for host in IDENTITIES:
+        for cid in ("user", "organization"):
+            body = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": cid,
+                                           "client_secret": tok, "scope": "api.secrets"}).encode()
+            req = urllib.request.Request("https://%s/connect/token" % host, data=body,
+                                         headers={"Content-Type": "application/x-www-form-urlencoded"})
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    if json.loads(r.read().decode()).get("access_token"):
+                        return host, ""
+            except urllib.error.HTTPError as exc:
+                last = ("rejected:%d on %s" % (exc.code, host))
+            except OSError:
+                last = "unreachable"
+    return "", last if "last" in dir() else "unreachable"
+
+
+def recipient() -> str:
+    import re
+    try:
+        for line in AGE_KEY.read_text().splitlines():
+            m = re.search(r"public key:\s*(age1\w+)", line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def store(tok: str, rcpt: str) -> None:
+    TARGET.parent.mkdir(parents=True, exist_ok=True)
+    plain = Path("/tmp/.bws-adopt.tmp")
+    plain.write_text("token: " + json.dumps(tok) + "\n")
+    os.chmod(plain, 0o600)
+    try:
+        p = subprocess.run([SOPS, "-e", "--age", rcpt, "--input-type", "yaml",
+                            "--output-type", "yaml", str(plain)],
+                           capture_output=True, text=True, timeout=30)
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr or "sops failed")[:200])
+        tmp = TARGET.with_suffix(".tmp")
+        tmp.write_text(p.stdout)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, TARGET)
+    finally:
+        plain.unlink(missing_ok=True)
+
+
+def main() -> int:
+    tok = getpass.getpass("Bitwarden machine access token (input hidden): ").strip()
+    if not tok:
+        print("REFUSED: empty token")
+        return 2
+    host, why = verify(tok)
+    if not host:
+        print("REFUSED: Bitwarden rejected the token (%s); nothing stored" % why)
+        return 3
+    rcpt = recipient()
+    if not rcpt:
+        print("REFUSED: no age recipient on this host")
+        return 4
+    print("verified against %s" % host)
+    store(tok, rcpt)
+    print("stored %s (mode 600, sops+age)" % TARGET)
+    subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/ai.estate.bws-sync" % os.getuid()],
+                   capture_output=True)
+    for _ in range(20):
+        time.sleep(2)
+        try:
+            st = json.loads(STATUS.read_text())
+        except (OSError, ValueError):
+            continue
+        if st.get("state") == "ok":
+            print("sync state=ok secrets=%d" % st.get("secrets", 0))
+            return 0
+    try:
+        st = json.loads(STATUS.read_text())
+    except (OSError, ValueError):
+        st = {}
+    print("sync state=%s reason=%s (the daemon keeps retrying)" % (st.get("state"), st.get("reason")))
+    return 5
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
