@@ -1,0 +1,14 @@
+name: spec.validate
+description: >-
+  Validate one SPEC/1 packet at a declared stage. 'shape' checks structure only; 'intake',
+  'execution' and 'verified' also refuse missing essential fields. Even 'verified' certifies only
+  declared fields, never the underlying GitHub, CI, deployment or business facts.
+class: read
+args:
+  file: {type: string, default: "", description: "path to spec.json"}
+  stage: {type: string, default: "shape", description: "shape|intake|execution|verified"}
+steps:
+  - name: validate
+    cmd: >
+      IDP=${ESTATE_IDP:-$HOME/Documents/code/idp};
+      python3 "$IDP/bin/spec-factory" validate {{file}} --stage {{stage}}

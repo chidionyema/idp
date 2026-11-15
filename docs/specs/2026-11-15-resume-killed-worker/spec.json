@@ -1,0 +1,180 @@
+{
+  "schema_version": "estate.spec.v1",
+  "spec_id": "ES-20261115-resume-a-killed-worker-on-another-host",
+  "title": "Resume a killed worker on another host",
+  "work_type": "disaster_recovery",
+  "effect_class": "shared_infra",
+  "risk_level": "critical",
+  "status": "DRAFT",
+  "authority": {
+    "canonical_issue": "https://github.com/chidionyema/idp/issues/7790",
+    "instruction_id": "idp#7790",
+    "issuer": "existing issue owner FLOW; this packet grants nothing",
+    "mandate_revision": "UNKNOWN",
+    "governing_protocols": [
+      "AGENTS.md",
+      "IDP ADR 0048 (ARM k3s single node)",
+      "Greenlane"
+    ],
+    "permitted_effects": [
+      "shared_infra (authoring only; no execution from this packet)"
+    ],
+    "required_approvals": []
+  },
+  "ownership": {
+    "accountable_owner": "OpenCode",
+    "executor": "OpenCode",
+    "independent_verifier": "UNASSIGNED",
+    "deadline_utc": "UNKNOWN",
+    "successor_policy": "Durable reassign via existing FLOW; no founder re-prompt"
+  },
+  "outcome": {
+    "problem_statement": "After the cloud migration a worker session can die (context exhaustion, host loss) and its mission is not durably resumable by a successor on another host.",
+    "desired_outcome": "A killed worker's mission is resumed by a successor on another host from a durable checkpoint and fenced lease, with no founder re-prompt.",
+    "why_now": "P0 continuity mission; session death is routine after the migration and the founder must not be the recovery procedure.",
+    "in_scope": [
+      "durable mission checkpoint",
+      "lease and fencing",
+      "successor takeover",
+      "independent readback evidence"
+    ],
+    "out_of_scope": [
+      "new scheduler",
+      "new mission ledger",
+      "new mandatory gate",
+      "founder notification redesign"
+    ],
+    "acceptance_criteria": [
+      "a killed worker is resumed by a successor on another host",
+      "a stale writer is refused by the fence",
+      "the successor leaves an independent receipt of the resumed outcome"
+    ],
+    "baseline_evidence": [
+      "https://github.com/chidionyema/idp/issues/7790"
+    ],
+    "target_metrics": [
+      "successor resumes the mission without a founder prompt",
+      "stale write refused with a typed failure",
+      "independent receipt names the observed outcome"
+    ],
+    "explicit_non_goals": [
+      "claiming production yield from a structural draft",
+      "replacing FLOW or Greenlane"
+    ]
+  },
+  "system_map": {
+    "primary_system_or_repo": "chidionyema/idp",
+    "existing_capabilities": [
+      "existing FLOW mission ownership",
+      "estate memory plan ledger",
+      "Greenlane",
+      "capability registry"
+    ],
+    "interfaces_and_contracts": [
+      "GitHub issue as canonical mission owner",
+      "SPEC/1 packet (this file)"
+    ],
+    "data_and_privacy_classes": [],
+    "dependencies": [
+      "durable checkpoint store",
+      "lease and fencing primitive"
+    ],
+    "trust_boundaries": [
+      "agent host boundary",
+      "shared infrastructure effect"
+    ],
+    "failure_domains": [
+      "host loss",
+      "context exhaustion",
+      "stale writer"
+    ],
+    "blast_radius": [
+      "shared_infra"
+    ],
+    "alternatives_considered": [
+      "a single long-lived session",
+      "manual founder restart",
+      "a new mission ledger (rejected: duplicate layer)"
+    ]
+  },
+  "execution": {
+    "deterministic_preflight": [
+      "confirm the issue is open and owned",
+      "confirm the checkpoint store is reachable",
+      "confirm a lease/fence primitive exists",
+      "confirm no competing claim on the same paths"
+    ],
+    "work_packages": [
+      "checkpoint a live mission",
+      "kill the worker",
+      "acquire a fenced successor lease",
+      "resume and read back",
+      "record the independent receipt"
+    ],
+    "sequencing_and_dependencies": [
+      "checkpoint -> lease -> successor resume -> independent readback"
+    ],
+    "external_effects": [
+      "writes to the existing checkpoint store"
+    ],
+    "idempotency_and_reconciliation": "resume is idempotent; a stale fence is refused, not merged",
+    "rollback_or_compensation": "drop the successor lease; the original checkpoint remains",
+    "resource_budget": "UNKNOWN"
+  },
+  "assurance": {
+    "mapped_failure_modes": [
+      "unrestorable-backup",
+      "split-brain",
+      "stale-recovery-authority",
+      "orphaned-side-effect"
+    ],
+    "required_tests": [
+      "kill a worker mid-mission and resume on another host",
+      "a stale writer is fenced",
+      "no founder prompt appears in the recovery path"
+    ],
+    "negative_tests": [
+      "Destroy access to the primary host and prove recovery from off-host artifact.",
+      "Restore an intentionally stale checkpoint and reject conflicting writes."
+    ],
+    "independent_evidence": [],
+    "real_caller_canary": "UNKNOWN",
+    "known_residual_risks": []
+  },
+  "continuity": {
+    "mission_id": "idp#7790",
+    "checkpoint_store": "UNKNOWN",
+    "checkpoint_triggers": [
+      "initial acceptance",
+      "before irreversible effect",
+      "after durable milestone",
+      "before likely context exhaustion"
+    ],
+    "lease_and_fencing": "UNKNOWN",
+    "takeover_path": "UNKNOWN",
+    "current_branch_or_artifact": "UNKNOWN",
+    "pending_external_effects": []
+  },
+  "finality": {
+    "source_revision": "UNKNOWN",
+    "promotion_ref": "UNKNOWN",
+    "production_revision": "UNKNOWN",
+    "independent_receipt": "UNKNOWN",
+    "observed_outcome": "UNKNOWN",
+    "verdict": "UNVERIFIED"
+  },
+  "profile": {
+    "intent": "Restore authoritative state and service after loss of a primary failure domain.",
+    "questions_to_resolve": [
+      "What is the real RTO/RPO and most damaging credible common-mode failure?",
+      "Which off-host backup, signing key and restore identity are available?",
+      "How do corruption, stale snapshots, partial effects and authority revocation reconcile?",
+      "Which cold-start drill measures time to safe user path?"
+    ],
+    "specific_deliverables": [
+      "Recovery topology and dependencies",
+      "Backup/restore integrity records",
+      "Cold-restore drill and measured RTO/RPO"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+name: spec.generate
+description: >-
+  Generate one typed SPEC/1 packet for an existing canonical issue. Fills only the fields the
+  caller actually knows; proof fields stay UNKNOWN until independently resolved. A populated
+  destination is refused, so this can never overwrite another agent's packet. The packet is a
+  candidate authored for the issue's existing owner, never a new mission, lease or approval.
+class: mutate
+args:
+  type: {type: string, default: "defect", description: "a profile from spec.types"}
+  title: {type: string, default: "", description: "the bounded outcome, in one line"}
+  repo: {type: string, default: "", description: "owning repository or system of record"}
+  issue: {type: string, default: "", description: "existing canonical issue URL or ID; do not invent"}
+  owner: {type: string, default: "OpenCode", description: "accountable owner"}
+  effect: {type: string, default: "", description: "isolated_research|sandbox_prototype|commercial|shared_infra"}
+  risk: {type: string, default: "medium", description: "low|medium|high|critical"}
+  out: {type: string, default: "", description: "new output directory; must be empty or absent"}
+steps:
+  - name: generate
+    cmd: >
+      IDP=${ESTATE_IDP:-$HOME/Documents/code/idp};
+      e={{effect}};
+      python3 "$IDP/bin/spec-factory" new --type {{type}} --title {{title}} --repo {{repo}}
+      --issue {{issue}} --owner {{owner}} --risk {{risk}} --out {{out}} ${e:+--effect "$e"}
