@@ -64,7 +64,6 @@ def test_the_floor_is_production_eso_crds_and_priority_classes(monkeypatch):
             "./config/crd/experimental",
             f"{floor}gateway-api",
         ),
-        f"{floor}keda-http-crds": ("./config/crd", f"{floor}keda-http"),
         f"{floor}traefik-crds": ("./traefik/crds", f"{floor}traefik"),
         f"{floor}calico-crds": ("./libcalico-go/config/crd", f"{floor}calico"),
         f"{floor}image-reflector-controller-crds": (
@@ -82,6 +81,8 @@ def test_the_floor_is_production_eso_crds_and_priority_classes(monkeypatch):
         # file that reads this one is the change itself. Found 2026-10-12 by running it.
         f"{floor}github-app-creds": ("./platform/github-app-creds", "shadow"),
     }
+    # ADR 0048 / #7529 cut KEDA; the floor must not carry a row whose install file is gone.
+    assert f"{floor}keda-http-crds" not in ks
     assert (REPO / "platform/priority-classes/priorityclasses.yaml").exists()
 
 
@@ -114,9 +115,8 @@ def test_the_floor_takes_gateway_api_and_keda_http_crds_at_production_versions(
     assert srcs["shadow-floor-gateway-api"]["ref"] == {"tag": gw_tag}
     assert "path: ./config/crd/experimental" in ingress
 
-    keda = (REPO / "platform/keda/keda.yaml").read_text()
-    http = re.search(r"chart: keda-add-ons-http\s+version: *(\S+)", keda).group(1)
-    assert srcs["shadow-floor-keda-http"]["ref"] == {"tag": "v" + http}
+    # ADR 0048 / #7529 cut KEDA; the floor skips a row whose install file is gone.
+    assert "shadow-floor-keda-http" not in srcs
     for spec in srcs.values():
         assert spec["ignore"].startswith("/*\n!/")
 

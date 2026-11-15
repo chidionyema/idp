@@ -488,16 +488,25 @@ def floor_sources():
             ),
             "./config/crd/experimental",
         ),
-        (
-            "shadow-floor-keda-http",
-            "https://github.com/kedacore/http-add-on",
-            "v"
-            + pinned(
-                KEDA_ROW,
-                r"chart: keda-add-ons-http\s+version: *([0-9][^\s]*)",
-                "keda-add-ons-http chart",
-            ),
-            "./config/crd",
+        # ADR 0048 / #7529 cut KEDA with the one-node admission list; the row that pinned
+        # these CRDs is gone. Skip the floor entry when the row is absent instead of
+        # crashing the run on a deleted file.
+        *(
+            (
+                (
+                    "shadow-floor-keda-http",
+                    "https://github.com/kedacore/http-add-on",
+                    "v"
+                    + pinned(
+                        KEDA_ROW,
+                        r"chart: keda-add-ons-http\s+version: *([0-9][^\s]*)",
+                        "keda-add-ons-http chart",
+                    ),
+                    "./config/crd",
+                ),
+            )
+            if os.path.exists(KEDA_ROW)
+            else ()
         ),
         (
             "shadow-floor-traefik",
