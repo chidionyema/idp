@@ -1,5 +1,7 @@
 # The one-hour buyer sandbox, step by step
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 A throwaway cluster-in-a-cluster a buyer's engineer can hold for one hour or four. It runs
 inside the existing cluster, its control plane may not ask for more than a quarter of one
 processor core, and it deletes itself on schedule. No cleanup step, no follow-up, nothing

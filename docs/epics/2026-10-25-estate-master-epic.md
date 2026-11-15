@@ -1,5 +1,7 @@
 # The Estate Master Epic — a closed-loop, self-governing agentic workforce
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - **Status:** proposed — founder go/no-go requested on §1, §2, §8 and §11 (second pass)
 - **Date:** 2026-10-25 · **Author:** pi (chief-architecture review), commissioned by the founder
 - **Scope:** every surface, the last seven days of work, and the target architecture

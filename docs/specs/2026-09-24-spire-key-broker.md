@@ -1,4 +1,6 @@
 # SPIRE Key Broker — Router Identity Without Standing Credentials
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 **Date:** 2026-09-24
 **Problem:** Founder is the credential. Every session ends with "founder, set the key." SPIRE is deployed. Not wired.
 **Goal:** Router fetches provider keys via SVID. No mounted Secret. No ExternalSecret. No Bitwarden-as-source-of-truth-for-humans. No founder.

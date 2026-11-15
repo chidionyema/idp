@@ -1,5 +1,7 @@
 # Onboarding: Otto's three homes
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Door (from the UI):** Backstage → **Create** → *Which home is Otto on?*. One button, no
 parameters, and its verdict is a token Otto actually generated rather than a health check. You
 never need a terminal to know which brain answered the founder. The button dispatches

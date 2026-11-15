@@ -1,5 +1,7 @@
 # Onboarding: Adding a new scheduled job
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## Overview
 
 The estate scheduler runs all scheduled jobs (science runs, catalogue jobs) on the cluster. Jobs are defined in the `scheduler/` directory and loaded by the Dagster user-code deployment.

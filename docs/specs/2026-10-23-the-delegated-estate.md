@@ -1,5 +1,7 @@
 # The Delegated Estate — tiered routing, cross-harness delegation, and visible state
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Status: PROPOSED — for the founder and an external consultant to evaluate. Not approved, not built.**
 **Date: 2026-10-23 · Author: estate agent (pi) · Builds on:** the routing cost layer
 (`docs/specs/2026-09-24-llm-routing-cost-layer.md`), the anticipatory router

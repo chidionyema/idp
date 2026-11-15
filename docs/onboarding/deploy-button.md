@@ -1,5 +1,7 @@
 # The deploy button
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-09-04: "install weaveops ... so i can do the deploynents nyself", and
 "WE ARE STRCTILY GITOPS". His consultation post on the same subject is recorded verbatim at
 `~/.claude/docs/founder/2026-09-04T0706Z-hello-i-see-you-i-agree-taking-the-f6729f06.md`.

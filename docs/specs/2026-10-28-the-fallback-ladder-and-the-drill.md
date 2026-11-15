@@ -1,5 +1,7 @@
 # Spec: the fallback ladder, and the drill that measures it
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Date: 2026-10-28
 - Deciders: founder ("and lastly recurring drill that verifies these critical lanes"; "so our
   estate can never go down like this again")

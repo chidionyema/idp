@@ -166,6 +166,9 @@ def is_repair_path(path: str) -> bool:
 
 def main(argv: list[str]) -> int:
     state, reasons = verdict()
+    # A --json caller parses stdout. All human prose goes to stderr in that mode, so an outage
+    # cannot corrupt the document the caller reads (it did: "Extra data: line 9").
+    stream = sys.stderr if "--json" in argv else sys.stdout
     if "--json" in argv:
         print(json.dumps({"verdict": state, "reasons": reasons, "at": time.time()}, indent=2))
     else:
@@ -185,11 +188,11 @@ def main(argv: list[str]) -> int:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"opened_at": time.time(), "for": state}))
         _record("repair-window-opened", f"bounded {WINDOW_SECONDS}s to fix memory", state=state)
-        print(f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.")
+        print(f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.", file=stream)
         return 0
 
     if is_repair_path(os.environ.get("ESTATE_MEMORY_TARGET", "")) and repair_window_open():
-        print("\nThis path repairs memory and a window is open: allowed.")
+        print("\nThis path repairs memory and a window is open: allowed.", file=stream)
         return 0
 
     print(
@@ -197,7 +200,8 @@ def main(argv: list[str]) -> int:
         "Repair it first:\n"
         "  bin/estate-memory-required --open-repair     # bounded window to fix memory only\n"
         "  git restore platform/estate/memory/          # the usual cause: a file deleted uncommitted\n"
-        "  bin/estate-memory-required                   # must print OK before any work\n"
+        "  bin/estate-memory-required                   # must print OK before any work\n",
+        file=stream,
     )
     return 1
 

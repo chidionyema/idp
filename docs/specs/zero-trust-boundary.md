@@ -1,5 +1,7 @@
 # The zero-trust boundary — the build spec
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Governed by decision 0023, "The boundary is enforced by the infrastructure, never by the
 application", and by decision 0021's two planes. Six steps in order. Each is one pull request.
 Step 1 is the only one that must happen tonight.

@@ -1,5 +1,7 @@
 # Root trust
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Ruling:** founder, 2026-08-28, crew#66 ([5453747447](https://github.com/chidionyema/crew/issues/66#issuecomment-5453747447)),
 verbatim: "The founder will never copy-paste a secret or click through web UI settings" /
 "thats the standard i expect, founndr is also ceo / ceo does not need frction" / "but this

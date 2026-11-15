@@ -1,5 +1,7 @@
 # Onboarding — the sovereign bus (`sb`)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 `sb` is the one command for durable agent sessions: start, stop, approve, steer and audit them from the laptop, the phone (Otto's pinned card and the cockpit Mini App) or Windows (`bin/sb-windows.ps1`).
 
 ## Once

@@ -1,5 +1,7 @@
 # Platform queries: the tools, and how to call them when the door is shut
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Companion to **ADR 0006** (`docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`)
 and to the one-line rule in `AGENTS.md`: *a question about estate state is one `mcp__estate__*`
 call, never a shell recon.*

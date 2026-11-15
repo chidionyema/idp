@@ -1,5 +1,7 @@
 # The Estate — one index
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date.** 2026-09-20 · **Purpose.** There are fourteen documents in this estate that each claim, in
 their own era and their own words, to describe "the estate." None of them knows the others exist.
 A reader who opens them in the wrong order gets three different companies described in three

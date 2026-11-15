@@ -1,5 +1,7 @@
 # The estate snapshot is mandatory, and no agent proceeds without it
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-09-03 04:1xZ, in the Kimi lane session, verbatim: "soryr that does not nake sense
 and nno sgaebt can proceed withoit it furthernoe i need to know exactly what is conteibs."
 

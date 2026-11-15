@@ -1,5 +1,7 @@
 # Model Forge and Edge Runtime — two platform capabilities, one artifact between them
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Status:** v1 spec, building. **Date:** 2026-09-06. **Tracked:** crew#885.
 **Founder records (verbatim, the file is the record):**
 `~/.claude/docs/founder/2026-09-06T0740Z-3-the-4-step-playbook-to-cut-reliance-d75d416a.md`,

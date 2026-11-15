@@ -1,5 +1,7 @@
 # Analysis: the estate's critical spines, their homes, and where they are blind
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Date: 2026-10-28
 - Question asked by the founder: "analysis and recommendations for other critical services
   spines/backbones that is crucial for the estate to have no fallback", and "how to better

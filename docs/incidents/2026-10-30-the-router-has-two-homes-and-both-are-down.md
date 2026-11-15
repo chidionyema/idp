@@ -1,5 +1,7 @@
 # Incident: the router had two homes, each the other's only fallback, and both are down (2026-10-27 to 2026-10-30)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Status: OPEN. The class of cause is established, from this repository and from the laptop's own
 state files. Six facts that would size it are not (see "Not established"). Founder, 2026-10-30
 12:17 (spelling normalised): the LiteLLM router is down and the whole fleet with it, "despite

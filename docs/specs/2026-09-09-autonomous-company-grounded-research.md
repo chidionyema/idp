@@ -1,5 +1,7 @@
 # The autonomous company, graded: what converges, what this estate already runs, what to build now
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder record: `~/.claude/docs/founder/2026-09-08T2342Z-and-this-also-link-tickets-inclning-code-nt-760a5bba.md`
 ("do extensive grounded research and see what is already out there and where academic and industry
 future plans converge but can be fully productionised now"). Board row: MUM-289, linked to MUM-287

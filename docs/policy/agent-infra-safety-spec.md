@@ -1,5 +1,7 @@
 # The full work: what gets built so agents can manage infrastructure safely
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Companion to `docs/decisions/0025-agents-hold-no-write-on-production-and-the-greenlane-grows-by-rows.md`.
 The ADR decides; this is the specification of the work, with the acceptance test for each piece.
 The founder's standard is in two records, which are the only source and are never paraphrased from

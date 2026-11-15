@@ -1,5 +1,7 @@
 # AI model stack: who asks which model, through which door
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Measured 2026-08-29 (crew#568). This page is the one place that says, for every agent and product on the estate, where its AI calls go today and where they go after the migration in crew#617.
 
 ## The five things, one sentence each

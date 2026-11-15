@@ -1,5 +1,7 @@
 # Spec: the five Otto capabilities, finished and proved
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Founder record: `~/.claude/docs/founder/2026-09-05T2023Z-spec-for-deepseek-to-get-everything-done-and-a8f82afe.md`
   ("spec for deepseek to get everything done and fully finished")
 - Written for: the executing session (any model). Every step is a command; every finish line is

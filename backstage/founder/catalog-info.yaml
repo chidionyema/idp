@@ -369,9 +369,6 @@ metadata:
     - title: "Drill schedule (source)"
       url: "https://github.com/chidionyema/idp/blob/main/drills/catalogue.yaml"
       icon: dashboard
-    - title: "oke-check: cluster, login, chaos, IAM, cluster-state"
-      url: "https://github.com/chidionyema/idp/actions/workflows/oke-check.yml"
-      icon: dashboard
     - title: "trace-drill: one call, one trace, hourly"
       url: "https://github.com/chidionyema/idp/actions/workflows/trace-drill.yml"
       icon: dashboard
@@ -409,7 +406,7 @@ metadata:
     estate/group: "Fix something"
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
-    idp/updated-by: "Terraform/Flux on merge; oke-check reads it daily"
+    idp/updated-by: "Current infrastructure authority in IDP AGENTS.md"
   tags: [founder, kubernetes]
   links:
     - title: "Open"
@@ -583,8 +580,7 @@ spec:
 # crew#751: Cursor is the Hermes WORK harness. It is not a LiteLLM lane and it is
 # not a second login. The Resource vendor-cursor is generated from the vendor
 # registry; this card is the door a person opens. Mint the key once at Console;
-# oke-check apply (already on founder-drills) seeds the vault. Never paste the
-# value into chat.
+# Use the current vault provisioning instructions in IDP AGENTS.md.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:

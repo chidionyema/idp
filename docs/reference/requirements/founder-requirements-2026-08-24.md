@@ -1,4 +1,6 @@
 # Founder requirements sweep, 2026-08-24 to 08-25
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 Every founder ask, ruling and directive extracted from the crew-agent transcripts covering 2026-08-24 15:42Z through 2026-08-25 03:05Z, merged from ten background-agent extraction passes into one table.
 
 | time | requirement | verbatim quote | topic tag | status |

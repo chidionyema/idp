@@ -1,5 +1,7 @@
 # Credential life cycle
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-08-29 (crew#618): "all this needs to be documented; no PR covering critical infra
 like this can have setup going to void: reusable? expiration? we need policy."
 

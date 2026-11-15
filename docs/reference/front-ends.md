@@ -1,5 +1,7 @@
 # Front ends in the estate (crew#694 CP0)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Inventory taken 2026-09-30 by reading each repo (no build run). "Served" means a Flux row or an
 edge route exists for it; it does not mean it was watched working today.
 

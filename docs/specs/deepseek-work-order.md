@@ -1,5 +1,7 @@
 # The DeepSeek work order — one queue across three specs
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder record, verbatim:
 `~/.claude/docs/founder/2026-09-05T2132Z-so-review-all-and-lets-plan-this-for-87f5df34.md`
 ("so review all and lets plan this for deepseek"), and the six records the three specs cite.

@@ -1,5 +1,7 @@
 # 2026-09-03. hermes-v2 rides the platform's Flux road as the `hermes-agent` row, and there is no second road
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-09-03: "need all conpleted". The five-day capability audit of the same day (crew
 repository, `docs/audits/2026-09-03-five-day-capability-audit.md`, section 5) listed "onboard
 hermes-v2 and prospector onto the Flux road as catalogued workloads, retiring the launchd/hand

@@ -1,5 +1,7 @@
 # The availability standard
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Every surface the founder can open survives losing one node. This is checked before the change
 merges, not after the outage.**
 

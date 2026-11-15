@@ -1,5 +1,7 @@
 # PROOF-OF-WORK — Wartime Multidimensional AI Inference Plan
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 > Date measured: 2026-09-13
 > Rule binding this doc: LAW 2 (verification before assertion). Every number below was read from a real file in this session, with the path and line, on the same working tree the gate will grade.
 

@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""estate-stranded -- a local commit that sits unpushed is work the estate cannot see.
+
+Founder, 2026-11-15: "no local commits sitting for more than 10 minutes, should trigger recovery."
+
+A commit ahead of its upstream (or on a branch with no upstream) is invisible to every other
+agent, to CI and to Flux: it exists on one laptop. After a bounded age (default 600 s) it is
+STRANDED, and the recovery is to hand the branch to the Greenlane (`lane-submit`), which proves
+it and lands it. This command only measures; it never pushes. Its exit code is the trigger:
+
+    0  nothing stranded
+    1  at least one commit has sat unpushed past the threshold -- recovery is required
+    2  a worktree could not be measured
+
+    bin/estate-stranded                       # every repo under ~/Documents/code
+    bin/estate-stranded --json                # the same facts, machine-readable
+    bin/estate-stranded --path . --max-age 600
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+DEFAULT_ROOT = os.path.join(HOME, "Documents/code")
+THRESHOLD_S = 600
+
+
+def git(cwd: str, *args: str) -> tuple[int, str]:
+    try:
+        p = subprocess.run(
+            ["git", "-C", cwd, *args], capture_output=True, text=True, timeout=20
+        )
+        return p.returncode, (p.stdout or "").strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 2, str(exc)
+
+
+def worktrees(root: str) -> list[str]:
+    """Every worktree path of every repo under root, plus root itself if it is a repo."""
+    paths: list[str] = []
+    if os.path.isdir(os.path.join(root, ".git")) or os.path.isfile(
+        os.path.join(root, ".git")
+    ):
+        repos = [root]
+    else:
+        repos = sorted(
+            os.path.join(root, name)
+            for name in os.listdir(root)
+            if os.path.exists(os.path.join(root, name, ".git"))
+        )
+    seen: set[str] = set()
+    for repo in repos:
+        code, out = git(repo, "worktree", "list", "--porcelain")
+        if code != 0:
+            candidates = [repo]
+        else:
+            candidates = [
+                line[len("worktree ") :]
+                for line in out.splitlines()
+                if line.startswith("worktree ")
+            ]
+        for path in candidates:
+            if path in seen:
+                continue
+            # A directory can carry a stale .git file and still not be a checkout. A path that
+            # cannot answer `rev-parse` is skipped, not reported as a failure: it is not work.
+            if git(path, "rev-parse", "--git-dir")[0] != 0:
+                continue
+            seen.add(path)
+            paths.append(path)
+    return paths
+
+
+def upstream(wt: str) -> str | None:
+    code, out = git(wt, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    return out if code == 0 and out else None
+
+
+def unpushed_ages(wt: str) -> list[int]:
+    """Age in seconds of every commit on HEAD that no remote ref contains."""
+    code, out = git(wt, "rev-list", "HEAD", "--not", "--remotes", "--format=%ct")
+    if code != 0:
+        return []
+    ages = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("commit "):
+            continue
+        try:
+            ages.append(int(line))
+        except ValueError:
+            continue
+    return ages
+
+
+def measure(wt: str, now: int) -> dict | None:
+    head_code, head = git(wt, "rev-parse", "--short", "HEAD")
+    if head_code != 0:
+        # An initialised repo with no commit is not work that can be stranded.
+        return None
+    branch_code, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+    up = upstream(wt)
+    ages = unpushed_ages(wt)
+    oldest = max(ages) if ages else 0
+    return {
+        "worktree": wt,
+        "branch": branch if branch_code == 0 else "HEAD",
+        "upstream": up or "",
+        "head": head,
+        "unpushed_commits": len(ages),
+        "oldest_unpushed_age_s": max(0, now - oldest) if ages else 0,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="estate-stranded")
+    ap.add_argument("--root", default=DEFAULT_ROOT, help="directory of repos to scan")
+    ap.add_argument(
+        "--path", default="", help="scan one repo/worktree instead of --root"
+    )
+    ap.add_argument(
+        "--max-age",
+        type=int,
+        default=THRESHOLD_S,
+        help="seconds before a commit is stranded",
+    )
+    ap.add_argument(
+        "--now", type=int, default=0, help="epoch override, for the falsifier"
+    )
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    now = a.now or int(time.time())
+    roots = [a.path] if a.path else [a.root]
+    rows: list[dict] = []
+    for root in roots:
+        for wt in worktrees(os.path.abspath(root)):
+            if not os.path.isdir(wt):
+                continue
+            row = measure(wt, now)
+            if row is not None:
+                rows.append(row)
+
+    stranded = [
+        r
+        for r in rows
+        if r.get("oldest_unpushed_age_s", 0) > a.max_age
+        and r.get("unpushed_commits", 0) > 0
+    ]
+    errors = [r for r in rows if r.get("error")]
+    payload = {
+        "ok": not stranded and not errors,
+        "threshold_s": a.max_age,
+        "scanned": len(rows),
+        "stranded": stranded,
+        "errors": errors,
+    }
+
+    if a.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"estate-stranded: scanned {len(rows)} worktree(s), threshold {a.max_age}s"
+        )
+        for r in stranded:
+            print(
+                f"  STRANDED {r['branch']} @ {r['head']}  "
+                f"unpushed={r['unpushed_commits']} oldest={r['oldest_unpushed_age_s']}s  {r['worktree']}"
+            )
+            # lane-submit defaults the lane to lane/<current branch>; name only the worktree.
+            print(f"    recover: estate-execute lane-submit cwd={r['worktree']}")
+        for r in errors:
+            print(f"  ERROR {r['worktree']}: {r['error']}")
+        if not stranded and not errors:
+            print("  nothing stranded")
+
+    if errors:
+        return 2
+    return 1 if stranded else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

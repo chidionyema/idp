@@ -1,5 +1,7 @@
 # Vendor-independence audit — swap paths per vendor
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder principle 2026-09-17: **"we must be able to run vendor independent"**. A single vendor's
 outage, price hike, deprecation, or unilateral policy change must never be able to trap the
 estate. Every vendor row below names one alternative that the estate is engineered to accept,

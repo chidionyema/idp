@@ -521,6 +521,10 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
     esac
     ;;
   cluster)
+    if [ "$BACKEND" = oci ]; then
+      printf '%s\n' 'REFUSED: OKE is retired. Read the current infrastructure authority in IDP AGENTS.md.' >&2
+      exit 78
+    fi
     case "$verb" in
       list)
         case "$BACKEND" in
