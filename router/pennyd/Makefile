@@ -25,4 +25,4 @@ sbom:
 	cargo cyclonedx --format json --output dist/sbom
 
 image:
-	docker buildx build --platform linux/amd64,linux/arm64 -t pennyd:local .
+	../../bin/build-image --load -t pennyd:local .

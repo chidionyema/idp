@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""spec-factory -- discover the Estate Spec Factory authoring tool and run it.
+
+WHY (2026-11-15). The tool lives in `chidionyema/argon` under `tools/estate-spec-factory/`,
+but an agent working in `idp` must be able to find it through the estate's own doors rather
+than by remembering a repository path. This is a thin discovery wrapper: it holds no copy of
+the generator, no profiles and no state. If the tool is absent it says BLIND and exits 2
+rather than inventing a spec or a receipt.
+
+    bin/spec-factory types
+    bin/spec-factory new --type disaster_recovery --title '...' --repo chidionyema/idp \
+        --issue https://github.com/chidionyema/idp/issues/7790 --out /tmp/spec
+    bin/spec-factory validate /tmp/spec/spec.json --stage shape
+
+Resolution order:
+  1. $ESTATE_SPEC_FACTORY  -- an explicit path to spec_factory.py
+  2. $ESTATE_ARGON/tools/estate-spec-factory/spec_factory.py
+  3. ~/.estate/tools/estate-spec-factory/spec_factory.py  (pinned deployment)
+  4. ~/Documents/code/argon/tools/estate-spec-factory/spec_factory.py
+
+The wrapper never grants authority: a generated packet is a candidate, not a command.
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import sys
+
+
+def candidates() -> list[pathlib.Path]:
+    home = pathlib.Path.home()
+    out: list[pathlib.Path] = []
+    explicit = os.environ.get("ESTATE_SPEC_FACTORY", "").strip()
+    if explicit:
+        out.append(pathlib.Path(explicit))
+    argon = os.environ.get("ESTATE_ARGON", "").strip()
+    if argon:
+        out.append(
+            pathlib.Path(argon) / "tools" / "estate-spec-factory" / "spec_factory.py"
+        )
+    out.append(home / ".estate" / "tools" / "estate-spec-factory" / "spec_factory.py")
+    out.append(
+        home
+        / "Documents"
+        / "code"
+        / "argon"
+        / "tools"
+        / "estate-spec-factory"
+        / "spec_factory.py"
+    )
+    return out
+
+
+def main(argv: list[str]) -> int:
+    for path in candidates():
+        if path.is_file():
+            try:
+                os.execv(  # noqa: S606 - exec is the point: this process becomes the tool
+                    sys.executable, [sys.executable, str(path), *argv]
+                )
+            except (
+                OSError
+            ) as exc:  # pragma: no cover - exec only fails on a broken host
+                print(
+                    f"BLIND   spec-factory  cannot execute {path}: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
+    looked = ", ".join(str(p) for p in candidates())
+    print(
+        "BLIND   spec-factory  no Estate Spec Factory tool found; looked at: " + looked,
+        file=sys.stderr,
+    )
+    print(
+        "        set ESTATE_SPEC_FACTORY=/path/to/spec_factory.py or land the tool in argon",
+        file=sys.stderr,
+    )
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

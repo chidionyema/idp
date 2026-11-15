@@ -1,0 +1,12 @@
+name: spec.types
+description: >-
+  List the Estate Spec Factory work classes and their default effect classes. Read-only discovery
+  step for an agent that needs to choose a profile before writing a SPEC/1 packet. It creates no
+  file and grants no authority; the packet is still a candidate for the existing issue owner.
+class: read
+args: {}
+steps:
+  - name: types
+    cmd: >
+      IDP=${ESTATE_IDP:-$HOME/Documents/code/idp};
+      python3 "$IDP/bin/spec-factory" types
