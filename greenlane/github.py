@@ -988,11 +988,50 @@ class GitHubBackend:
                     else ""
                 )
                 red.append(f"{line} -- {cause}" if cause else line)
+        # ONE VERDICT PER SHA (founder 2026-11-14). The required list is what GitHub needs to
+        # move main; it is not everything that judges this commit. build-multiarch ran only
+        # after landing and was red on 24 of the last 40 main commits: the candidate was
+        # "green" while its images could not be built. Every workflow run on THIS sha that the
+        # commit itself triggered (push / pull_request / merge_group -- never a schedule,
+        # dispatch or workflow_run, which judge the environment, not the commit) is part of the
+        # verdict: red if its newest attempt failed, pending until it completes.
+        # main_red (`_verdict_only`) keeps its required-only meaning: it gates re-judging, and an
+        # image that rots on main must not freeze unrelated lanes -- the candidate that reaches
+        # the image is the one held, by its own build.
+        commit_runs = (
+            {} if getattr(self, "_verdict_only", False) else self._commit_runs(tip)
+        )
+        for path, run in commit_runs.items():
+            if run.get("status") != "completed":
+                pending.append(path)
+            elif run.get("conclusion") not in GREEN_CONCLUSIONS:
+                red.append(f"{path} {run.get('conclusion')} {run.get('html_url', '')}")
         if red:
             return "red", "; ".join(red)
         if pending:
             return "pending", "waiting on " + ", ".join(pending)
         return "green", ""
+
+    COMMIT_EVENTS = ("push", "pull_request", "merge_group")
+
+    def _commit_runs(self, sha: str) -> dict[str, dict]:
+        """The newest commit-triggered workflow run per workflow file on `sha`."""
+        page = self.gh(f"actions/runs?head_sha={sha}&per_page=100") or {}
+        newest: dict[str, dict] = {}
+        for r in page.get("workflow_runs", []) or []:
+            if r.get("event") not in self.COMMIT_EVENTS:
+                continue
+            path = (
+                (r.get("path") or r.get("name") or "?").split("@")[0].rsplit("/", 1)[-1]
+            )
+            key = (r.get("id") or 0, r.get("run_attempt") or 0)
+            have = newest.get(path)
+            if have is None or key > (
+                have.get("id") or 0,
+                have.get("run_attempt") or 0,
+            ):
+                newest[path] = r
+        return newest
 
     # -- why a required check is red, in the lane's own status ------------------------------
     #

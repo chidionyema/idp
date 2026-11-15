@@ -35824,6 +35824,7 @@
       },
       "consumers": [
         "cap:tool/idp-ci-touched",
+        "cap:workflow/gha-build-multiarch",
         "cap:workflow/gha-guarded-paths",
         "cap:workflow/gha-verifier"
       ],
@@ -56438,6 +56439,10 @@
       "depends_on": [
         {
           "id": "cap:tool/dockerfiles",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-base",
           "edge": "invokes"
         },
         {

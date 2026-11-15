@@ -1635,3 +1635,110 @@ def test_a_blob_with_a_nul_byte_is_not_text_even_when_it_decodes(repo):
     _git(repo, "commit", "-q", "-m", "text")
     head2 = _git(repo, "rev-parse", "HEAD")
     assert gg._git_text("show", f"{head2}:plain.txt") == "hello\n"
+
+
+# -- one verdict per sha (founder 2026-11-14) ------------------------------------------------
+
+
+def _runs(*rows):
+    return {"workflow_runs": [dict(r) for r in rows]}
+
+
+def test_a_candidate_with_a_red_commit_run_is_red_even_when_required_checks_are_green():
+    """build-multiarch was red on 24 of 40 main commits: images were first built after landing."""
+    b = Recorded(
+        {
+            **_green("t1"),
+            "actions/runs": _runs(
+                {
+                    "id": 1,
+                    "event": "push",
+                    "path": ".github/workflows/build-multiarch.yml",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "html_url": "u",
+                },
+            ),
+        }
+    )
+    verdict, why = b.checks("t1")
+    assert verdict == "red" and "build-multiarch.yml" in why
+
+
+def test_a_commit_run_still_running_holds_the_candidate_pending():
+    b = Recorded(
+        {
+            **_green("t2"),
+            "actions/runs": _runs(
+                {
+                    "id": 1,
+                    "event": "push",
+                    "path": ".github/workflows/build-multiarch.yml",
+                    "status": "in_progress",
+                    "conclusion": None,
+                },
+            ),
+        }
+    )
+    assert b.checks("t2")[0] == "pending"
+
+
+def test_environment_runs_and_superseded_attempts_do_not_judge_the_commit():
+    """A schedule/dispatch/workflow_run judges the environment; only the newest attempt counts."""
+    b = Recorded(
+        {
+            **_green("t3"),
+            "actions/runs": _runs(
+                {
+                    "id": 5,
+                    "event": "schedule",
+                    "path": ".github/workflows/ping.yml",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+                {
+                    "id": 6,
+                    "event": "workflow_run",
+                    "path": ".github/workflows/x.yml",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+                {
+                    "id": 7,
+                    "event": "push",
+                    "path": ".github/workflows/ci.yml",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "run_attempt": 1,
+                },
+                {
+                    "id": 7,
+                    "event": "push",
+                    "path": ".github/workflows/ci.yml",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "run_attempt": 2,
+                },
+            ),
+        }
+    )
+    assert b.checks("t3") == ("green", "")
+
+
+def test_main_red_keeps_its_required_only_meaning():
+    """An image rotting on main must not freeze re-judging of unrelated lanes."""
+    b = Recorded(
+        {
+            **_green("m1"),
+            "actions/runs": _runs(
+                {
+                    "id": 1,
+                    "event": "push",
+                    "path": ".github/workflows/build-multiarch.yml",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+            ),
+        }
+    )
+    assert b.main_red("m1") is False
