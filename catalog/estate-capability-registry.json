@@ -6,7 +6,7 @@
     "intent": 121,
     "layer": 261,
     "service": 121,
-    "tool": 493,
+    "tool": 495,
     "workflow": 106
   },
   "records": [
@@ -30975,6 +30975,64 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-production-acceptance",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Check hosted QA at a specific SHA before sending work to a release branch.",
+      "contract": {
+        "inputs": [
+          "--pre-push"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-production-acceptance",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-production-readiness",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-proof",
       "schema_version": 1,
       "kind": "tool",
@@ -35642,6 +35700,7 @@
         "cap:tool/catalog-projection",
         "cap:tool/catalog-refcheck",
         "cap:tool/diagnosis-gate",
+        "cap:tool/estate-production-acceptance",
         "cap:tool/estate-zone-gate",
         "cap:tool/face-licence-gate",
         "cap:tool/idp-availability-gate",
@@ -45828,6 +45887,56 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-probe-mutations",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-production-readiness",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-production-acceptance",
+        "cap:workflow/gha-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-production-readiness",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -56929,6 +57038,10 @@
         },
         {
           "id": "cap:tool/idp-messaging-demo",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-production-readiness",
           "edge": "invokes"
         },
         {

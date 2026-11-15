@@ -523,9 +523,16 @@ def _closing_note(service: str, rows: list) -> str:
     return note
 
 
-def file_issues(results: list, dry_run: bool = False) -> list:
+def file_issues(
+    results: list, dry_run: bool = False, declared: set | None = None
+) -> list:
     """One ticket per service with a lane down. Comment on the open one; close it when
-    the lane comes back. A drill that only prints is a report."""
+    the lane comes back. A drill that only prints is a report.
+
+    declared: every service on the ladder, passed only by a drill over the whole ladder. An open
+    incident for a service that is no longer declared is closed: a retired service has no lane to
+    come back, so before this its ticket stayed open for ever and held DoF at repair-only for every
+    agent (estate-doors #8042, left open after #8043 removed it from the ladder, 2026-11-14)."""
     actions = []
     services = []
     for row in results:
@@ -613,6 +620,55 @@ def file_issues(results: list, dry_run: bool = False) -> list:
                 if code == 0
                 else f"FAILED #{issue['number']}: {err}"
             )
+    if declared is not None and results:
+        actions += _close_retired(declared, dry_run)
+    return actions
+
+
+def _close_retired(declared: set, dry_run: bool) -> list:
+    actions = []
+    code, out, err = _gh(
+        [
+            "issue",
+            "list",
+            "--search",
+            f'in:title "{ISSUE_PREFIX}"',
+            "--state",
+            "open",
+            "--json",
+            "number,title",
+            "--limit",
+            "50",
+        ]
+    )
+    if code != 0:
+        return [f"could not read open lane incidents: {err}"]
+    try:
+        issues = json.loads(out or "[]")
+    except json.JSONDecodeError:
+        return ["could not read open lane incidents: not JSON"]
+    for issue in issues:
+        title = issue.get("title", "")
+        if not title.startswith(ISSUE_PREFIX + " ") or ":" not in title:
+            continue
+        service = title[len(ISSUE_PREFIX) + 1 :].split(":", 1)[0].strip()
+        if not service or service in declared:
+            continue
+        if dry_run:
+            actions.append(f"would close #{issue['number']} ({service}, retired)")
+            continue
+        note = (
+            f"{service} is no longer declared on the ladder (platform/ladder/critical-lanes.json), "
+            "so it has no lane that can be down. Closing: a retired service holds no incident."
+        )
+        code, _, err = _gh(["issue", "comment", str(issue["number"]), "--body", note])
+        if code == 0:
+            code, _, err = _gh(["issue", "close", str(issue["number"])])
+        actions.append(
+            f"closed #{issue['number']} ({service}, retired)"
+            if code == 0
+            else f"FAILED #{issue['number']}: {err}"
+        )
     return actions
 
 
@@ -883,7 +939,10 @@ def main(argv: list) -> int:
             print(render_diagnostics(details, show_remedy=args.remedy))
 
     if not (args.no_file or args.why or args.remedy):
-        for action in file_issues(results):
+        declared = (
+            None if args.service else {svc.get("service") for svc in config["services"]}
+        )
+        for action in file_issues(results, declared=declared):
             print(f"  filed  {action}")
     if args.gate:
         states = {lad["state"] for lad in ladders(results)}
