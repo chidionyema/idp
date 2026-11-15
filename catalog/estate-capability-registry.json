@@ -36378,7 +36378,6 @@
         "cap:tool/idp-oci-s3",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-oke-surge-node",
         "cap:tool/idp-otlp-headers",
         "cap:tool/idp-otto-homes",
@@ -37598,9 +37597,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -39538,7 +39535,6 @@
       "consumers": [
         "cap:tool/idp-envsubst-gate",
         "cap:tool/idp-oke-break-glass",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-recreate-guard"
       ],
       "cost": {
@@ -40809,7 +40805,6 @@
       },
       "consumers": [
         "cap:tool/idp-oci-bootstrap",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-tailscale-policy"
       ],
       "cost": {
@@ -43938,7 +43933,6 @@
         "cap:tool/idp-oci-login",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oidc-trust",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-verify",
         "cap:tool/idp-workstation-bootstrap"
       ],
@@ -44020,7 +44014,6 @@
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
         "cap:tool/idp-oke-break-glass",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-verify",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-router-recovery",
@@ -44361,9 +44354,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -44414,7 +44405,7 @@
       "id": "cap:tool/idp-oke-rebuild",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "!/bin/sh",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -44455,56 +44446,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-oke-rebuild",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-cloud",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-door-heartbeat",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-flux-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-iam-policy-drift",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-login",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-break-glass",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-surge-node",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-recreate-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-state-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-vault-reads",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-vault-split-guard",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -44543,9 +44485,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -46321,7 +46261,6 @@
       },
       "consumers": [
         "cap:tool/idp-flux-bootstrap",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-vault-split-guard"
       ],
       "cost": {
@@ -48391,7 +48330,6 @@
       },
       "consumers": [
         "cap:tool/idp-identity-apply",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-recreate-guard"
       ],
       "cost": {
@@ -49545,7 +49483,6 @@
       },
       "consumers": [
         "cap:tool/cloud-agnostic-gate",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-vault-refs",
         "cap:workflow/gha-vault-reads"
       ],
@@ -49667,8 +49604,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-cloud",
-        "cap:tool/idp-oke-rebuild"
+        "cap:tool/idp-cloud"
       ],
       "cost": {
         "estimate": null,
