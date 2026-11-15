@@ -4,7 +4,6 @@ The live falsifiers (dispatch battery, sync benches, grade bench) run on the hos
 the repository copy honest in CI: every script is present, executable and compiles.
 """
 
-import py_compile
 from pathlib import Path
 
 IDP = Path(__file__).resolve().parents[2]
@@ -30,7 +29,7 @@ def test_scripts_present_and_executable():
         assert p.stat().st_mode & 0o111, rel
 
 
-def test_scripts_compile(tmp_path):
+def test_scripts_compile():
     for rel in FILES:
-        out = tmp_path / (Path(rel).name + ".pyc")
-        py_compile.compile(str(IDP / rel), cfile=str(out), doraise=True)
+        source = (IDP / rel).read_text()
+        compile(source, rel, "exec")
