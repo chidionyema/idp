@@ -1367,7 +1367,14 @@ def execute_command(
     if bypass_verdict == _ZERO_BLIND:
         record_friction("refuse-hook-bypass-blind", command, detail=bypass_why)
 
-    free_mb = _free_mb()
+    # MEASURE THE VOLUME THE JOB WRITES TO, NOT "/" (2026-11-15). `_free_mb` documents itself as
+    # "free space on the volume that holds `path`", but it was called with no path, so it measured
+    # `/` -- on this APFS layout the sealed system volume, which reports its own 783 MB while the
+    # Data volume holding every checkout, worktree and log reported 1619 MB. The door refused
+    # every command on the machine for a shortage the work volume did not have, and the refusal
+    # text sent the caller to a cleaner that frees nothing there. A job writes where `cwd` points;
+    # measure that, and fall back to `/` only when the caller named no directory.
+    free_mb = _free_mb(cwd or "/")
     if free_mb is not None and free_mb < MIN_FREE_MB and not _floor_exempt(command):
         before_mb = free_mb
         # Deterministic first (#7950): milliseconds, in process, no subprocess. This is the ONLY
@@ -1376,7 +1383,7 @@ def execute_command(
         # cause of the full disk, not the cure, and it took 113 steps to do what one rm does.
         # What it cannot free, the refusal names honestly and the caller frees.
         _emergency_reclaim()
-        free_mb = _free_mb()
+        free_mb = _free_mb(cwd or "/")
         cleaner_rc = "none: the slow cleaner was deleted 2026-11-11"
         if free_mb is not None and free_mb >= MIN_FREE_MB:
             record_friction(
