@@ -3,7 +3,7 @@ description: >
   Free OCI capacity that orphaned block volumes are holding. The estate's Always Free tenancy
   hit its volume quota on 2026-09-07 and has been unable to create a single volume since:
   `oci bv volume create` answers LimitExceeded ("You cannot create a volume because you have
-  reached your limit"), the bridge instance's boot volume was refused (oke-check run
+  reached your limit"), the bridge instance's boot volume was refused (a 2026-09 OKE-era check run
   40608600584), and the cluster's LiteLLM -- the cloud route of the estate's router -- answers
   503 "Starting up" for every caller. The quota was held by 14 CSI volumes, every one of them
   AVAILABLE with no attachment, created 2026-08-25..2026-09-07 by node replacements.
@@ -13,7 +13,7 @@ description: >
   what=node is the second mode, and it is the door for the other half of the estate's missing
   capacity: a worker node that never came up (the pool "a1" held one RUNNING node and one
   STOPPED node since 2026-08-27). OKE refuses to remove that node from its pool --
-  "LimitExceeded: nodes-per-node-pool limit has been exceeded" (oke-check run 40650458830) --
+  "LimitExceeded: nodes-per-node-pool limit has been exceeded" (a 2026-09 OKE-era check run 40650458830) --
   because the pool is already over the free tier's node limit, so the compute API is the door
   that can close the catch: it does not count pool nodes. Only a STOPPED instance is ever a
   candidate. The node's boot volume is not chased: OCI's instance get does not expose it and
