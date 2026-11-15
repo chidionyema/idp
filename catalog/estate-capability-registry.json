@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 261,
+    "layer": 279,
     "service": 121,
     "tool": 499,
     "workflow": 105
@@ -7161,6 +7161,1066 @@
       "mirrors": []
     },
     {
+      "id": "cap:layer/platform-estate-continuity-accept",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Atomic mission acceptance (ESTATE-P0 INV-01).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/accept.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-accept_txn",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The acceptance transaction, split from accept.py for review (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/accept_txn.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-canary",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The ESTATE-P0 continuity canary (part 1): run attempt A, kill it mid-task.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-canary_stage2",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/canary.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-canary_stage2",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The ESTATE-P0 continuity canary (part 2): takeover, resume, verify, close.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-canary"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/canary_stage2.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-canary_worker",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The ESTATE-P0 continuity canary worker (attempt A).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/canary_worker.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-checkpoints",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Checkpoint write and validated reconstruction (ESTATE-P0 WP-03).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-records",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/checkpoints.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-effects",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Durable external-effect intents and receipts (ESTATE-P0 INV-04, WP-06).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fence",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/effects.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-fence",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Fence checks and fenced mutations (ESTATE-P0 INV-03).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-effects",
+        "cap:layer/platform-estate-continuity-transitions"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/fence.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-fields",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Strict record fields and exceptions for mission custody (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-accept",
+        "cap:layer/platform-estate-continuity-checkpoints",
+        "cap:layer/platform-estate-continuity-effects",
+        "cap:layer/platform-estate-continuity-fence",
+        "cap:layer/platform-estate-continuity-leases",
+        "cap:layer/platform-estate-continuity-recovery",
+        "cap:layer/platform-estate-continuity-store",
+        "cap:layer/platform-estate-continuity-transitions"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/fields.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-leases",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Lease acquisition with compare-and-swap and monotonically increasing",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/leases.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-model",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Record shapes, states and transitions for mission custody (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-recovery",
+        "cap:layer/platform-estate-continuity-transitions",
+        "cap:layer/platform-estate-protocolkit-protocolkit-gates",
+        "cap:layer/platform-estate-protocolkit-protocolkit-genesis",
+        "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+        "cap:layer/platform-estate-protocolkit-protocolkit-runtime"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/model.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-records",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Attempt, checkpoint, effect and failure-class field sets (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-checkpoints"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/records.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-recovery",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Failure detection and autonomous takeover (ESTATE-P0 WP-04).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/recovery.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-schema",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "SQLite DDL for the mission custody store (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/schema.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-schema2",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Checkpoint, external-effect and failure-class tables (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/schema2.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-store",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "MissionStore: the deterministic custody authority (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-accept",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-accept_txn",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-checkpoints",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-effects",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-leases",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-recovery",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-schema",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-schema2",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-transitions",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/store.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-transitions",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Canonical state-machine transitions (ESTATE-P0 section 5).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fence",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/transitions.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-util",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Canonical JSON and digests shared by the custody modules (ESTATE-P0).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-accept",
+        "cap:layer/platform-estate-continuity-accept_txn",
+        "cap:layer/platform-estate-continuity-canary",
+        "cap:layer/platform-estate-continuity-checkpoints",
+        "cap:layer/platform-estate-continuity-effects",
+        "cap:layer/platform-estate-governance-checks",
+        "cap:layer/platform-estate-governance-executor_permission",
+        "cap:layer/platform-estate-governance-plan_links",
+        "cap:layer/platform-estate-libexec-critical-watch",
+        "cap:layer/platform-estate-libexec-delegate-build",
+        "cap:layer/platform-estate-libexec-incident-loop",
+        "cap:layer/platform-estate-libexec-jev-decide",
+        "cap:layer/platform-estate-libexec-nsvee-verify",
+        "cap:layer/platform-execution-worker_pool",
+        "cap:layer/platform-execution-worktree_manager",
+        "cap:layer/platform-executor-fleetview_register",
+        "cap:layer/platform-idp_agent-engine",
+        "cap:layer/platform-integration-claude_code_hook",
+        "cap:layer/platform-intent-contract_exec",
+        "cap:layer/platform-intent-observer",
+        "cap:layer/platform-llm-callbacks-pobr_gate",
+        "cap:layer/platform-llm-callbacks-pobr_gate_wrapper",
+        "cap:layer/platform-llm-efficiency_gateway",
+        "cap:layer/platform-submitqueue-jev_plan"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/util.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:layer/platform-estate-db-backup-test_backup_immediate_prove",
       "schema_version": 1,
       "kind": "layer",
@@ -7404,6 +8464,10 @@
         "latency_class": "interactive",
         "depends_on": [
           {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
             "edge": "imports"
           }
@@ -7458,6 +8522,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-governance-ledger",
             "edge": "imports"
@@ -7744,6 +8812,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-governance-founder_intake",
             "edge": "imports"
@@ -9074,7 +10146,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9177,7 +10254,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9750,7 +10832,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9809,7 +10896,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9916,7 +11008,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11245,6 +12342,10 @@
         "latency_class": "interactive",
         "depends_on": [
           {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
             "edge": "imports"
           }
@@ -11301,6 +12402,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-governance-registry",
             "edge": "imports"
@@ -11376,6 +12481,8 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-continuity-recovery",
+        "cap:layer/platform-estate-continuity-transitions",
         "cap:layer/platform-estate-protocolkit-protocolkit-gates",
         "cap:layer/platform-estate-protocolkit-protocolkit-genesis",
         "cap:layer/platform-estate-protocolkit-protocolkit-registry",
@@ -11415,6 +12522,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
             "edge": "imports"
@@ -11477,6 +12588,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-model",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-governance-registry",
             "edge": "imports"
@@ -12746,7 +13861,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12801,7 +13921,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12965,7 +14090,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13290,7 +14420,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13390,6 +14525,10 @@
         "latency_class": "interactive",
         "depends_on": [
           {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
             "edge": "imports"
           },
@@ -13457,7 +14596,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13514,7 +14658,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14177,7 +15326,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14225,7 +15379,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14419,7 +15578,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -17031,7 +18195,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -25481,7 +26650,9 @@
         "dependencies"
       ],
       "known_issues": [],
-      "mirrors": []
+      "mirrors": [
+        "platform/estate/continuity/canary.py"
+      ]
     },
     {
       "id": "cap:service/staging/canary-gauge",
