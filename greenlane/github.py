@@ -1206,6 +1206,9 @@ class GitHubBackend:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         resolved: list[tuple[str, str, str, dict, Optional[int]]] = []
         for lane, head, rebased in members:
+            # The proof goes into the PR body before the push, because the push is what starts
+            # the run that grades it: see `_write_proof_body`.
+            self._write_proof_body(lane, head, rebased, tip)
             # leased to the head the batch tested: a lane its author has moved since is new work,
             # and landing the old squash over it would erase the push. Refused, it raises, and
             # land() treats it as a refused land (I4).
@@ -1489,18 +1492,40 @@ class GitHubBackend:
         proven = re.fullmatch(r"[0-9a-f]{40}", r[0] or "") is not None
         return actual if proven and a == r else rebased
 
-    def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
-        existing = (
-            self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
-        )
+    def _proof_body(self, lane: str, head: str, rebased: str, tip: str) -> str:
         proved = self._proof_head(lane, rebased)
-        body = (
+        return (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
             f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
             f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
             f"BDD-PROOF\nhead: {proved}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
+
+    def _write_proof_body(self, lane: str, head: str, rebased: str, tip: str) -> None:
+        """Rewrite the open PR's proof to name `rebased` BEFORE the push that grades it.
+
+        THE PROOF IS WRITTEN BEFORE THE PUSH THAT GRADES IT (2026-11-15). The lane push in
+        `_land` starts fast-gate on `rebased`, and fast-gate grades the pull request that branch
+        carries. A body still naming the previous attempt, or carrying no block at all, is
+        refused -- so the very push that starts the proof's own run is the run that refuses it,
+        and every retry repeats the refusal (measured: #8099 "carries no BDD-PROOF ... block"
+        at run 43703361365; #8124/#8110/#8115/#8117 the same class). `_ensure_pr` already writes
+        this body, but it runs AFTER the push, so it repaired the next attempt and never the one
+        being graded. Write it first; `_ensure_pr` then has nothing left to change.
+        """
+        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        if not found:
+            return
+        body = self._proof_body(lane, head, rebased, tip)
+        if (found[0].get("body") or "") != body:
+            self.gh(f"pulls/{found[0]['number']}", "PATCH", {"body": body})
+
+    def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
+        existing = (
+            self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        )
+        body = self._proof_body(lane, head, rebased, tip)
         if existing:
             # A retry re-squashes the lane, so the open PR's head moves to `rebased`. Its proof
             # must move with it: a body still naming the previous attempt's sha is refused by
