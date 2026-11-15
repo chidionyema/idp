@@ -1,0 +1,95 @@
+# button: Check that argon's own code builds and passes its tests, on idp's free public runners
+# founder: argon is private and GitHub refuses to start private-repo jobs (billing), so nothing
+# of argon was being tested. idp is public, its runner minutes are free, and the GitHub App
+# credential that already reads private argon (genesis-aistudio-source-intake.yml) is reused here:
+# no spend, argon stays private, no obfuscated public copy. Argon's code runs in a job that holds
+# NO credential; the public log carries counts and file names only, never source or test output.
+# Trusted main workflow definition; no pull_request/branch-token execution.
+name: argon-verify
+on:
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: argon-verify
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ref: main
+            dir: .
+            name: argon-main
+          - ref: propose/aistudioi8080-f024b8a8
+            dir: quarantine/aistudio/i8080-admission-control-plane
+            name: i8080-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify the argon-verify trust contract before obtaining credentials
+        run: python3 -m unittest -q tests/test_argon_verify_workflow.py
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          lane: agent-workforce
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: Read private argon source (the only step that holds the App token)
+        env:
+          GH_APP_TOKEN: ${{ steps.app.outputs.token }}
+          ARGON_REF: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_APP_TOKEN:-}" || { echo "::error::PRIVATE_GITHUB_APP_TOKEN_ABSENT"; exit 2; }
+          auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          git clone --quiet --depth 1 --single-branch --branch "$ARGON_REF" \
+            https://github.com/chidionyema/argon.git "${RUNNER_TEMP}/argon"
+          rm -rf "${RUNNER_TEMP}/argon/.git"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Verify argon (no credential in this step; package scripts disabled)
+        env:
+          APP_DIR: ${{ matrix.dir }}
+          APP_NAME: ${{ matrix.name }}
+        run: |
+          set -uo pipefail
+          cd "${RUNNER_TEMP}/argon/${APP_DIR}"
+          log="${RUNNER_TEMP}/argon-verify.log"
+          : > "$log"
+          if test -f package-lock.json; then
+            npm ci --ignore-scripts --no-audit --no-fund >>"$log" 2>&1; inst=$?
+          else
+            npm install --ignore-scripts --no-audit --no-fund >>"$log" 2>&1; inst=$?
+          fi
+          npx tsc --noEmit >>"$log" 2>&1; tsc=$?
+          tests="$(find . -path ./node_modules -prune -o -name '*.test.ts' -print | sort)"
+          if test -n "$tests"; then
+            # shellcheck disable=SC2086
+            npx tsx --test $tests >"${RUNNER_TEMP}/argon-tests.log" 2>&1; tst=$?
+          else
+            tst=0
+          fi
+          npm run build >>"$log" 2>&1; bld=$?
+          pass="$(grep -c '^# pass' "${RUNNER_TEMP}/argon-tests.log" 2>/dev/null || true)"
+          echo "ARGON_VERIFY ${APP_NAME}: install=${inst} typecheck=${tsc} tests=${tst} build=${bld}"
+          grep -E '^# (tests|pass|fail) ' "${RUNNER_TEMP}/argon-tests.log" 2>/dev/null || true
+          # Only paths of failing test files reach the public log: never source or test output.
+          grep -E '^not ok .*\.test\.ts' "${RUNNER_TEMP}/argon-tests.log" 2>/dev/null | sed -E 's/ *#.*//' | head -20 || true
+          test "$inst" = 0 && test "$tsc" = 0 && test "$tst" = 0 && test "$bld" = 0
