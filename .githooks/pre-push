@@ -44,9 +44,12 @@ _free_to_skip() {
   local local_ref local_sha remote_ref remote_sha pending=0
   while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     [ -z "${local_ref:-}" ] && continue
-    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
     [ "$local_sha" = "${remote_sha:-}" ] && continue
-    case "$remote_ref" in refs/heads/main | refs/heads/queue/*) continue ;; esac
+    case "$remote_ref" in
+      refs/heads/release/*) ;;
+      refs/heads/main | refs/heads/queue/*) continue ;;
+      *) [ "$local_sha" != "0000000000000000000000000000000000000000" ] || continue ;;
+    esac
     pending=1
   done <<<"$push_refs"
   [ "$pending" = 0 ]
@@ -55,6 +58,44 @@ _free_to_skip() {
 if _free_to_skip; then
   echo "ok    pre-push: nothing to push (remote already has every ref)" >&2
   exit 0
+fi
+
+
+_readiness_sha=""
+_release_push=0
+while IFS=' ' read -r _local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] && [ "$local_sha" != "$remote_sha" ] || continue
+  case "$remote_ref" in refs/heads/release/*) _release_push=1 ;; esac
+  case "$remote_ref" in
+    refs/heads/lane/*|refs/heads/release/*)
+      [ "$local_sha" != "0000000000000000000000000000000000000000" ] || continue
+      if [ "$(git rev-parse HEAD)" != "$local_sha" ] || [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+        echo "FAIL production-readiness: check out the exact lane revision with a clean worktree" >&2
+        exit 1
+      fi
+      _readiness_sha="$local_sha"
+      ;;
+  esac
+done <<<"$push_refs"
+if [ "$_release_push" -eq 1 ]; then
+  if ! _release_policy=$(git show refs/remotes/origin/main:bin/estate-production-acceptance); then
+    echo "FAIL production-readiness: release verification is missing from origin/main" >&2
+    exit 1
+  fi
+  if ! python3 -B -c "$_release_policy" chidionyema/idp --pre-push <<<"$push_refs"; then
+    exit 1
+  fi
+fi
+if [ -n "$_readiness_sha" ]; then
+  readiness_root="$(git rev-parse --show-toplevel)"
+  if ! "$readiness_root/bin/idp-production-readiness" </dev/null; then
+    echo "FAIL production-readiness: the IDP lane smoke checks did not pass" >&2
+    exit 1
+  fi
+  if [ "$(git rev-parse HEAD)" != "$_readiness_sha" ] || [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    echo "FAIL production-readiness: the checkout changed while the checks were running" >&2
+    exit 1
+  fi
 fi
 
 _free_mb=$(/bin/df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
