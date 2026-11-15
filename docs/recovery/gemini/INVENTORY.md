@@ -1,4 +1,4 @@
-# Gemini recovery — forensics inventory (OpenCode 1)
+# Gemini recovery - forensics inventory (OpenCode 1)
 
 Role: OpenCode 1, Forensics & Recovery. Canonical issue `chidionyema/idp#7819`.
 Claim: `agent=oc6-7c1a`, heartbeat `2026-11-15T22:33:10Z`, lease until `2026-11-15T23:33:10Z`.
