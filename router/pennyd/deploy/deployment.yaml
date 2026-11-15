@@ -12,6 +12,12 @@ spec:
       labels:
         app: pennyd
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: pennyd
           image: ghcr.io/chidionyema/pennyd:v0.2.0
@@ -26,14 +32,18 @@ spec:
             - {name: config, mountPath: /app/config.toml, subPath: config.toml}
             - {name: keys, mountPath: /etc/pennyd/keys.toml, subPath: keys.toml, readOnly: true}
             - {name: log, mountPath: /var/lib/pennyd}
+            - {name: tmp, mountPath: /tmp}
           readinessProbe:
             httpGet: {path: /health, port: 4000}
             periodSeconds: 10
           resources:
             requests: {cpu: "50m", memory: "64Mi"}
             limits: {cpu: "500m", memory: "256Mi"}
-        - name: keys
-          secret: {secretName: pennyd-edge-keys}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          # the only writable paths: the request log (PVC above) and scratch
       volumes:
         - name: providers
           configMap: {name: pennyd-providers}
@@ -43,3 +53,5 @@ spec:
           persistentVolumeClaim: {claimName: pennyd-log}
         - name: keys
           secret: {secretName: pennyd-edge-keys}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
