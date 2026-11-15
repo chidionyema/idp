@@ -54,6 +54,14 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def blob_digest(blob: str) -> str:
+    if not blob:
+        return ""
+    p = subprocess.run(["git", "-C", str(IDP), "cat-file", "blob", blob],
+                       capture_output=True, timeout=20)
+    return hashlib.sha256(p.stdout).hexdigest() if p.returncode == 0 else ""
+
+
 def git(*args: str) -> str:
     p = subprocess.run(["git", "-C", str(IDP)] + list(args), capture_output=True, text=True, timeout=20)
     return p.stdout.strip() if p.returncode == 0 else ""
@@ -97,14 +105,13 @@ def issue() -> int:
     code = []
     for rel in CODE:
         local = HOME / ".estate" / rel
-        repo = IDP / rel
-        if not repo.exists():
-            print("REFUSED: %s is not in the repository" % rel)
-            return 3
         blob = git("rev-parse", "%s:%s" % (commit, rel)) if commit else ""
+        if not blob:
+            print("REFUSED: %s is not in commit %s" % (rel, commit[:12]))
+            return 3
         code.append({"path": rel,
                      "installed_sha256": sha(local) if local.exists() else "",
-                     "repo_sha256": sha(repo),
+                     "repo_sha256": blob_digest(blob),
                      "blob": blob})
     drift = [c["path"] for c in code if c["installed_sha256"] and c["installed_sha256"] != c["repo_sha256"]]
     doc = {
@@ -138,12 +145,19 @@ def verify(path: str) -> int:
     problems = []
     if not hmac.compare_digest(doc.get("signature", ""), sign(doc, secret)):
         problems.append("signature")
+    commit = (doc.get("provenance") or {}).get("commit", "")
     for c in doc.get("code", []):
         local = HOME / ".estate" / c["path"]
         if not local.exists():
             problems.append("missing:" + c["path"])
         elif sha(local) != c.get("installed_sha256"):
             problems.append("drift:" + c["path"])
+        if commit:
+            want = git("rev-parse", "%s:%s" % (commit, c["path"]))
+            if want != c.get("blob"):
+                problems.append("blob:" + c["path"])
+            elif blob_digest(want) != c.get("repo_sha256"):
+                problems.append("blob-sha:" + c["path"])
     ev = doc.get("evidence") or {}
     for name in ("itest.json", "grade.json", "assurance.json"):
         p = TOP / name
