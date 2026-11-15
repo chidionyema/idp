@@ -4,7 +4,7 @@
 Incident 2026-08-27 (crew#535): claude-estate run 33105070038 and every private-repo run after
 15:29Z failed with 0 steps; the check-run annotation said "recent account payments have failed",
 and three sessions spent ~3h grading the red as a pull-request fault. A run whose jobs all have
-zero steps never started; the annotation is the reason, and billing is a founder action.
+zero steps never started. Read the annotation and verify the independent runner route first.
 """
 from __future__ import annotations
 
@@ -17,7 +17,18 @@ import sys
 DEFAULT_REPOS = "chidionyema/idp,chidionyema/claude-estate,chidionyema/estate-secrets,chidionyema/crew,chidionyema/claude-guards"
 NO_ANNOTATION = "refused before the first step, no annotation"
 BILLING_WORDS = ("payments have failed", "spending limit")
-FOUNDER_LINE = "FOUNDER ACTION: fix the GitHub payment method or raise the spending limit — https://github.com/settings/billing"
+ARGON_RELAY = (
+    "Read the latest public IDP argon-guardian-relay.yml run. Its read-only Argon App "
+    "fetch and pinned verifier can prove a provenance result independently of private "
+    "Actions: https://github.com/chidionyema/idp/actions/workflows/argon-guardian-relay.yml. "
+    "For application tests, use the existing private Vercel staging route documented at "
+    "https://github.com/chidionyema/idp/issues/8018 and verify the exact revision. "
+    "Keep the release pending until the complete acceptance suite has a valid receipt."
+)
+DISCOVERY = (
+    "Look up the repository's approved alternate runner in the Estate capability registry. "
+    "Verify the runner and exact-revision evidence before using its verdict."
+)
 
 
 def gh_json(path: str):
@@ -40,7 +51,10 @@ def classify(repo: str, runs: list[dict], jobs_for, annotations_for) -> list[dic
             if notes:
                 reason = notes[0].get("message", NO_ANNOTATION)
                 break
-        found.append({"repo": repo, "run_id": run["id"], "reason": reason})
+        finding = {"repo": repo, "run_id": run["id"], "reason": reason}
+        if any(word in reason.lower() for word in BILLING_WORDS):
+            finding["next_action"] = ARGON_RELAY if repo.lower() == "chidionyema/argon" else DISCOVERY
+        found.append(finding)
     return found
 
 
@@ -71,8 +85,8 @@ def main(argv: list[str]) -> int:
     else:
         for f in findings:
             print(f"refused  {f['repo']} run {f['run_id']}: {f['reason']}")
-        if any(w in f["reason"] for f in findings for w in BILLING_WORDS):
-            print(FOUNDER_LINE)
+        for action in dict.fromkeys(f["next_action"] for f in findings if "next_action" in f):
+            print(f"next     {action}")
     return 2 if findings else 0
 
 
