@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pennyd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pennyd
+  template:
+    metadata:
+      labels:
+        app: pennyd
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # Keep the image's nobody identity and make the log volume writable for it.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: pennyd
+          image: ghcr.io/chidionyema/pennyd:v0.2.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          # no args: the image ENTRYPOINT already supplies /app/config.toml,
+          # which the config volume mounts at that exact path
+          ports: [{containerPort: 4000}]
+          envFrom:
+            - secretRef: {name: pennyd-keys}
+          volumeMounts:
+            - {name: providers, mountPath: /etc/pennyd/providers, readOnly: true}
+            - {name: config, mountPath: /app/config.toml, subPath: config.toml, readOnly: true}
+            - {name: keys, mountPath: /etc/pennyd/keys.toml, subPath: keys.toml, readOnly: true}
+            - {name: log, mountPath: /var/lib/pennyd}
+            # the root filesystem is read-only, so /tmp is the only scratch path
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe:
+            httpGet: {path: /health, port: 4000}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "50m", memory: "64Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+      volumes:
+        - name: providers
+          configMap: {name: pennyd-providers}
+        - name: config
+          configMap: {name: pennyd-config}
+        - name: log
+          persistentVolumeClaim: {claimName: pennyd-log}
+        - name: tmp
+          emptyDir: {}
+        - name: keys
+          secret: {secretName: pennyd-edge-keys}

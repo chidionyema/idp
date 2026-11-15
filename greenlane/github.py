@@ -1206,6 +1206,9 @@ class GitHubBackend:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         resolved: list[tuple[str, str, str, dict, Optional[int]]] = []
         for lane, head, rebased in members:
+            # The proof goes into the PR body before the push, because the push is what starts
+            # the run that grades it: see `_write_proof_body`.
+            self._write_proof_body(lane, head, rebased, tip)
             # leased to the head the batch tested: a lane its author has moved since is new work,
             # and landing the old squash over it would erase the push. Refused, it raises, and
             # land() treats it as a refused land (I4).
@@ -1347,6 +1350,7 @@ class GitHubBackend:
                 f"proven on candidate {tip[:12]}",
             )
             subject = self.git("log", "-1", "--format=%s", merge_sha)
+            self._approve(pr["number"], merge_sha, tip)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
                     result = self.gh(
@@ -1465,20 +1469,73 @@ class GitHubBackend:
         found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         return found[0] if found else None
 
+    def _proof_head(self, lane: str, rebased: str) -> str:
+        """The sha the PR head really is, when it carries exactly the proven tree.
+
+        The proof must name the PR head (bin/idp-bdd-proof-gate). The lane on origin can hold
+        a different commit than `rebased` with the SAME tree and parent -- an earlier squash of
+        the same work. Measured twice: #8117 (204bd87 vs head 2646a47, tree 80269896) and
+        #8124 (dbd5d78 vs head 18d8606, tree 630c04aa): the gate refused a proven change for a
+        sha it never looked inside. Name the real head only when its tree and parents are
+        identical to what was proven; anything else keeps `rebased`, and the gate refuses it.
+        """
+        actual = self._ref(lane)
+        if not re.fullmatch(r"[0-9a-f]{40}", actual or "") or actual == rebased:
+            return rebased
+
+        def shape(sha: str) -> tuple[str, str]:
+            tree = self.git("rev-parse", f"{sha}^{{tree}}", check=False)
+            parents = self.git("rev-parse", f"{sha}^@", check=False)
+            return tree, parents
+
+        a, r = shape(actual), shape(rebased)
+        proven = re.fullmatch(r"[0-9a-f]{40}", r[0] or "") is not None
+        return actual if proven and a == r else rebased
+
+    def _proof_body(self, lane: str, head: str, rebased: str, tip: str) -> str:
+        proved = self._proof_head(lane, rebased)
+        return (
+            f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
+            f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
+            f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
+            f"BDD-PROOF\nhead: {proved}\nrequired checks green on candidate {tip}: "
+            f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
+        )
+
+    def _write_proof_body(self, lane: str, head: str, rebased: str, tip: str) -> None:
+        """Rewrite the open PR's proof to name `rebased` BEFORE the push that grades it.
+
+        THE PROOF IS WRITTEN BEFORE THE PUSH THAT GRADES IT (2026-11-15). The lane push in
+        `_land` starts fast-gate on `rebased`, and fast-gate grades the pull request that branch
+        carries. A body still naming the previous attempt, or carrying no block at all, is
+        refused -- so the very push that starts the proof's own run is the run that refuses it,
+        and every retry repeats the refusal (measured: #8099 "carries no BDD-PROOF ... block"
+        at run 43703361365; #8124/#8110/#8115/#8117 the same class). `_ensure_pr` already writes
+        this body, but it runs AFTER the push, so it repaired the next attempt and never the one
+        being graded. Write it first; `_ensure_pr` then has nothing left to change.
+        """
+        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        if not found:
+            return
+        body = self._proof_body(lane, head, rebased, tip)
+        if (found[0].get("body") or "") != body:
+            self.gh(f"pulls/{found[0]['number']}", "PATCH", {"body": body})
+
     def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
+        body = self._proof_body(lane, head, rebased, tip)
         if existing:
-            return existing[0]["number"]
+            # A retry re-squashes the lane, so the open PR's head moves to `rebased`. Its proof
+            # must move with it: a body still naming the previous attempt's sha is refused by
+            # bin/idp-bdd-proof-gate on every retry (2026-11-14: #8110, #8115, #8117 -- a lane
+            # proven green could never land). Rewrite it whenever it no longer says this.
+            number = existing[0]["number"]
+            if (existing[0].get("body") or "") != body:
+                self.gh(f"pulls/{number}", "PATCH", {"body": body})
+            return number
         subject = self.git("log", "-1", "--format=%s", rebased)
-        body = (
-            f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
-            f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
-            f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
-            f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
-            f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
-        )
         created = self.gh(
             "pulls",
             "POST",
@@ -1488,6 +1545,40 @@ class GitHubBackend:
         # costs a round trip and races with GitHub's own listing lag; the POST already carries
         # it. `None` still means "no PR" and the caller refuses rather than guessing.
         return (created or {}).get("number")
+
+    def _approve(self, number: int, sha: str, tip: str) -> None:
+        """The second identity's review on a head the Greenlane itself proved green.
+
+        main's ruleset requires one approving review (I-8046, 2026-11-13). The App that opens
+        every lane PR cannot approve its own, so from that day no lane could land without the
+        founder (#8117 sat refused: "At least 1 approving review is required"). The workflow's
+        own token (github-actions[bot], GREENLANE_STATUS_TOKEN) is a different identity: it
+        approves exactly the sha being merged, and only here, after the candidate was proven
+        green on top of main. A refusal is printed, never fatal: the merge that follows reports
+        the rule itself.
+        """
+        if not self.status_token:
+            return
+        try:
+            _run(
+                "gh",
+                "api",
+                f"repos/{self.repo}/pulls/{number}/reviews",
+                "-X",
+                "POST",
+                "--input",
+                "-",
+                input=json.dumps(
+                    {
+                        "event": "APPROVE",
+                        "commit_id": sha,
+                        "body": f"Greenlane machine review: candidate {tip[:12]} proven green on top of main.",
+                    }
+                ),
+                env={**os.environ, "GH_TOKEN": self.status_token},
+            )
+        except RuntimeError as e:
+            print(f"greenlane: machine review of #{number} refused: {str(e)[-200:]}")
 
     def _status(self, sha: str, fields: dict) -> None:
         if self.status_token:

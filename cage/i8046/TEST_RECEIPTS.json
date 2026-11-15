@@ -1,0 +1,90 @@
+{
+  "instruction_id": "I-8046-UNIVERSAL-CAGE",
+  "verified_at_utc": "2026-11-13T14:38:00Z",
+  "tla_formal_verification": {
+    "spec_module": "GenesisSplitAuthorityCertifier.tla",
+    "reachable_states_verified": 20,
+    "transitions_verified": 354,
+    "invariants_passed": [
+      "INV_1_ImproverCannotSelfCertify",
+      "INV_2_TrojanNeverReachesMain",
+      "INV_3_OSAndBrowserQuarantine",
+      "INV_4_ReversibleJournalConsistency"
+    ],
+    "status": "PASS_ZERO_VIOLATIONS"
+  },
+  "cucumber_bdd_verification": {
+    "suite": "i8046_universal_cage_and_automain.feature",
+    "total_scenarios": 6,
+    "passed_scenarios": 6,
+    "failed_scenarios": 0,
+    "scenarios": [
+      {
+        "scenario": "Scenario 1: Universal Write Revocation Across the Non-Gemini Fleet",
+        "class_b_agents_tested": 16,
+        "unauthorized_mutations_blocked": 80,
+        "telegram_3327_alerts_emitted": 80,
+        "status": "PASSED"
+      },
+      {
+        "scenario": "Scenario 2: Exclusive Bypass and Certifier Authority for Gemini and Google AI Studio",
+        "unsigned_class_a_rejected": true,
+        "passkey_signed_class_a_accepted": true,
+        "status": "PASSED"
+      },
+      {
+        "scenario": "Scenario 3: OS Credential & Browser Session Quarantine for All Local Harnesses",
+        "unmounted_credentials": [
+          "GH_TOKEN",
+          "GITHUB_TOKEN",
+          "gh_hosts",
+          ".git-credentials",
+          "SSH_AUTH_SOCK"
+        ],
+        "chrome_debug_ports_locked": true,
+        "leaked_harnesses": 0,
+        "status": "PASSED"
+      },
+      {
+        "scenario": "Scenario 4: Full Configuration from Founder Surface with 1-Tap Rollback",
+        "rollback_seq_id": 1,
+        "rollback_latency_ms": 0.254,
+        "restored_known_good_state": true,
+        "status": "PASSED"
+      },
+      {
+        "scenario": "Scenario 5: Deterministic Work-in-Flight Triage and Auto-Main Drainage",
+        "triage_verdicts": {
+          "6ed3d165": "PROMOTED_MAIN",
+          "937dda9d": "QUARANTINED_B2_BREACH",
+          "2e1307a39": "PROMOTED_MAIN",
+          "8036monolith": "ARCHIVED_FAILED_LOCAL_GATE"
+        },
+        "status": "PASSED"
+      },
+      {
+        "scenario": "Scenario 6: Dual-Router Local Hermetic Verification (Rust pennyd vs sovereign-router)",
+        "pennyd_4200": {
+          "router_id": "pennyd",
+          "port": 4200,
+          "language": "Rust",
+          "ledger_seq": 26,
+          "ledger_valid": 1,
+          "max_tokens_cap": 1024,
+          "last_latency_ms": 14
+        },
+        "sovereign_router_8022": {
+          "router_id": "sovereign-router",
+          "port": 8022,
+          "language": "Rust/TypeScript",
+          "ledger_seq": 101,
+          "ledger_valid": 1,
+          "max_tokens_cap": 1024,
+          "last_latency_ms": 19
+        },
+        "status": "PASSED"
+      }
+    ]
+  },
+  "acceptance_criteria_all_met": true
+}

@@ -34,7 +34,7 @@ restore) is created and tested. See crew#673 CP1.
 | Dependency | Status | Recovery truth |
 |---|---|---|
 | Kube auth / how anyone reaches the cluster | PROVEN | `bin/idp-kube:7,70` uses an OCI-generated kubeconfig + short-lived tokens from `bin/idp-cloud`/`bin/idp-jit`. Depends on Phase 0 identity. |
-| Cluster recreation | PROVEN tool, OPEN end-to-end | `bin/idp-oke-rebuild` rebuilds the cluster from git (crew#78). **OPEN:** no drill has proven rebuild from an EMPTY tenancy with only founder login. |
+| ARM k3s replacement | Declared | Verify an eligible host and follow ADR 0048. |
 | Cluster identity inside (instance principal pods, SPIRE) | PROVEN exists / OPEN recover | The portability drill proves pods hydrate on a non-OCI cluster, but instance-principal pods (OCI-calling) need the OCI dynamic group (`workers`/`bridge`). |
 
 ## Phase 2 — secrets and their doors
@@ -78,7 +78,7 @@ are the enforcement of "the founder must be present".
 |---|---|---|
 | Service catalog / inventory | PROVEN regenerable | `catalog-gen` from the LAW 39 inventory in git. Not a loss. |
 | Postgres (estate-db, langfuse, backstage, Temporal, commerce, hindsight, Dagster, Guacamole, Healthchecks, LiteLLM) | **mostly OPEN** | restic adopted (docs/reports/2026-09-08-founder-requests-ledger.md); the `shop-backup` drill proves SQLite restore (drills/catalogue.yaml), but **no Postgres restore is proven-by-restore** (crew#715; docs/runbooks/dagster.md "not yet implemented"). Live Postgres is the estate's single biggest data-loss risk. |
-| Scheduled drills / health | PROVEN exist, OPEN founder-only | 30+ drills in `drills/catalogue.yaml` (oke-check, login-drill, verdict-*, estate-*). Trust re-establishment on a rebuilt estate with no agents is not proven. |
+| Scheduled drills / health | PROVEN exist, OPEN founder-only | 30+ drills in `drills/catalogue.yaml` (login-drill, verdict-*, estate-*). Trust re-establishment on a rebuilt estate with no agents is not proven. |
 
 ---
 
@@ -94,7 +94,7 @@ are the enforcement of "the founder must be present".
    (decision 0020) is the named path to shrink this.
 4. **The GitHub org and vendor consoles are outside git and owned by the founder.** If the org is
    lost, `SEED_*` roots die with it; re-establishment is manual at each vendor.
-5. **Rebuild-from-empty-tenancy is unproven.** `bin/idp-oke-rebuild` + the portability drill
+5. **Rebuild-from-empty-tenancy is unproven.** An ARM k3s deployment and the portability drill
    prove the mechanics exist; nobody has run the full founder-only chain into an empty tenancy
    (crew#673 CP3's exact ask).
 

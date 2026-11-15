@@ -125,3 +125,53 @@ def test_a_land_whose_head_is_its_candidate_does_not_wait_twice(monkeypatch, tmp
 
     assert b.merged_sha == rebased
     assert b.head_checks == 1, "no second wait when the head is the proven candidate"
+
+
+def test_the_merge_is_preceded_by_a_machine_review_of_the_same_sha(
+    monkeypatch, tmp_path
+):
+    """2026-11-15: main requires one approving review (I-8046) and the App that opens every
+    lane PR cannot approve its own, so #8117 -- proven green -- was refused at merge and sat
+    waiting for the founder. The second identity approves exactly the sha being merged, first."""
+    r, _ = _repo(tmp_path, monkeypatch)
+    head = _commit(r, "head.txt", "lane work")
+    _git(r, "push", "-q", "origin", f"{head}:refs/heads/lane/x")
+    rebased = _commit(r, "sq.txt", "rebased squash")
+    pr_head = _commit(r, "moved.txt", "moved under the land")
+    b = Backend(pr_head=pr_head, pend_calls=0)
+    order: list[str] = []
+    real_gh = b.gh
+
+    def gh(path, method="GET", fields=None):
+        if path.endswith("/merge"):
+            order.append("merge")
+        return real_gh(path, method, fields)
+
+    def approve(number, sha, tip):
+        order.append(f"approve {number} {sha}")
+
+    b.gh = gh
+    b._approve = approve
+    b.land([("lane/x", head, rebased)], _git(r, "rev-parse", "HEAD"))
+    assert order and order[0] == f"approve 7 {pr_head}", order
+    assert "merge" in order[1:], order
+
+
+def test_the_review_uses_the_workflow_identity_not_the_app(monkeypatch):
+    from greenlane import github as gl
+
+    calls = []
+    monkeypatch.setattr(
+        gl,
+        "_run",
+        lambda *a, **k: calls.append((a, k.get("env", {}).get("GH_TOKEN"))) or "",
+    )
+    gl.GitHubBackend(repo="o/r", required=[], status_token="WORKFLOW")._approve(
+        7, "a" * 40, "b" * 40
+    )
+    assert calls and calls[0][1] == "WORKFLOW" and "pulls/7/reviews" in calls[0][0][2]
+    calls.clear()
+    gl.GitHubBackend(repo="o/r", required=[], status_token="")._approve(
+        7, "a" * 40, "b" * 40
+    )
+    assert calls == [], "no second identity, no review: never approve as the App itself"

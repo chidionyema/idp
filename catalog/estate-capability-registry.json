@@ -3,11 +3,11 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 118,
+    "intent": 121,
     "layer": 261,
     "service": 121,
-    "tool": 492,
-    "workflow": 105
+    "tool": 495,
+    "workflow": 106
   },
   "records": [
     {
@@ -5369,6 +5369,159 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/snapshot.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.generate",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Generate one typed SPEC/1 packet for an existing canonical issue. Fills only the fields the caller actually knows; proof fields stay UNKNOWN until independently resolved. A populated destination is refused, so this can never overwrite another agent's packet. The packet is a candidate authored for the issue's existing owner, never a new mission, lease or approval. class: mutate args: type: {type: string, default: \"defect\", description: \"a profile from spec.types\"} title: {type: string, default: \"\", description: \"the bounded outcome, in one line\"} repo: {type: string, default: \"\", description: \"owning repository or system of record\"} issue: {type: string, default: \"\", description: \"existing canonical issue URL or ID; do not invent\"} owner: {type: string, default: \"OpenCode\", description: \"accountable owner\"} effect: {type: string, default: \"\", description: \"isolated_research|sandbox_prototype|commercial|shared_infra\"} risk: {type: string, default: \"medium\", description: \"low|medium|high|critical\"} out: {type: string, default: \"\", description: \"new output directory; must be empty or absent\"} steps: - name: generate cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; e={{effect}}; python3 \"$IDP/bin/spec-factory\" new --type {{type}} --title {{title}} --repo {{repo}} --issue {{issue}} --owner {{owner}} --risk {{risk}} --out {{out}} ${e:+--effect \"$e\"}",
+      "contract": {
+        "inputs": [
+          "effect",
+          "issue",
+          "out",
+          "owner",
+          "repo",
+          "risk",
+          "title",
+          "type"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.generate.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.types",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "List the Estate Spec Factory work classes and their default effect classes. Read-only discovery step for an agent that needs to choose a profile before writing a SPEC/1 packet. It creates no file and grants no authority; the packet is still a candidate for the existing issue owner. class: read args: {} steps: - name: types cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; python3 \"$IDP/bin/spec-factory\" types",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.types.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.validate",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Validate one SPEC/1 packet at a declared stage. 'shape' checks structure only; 'intake', 'execution' and 'verified' also refuse missing essential fields. Even 'verified' certifies only declared fields, never the underlying GitHub, CI, deployment or business facts. class: read args: file: {type: string, default: \"\", description: \"path to spec.json\"} stage: {type: string, default: \"shape\", description: \"shape|intake|execution|verified\"} steps: - name: validate cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; python3 \"$IDP/bin/spec-factory\" validate {{file}} --stage {{stage}}",
+      "contract": {
+        "inputs": [
+          "file",
+          "stage"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.validate.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -30822,6 +30975,64 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-production-acceptance",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Check hosted QA at a specific SHA before sending work to a release branch.",
+      "contract": {
+        "inputs": [
+          "--pre-push"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-production-acceptance",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-production-readiness",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-proof",
       "schema_version": 1,
       "kind": "tool",
@@ -35489,6 +35700,7 @@
         "cap:tool/catalog-projection",
         "cap:tool/catalog-refcheck",
         "cap:tool/diagnosis-gate",
+        "cap:tool/estate-production-acceptance",
         "cap:tool/estate-zone-gate",
         "cap:tool/face-licence-gate",
         "cap:tool/idp-availability-gate",
@@ -36378,7 +36590,6 @@
         "cap:tool/idp-oci-s3",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-oke-surge-node",
         "cap:tool/idp-otlp-headers",
         "cap:tool/idp-otto-homes",
@@ -37598,9 +37809,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -39538,7 +39747,6 @@
       "consumers": [
         "cap:tool/idp-envsubst-gate",
         "cap:tool/idp-oke-break-glass",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-recreate-guard"
       ],
       "cost": {
@@ -40809,7 +41017,6 @@
       },
       "consumers": [
         "cap:tool/idp-oci-bootstrap",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-tailscale-policy"
       ],
       "cost": {
@@ -43938,7 +44145,6 @@
         "cap:tool/idp-oci-login",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oidc-trust",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-verify",
         "cap:tool/idp-workstation-bootstrap"
       ],
@@ -44020,7 +44226,6 @@
         "cap:tool/idp-oci-session",
         "cap:tool/idp-oci-whoami",
         "cap:tool/idp-oke-break-glass",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-verify",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-router-recovery",
@@ -44361,9 +44566,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -44414,7 +44617,7 @@
       "id": "cap:tool/idp-oke-rebuild",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "!/bin/sh",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -44455,56 +44658,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-oke-rebuild",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-cloud",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-door-heartbeat",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-flux-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-iam-policy-drift",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-login",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-break-glass",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oke-surge-node",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-recreate-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-state-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-vault-reads",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-vault-split-guard",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -44543,9 +44697,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-oke-rebuild"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -45746,6 +45898,56 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-production-readiness",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-production-acceptance",
+        "cap:workflow/gha-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-production-readiness",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-prove",
       "schema_version": 1,
       "kind": "tool",
@@ -46321,7 +46523,6 @@
       },
       "consumers": [
         "cap:tool/idp-flux-bootstrap",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-vault-split-guard"
       ],
       "cost": {
@@ -47540,6 +47741,10 @@
         {
           "id": "cap:tool/estate-fleet",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -48391,7 +48596,6 @@
       },
       "consumers": [
         "cap:tool/idp-identity-apply",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-recreate-guard"
       ],
       "cost": {
@@ -49545,7 +49749,6 @@
       },
       "consumers": [
         "cap:tool/cloud-agnostic-gate",
-        "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-vault-refs",
         "cap:workflow/gha-vault-reads"
       ],
@@ -49667,8 +49870,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-cloud",
-        "cap:tool/idp-oke-rebuild"
+        "cap:tool/idp-cloud"
       ],
       "cost": {
         "estimate": null,
@@ -54484,6 +54686,53 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/spec-factory",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "spec-factory -- discover the Estate Spec Factory authoring tool and run it.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/spec-factory",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/spec-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -54638,6 +54887,7 @@
         "cap:tool/idp-room-prove",
         "cap:tool/idp-science-facts",
         "cap:tool/idp-script-compiles",
+        "cap:tool/idp-session-bootstrap",
         "cap:tool/idp-shadow",
         "cap:tool/idp-simulate-gate",
         "cap:tool/idp-sleep-ban",
@@ -56791,6 +57041,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/idp-production-readiness",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/idp-tests-for",
           "edge": "invokes"
         },
@@ -57227,6 +57481,63 @@
         "health",
         "proof",
         "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-deterministic-zero-agent-cicd",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "deterministic-zero-agent-cicd -- the GitHub Actions workflow deterministic-zero-agent-cicd.yml.",
+      "contract": {
+        "inputs": [
+          "pull_request",
+          "merge_group",
+          "push"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v4",
+          "dtolnay/rust-toolchain@stable"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/deterministic-zero-agent-cicd.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
       ],
       "known_issues": [],
       "mirrors": []

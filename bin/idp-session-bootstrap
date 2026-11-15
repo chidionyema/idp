@@ -3,6 +3,12 @@
 #
 #   bin/idp-session-bootstrap          clone estate-guards into ~/.estate/scripts when absent
 #   bin/idp-session-bootstrap --check  exit 0 when ~/.estate/scripts holds the guards, 1 when absent
+#   bin/idp-session-bootstrap --announce  also broadcast a PRESENCE line on the fleet bus
+#   bin/idp-session-bootstrap --watch     also start a detached estate-fleet watcher
+#
+# A session that cannot read the bus must say BLIND, never "no messages". When the bus is
+# silent the approved recovery door is `estate-execute bus-ensure`; it is tried once, and the
+# inbox is re-read, so a missing broker cannot present itself as an empty inbox.
 #
 # The canonical home is ~/.estate/ — NOT ~/.claude/. Claude Code, Gemini Code, Cursor,
 # Windsurf, any agent harness all mount the same ~/.estate/ home. One boundary, not one per
@@ -21,6 +27,15 @@ GUARDS_REPO=${ESTATE_GUARDS_REPO:-https://github.com/chidionyema/estate-guards}
 ESTATE_HOME=${ESTATE_HOME:-$HOME/.estate}
 SCRIPTS_DIR="$ESTATE_HOME/scripts"
 
+ANNOUNCE=0
+WATCH=0
+for arg in "$@"; do
+    case "$arg" in
+        --announce) ANNOUNCE=1 ;;
+        --watch) WATCH=1 ;;
+    esac
+done
+
 # --check: verify guards are present without writing anything
 if [ "${1:-}" = --check ]; then
     if [ -f "$SCRIPTS_DIR/hook-run.py" ]; then
@@ -31,14 +46,49 @@ if [ "${1:-}" = --check ]; then
     exit 1
 fi
 
+FLEET="$(dirname "$0")/estate-fleet"
+AGENT=${ESTATE_AGENT:-claude-code}
+
 # Receiving a message is not applying it. The inbox's --ack records "applied" and removes
 # the message from redelivery; bootstrap cannot attest that an agent acted on it. The
 # explicit estate-fleet --pipe consumer owns acknowledgement after successful processing.
 # Do not truncate pending messages: an instruction beyond line 40 would disappear from the
 # agent's view even though the old bootstrap acknowledged it.
-if [ -x "$(dirname "$0")/estate-fleet" ]; then
-    if ! ESTATE_AGENT=${ESTATE_AGENT:-claude-code} timeout 45 "$(dirname "$0")/estate-fleet" inbox; then
-        echo "BLIND   idp-session-bootstrap  fleet inbox unreadable; no messages acknowledged" >&2
+if [ -x "$FLEET" ]; then
+    if ! ESTATE_AGENT="$AGENT" timeout 45 "$FLEET" inbox; then
+        echo "BLIND   idp-session-bootstrap  fleet inbox unreadable; trying the bus recovery door" >&2
+        if command -v estate-execute >/dev/null 2>&1; then
+            # The executor's ceiling is the one wall-clock bound (ADR 0043); do not add
+            # a second literal timeout inside this step.
+            estate-execute bus-ensure >/dev/null 2>&1 || true
+        fi
+        if ! ESTATE_AGENT="$AGENT" timeout 45 "$FLEET" inbox; then
+            echo "BLIND   idp-session-bootstrap  fleet inbox still unreadable; no messages acknowledged" >&2
+        fi
+    fi
+
+    # Presence: advertise what this session holds before it edits anything, so a peer does
+    # not duplicate the work. Display data only; a message is never execution authority.
+    if [ "$ANNOUNCE" = "1" ] || [ -n "${ESTATE_TICKET:-}" ]; then
+        branch=$(git -C "${ESTATE_WORKTREE:-$PWD}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+        presence="PRESENCE actor=$AGENT ticket=${ESTATE_TICKET:-unknown} branch=$branch worktree=${ESTATE_WORKTREE:-$PWD} capabilities=${ESTATE_CAPABILITIES:-unknown} blockers=${ESTATE_BLOCKERS:-none} state=working"
+        ESTATE_AGENT="$AGENT" timeout 20 "$FLEET" broadcast "$presence" \
+            || echo "BLIND   idp-session-bootstrap  presence not published" >&2
+    fi
+
+    # A watcher is a convenience, never a second inbox: it prints new messages only and
+    # leaves the durable consumer untouched. One watcher per agent, tracked by pidfile.
+    if [ "$WATCH" = "1" ]; then
+        pidfile="$ESTATE_HOME/fleet-watch-$AGENT.pid"
+        if [ ! -f "$pidfile" ] || ! kill -0 "$(cat "$pidfile" 2>/dev/null)" 2>/dev/null; then
+            mkdir -p "$ESTATE_HOME"
+            nohup env ESTATE_AGENT="$AGENT" "$FLEET" watch \
+                >>"$ESTATE_HOME/fleet-watch-$AGENT.log" 2>&1 &
+            echo $! >"$pidfile"
+            echo "ok      idp-session-bootstrap  watcher started pid=$(cat "$pidfile")"
+        else
+            echo "ok      idp-session-bootstrap  watcher already running pid=$(cat "$pidfile")"
+        fi
     fi
 fi
 

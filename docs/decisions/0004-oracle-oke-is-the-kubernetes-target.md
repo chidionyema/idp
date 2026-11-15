@@ -1,4 +1,7 @@
-# 0004. Oracle OKE on Always Free is the Kubernetes target, and Flux delivers to it
+<!-- estate:historical current=AGENTS.md -->
+# 0004. Retired managed Kubernetes decision
+
+**Historical record. OKE is retired.** [ADR 0048](0048-the-estate-runs-on-one-node-with-an-admission-list.md) records current placement. Read IDP AGENTS.md and verify the live runtime before choosing an action.
 
 - Status: DECIDED 2026-08-24. Founder: "happy to go to Oracle asap but we need a vote of
   confidence and next steps". Records the choice; nothing is provisioned (ruling R23).

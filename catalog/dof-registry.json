@@ -37,7 +37,8 @@
         "clusters/**",
         "deploy/**",
         "flux/**",
-        "docs/diagnoses/**"
+        "docs/diagnoses/**",
+        "platform/ladder/critical-lanes.json"
       ]
     },
     "otto": {
@@ -47,7 +48,8 @@
         "platform/otto-golden/**",
         "platform/otto-golden-secret/**",
         "bin/idp-otto-homes",
-        "docs/diagnoses/**"
+        "docs/diagnoses/**",
+        "platform/ladder/critical-lanes.json"
       ]
     },
     "estate-doors": {
@@ -60,7 +62,8 @@
         "flux/**",
         ".github/workflows/oke-*.yml",
         ".github/workflows/estate-homes-drill.yml",
-        "docs/diagnoses/**"
+        "docs/diagnoses/**",
+        "platform/ladder/critical-lanes.json"
       ]
     },
     "dof-probe": {

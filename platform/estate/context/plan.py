@@ -40,6 +40,8 @@ import dataclasses
 import hashlib
 import json
 import os
+from pathlib import Path
+import re
 from typing import Any, Mapping
 
 # The plan's own limits. They are stated here, not scattered in the callers, so there is one
@@ -145,6 +147,40 @@ def normalize_path(raw: str, repo_root: str) -> str | None:
         ):
             return stripped
     return None
+
+
+_HISTORICAL = re.compile(r"<!-- estate:historical current=([A-Za-z0-9_./-]+) -->")
+
+
+def historical_reference(repo_root: str, relative_path: str) -> dict[str, str] | None:
+    """Read the source's status, even if the search excerpt starts below the header."""
+    if Path(relative_path).suffix != ".md":
+        return None
+    root = Path(repo_root).resolve()
+    source = (root / relative_path).resolve()
+    if not source.is_relative_to(root):
+        return None
+    try:
+        with source.open("r", encoding="utf-8", errors="replace") as stream:
+            first = stream.readline(1024).strip()
+    except OSError:
+        return None
+    if not first.startswith("<!-- estate:historical"):
+        return None
+    reference = {"source": relative_path, "reason": "historical"}
+    match = _HISTORICAL.fullmatch(first)
+    if match:
+        current = match.group(1)
+        target = (root / current).resolve()
+        if (
+            not Path(current).is_absolute()
+            and ".." not in Path(current).parts
+            and target.is_relative_to(root)
+            and target != source
+            and target.is_file()
+        ):
+            reference["current"] = current
+    return reference
 
 
 def repo_name(repo_root: str) -> str:
@@ -340,15 +376,9 @@ def _item_for(
     impact_map: Mapping[str, list[str]],
     dependents: Mapping[str, list[str]],
     repo_root: str,
-) -> dict[str, Any] | None:
-    """One item of the plan: a source, with everything needed to check it.
-
-    Returns None when the engine's path is not in this tree -- a path that resolves to nothing
-    is not a source, and inventing one would be worse than dropping it.
-    """
-    rel = normalize_path(raw_path, repo_root)
-    if rel is None:
-        return None
+    rel: str,
+) -> dict[str, Any]:
+    """Build one item from a repository path already admitted to the plan."""
 
     # The engine's own symbols for this file, if it named any: their source is better than a
     # blind head-of-file, because the engine chose those symbols.
@@ -452,13 +482,10 @@ def assemble(inp: PlanInput) -> dict[str, Any]:
     dropped: list[dict[str, Any]] = []
     used = 0
     tokenizer = f"estate/chars-per-token:{inp.chars_per_token}"
-    rank = 0
-    for raw_path in engine_candidates(payload):
-        rank += 1
-        item = _item_for(
-            raw_path, rank, symbols, blast, impact_map, dependents, inp.repo_root
-        )
-        if item is None:
+    historical_paths: set[str] = set()
+    for rank, raw_path in enumerate(engine_candidates(payload), start=1):
+        relative_path = normalize_path(raw_path, inp.repo_root)
+        if relative_path is None:
             dropped.append(
                 {
                     "source": raw_path,
@@ -467,6 +494,21 @@ def assemble(inp: PlanInput) -> dict[str, Any]:
                 }
             )
             continue
+        reference = historical_reference(inp.repo_root, relative_path)
+        if reference is not None:
+            historical_paths.add(relative_path)
+            dropped.append(reference)
+            continue
+        item = _item_for(
+            raw_path,
+            rank,
+            symbols,
+            blast,
+            impact_map,
+            dependents,
+            inp.repo_root,
+            relative_path,
+        )
         tokens, tokenizer = measure_tokens(
             item["excerpt"], chars_per_token=inp.chars_per_token
         )
@@ -539,7 +581,10 @@ def assemble(inp: PlanInput) -> dict[str, Any]:
         "coverage": {
             "uncovered_impact_nodes": uncovered,
             "engine_files_to_edit": [
-                p for p in (payload.get("files_to_edit") or []) if isinstance(p, str)
+                p
+                for p in (payload.get("files_to_edit") or [])
+                if isinstance(p, str)
+                and normalize_path(p, inp.repo_root) not in historical_paths
             ],
             "related_test_files": [
                 p
@@ -585,6 +630,13 @@ def plan_hash(plan: Mapping[str, Any]) -> str:
             for i in plan.get("items") or []
         ],
     }
+    historical = [
+        item
+        for item in (plan.get("dropped") or [])
+        if item.get("reason") == "historical"
+    ]
+    if historical:
+        canonical["historical"] = historical
     blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

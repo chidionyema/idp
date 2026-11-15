@@ -1,0 +1,22 @@
+id = "deepseek"
+dialect = "openai"
+base_url = "https://api.deepseek.com"
+
+[auth]
+kind = "bearer"
+key_env = "DEEPSEEK_API_KEY"
+
+[[models]]
+id = "deepseek-chat"
+class = "paid"
+price_in_per_mtok = 0.14
+price_out_per_mtok = 0.28
+context_window = 64000
+aliases = ["cheap-chat"]
+
+[[models]]
+id = "deepseek-reasoner"
+class = "paid"
+price_in_per_mtok = 0.55
+price_out_per_mtok = 2.19
+context_window = 64000

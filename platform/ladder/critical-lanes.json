@@ -14,25 +14,12 @@
             "host:laptop"
           ],
           "reaches": [
-            "cloud (OKE LiteLLM)",
             "laptop front"
           ],
           "note": "every local agent's base URL (bin/litellm-status). platform/llm/front.py dials the cloud and its own slots only: not the lifeboat, not the floor."
         }
       ],
       "legs": [
-        {
-          "name": "cloud (OKE LiteLLM)",
-          "provider": "oracle-oke",
-          "fate": [
-            "provider:oracle-oke"
-          ],
-          "role": "default",
-          "url": "https://llm.{zone}/health/liveliness",
-          "expect": [
-            200
-          ]
-        },
         {
           "name": "lifeboat (Cloudflare edge)",
           "provider": "cloudflare",
@@ -81,13 +68,21 @@
       "what_breaks": "the founder's own assistant, the one surface that must never be silent",
       "legs": [
         {
-          "name": "cluster (otto-gateway)",
-          "provider": "oracle-oke",
+          "name": "gemini direct",
+          "provider": "google",
+          "fate": [
+            "provider:google"
+          ],
           "role": "default",
-          "url": "https://otto.{zone}/healthz",
+          "url": "https://generativelanguage.googleapis.com/v1beta/models",
+          "secret": "GEMINI_API_KEY",
+          "headers": {
+            "x-goog-api-key": "${GEMINI_API_KEY}"
+          },
           "expect": [
             200
-          ]
+          ],
+          "note": "Genesis Otto calls providers directly (argon AGENTS.md section 2); OKE otto-gateway retired by founder 2026-11-13."
         },
         {
           "name": "lifeboat (Cloudflare edge)",
@@ -111,97 +106,6 @@
           "expect": [
             200
           ]
-        }
-      ]
-    },
-    {
-      "service": "estate-doors",
-      "what_breaks": "every published hostname: the portal, the catalogue, the API, identity, traces, the voice router",
-      "note": "These doors are asked with expect_any: the question is only 'does this name answer at all'. A door that answers 404 is up; a door that does not answer is a hole in the estate's surface.",
-      "legs": [
-        {
-          "name": "api",
-          "provider": "oracle-oke",
-          "url": "https://api.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "auth",
-          "provider": "oracle-oke",
-          "url": "https://auth.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "catalogue",
-          "provider": "oracle-oke",
-          "url": "https://catalogue.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "cyrus",
-          "provider": "oracle-oke",
-          "url": "https://cyrus.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "hc",
-          "provider": "oracle-oke",
-          "url": "https://hc.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "langfuse",
-          "provider": "oracle-oke",
-          "url": "https://langfuse.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "llm",
-          "provider": "oracle-oke",
-          "url": "https://llm.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "mcp",
-          "provider": "oracle-oke",
-          "url": "https://mcp.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "meridian",
-          "provider": "oracle-oke",
-          "url": "https://meridian.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "otto",
-          "provider": "oracle-oke",
-          "url": "https://otto.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "sandbox",
-          "provider": "oracle-oke",
-          "url": "https://sandbox.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "signoz",
-          "provider": "oracle-oke",
-          "url": "https://signoz.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "superset",
-          "provider": "oracle-oke",
-          "url": "https://superset.{zone}/",
-          "expect_any": true
-        },
-        {
-          "name": "www",
-          "provider": "oracle-oke",
-          "url": "https://www.{zone}/",
-          "expect_any": true
         }
       ]
     }
