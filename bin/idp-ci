@@ -763,6 +763,24 @@ if [ "$FAST" = 1 ]; then
   elif [ $rc = 0 ]; then say "ok    tsc      backstage"
   elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
   else say "FAIL  tsc      backstage"; fail=1; fi
+  # 1d.2b: zero-poll diff scan (idp#8057 REQ-012 / I-8090). The poll class was measured
+  # (133 incidents/24h, docs/diagnoses/2026-11-11-reactive-wakeup-signaling-gap.md) and the
+  # replacements shipped (bin/estate-wait, bin/lane-why) -- but PR #8161 still ran a 14-iteration
+  # `gh pr view + sleep` loop on 2026-11-15 because nothing REFUSED the construct at the gate.
+  # This rung refuses it: the same matcher that refuses a command at the pre-exec boundary
+  # (bin/zero-poll-guard.py, exit 78) grades the diff's added lines, so a new polling loop,
+  # watch/wait verb, setInterval timer or while+time.sleep+remote-read daemon cannot land.
+  # Scoped like tsc: a diff that touches no code path cannot introduce a poll. The falsifier
+  # suite runs both directions in tests/test_zero_poll.py and in the guard's own --selftest.
+  if touched bin/ platform/ greenlane/ scripts/ src/ .github/; then
+    if python3 "$IDP/bin/zero-poll-guard.py" --scan-diff; then
+      say "ok    zeropoll  no polling construct in the diff"
+    else
+      say "FAIL  zeropoll  polling construct introduced (see guard output above)"; fail=1
+    fi
+  else
+    say "ok    zeropoll  no code path touched since $IDP_CI_BASE"
+  fi
   # 1d.3: ruff format --check. On a pull request (IDP_CI_BASE set) it checks the Python the diff
   # touches; with no base, the whole repo -- the same shape as the yamllint rung above, for the
   # same reason. Until 2026-10-22 it was whole-repo in every mode, and one unwrapped `assert`
