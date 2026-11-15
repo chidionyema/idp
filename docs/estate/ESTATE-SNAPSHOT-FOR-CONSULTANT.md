@@ -1,5 +1,7 @@
 # The Estate — a snapshot for the external consultant
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date.** 2026-09-20 · **Author.** the crew, for the founder
 **Status.** The estate is substantially larger than any single document describes. This is a
 *way in*, not a complete inventory. Where a number is measured it carries the command that

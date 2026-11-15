@@ -1,5 +1,7 @@
 # Onboarding: scheduling immunity (crew#539)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 You are adding or changing a platform workload. Three things to know.
 
 **Name a PriorityClass.** Every Deployment, StatefulSet or CronJob in an idp namespace should carry

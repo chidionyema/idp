@@ -1,5 +1,7 @@
 # FleetView CP1 — the session contract, seen running
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 This is what the board's data layer does when you run it, with the real output.
 
 ## What it is

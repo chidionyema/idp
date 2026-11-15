@@ -1,5 +1,7 @@
 # The infrastructure department, the stamped vision, and one harness from the ground up
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: PROPOSED 2026-10-30. Needs the founder's signature on each of the three decisions below.
 - Deciders: founder
 - Founder, 2026-10-30 13:07 (spelling normalised): "infra is the elephant in the room ... we need a

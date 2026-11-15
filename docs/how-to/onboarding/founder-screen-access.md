@@ -1,5 +1,7 @@
 # Onboarding: seeing the estate Mac's screen
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## What it is
 
 Three ways to see and drive the estate Mac from wherever you are, decided on ADR 0009

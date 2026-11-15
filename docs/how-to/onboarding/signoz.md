@@ -1,5 +1,7 @@
 # The SigNoz verdict — what it is for, what it costs, where it lives, how to stop it
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## What it is for
 
 SigNoz is the estate's telemetry store (`platform/observability/signoz.yaml`). Before this, the

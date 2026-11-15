@@ -1,5 +1,7 @@
 # Complete Scripts Index
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Total scripts: 300** | **Last updated:** 2026-09-22 (removed the ten deleted drill scripts)
 
 ## Hooks (Active)

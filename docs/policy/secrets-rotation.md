@@ -1,5 +1,7 @@
 # Secrets rotation: the estate-wide strategy
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Why this exists.** Founder, 2026-08-31: "poorly designed enterprise-wide secrets rotation
 strategy, this will harm us badly if we let it slide." Twice in one week a rotation "succeeded"
 and the running program kept the old value: crew#506 CP4 (the vault held the new key, the pod

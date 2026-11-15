@@ -1,5 +1,7 @@
 # Onboarding: Otto's homes, and how to add one
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 `bin/idp-otto-homes` grades and deploys the places Otto can run. Read this before changing a
 home, adding a lane, or moving the door.
 

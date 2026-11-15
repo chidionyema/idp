@@ -1,5 +1,7 @@
 # Tailscale — capability sheet (crew#590)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Measured 2026-08-28 from the admin console's New credential wizard (console.tailscale.com/admin/settings/trust-credentials/add) and tailscale.com/docs/reference/trust-credentials. Founder, same night: "you have to first know, learn, research everything, the full capabilities". One row per capability the vendor documents; USED / NOT USED with the why / CANDIDATE with a ticket. Re-measure when older than 30 days.
 
 ## Trust credentials

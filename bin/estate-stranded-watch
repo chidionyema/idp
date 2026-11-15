@@ -1,0 +1,22 @@
+#!/bin/sh
+# estate-stranded-watch -- the 10-minute trigger.
+#
+# Founder, 2026-11-15: "no local commits sitting for more than 10 minutes, should trigger recovery."
+# Runs bin/estate-stranded against every repo under ~/Documents/code. When the detector exits 1
+# (a commit has sat unpushed past the threshold), it delivers the recovery list, once per hour,
+# instead of letting the work rot silently. Read-only: it never pushes.
+set -eu
+
+DETECTOR="${ESTATE_STRANDED:-$HOME/.estate/bin/estate-stranded}"
+
+rc=0
+TEXT="$("$DETECTOR" --root "$HOME/Documents/code" 2>/dev/null)" || rc=$?
+
+if [ "$rc" = "1" ] && [ -n "$TEXT" ]; then
+  printf '%s\n' "$TEXT"
+  # Delivery runs in the background: a slow Telegram call must not hold the watchdog.
+  ( "$HOME/.estate/bin/estate-notify-done" \
+      --text "$TEXT" --key "stranded-$(date +%Y%m%d-%H)" >/dev/null 2>&1 & ) || true
+fi
+
+exit 0

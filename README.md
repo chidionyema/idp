@@ -1,6 +1,10 @@
 # idp — the estate's platform
 
-One platform, one of each layer, running on Oracle's Kubernetes service and kept in step with this repository by Flux.
+> **OKE is retired.** Current infrastructure authority: `AGENTS.md` and
+> `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+> Verify the live runtime before acting; OKE/OCI references below are historical.
+
+One platform, one of each layer, running on the declared ARM k3s node and kept in step with this repository by Flux.
 Products (`prospector`, `hermes-v2`) run on it; they do not carry copies of it.
 
 Two generated pages describe it and are refreshed by `make diagrams`; a hand-drawn page is refused
@@ -12,7 +16,9 @@ by `bin/estate-diagram --check`:
 
 ## Layers
 
-Each directory under `platform/` is one layer. `clusters/oke/platform.yaml` is the Flux
+Each directory under `platform/` is one layer. `clusters/oke/` keeps its historical directory
+name only because the live Flux Kustomization still points at `./clusters/oke`; the OKE
+substrate itself is retired. `clusters/oke/platform.yaml` is the Flux
 folder of manifests that applies them; `clusters/oke/estate-config.yaml` holds `ESTATE_ZONE` and the
 other substitutions, so no manifest names a zone, a host or an account ([the no-hardcoding law](docs/reference/laws-and-guards.md)).
 
@@ -26,7 +32,7 @@ other substitutions, so no manifest names a zone, a host or an account ([the no-
 | traces and audit | `platform/observability` | Langfuse |
 | scheduling | `scheduler/` | Dagster; every job carries a description |
 | CI and supply chain | `.github/`, `platform/github`, `platform/github-app` | pinned actions, Flux image automation, per-lane GitHub App |
-| chaos and drills | `platform/chaos`, `drills/` | `oke-check`, `login-drill` and `drill-heartbeat` workflows |
+| chaos and drills | `platform/chaos`, `drills/` | `login-drill` and `drill-heartbeat` workflows (`oke-check` is retired) |
 | policy | `policy/`, `AGENTS.md` | Kyverno at admission; Rego and shell gates in `bin/idp-ci` |
 | agent interface | `mcp/`, `sovereign/` | the estate MCP server and the Sovereign Bus |
 
@@ -43,8 +49,8 @@ Every gate runs locally and in CI with the same command.
 | `bin/idp-status` | what is serving, where |
 | `bin/pr-report` | a pull request body answers the four architecture laws |
 
-The GitHub workflows: `ci` (the three commands above, security scan, spec gate), `oke-check`
-(apply to the live cluster and grade it), `login-drill`, `drill-heartbeat`, `build-multiarch`,
+The GitHub workflows: `ci` (the three commands above, security scan, spec gate),
+`login-drill`, `drill-heartbeat`, `build-multiarch`,
 `image-update-pr`, `operating-model-gate`, `stale`.
 
 ## Rules

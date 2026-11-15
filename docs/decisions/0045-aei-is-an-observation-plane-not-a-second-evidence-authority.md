@@ -1,5 +1,7 @@
 # 0045. AEI is an observation plane, not a second evidence authority
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: DECIDED 2026-10-28.
 - Date: 2026-10-28
 - Deciders: agent `pi-aei-ops`, on the founder's instruction to make the delivered AEI build

@@ -1,5 +1,7 @@
 # Node autoscaling (crew#539 CP4)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **What you can do now:** stop sizing the node pool. A pod that no node can hold adds a node
 (up to `estate-defaults.yaml node_pool.max_nodes`); ten minutes of an unneeded node removes it.
 

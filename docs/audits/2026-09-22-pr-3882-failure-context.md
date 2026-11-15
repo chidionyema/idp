@@ -1,5 +1,7 @@
 # PR #3882 — Failure Context Pack for Consultant Review
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Branch:** `consolidate/fix-everything`
 **PR:** https://github.com/chidionyema/idp/pull/3882
 **Latest run:** `35790548283` (run at `d36a717c3`, started 2026-09-22T22:06:38Z)

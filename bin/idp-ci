@@ -750,7 +750,15 @@ if [ "$FAST" = 1 ]; then
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
   # check, run on pull requests) is the compiler there. Scoped by touched(): a diff with no
   # backstage/ file cannot change what tsc reads, and it was 175 s of a pre-push under load.
-  if touched backstage/ bin/idp-backstage-tsc; then (cd "$IDP" && bin/idp-backstage-tsc); rc=$?; else rc=4; fi
+  # tsc reads TypeScript and the package/tsconfig files, not templates or YAML. A backstage diff
+  # that touches only YAML (the OKE template deletions did) cannot change what the compiler sees,
+  # and without node_modules it would otherwise report BLIND for a change tsc never reads.
+  if touched backstage/ bin/idp-backstage-tsc; then
+    ts_files=$(cd "$IDP" && git diff --name-only --diff-filter=d "${IDP_CI_BASE}...HEAD" 2>/dev/null | grep -E '^backstage/.*\.(ts|tsx|json)$' || true)
+    if [ -z "$ts_files" ] && ! touched bin/idp-backstage-tsc; then rc=4
+    else (cd "$IDP" && bin/idp-backstage-tsc); rc=$?
+    fi
+  else rc=4; fi
   if [ $rc = 4 ]; then say "ok    tsc      backstage untouched since $IDP_CI_BASE"
   elif [ $rc = 0 ]; then say "ok    tsc      backstage"
   elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
@@ -779,6 +787,29 @@ if [ "$FAST" = 1 ]; then
     (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
       && say "ok    ruff-fmt whole repo" \
       || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
+  fi
+  # 1c.7 registry witness: the capability registry must already be the generator's exact output at
+  # HEAD. registry-workflow-dependency-preflight refused pull requests that carried a stale witness.
+  # The same script runs here and in fast-gate.yml, so a laptop push and a cloud agent's pull request
+  # hit the same wall at the earliest moment instead of after a red CI round trip.
+  # Path-scoped: the witness can only go stale when an input that feeds the index changes. A push
+  # that touches none of them pays nothing, which keeps the pre-push budget while still closing the
+  # class on every change that can cause it.
+  if touched catalog/ || touched bin/ || touched platform/estate/ || touched mcp/ || touched capabilities; then
+  registry="$IDP/bin/registry-gate"
+  if [ ! -f "$registry" ]; then
+    say "BLIND registry bin/registry-gate is not in this checkout"; fail=1
+  else
+    reg_out=$("$MPY" "$registry" 2>&1); reg_rc=$?
+    if [ "$reg_rc" -eq 0 ]; then
+      say "ok    registry $(printf '%s' "$reg_out" | sed -n 's/^ok *registry-gate *//p' | head -1)"
+    else
+      say "FAIL  registry the committed capability witness is not the generator's output; fix: bin/capability-index emit --write"
+      printf '%s\n' "$reg_out" | tail -6 | sed 's/^/      /'; fail=1
+    fi
+  fi
+  else
+    say "ok    registry no capability input in the diff; the witness cannot change"
   fi
   # 1d.4: python-strict (estate standard, one copy) on the range base...HEAD, the same rung
   # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a

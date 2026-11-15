@@ -1,5 +1,7 @@
 # Reliability plan: eliminate the failure class behind the 2026-10-28 outage
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Issue idp#7362 (child of #7343, tracker #7359). Incident: `docs/incidents/2026-10-28-the-router-lost-every-model.md`.
 
 ## What happened, as a chain (every link measured in #7343)

@@ -1,5 +1,7 @@
 # Estate infrastructure inventory
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Measured from git by `bin/idp-infra-inventory` on 2026-10-30T06:07:33Z.
 The live control plane is unreachable (incident 2026-10-29), so the manifests are the
 declaration of record.

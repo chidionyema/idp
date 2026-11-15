@@ -1,7 +1,7 @@
 {
   "zone_env": "ESTATE_ZONE",
   "zone_default": "mumchimp.com",
-  "note": "The estate's critical lanes, as data. A home is a failure domain: a place the service runs that can die without taking the others with it (docs/explanation/otto-survival-matrix.md). Adding a home is a line in this file; bin/idp-estate-homes asks the questions and files what is down.",
+  "note": "The estate's critical lanes, as data. A home is a failure domain: a place the service runs that can die without taking the others with it (docs/explanation/otto-survival-matrix.md). Adding a home is a line in this file; bin/idp-estate-homes asks the questions and files what is down. Public probes measure endpoint behavior. Their provider label does not attest to a backend deployment.",
   "leg_state_note": "A leg's `state` is its PROVISIONING state, never a verdict, and it defaults to `active`: `active` means the home is meant to be answering now, `planned` means the estate has declared the home and has not provisioned it yet. The drill still decides health. A `planned` leg whose NAME does not resolve is NOT_PROVISIONED -- reported, counted as neither up nor down, and never filed: a name nobody ever pointed anywhere is not an outage, and grading it as one kept idp#7332 and idp#7333 open against four otherwise healthy lanes (measured 2026-11-08: `no answer: [Errno 8] nodename nor servname provided`, while every sibling lane answered HTTP 200). The classification is deliberately narrow: a `planned` leg that RESOLVES and stays silent is still MEASURED_FAIL, and an `active` leg that stops resolving is still MEASURED_FAIL, so a production home that was deleted is caught.",
   "services": [
     {
@@ -55,11 +55,13 @@
           "fate": [
             "host:laptop"
           ],
-          "role": "in-house fallback",
+          "role": "dr",
           "url": "http://127.0.0.1:4000/health/liveliness",
           "expect": [
             200
-          ]
+          ],
+          "expires_at": "2026-12-14T00:00:00Z",
+          "note": "founder, 2026-11-14: the laptop is a DR lifeline only, switch-off by default, with an expiry. It is never a home and never a fallback."
         }
       ]
     },

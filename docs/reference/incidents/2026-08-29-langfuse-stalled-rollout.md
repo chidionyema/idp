@@ -1,5 +1,7 @@
 # Incident report: Langfuse sign-in red for 16 hours after an unmeasured CPU cut
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Date: 2026-08-29. Author session: a7b41022. Founder words that opened this report, 18:10Z–18:20Z:
 "I need trace and audit", "no one is addressing root cause", "we patching like donkey",
 "this will happen again, if not the same container then another one", "capacity planning

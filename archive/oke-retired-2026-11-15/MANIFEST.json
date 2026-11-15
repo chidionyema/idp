@@ -1,0 +1,3361 @@
+{
+  "retired": "OKE",
+  "current_authority": "AGENTS.md + docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+  "generated": "2026-11-15",
+  "files": [
+    {
+      "path": ".aevum/local.jsonl",
+      "sha256": "f2400d388f21c51a1dbc787bdd92fa108eb03ccf237bf27c121ba93dc0112bd6",
+      "dedicated": false
+    },
+    {
+      "path": ".github/requirements/oci-cli.txt",
+      "sha256": "f2e2568c18045ebacd2bc5ad875baa8e6fbb189c360a6165c60a0d0d85451a7f",
+      "dedicated": true
+    },
+    {
+      "path": ".github/scopes.yaml",
+      "sha256": "3c3e643d559167ee6a6c436cda96efc8892f665e9d58d4c7b344bca8662aad93",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/build-multiarch.yml",
+      "sha256": "bb55f24588aa75e9f6d0511bcf35275d2ec349e0a7003845c1fb1956ceaa2396",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "45fa3dec7fe7b3f7da7d5f743c67a7c2a2085b7c2ff1a7e862d4841069d448f4",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/concierge-deploy.yml",
+      "sha256": "4592727bccd42124221c4b96ea6bd26bd459ca1ff6ce0ff3614c6ff1b71707ce",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/demo-sandbox.yml",
+      "sha256": "4923eb9ece39fa90e3841c4cb9064fac87139712e38456e6c2f0ae1cf6cca1dc",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/estate-bootstrap.yml",
+      "sha256": "08a973a396c87e4c9c569ef6bafe24cab9b2ab868d8bf96961f2f02999446d16",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/estate-db-backup.yml",
+      "sha256": "7aefaba19587ede90f41e7c89b7e9b4b4a04907569689a980c9ef0e8df7f4142",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/estate-secret-prune.yml",
+      "sha256": "b6cbeeba1c6c95903f020feee9f42aafe9dd5c1182651d2a267fa70f479c6065",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/estate-state.yml",
+      "sha256": "4dadaf9ba94d89ac78a54858dbe892369443023709803f1f465c4797f667eb7d",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/feature-request-enable.yml",
+      "sha256": "08a5b19db488c1cb31eeef7daf061523aebec7314302696334e38ddd874547d8",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/founder-passkey-deploy.yml",
+      "sha256": "a407d5bfe5236902ecef9b77258b876e4cf1438c0569d8e2700c8d144c7a7c75",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/image-update-pr.yml",
+      "sha256": "444984ec55cc4d825b9c518274f3ba0f3235bea1943c7b4d186cd0421bd1952d",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/kini-finish.yml",
+      "sha256": "f1dcfcef1572cc04189da8da3b32269f948d9410c27017f0c8b57460037b9a7e",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/mac-salvage.yml",
+      "sha256": "567af4b852d893734ec721380f2820c2de8728e805449d1e982b6623b3b1ddb0",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/otto-homes.yml",
+      "sha256": "8b904b500ac5c0494fbf836a3b2a9159ebe0db4f85a0f3c0c564437d6ddc5911",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/otto-parity.yml",
+      "sha256": "395caced500861d1ed3589bf07f88cebafccc576bb599a7f73157c8993ba98cb",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/ping.yml",
+      "sha256": "6ddd4b3cc9555f593efef5015d8ad14314778bef968fb6e784e3fd63c9cddbf2",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/reconcile-backstage.yml",
+      "sha256": "482a7e4b8a9319d8c859ae1557e2d6fe4eafa0b32f3137581fcd559e9ccb7104",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/recovery-data.yml",
+      "sha256": "5590ebe7442a7b8c55fa6b4f6c73918a606300f6913ff6ffc4b027a221910769",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/router-recovery.yml",
+      "sha256": "171601a897163fe6ff989697a89bbdc947f8ea866bb5b1baa0e423bab3acc668",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/shadow-verify.yml",
+      "sha256": "3cf05220c3ca5ad4e42fee3470fd63788b0d880dcedfadbcac1d73eeb4d3a7c6",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/vault-bootstrap.yml",
+      "sha256": "f623fdf1f8d2b1b064c2b2e59666d5c3ad9bd9d99a5ed1e1268a9d9fdd71ef83",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/vault-reads.yml",
+      "sha256": "081ba2691ddbded54956eacfa26f55a38f4d5d397aae72a7db7e3519315fb49c",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/vault-seed.yml",
+      "sha256": "220dc5f6e98a2f58dffbf0e1a800be7dd310631f795bafb93d3a0a42e882471e",
+      "dedicated": false
+    },
+    {
+      "path": ".github/workflows/verdict-surfaces.yml",
+      "sha256": "7b3450acbbb0449ceee5c0b565154efbec4d283e1b1af86f156fdcc122e68a83",
+      "dedicated": false
+    },
+    {
+      "path": ".gitleaksignore",
+      "sha256": "11c227c729a1af1984d12424d989b88f9741ef9c514a0af8dd31d14a11b2247a",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/aliases.jsonl",
+      "sha256": "2cd92ad53ca26c7f245b9da0cdded518eebbafd3a24a824abcc8ef8de460eca3",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/entities.jsonl",
+      "sha256": "7422bb583e068f5fc887f293bca2b26de5b314636d1f040c15e55d3d2da8b8aa",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/journal.md",
+      "sha256": "06d52acdb935a53aa78bd2d9661f6006f73bb33fa686d0166acda76d16e51f93",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/mentions.jsonl",
+      "sha256": "cfa6a0762a1273a68fb7abf5e244a9d228ff409f0ae25e8fe2cc472e5e4eb9c2",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/relations.jsonl",
+      "sha256": "6d987209acd953d7a66abe3b599e089de25d41d975c084ebe222cf32c2d41cbc",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/sources.jsonl",
+      "sha256": "5c2af5aa8a3889c1c1ab1577ca20572c550eb31efb8e890e9b6a03af22d2082e",
+      "dedicated": false
+    },
+    {
+      "path": ".growmos/state.json",
+      "sha256": "512c93c812d18c6581ccd5c0d22b072e7fb94c9791132538d68bc8fa4c45ea60",
+      "dedicated": false
+    },
+    {
+      "path": ".trivyignore.yaml",
+      "sha256": "8b4179e53e585aa802edb918e354b5169295373eda14bfb0bba3eff187910923",
+      "dedicated": false
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "2e1322665c70d86c06c0aa9d28ec979b1de2e753205f6d1e75b39465ef18761c",
+      "dedicated": false
+    },
+    {
+      "path": "CP4-SPEC.md",
+      "sha256": "cb60bd17cbacbca93d6b4e4e0d89f15fcca4a2a891f100f87bfa388beba0c3c2",
+      "dedicated": false
+    },
+    {
+      "path": "README.md",
+      "sha256": "c8005fb110348e1fe4ae3dea90ca4ba4201174e06e1a79fe9ed28aa937c13eb5",
+      "dedicated": false
+    },
+    {
+      "path": "architecture/research/agent-prison/model-check.mjs",
+      "sha256": "b5b19e917c6fbacec403083aa4778249e4873163afe5aaff6c58d34c79296078",
+      "dedicated": false
+    },
+    {
+      "path": "artifacts/intent.dag.dot",
+      "sha256": "aa47b5901992ca9563a67b03100c53cbd148abac4d5610a7a24cda9988ca647a",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/app-config.container.yaml",
+      "sha256": "50c584287cf8853996c13f1a019b8126520dd6859d35b5f20f1db9ea1e76ab20",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/app-config.yaml",
+      "sha256": "63d0a6055e2caa93ea415b2c0ad91d59e43b6c2885b008bcf5738f1eedffbb17",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/founder/catalog-info.yaml",
+      "sha256": "09623cc0284e7ec5b341ce2e6894646ad215243caa8ecbd3dcb95118e720ff65",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/founder/kustomization.yaml",
+      "sha256": "03524fa449849760ba9773b8af0d11469206a719f3c375a2cdbaa17a9848da10",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/org/kustomization.yaml",
+      "sha256": "fc0378d8f969b532183c2a592273d204792622aedbaf8d55e09593010ab38e2d",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/packages/app/src/modules/home/visuals.tsx",
+      "sha256": "4ca2d01028e0edba94ce4e8a8d8be9925af4e63f2c98a1057fd4e41ec05db963",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/packages/app/src/modules/room/ui/ClaimsPanel.test.tsx",
+      "sha256": "e52435b9e7c8b40d8566c1e57bdb80c7b2733ba4cc7a61ae1782c8c1072b8779",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/packages/app/src/modules/room/ui/NewsDesk.test.tsx",
+      "sha256": "3fea075599c2cb2a295638d57eb83af57b953f4476f731f36913944719f1ff1f",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/packages/backend/src/index.ts",
+      "sha256": "a9f580e89fac1b8bfea8608d705371e224d0353b0e61012256c1aae710272c4f",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/packages/backend/src/researchOutput.ts",
+      "sha256": "3e328f595e0471d2526999b15c173eda7dc1990dcb1c22c2fd7045f6b4e3a515",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/platform/catalog-info.yaml",
+      "sha256": "ca9a4e3f9a285d9bbd4115797d3e2b8de02d21c693e082d06ac2c02d91c43047",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/platform/kustomization.yaml",
+      "sha256": "f558945b58861216fb86dedc9232d61d4dbdf72009cbd7d37425a2b5869e4335",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/agent_jobs.py",
+      "sha256": "13121fc43981bbab69b683f3ad098d9d50ecb66de808b32d5fe8e65ae920669b",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/executor_link.py",
+      "sha256": "4b2598fdd34e4a9163d2afe21139091764990cf1baee3b01ea2dbfcdf36d6f6a",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py",
+      "sha256": "7694f2e95d0427fb32f020d2f12146ce4bdf480760cd77318b88d8f7fa652c77",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/serve.py",
+      "sha256": "c4a51cb1cbd3313411c19a4b6b7c1f25d74aafd85fb2b7a5a10152a88b8a2a01",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py",
+      "sha256": "079dfbb668baaa22a9f42a1382d2e4f08bd714a771fd18f08393e715b40bb133",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py",
+      "sha256": "8799d30533c7badae8b51ce39827adcf92a409adb17148d9bdd2557c5db75600",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/plugins/fleetview-backend/tests/test_voice_sessions_source.py",
+      "sha256": "33e8c00e9b321062fd01080b021b0e1e8e3615bef8340f126afa908399dd128e",
+      "dedicated": false
+    },
+    {
+      "path": "backstage/templates/estate-component/skeleton/AGENTS.md",
+      "sha256": "fe4a6d78eb7db91c5503c09d062b2e8871a712ac94e8d09dbd9da384253918a8",
+      "dedicated": false
+    },
+    {
+      "path": "bin/aei-collector",
+      "sha256": "3d8911cfbf56b6b11bf95d26fa7ec219a0398c3d4fdfb5c21be666aa94bbdc1e",
+      "dedicated": false
+    },
+    {
+      "path": "bin/aei-observe",
+      "sha256": "7efb36cb8624d1ebb5e605decc6507e3e673f4410bfc21bd869674b47912b10f",
+      "dedicated": false
+    },
+    {
+      "path": "bin/catalog-gen",
+      "sha256": "a0e2045e1ddc83d010b3b73f5e21f4bdc4515624f42fc592cefd92267aa5f4c8",
+      "dedicated": false
+    },
+    {
+      "path": "bin/catalog-platform",
+      "sha256": "5a6a9d9edd35eee270da9ff23947fbcb6a1ca0b084b3ab1071c094cb1357265a",
+      "dedicated": false
+    },
+    {
+      "path": "bin/catalog-render",
+      "sha256": "7db004d2f624620851f062cd4f439f274e0d035aa4c3e68b419b245ab7e158d4",
+      "dedicated": false
+    },
+    {
+      "path": "bin/dod-live-claim-gate",
+      "sha256": "4142f334a656d580ca2e10b4a05a88ff165e0e2cad9426b9ccc3f9c07297ab71",
+      "dedicated": false
+    },
+    {
+      "path": "bin/estate-security-scan",
+      "sha256": "6d3e08951b503f9841e677bc2378596954abfceeddcb9223b71871535020815b",
+      "dedicated": false
+    },
+    {
+      "path": "bin/estate-twin-runtime",
+      "sha256": "0f5271b4b4e807823e2d90046b68a7c0df5daeff549a60ace30708497cd690a6",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-admission-policies",
+      "sha256": "6b5689665c4f133913509a7aae3340d1603d9cf1e9aa714c694d6b82169b7874",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-affected-graph",
+      "sha256": "8b70ae24b0a3631bbd5dd3dcf44be387a6d9e533dc3a3735a41fa53807b4de32",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-always-on-guard",
+      "sha256": "32ac351c78aeec906a24dff8999cbffd92addbf3f7578e619e8c40e73dc1692d",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-autoscaler-seed",
+      "sha256": "1ad6b94f0de0171ff5d857dd857db7afcfb8fd21137ad52991d4f59e4a0a2dd3",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-availability-gate",
+      "sha256": "c59d49e7a0033f93c9410485d00010f2e696b8ceb8af1c4fbd4879424f01992f",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bootstrap-cloudflare",
+      "sha256": "fc7c196ac39701005bf29054f140caa24cb18e23ed6e54ffe78b1612276e5431",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bootstrap-macrun",
+      "sha256": "a8b3f58563eadb5041aa3419502c539322b376823b7059a6e835be65edf15f22",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bootstrap-sunshine",
+      "sha256": "e7f9d7d0ce3bc74b7f9bcd0963e6b3767f6b794ea7dbbc63f76a4a2f02f9368f",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bootstrap-tailscale",
+      "sha256": "93ec9fdfcb99f4b7c7624e81930d62ffba1ac1c12ecf64f1873ab7b269b75f18",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bootstrap-vendors",
+      "sha256": "bec74ffbdd95d52f5b7e300c3308d28f70496670fdd01fcd671cfbde4c4ef26e",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-bound-helm-history",
+      "sha256": "de1b0cec3a207cc4f853db177ddbc8c1addfc123ae9a1601b64d41542fe07dd6",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-catalogue-drift",
+      "sha256": "8ab423d687e6294e63e8b9c16098d70994891ebc8a5d2ab87cab75d365ce2819",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-ci",
+      "sha256": "ace302ca293ea084f7087bba3b7e48114a5bea9ab6f2b7a8cb7eb14f1c502657",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-cloud",
+      "sha256": "11e009cbb381436257498385f6a5278ecf6d6390e0d0c0e6806bbb93679ee60a",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-cluster-state",
+      "sha256": "fe2d73ef91d616a48f9eb2580568a713b3d9c1a1c7629ac465c4e96c69bd0e56",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-crd-then-cr",
+      "sha256": "afcd71ce1b0f9cc7e851d001884ae850fd4860cc559f1463180a8877916dbeb2",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-escrow",
+      "sha256": "baf57095deb856a2626962ed2a80caa544c4d8bf0d38f3d0de893effad165398",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-estate-audit",
+      "sha256": "53467b6f0f2ace6deefe3ddc3c9f7a4d2922a83de0205886a793771abda0d248",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-estate-capacity",
+      "sha256": "15dbedf53cf56b11450742067810a40a1c73957b147c78138f3d6fa7aa379f77",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-estate-seed",
+      "sha256": "e60baacf310f3ec58eb8757d6eca505ee12ac9cd1643bfae1f68e69e1f62d11a",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-estate-state-build",
+      "sha256": "b38303128dec10b3b274101d6beba0ca17b8ab52eebba713609cd90780d2fb46",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-features",
+      "sha256": "78d2bb6386bce94595d51b9b0c4afa99e4f47321a36f8b7d6e77ccd2c98b23fc",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-flux-bootstrap",
+      "sha256": "d403e2f9190397374d1a1043803abc65326f7ab3a4ea754413a453a7dfde2630",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-flux-wait-brake",
+      "sha256": "bbe2adedd670b13e6ff3f72cb8b16493460d021efa0e2ccd4f6bae4c0ea6dd78",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-hc-enroll",
+      "sha256": "432ccb8bd9b19b2e0bfae86c7aad57527c87f0a01997937fdcbe3b28850b943d",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-headlamp-mac",
+      "sha256": "e9e9f61e3cecf050b215a75c01ec7cf00ff42ef11d99d72d367c53a6257472e5",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-human-vault-probe",
+      "sha256": "fc55b505a63fbc8e3b6803005a87bac506cf0e96902ef402acd1630b83100bb5",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-hydrate",
+      "sha256": "cd35a33cdea60f1a221abfd9bac85fd5a733ad0d32a67c1630d73249c3280ad5",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-iam-policy-drift",
+      "sha256": "d4c75cb64fcd3daf88798691b847d169f3f6c2adbf21e3784a7ce40a19484825",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-identity-apply",
+      "sha256": "a63e20fb73dd675f630af38a984d680ae508cd9bc1a6546f9e3e06d7a251ff35",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-image-pin-guard",
+      "sha256": "2743d132d6c780ed13725b75958e82d0e4f7fb91ba2f8d8e5afcbfeac5bc15bc",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-infra-inventory",
+      "sha256": "8d1660ebbcd46d08515df4125c5f599d982eb23530d0bda784498a1205027ae5",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-install-all",
+      "sha256": "04b6dcd3287a5344a2740bf80eb96e7d392af77c17d6f543dc79ce3306d8c851",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-install-launchd",
+      "sha256": "e8d2065b88b9ba6e8bacd525593b41841829d849d71a13c4fcb7cfb629d5ec66",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-inventory",
+      "sha256": "1c2466621b8fca53c6f3839211385e1811c4122215b8d6dc26da37e1a22ce5a3",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-kini-state",
+      "sha256": "d564ff46fb970aecf7816ec6bac59c74b830a56141b98ddf1f4e3f4deccd2143",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-kube",
+      "sha256": "2eb8209d5e50156d422165deea1fc364494b05a71a27d268aa1967be2c557449",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-kubeconform",
+      "sha256": "e030bfa889b38b3f485d651b42bdcc3efbcfef3185c472aa907b69c0202ac9de",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-kyverno-render",
+      "sha256": "53be00da89775d40c5436335dbb8c70224797a98157977531f400e20580f7312",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-kyverno-render-keep",
+      "sha256": "6f1a83cb4d3b90c03e10237ec125b9aa061c0dcc82fb89af6aaf39b23f1fb90b",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-login-drill",
+      "sha256": "166b0a89c0b1568194497031eda09f34c0871f600df404687b14ec6460bd8497",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-mac-adopt-otto",
+      "sha256": "cb19838e29e80b05c5088114698b79b280ba059c727349c710a7aaec51ac0169",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-mac-secret-deliver",
+      "sha256": "565c2a9848c197b10a6dac0a74ae17cbd5953bdbd6e7816078a18d3db4c48fe4",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-mcp-first-gate",
+      "sha256": "6464b9e2fa4a6115f6840dde1b96c785a9f644df4f9e4df4244312c2b5c86295",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-ns-fence-gen",
+      "sha256": "ddd468fa13e0e7f287c5e4ee76984a863b86d7eaa30ec6665c95cbab340fb842",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oci-bootstrap",
+      "sha256": "45bfb90cb0f2dc69eb5af73564fe830205e38c878e60e4792924163fc709de0d",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oci-login",
+      "sha256": "3e6ecd1edc0ebcac52240e69787d943d3548fd026d451ddbdb90f3a7c20044f8",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oci-whoami",
+      "sha256": "cf99d0d0274cf33f7fa036de0130c5e0baeba801d2c555f263c584881cbbc17e",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oke-break-glass",
+      "sha256": "f44f2ee77128e7b32a2b870937e563d5d16b55c1936944e6a513f7e1ebabb298",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oke-rebuild",
+      "sha256": "f44f2ee77128e7b32a2b870937e563d5d16b55c1936944e6a513f7e1ebabb298",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-oke-surge-node",
+      "sha256": "f44f2ee77128e7b32a2b870937e563d5d16b55c1936944e6a513f7e1ebabb298",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-otto-homes",
+      "sha256": "6257c0a3740eaf5313e47c811c5e92e08053b5831a781d9eb5a56b801a653d25",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-pr-arm",
+      "sha256": "1725edb0754cd320200b0adb73f096379b9a553b98a612bab2a3ce5f41541a6f",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-prove",
+      "sha256": "283e4b2ea1714bd654f6bc7cdac72652f36e19d1a0aa63a64737a2a4381ad033",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-router-key",
+      "sha256": "d653b64977ca8bd97faa88ed523f41a033579a67b65f854e719f096a3cd2483c",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-router-lanes",
+      "sha256": "1065fa104b17ebd4fc1ce7bf516492cd9c8358eccb6a494c339a4cd36096b583",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-router-rows-to-console",
+      "sha256": "f83fe8454e7eac6ce262dae8d144ca775ca50419e28f096ad946ce3fb2abf587",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-sandbox-sweep",
+      "sha256": "58cf5bebd58391502233f7f0f6b0237e8e839b3d081b366d997c14b8c04d82ca",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-set-root",
+      "sha256": "2865ee47b6e6b473fc7cc55a8d5ee391299353770ac87d7268997a15608af5b2",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-shadow",
+      "sha256": "c6994c9987df9eac270365be153940019d440af1107dd63c9da4a25cf5f962b1",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-shadow-run",
+      "sha256": "a8a75fd1b37333ab6fc83fcb60efc511b5f8f548ed70d378da69d683f5a293ff",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-shop-backup",
+      "sha256": "18705dd0e6b8faf38e73bcba53d60800d2020ef6b1c619f2bd415ccc56e78e9c",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-signoz-key",
+      "sha256": "79ff87f0a181e02f0c9e7675e8308924a7dc08d58648cea8885f32ab3251e636",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-state-guard",
+      "sha256": "77fd039b6890b4b33137513e7909a81edad86a9b0ba3151ab1e8970d3a5ed470",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-tailscale-policy",
+      "sha256": "3145a6c168a2ed8ea1de448d448a8ede5c5ea8197edf77e1cb7bdc6a684def7a",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-telemetry-coverage",
+      "sha256": "c4c62644a05d2f9fefd1891107670144ddbe29baebd91bca6508b38a22ef4f83",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-ticket-facts",
+      "sha256": "f17b9320b4ed6d86744c8751ccdbd95e95872ff8b929595dd379e3f0e485c629",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-vault-reads",
+      "sha256": "2256180afae630ed3341885ad4aa513611c6edf245981dd684d98a0fd991e3c5",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-vault-refs",
+      "sha256": "c1793f2c878c2b548ac9538fbbfef376eb04d21b416de642a903019dabe434b2",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-vault-split-guard",
+      "sha256": "43d6b848d392906139a6b99de1f155435e0619725b060800c15aa77fa36034ed",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-verdict",
+      "sha256": "e2047d1bdac4a71563138d6da2dc7aeb99fe5f8f7cc91f31e240642f5a1083e4",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-verify",
+      "sha256": "d62106fffaa880b827633f33521bb910a8261d28b33c299f9ab5775bb0c03d67",
+      "dedicated": false
+    },
+    {
+      "path": "bin/idp-workstation-bootstrap",
+      "sha256": "dfbdc659df1941a486259ccb4fdea61e34efdb717adfa132ef3f0cf5d4ded739",
+      "dedicated": false
+    },
+    {
+      "path": "bin/langfuse-up",
+      "sha256": "648ac7bac41fed1c0d6739763fd5d5b13dc05c275546518b2f1ad8ff84970f61",
+      "dedicated": false
+    },
+    {
+      "path": "bin/lib/node_prune.py",
+      "sha256": "4a67624acb868081e2fe6ba81e6c52cf53b603c71b440cbdb5ff75d42d1ac0f2",
+      "dedicated": false
+    },
+    {
+      "path": "bin/media-dept-baseline",
+      "sha256": "973c645accf677c977a4b19db50cc48d221ad7df9ab310accce3e2b807440938",
+      "dedicated": false
+    },
+    {
+      "path": "bin/memory-forward-launchd",
+      "sha256": "5a4f005d3f9f36d8b5231229c3f1675afab628e357fe1a3ef5357d321770c643",
+      "dedicated": false
+    },
+    {
+      "path": "bin/memory-gate",
+      "sha256": "4e64348436eb1431f5eef4ef6801c1dbbe0f8df2c7aab53112efa8fcc927f178",
+      "dedicated": false
+    },
+    {
+      "path": "bin/ns-fence-gate",
+      "sha256": "32d026bb4f4cd0f9d42ddb57b13fb0d08830b512a969e0f7e5359b9eda020c81",
+      "dedicated": false
+    },
+    {
+      "path": "bin/reactor-standalone.html",
+      "sha256": "fd18ec37acef17bda85d56e0156337e3c8b2a1840ce120952aaf5391391d7343",
+      "dedicated": false
+    },
+    {
+      "path": "bin/router-drift-check",
+      "sha256": "98b96eac892a258b5e4e4c3b14857ba2f95c2dab307c71e4d8c0d6b0d5f9739a",
+      "dedicated": false
+    },
+    {
+      "path": "bin/static-secret-gate",
+      "sha256": "88b0d3379676e665b6299b33a3db5d45ae4c7262446920f48c718fa38725ca04",
+      "dedicated": false
+    },
+    {
+      "path": "bin/verify-dros",
+      "sha256": "2fe2db657d074dcc0cd028589473fb29ddabffbf54588d93affd65db530bcf8c",
+      "dedicated": false
+    },
+    {
+      "path": "bin/voice-router-launchd",
+      "sha256": "920f1cd06a711b0d8ddad905c3f02e65ffa28424bc153b291a6aad8302d908be",
+      "dedicated": false
+    },
+    {
+      "path": "branch-ci3.out",
+      "sha256": "d163a6c9718f5697fc252f0e53a57a16241d120bbc3d91b5647ef5b15a06a2b9",
+      "dedicated": false
+    },
+    {
+      "path": "catalog/dof-registry.json",
+      "sha256": "fe21606132d0fe696bf77350c4a08c90f3b403998f913ff76c7ee05728045fa8",
+      "dedicated": false
+    },
+    {
+      "path": "catalog/ports.yaml",
+      "sha256": "5f5b2af41d6c1fc5fd8f161eadf5fa104c48c858800095a48e7b1ac043c4c455",
+      "dedicated": false
+    },
+    {
+      "path": "checkpoints/EPISTEMIC-GATE-TICKET.md",
+      "sha256": "9649b51f2101c6d26d151e318e4327d5d2f6b04b6b4a5a183aa510e0de402a73",
+      "dedicated": false
+    },
+    {
+      "path": "checkpoints/LATEST.md",
+      "sha256": "a9597b1b4326dfbfe730f8356286e2a5476d0b4c871948a212ed96da18c4af2b",
+      "dedicated": false
+    },
+    {
+      "path": "clusters/oke/aei.yaml",
+      "sha256": "d75d26d257480881c3466fba6016bf3fdda61456186b667c6a5969b098cfc23d",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/backstage.yaml",
+      "sha256": "3e818383761b912bca91f96692be30bbf2620118156a33e3e802a9f81ca053f9",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/estate-config.yaml",
+      "sha256": "d0fc9a241578e7cde910a371b8ba4eea295c935eed2a9b8edc158253cc5ee390",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/estate-db.yaml",
+      "sha256": "a9c9ea73b408f396aac432ee2dc217bc02e878a66e0161ee6eef2d29b09cdb08",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/flux-system/gotk-sync.yaml",
+      "sha256": "81b7918e9a1e80a31e09f5b25cdec243328c33cba33cf544f449e6933739f769",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/ingress.yaml",
+      "sha256": "aca6de2fd625ddb1376b75f33d8b6ad8606896373aa6e6097b0763b2bb35dd18",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/jit.yaml",
+      "sha256": "c57c14080497350a504c456accbca44c8ac253a263a44cde24d17348b6416299",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/meridian.yaml",
+      "sha256": "6c8260d2ebf093b5001c6e5921445a024ae31dee02031b8fcde916684007b1ed",
+      "dedicated": true
+    },
+    {
+      "path": "clusters/oke/platform.yaml",
+      "sha256": "d828d27f33b942321867a906232270d616e25b12868143ce88e5a9dca4e00a6e",
+      "dedicated": true
+    },
+    {
+      "path": "cmd/elpis-proxy/Dockerfile",
+      "sha256": "42340b2ac33dc25c6a459520f39ead71aa3933080c56ceba038d8c84138f299c",
+      "dedicated": false
+    },
+    {
+      "path": "cmd/identity-bootstrapper/main.go",
+      "sha256": "4e46c08883cb36fa834864374a866a28840ae7da8e810b9c4e126d6028cb8c02",
+      "dedicated": false
+    },
+    {
+      "path": "demos/dagster.tape",
+      "sha256": "98fe5cf9168ee3a158b080b1a5a3cbed6b2693b9101dd3b4cefcf4be2b137c3c",
+      "dedicated": false
+    },
+    {
+      "path": "deploy/README.md",
+      "sha256": "6235d7d15a3136c6405093a00bc562a0bda3053e3484a0941ac2955b33412314",
+      "dedicated": false
+    },
+    {
+      "path": "deploy/production-agent-pod.yaml",
+      "sha256": "4a3fea87ff50173d250be48190e92d2453b2119695fb075b447cfd5719ad541c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/BIN-SCRIPTS-INDEX.md",
+      "sha256": "7c2940e4d56b6cf1c2261b8c2f135b9159bf99f7dbd4f054dc09b3746d9e8935",
+      "dedicated": false
+    },
+    {
+      "path": "docs/FOUNDER.md",
+      "sha256": "fe7411aa4bbf69bd4ae6342cf8e64644f739447696f90dff49fa57c7b654de1c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/NEXT.md",
+      "sha256": "a214904cc3f3ffe715ddf12c14641b86b34bcdb60350faada6f4a82ee92b285b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/REQUIREMENTS.md",
+      "sha256": "221b102ce733b613453c07d1700466b37cd3ef5ddcee453333163cef3a422de7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/SHOWCASE.md",
+      "sha256": "66390015245e9b4daa42e0602fe95eb2834ac97d5f13213accfa1b5acfa35da4",
+      "dedicated": false
+    },
+    {
+      "path": "docs/analysis/2026-10-28-the-critical-spines-and-their-fallbacks.md",
+      "sha256": "55bdd25586ff81298f02b4bb9ce3015f1bdfaf83f979db8a68cec1fcd5025eb3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audit/bootstrap-from-scratch.md",
+      "sha256": "b21bd70a8e4ebf32e48bdce239b2adddfdef7db60df3bb4e0dea7871765cbe77",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audit/estate-inventory.md",
+      "sha256": "74369844d00aa95e9e273cc08d3924d19d1a478329bcb48cb7fc03eaed8ad689",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-09-06-portal-audit.md",
+      "sha256": "65f7a3bd386d97732b7a171f6047fbf7d8fc7603209be33a23b66e9351353a58",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-09-07-product-audit.md",
+      "sha256": "87999e6dd6be0c12222cef1aeb8b8468900263cece807f34d81287d762f1f76f",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-09-22-pr-3882-failure-context.md",
+      "sha256": "1d1bd34d302bda8a3d18d15f1681435ef2ce1b3a0cd016ea1135a98bf950dbb4",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-09-23-consolidate-rollup.md",
+      "sha256": "248a02d650a1df4df2c3638d50e5018fb7116fac9fc3f7e761455472c9ab935c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-10-29-lockdown/corpus.json",
+      "sha256": "235dd77d4d1000c42652e83e32f9a99c274808107687cd186f79f295fa21b6fe",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-10-30-infra-inventory/inventory.json",
+      "sha256": "061d8fd5c38a01496bd9f926067bccd6361a15faadd5103973d463f9faf931bd",
+      "dedicated": false
+    },
+    {
+      "path": "docs/audits/2026-10-30-infra-inventory/inventory.md",
+      "sha256": "01d26151155925d6bf6c5253837629b89305b3fc0d5d9a1250c55b427322393b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/debugging-packs.json",
+      "sha256": "bf986d7694311423fab16c7523e65acf5343fd1ae9fcce30ea6c4756972c7a05",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0004-oracle-oke-is-the-kubernetes-target.md",
+      "sha256": "f35959b28e090e644630aa7d3f2d13d723c8b9799edd5606d31f2d6bdd0319fb",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0005-chaos-mesh-is-the-chaos-framework.md",
+      "sha256": "d7bed2ca233546794bfbfc3a1fdc4d052cfe478de6121dd01ada0173c138e823",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md",
+      "sha256": "653d4db5bebdebd81fea8de3ab013cb57b6d7a77dbc494c57680be20329fc228",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0007-bootstrap-deps-on-crossplane.md",
+      "sha256": "7180e919573c55e4b3e96ddfda84ea5df43910db86499db22923745cea644e94",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0008-every-founder-action-is-a-portal-button.md",
+      "sha256": "164af23fd9e83209d92a8e690443db0ad23c002ba997f52f888d971881416748",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md",
+      "sha256": "06e21fb0150fab7d1a1644eaa9a6bb028995b3665e537eb2953173aca7650608",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0011-money-never-enters-the-application.md",
+      "sha256": "155eaa8b58ffebd312ac9fe6538c3d376648c4ec6307a61afd56180eea60236e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0012-messaging-day-0.md",
+      "sha256": "e96b8e03ffba5ed58b302318ed10f422d05dc685980b8b8afc260bff09be222a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md",
+      "sha256": "abb15407f4b5f67043b156e3a848214e5597a2045fae5cda8f417e10d6d74187",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0019-credentials-federate-a-human-pastes-at-most-one-seed.md",
+      "sha256": "660c1618456f45b514a6045154f1b26802e907b1823db5fff5b60f83811cd6de",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0022-the-founder-override-is-voice-first-and-nothing-is-deleted.md",
+      "sha256": "ff21a05c95594ce105a8b6a403c5de93672687206ba6787b471190457befeb67",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md",
+      "sha256": "731341eb2988760dfd19100795237e3a7b11ec738bc85c4e37d3737c1f48fe3e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0029-definition-of-done-v3-is-five-checks-none-self-graded.md",
+      "sha256": "a2683e415e2163556ad987f83372f5ce0d38ab221d1fd96e6143d9e780208b97",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0031-the-intent-engine-reuses-the-reactor.md",
+      "sha256": "3dbf8e96275c6e4d8a92d9bdac8969d6d87cf68505568d189a79f10bcf72d186",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0032-the-mac-holds-no-standing-secret-spire-join-token-then-oci-wif.md",
+      "sha256": "910b9fda336ba451ffcdc0fee40bcf572d350bf6a178ce95e69b2431a3bbccd8",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md",
+      "sha256": "2a00b507562616db7fd7ea528db7edada7ed58ce407d7cc0d891aec16168c31d",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0035-dros-kernel-enforcer-runs-as-one-node-daemonset.md",
+      "sha256": "b9e5211e06005425c77491cbf3c1e745a7f986fe4c5f8d447d968a2dd422a8a1",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0045-aei-is-an-observation-plane-not-a-second-evidence-authority.md",
+      "sha256": "4dca409e878ea4de0c1311217a11d9aace5f057edb9717649a4f0e5369c7dbea",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+      "sha256": "39ca0e911e613af0c2f86b18dc477b6144f6bde9571e4937a116dcbf1cb47d67",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-08-31-estate-inventory-from-the-control-planes.md",
+      "sha256": "c78a21fe390fe6f40b07fa77b110715552dd4276d74df1a865eccbf64d841457",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-09-01-diamond-standard-jit-compiler.md",
+      "sha256": "a4279b048e0439e298c4578fdc1da559dea0e8184c35ff01501b82fbedf23697",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-09-01-one-place-for-every-name.md",
+      "sha256": "8354717b37dc82332436a723058bad0e6ed9bf52abc604e653617a5fd484518a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-09-03-hermes-v2-rides-the-hermes-agent-row.md",
+      "sha256": "019d7ba1fc0a47f0fe460679f04a90ab4f09ed0564e42066a989503255353e4a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-09-04-the-anthropic-credential-moves-to-workload-identity-federation.md",
+      "sha256": "2e7466343751f5b7dcb96bcf0133821cb8c5c2cca58f310e8a31f57bb4072d31",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-10-26-the-llm-spend-is-cut-at-the-router-on-the-cloud-route.md",
+      "sha256": "c0ecb81876c2a23f46ec7479e746e4830ca5bd7d9bc62eca501fdfeceb8fcdf5",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/2026-10-30-the-infrastructure-department-and-the-stamped-vision.md",
+      "sha256": "97193d5b92197ce1cc3d2a5391ab7af37f1f50d49f08b3451cabddd6d61fb7ec",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/decision-matrix.yaml",
+      "sha256": "645bda4c8b64cba2db321b301f3e857f324b1a8a9f4ace99e7ebc6b9bf87026b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/decisions/portal-defects-crew612.md",
+      "sha256": "3b64a99b7ece3e1d2c0fcdd967c8ec8fa9fdbf0de46e4b83dc0252c77d5f2f07",
+      "dedicated": false
+    },
+    {
+      "path": "docs/demo/vault-bootstrap.md",
+      "sha256": "158f3f0dc0ad573dd50588edc4a8c6a436a27e3d5e2ba119de77ec2e3d6e2912",
+      "dedicated": false
+    },
+    {
+      "path": "docs/departments/media/README.md",
+      "sha256": "94929ba44c625c176317b3142894d00e2e685eb26121a95659b2a2ab3c2024ea",
+      "dedicated": false
+    },
+    {
+      "path": "docs/departments/media/m0-capability-matrix.json",
+      "sha256": "25d3f5a57a6ddf1e54cbc5cbc04ad216dbdd4488dc4c3346f6c6b518d8b6b821",
+      "dedicated": false
+    },
+    {
+      "path": "docs/diagnoses/2026-10-11-deepseek-flash-calls-the-router-itself.yaml",
+      "sha256": "df943b0b2c678b3feec047037503b5a536429dfc1347e13058a3d415807e7dea",
+      "dedicated": false
+    },
+    {
+      "path": "docs/diagnoses/2026-10-21-router-front-fails-over-only-on-refused-connect.yaml",
+      "sha256": "f2a0238fdf1c04e39e1fb25c952c319a92363816790e58d4a53eb3316491670f",
+      "dedicated": false
+    },
+    {
+      "path": "docs/diagnoses/2026-10-25-primary-spend-placement.yaml",
+      "sha256": "ae59f0f603c287a2f0476fce29e558533c246235383d7ac7f375007799ab825d",
+      "dedicated": false
+    },
+    {
+      "path": "docs/diagnoses/2026-10-28-the-laptop-lost-every-model.yaml",
+      "sha256": "9e73f081f7bdd7df9cfe3756c20ef4fafb65334298f81ab1993be32020222a3c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/diagnoses/2026-10-28-the-laptop-lost-every-model.yaml.verdicts.yaml",
+      "sha256": "266b88fe8eb1ac382893cbffe0d83c427e1f90de28a0ebdf91f5cdfde98b5d68",
+      "dedicated": false
+    },
+    {
+      "path": "docs/epics/2026-10-25-estate-master-epic.md",
+      "sha256": "774d56196f1815e8f039beb18834a11a7ca1e359bdd2b7ade4e02cf2631d9615",
+      "dedicated": false
+    },
+    {
+      "path": "docs/epics/2026-10-28-otto-minimum-viable-programme.md",
+      "sha256": "330f4612c48a2127646de2b2ad23302fb2f2223d3687c61d2a68cb3540cc3e1f",
+      "dedicated": false
+    },
+    {
+      "path": "docs/epics/2026-10-29-otto-wish-map.md",
+      "sha256": "4e7f58fa85ab0394aa405fae15a7119411d3b770ff23c831645ffd3c92bc5516",
+      "dedicated": false
+    },
+    {
+      "path": "docs/estate/ESTATE-SNAPSHOT-FOR-CONSULTANT.md",
+      "sha256": "f411e001f7d9649e2d4e91325f57894c2397c8e57fc58d808e0da6489dfd2e69",
+      "dedicated": false
+    },
+    {
+      "path": "docs/estate/INDEX.md",
+      "sha256": "920c1861fc20b9eac66256825857ddf63d7dd0e253679dbef14e42ea5f154cee",
+      "dedicated": false
+    },
+    {
+      "path": "docs/evidence/pr-336/20260827T071434Z-1.md",
+      "sha256": "d41d7a16de1e9b800eec66c30f75f7a794b719a85db0b69543ef1eb877f5eac7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/evidence/wartime-inference/PROOF-OF-WORK.md",
+      "sha256": "0ec818e0fb68d8a32fe2ac692e148615ca6fb724a904d0876173801a73e1af97",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/architecture-overview.md",
+      "sha256": "16c93e31e371650d10d883e98c40dec919f645ab75a7238a3f85c09e6546572d",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/architecture/model-stack.md",
+      "sha256": "3b99e2bf681f17964b1bc1771a578471d63e36fd190884570084e339c3c23d21",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/customer-event-door.md",
+      "sha256": "3cf419aa75e801b485bb1dce0fbafde0f25061b11c52b912b7b3d8916ed619ec",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/flux-tiers-never-wait-upward.md",
+      "sha256": "d8092df831fb6c76368ce4da5e82b1eadbfb3c91d35cc35557d5518c7df3474c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/otto-on-the-mac.md",
+      "sha256": "4b4447b3ec43232b0a2959bcd74f20e8f30e9aec3528e68be492d804bbfaf55d",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/otto-survival-matrix.md",
+      "sha256": "43b3721a3fb49faea5e2ce1830b8fb4626e382f60cfb34421058712b5ba64d71",
+      "dedicated": false
+    },
+    {
+      "path": "docs/explanation/verification-plane.md",
+      "sha256": "f809a482c51d3a163db61c2638ec61c726630807c4100d50feca26da3d49c848",
+      "dedicated": false
+    },
+    {
+      "path": "docs/founder.json",
+      "sha256": "6b66f61dd34cf4141aa34c42a946412bfeec40a2bf115263628cb049ceebd34e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/founder/estate-snapshot-is-mandatory.md",
+      "sha256": "8ddd8b9d62204d9613585cd788cf0fbec7c2e3f49eff25c9c34325f8760ac0f4",
+      "dedicated": false
+    },
+    {
+      "path": "docs/founder/mac-remote-desk/README.md",
+      "sha256": "56724528ee4bc8f52f4914501b0261e01a9bb2a9e5962ec87b23425aded6a02d",
+      "dedicated": false
+    },
+    {
+      "path": "docs/founder/otto-on-the-mac.md",
+      "sha256": "00951f6d5dfd96436075dfe0620eed868d45c580d6c270142916e39dd1d461d8",
+      "dedicated": false
+    },
+    {
+      "path": "docs/founder/otto.md",
+      "sha256": "6be545f707d5cea5953d6256d9bacbfc8914055bb3cb75d5c0fc454d2ce47195",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/bitwarden-human-vault.md",
+      "sha256": "2bc65ce3dda4bad4a68a0d0dbd0d49e2fdbe422737fcba6593b4a40d1b101c3a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/build-an-image.md",
+      "sha256": "336ea0d567213c59d26d412921b8f97f592e015d73fce35279de73a6543a2735",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/check-the-cluster-from-github.md",
+      "sha256": "d2a646482d766db3af4879eae69c76e9aefd1265233d452202756131b18c0c49",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/autoscaler.md",
+      "sha256": "2c895e8d7bf1595454fa913c78d4f95dae761335c2ddabf38e68e6e522bf854b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/build-image.md",
+      "sha256": "6d6b380dbbd123f26cd3821ca1c61733ed7899098a8983e947cb7b4d0ffca1f2",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/cloud-agnostic.md",
+      "sha256": "c028954bca7696a22d3e3eaec1e89c18172dcdf6da2efd509c653af596d380f5",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/commerce.md",
+      "sha256": "633eea8d829e6b6ffaac80ed71fac0dd8a1b65f25c0b19951bf4c27f60335bf6",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/estate-inventory.md",
+      "sha256": "0aa844b1fed11ab3119767bd61ef7953778401b0c99d5799211b5e835ff84e09",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/founder-screen-access.md",
+      "sha256": "65d980c1cbdc2e7d68076d2580a41dbf33eb572594d6e96a72858e9c06543099",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/healthcheck-exists.md",
+      "sha256": "31078310881a628dac9299fa5be991365d770fb45066e336d1ff3fd8ef4406ef",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/hermes.md",
+      "sha256": "6d9f81d32adf4091616998c3f8595877e2c7ee736ed0c4d0281e18c5b4cc57e7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/idp-otto-homes.md",
+      "sha256": "48f3360070747fbc275b89f1275f33c8bc7e5c7c0eddf6696b606d878233c305",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/intent.md",
+      "sha256": "ef167267f78e18d74c5f87e2e2d70d329080d1e715ddc7dcc99887a57c83d52b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/k8s-infra.md",
+      "sha256": "b0ca11099811a7ffcb48af73ad92850ab603b53265228806f53076ae0a53eeda",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/langfuse.md",
+      "sha256": "291805ee6eab94f5fc01d56d115c690436b2813e0535f1458509ca753d7fc1c3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/litellm.md",
+      "sha256": "ed5c1a103c839656f2d03ed07d36424a05bdd3844c41a0d7fb281a06d4da108c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/monitoring.md",
+      "sha256": "6db865467db7190a8dd25398605eb6fc2b4b22955feabd90b84178bd95c6e055",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/notify.md",
+      "sha256": "aa293b1696253cab37b15c1bf4f35b5c5668391410464d00e89e85f6ce596b36",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/oci.md",
+      "sha256": "0631ed42c62ac078b6833b62e4a277f77ac809e6324f77d44853e61664901c4a",
+      "dedicated": true
+    },
+    {
+      "path": "docs/how-to/onboarding/oke.md",
+      "sha256": "d2a646482d766db3af4879eae69c76e9aefd1265233d452202756131b18c0c49",
+      "dedicated": true
+    },
+    {
+      "path": "docs/how-to/onboarding/otto-golden.md",
+      "sha256": "53f68efcba9ac0ab0609d52dac7be76418c0c8774d29f1e5a610738eeb26063f",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/otto-three-homes.md",
+      "sha256": "f1e763af3985e5ce643573f8485e7161b182b3e307bc8c347c129ef600e80884",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/otto.md",
+      "sha256": "9b59884e72f1568f2a76663998c40d2958a317426dc4a4d17eb731f6ea318077",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/sb.md",
+      "sha256": "201ad60168423eca96e45b38bfe4ae21767e7156031c14662c35de6d7c5b6518",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/scheduling-immunity.md",
+      "sha256": "ec908516afb3d6f274e03be74f52312c282019c4bfd35c0dfa0776d6cbc05430",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/signoz.md",
+      "sha256": "5c02680b82e02e662e8d2c9719e8571f872f6f363311f9bb63a0188f8308b052",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/onboarding/static-secret.md",
+      "sha256": "ce0bc0be036a38ce0f6eeca898e02628965c0a5eb51ab30e1cdf11963d6cbdb6",
+      "dedicated": false
+    },
+    {
+      "path": "docs/how-to/scope-the-verdict-key-to-the-prover.md",
+      "sha256": "7e14eb95ccd3e076dfbcc49bcc1d76d69d03f7a02769c5649d9c3d083ad1d000",
+      "dedicated": false
+    },
+    {
+      "path": "docs/incidents/2026-10-28-the-router-lost-every-model.md",
+      "sha256": "d641a182d7b756fcf7b33bbcf51460a68c10c356e7dd63c6c05979e9872597d7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/incidents/2026-10-29-the-cluster-lost-its-control-plane.md",
+      "sha256": "3be1b82706428122686fa81b9c5d725606b0bbc68a1114d8576011d9290da13e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/incidents/2026-10-30-the-router-has-two-homes-and-both-are-down.md",
+      "sha256": "e36de500f72131ce991f532bfaf3e10ccb6bebeb62adc7ad74333ab2d6e9aeb7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/inventory/branches-2026-09-07.md",
+      "sha256": "04b3092d009e91c6ca1bf83a7313babf58e11dbf789b3cad67fc066a7e5a9b1b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/ironcage-state.md",
+      "sha256": "2456667219990df2c97b8515ca6f43b79facb7860055b6cff9b2b4875923182b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/onboarding/dagster.md",
+      "sha256": "de7701ab86f94a3b943f2eb36d34413b1b766ff4b6f15595e85673f29f68a721",
+      "dedicated": false
+    },
+    {
+      "path": "docs/onboarding/deploy-button.md",
+      "sha256": "470643ff965fe2c184050f67b01c02894605a9c7480ab7143230476fba384592",
+      "dedicated": false
+    },
+    {
+      "path": "docs/onboarding/vault-bootstrap.md",
+      "sha256": "f520598a5624e50128ae6479a5ed580f89d0c0344caca7761acb189500618ddc",
+      "dedicated": false
+    },
+    {
+      "path": "docs/policy/agent-infra-safety-spec.md",
+      "sha256": "a03b9fe7c036b01157944c7d6d5e3013c0dee457a0ce55d4350d3884af977ea8",
+      "dedicated": false
+    },
+    {
+      "path": "docs/policy/every-interface-is-a-door.md",
+      "sha256": "c1ad976313bb93f9e7f2675054a5462ef786922092f41738f54b3c210062be4b",
+      "dedicated": false
+    },
+    {
+      "path": "docs/policy/secrets-rotation.md",
+      "sha256": "89b965d653527e79122a00a430b0a3f9c308835c2bc89b1f228ca96fffcf29ec",
+      "dedicated": false
+    },
+    {
+      "path": "docs/pr-bodies/crew561-adopt-any-dispatch.md",
+      "sha256": "07ccce6e8b7bca2ecd5c03245f04cbdf3e6332d5b0a131e6ca5d03c0cef13c19",
+      "dedicated": false
+    },
+    {
+      "path": "docs/pr-bodies/crew561-otto-mac-run.md",
+      "sha256": "256d6a231fae3a729b864f86d8591bebd9519b3eabc130b83c25ca2f2f19005a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/pr-bodies/crew561-policy-placeholder.md",
+      "sha256": "0089f14d8bf6110963b64745142f019c1cbdb6427e98db47c4b01e30fbf2a010",
+      "dedicated": false
+    },
+    {
+      "path": "docs/pr-bodies/crew562-jump-desk.md",
+      "sha256": "2f622e103ba3cc0c6374797a6459ef9904f7e70ddc3e3da3d3891473896a3ff7",
+      "dedicated": false
+    },
+    {
+      "path": "docs/proposals/2026-10-28-aee-execution-economy.md",
+      "sha256": "c48104c0cdce0c05841639074cc0c3826de2f58f2945abc392563bef297d98f9",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/chaos-daemon-runtime.feature",
+      "sha256": "9524e8488f073a8628cb4ad1585460620aa3ece2678cd918a050b3ce5352c34e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/fortress/cp4_spiffe_on_oke.feature",
+      "sha256": "f91c8a2c924fe7797a9c0b0178f24c884969fc8649f4ec503c3e71355e03f3f6",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/front-door-login-live.feature",
+      "sha256": "f39beaa3eae9aaba8a97c18ecd6b47c812326a8758cd0e9bc0527a0ddec5f990",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/golden-path-cp2e-flux-reconciles-service.feature",
+      "sha256": "b3868d804929e48f9d75250138c7793de3bf6444501f979093dd16a9e0f60541",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/messaging-cp2.feature",
+      "sha256": "53cd6d66f00dffea04d5715859758f60f565d7429dc80709121ff9c94eb712ad",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/self-aware-platform/cp4_get_catalog_drift.feature",
+      "sha256": "6cfa61a5e8d4e6ca067366c63e2760c89856c246b0ac4eb86f78c8238d603cf9",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/self-aware-platform/cp7_token_receipt.feature",
+      "sha256": "b1251ad37bf831f4ea9e3701c49307d47ca0fa8df772c11bc1a8061aed7aa8d0",
+      "dedicated": false
+    },
+    {
+      "path": "docs/prose/self-aware-platform/cp8_k8s_adapter.feature",
+      "sha256": "a04a12c6cbf66d7105c65a5e4d1d42ba46135e478bdfdaf5992e815e5b56c869",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/estate-agent-surface-map.md",
+      "sha256": "3b2cefcc3b89d26fd3eac330dc09f6e4ca64f6d9f2ab4ecc50e75d8727d62cd6",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/front-ends.md",
+      "sha256": "a451adf53c3ae2fcefbcbbffdbc862395c6eeb225845f4b0214ae42edfbf1694",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/identity-and-secrets-review.md",
+      "sha256": "f1712d42e0bd265ac508cab1976dff8276a10da252098c8547bac3428f8578db",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/incidents/2026-08-29-langfuse-stalled-rollout.md",
+      "sha256": "4a6fb4152fa9dbf0ccfb48b05e8cd0e69b01401d407b30d6f43a23ff770579a6",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/incidents/2026-08-30-three-incidents-one-defect.md",
+      "sha256": "025e2978245d8147a531f218af68af2ff802d04f151b8fe36c182e3657c85a28",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/incidents/2026-09-01-otto-telegram-door-and-five-unread-p0s.md",
+      "sha256": "426616a1320f8b070b4168d2c700fb757d863b21f9718f98b981f0d40226ff42",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/incidents/2026-09-06-calico-cutover-blacked-out-every-public-site.md",
+      "sha256": "a0c8e909fed47594f22dc181e0533f841d9f4f02367d2865ed8446552e33d4cc",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/oci-tenancy.md",
+      "sha256": "68f4d60989b26d5f98f64a2ab6318ce23d529b0e69c75612acc995fb550bcaf8",
+      "dedicated": true
+    },
+    {
+      "path": "docs/reference/owner-accounts.yaml",
+      "sha256": "c38f84f0c6d19ea65b19d9f69e32b3d6bc7e2116d8608213db6415ab5f6488cd",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/platform-queries.md",
+      "sha256": "18287a3014f1e0b43e1bf19887a016989543b4f69fdd830cf8ed34712eb17520",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/availability-standard.md",
+      "sha256": "e52dec127b6efe2f74db57bce1faf285e883c019b9df46915a37d4580c3792d2",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/credential-lifecycle.md",
+      "sha256": "a39d5f4d56760d3d0a1f6da51f609609b0d6c8b96e9ccfaa7d2003be7e53455a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/enterprise-operating-model.md",
+      "sha256": "7637da11ed5678fcc3ac554cb1a1d842800ae9fdb940c64faff465d2456d4abb",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/governance-kernel.md",
+      "sha256": "251bdb739c34665b3b335549d2895108698be64f168209c1c0252f1861f2b445",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/provider-independence.md",
+      "sha256": "2060aab32d52cf2b6d581ba08bb9b73e86989ec0bc4f0af8e07c2fcab3f19bb5",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/policy/root-trust.md",
+      "sha256": "082436b62edabcbc80db93505ecd0ffe1bfa436a43d99608e9d3b5a0b9764074",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/requirements/founder-requirements-2026-08-24.md",
+      "sha256": "c30c5d5db2923861bca22bc8335a0f1203f92890709a28223821c0cceba448f3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/security-architecture.md",
+      "sha256": "9f298331f16b73e44abd73eb8911ae692368d38d89c50073faa0b4154839dfef",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reference/security-policy.md",
+      "sha256": "de7f15aeae160d0431bdfaa8e37ff9c30dfd82bed7869615d0239e5e8893f6ff",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reports/2026-09-18-fleetview-to-enterprise.md",
+      "sha256": "32e4b3b131979fce392c2bff0ef141f580b96b3298e64904c6209b6e3e2e9b57",
+      "dedicated": false
+    },
+    {
+      "path": "docs/reviews/2026-10-29-estate-360-after-the-oke-loss.md",
+      "sha256": "037f756ba19107a2c73b9e14de70a460ca81805f672febe5fd61ea56b665146e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/admission-webhook-eof.md",
+      "sha256": "d2a646482d766db3af4879eae69c76e9aefd1265233d452202756131b18c0c49",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/agent-workforce.md",
+      "sha256": "18046f7508fbb98875d05da09879a67860e96737523200ac7a781797650ea8cd",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/backstage-prevention-incidents.md",
+      "sha256": "1284fd5dbfed8c7e0793bb3601f80565c5960286a3f2bbb0669fd93a852db399",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/demo-sandbox.md",
+      "sha256": "6074e59c627e2075d588f6bae94db5c233cf964e3f242e89554dff9c6c3ef4f1",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/estate-inventory.md",
+      "sha256": "3c87077faf0161a8084ad8276a85e8ce86c1b62d432a64202dac1575c466944e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/new-site.md",
+      "sha256": "f1237281283437992fe80da966673db4976d50b82ae47a5b2dd7a9094ee1e990",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/otto-onboarding.md",
+      "sha256": "de5f77f23b6b4fcc83ce55ee6b2f36cdc665a19f3d686d3247437714ec70af09",
+      "dedicated": false
+    },
+    {
+      "path": "docs/runbooks/otto-telegram-webhook.md",
+      "sha256": "d2a646482d766db3af4879eae69c76e9aefd1265233d452202756131b18c0c49",
+      "dedicated": false
+    },
+    {
+      "path": "docs/scheduling/CLOCKS.md",
+      "sha256": "b09d32154d2eaf4349db825c609cc7247c47066ac33a6fa27727addfe27dfdea",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-06-model-forge-edge-runtime.md",
+      "sha256": "68887780e2370aa29dcd4f8905589301c6f67c028a66bd68bfe179fa3663459a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-06-portal-100.md",
+      "sha256": "db114f452ff099bdb59f8ad69eeb66cb58028a65c61a3142d0aab95577ac9f52",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-08-cyrus-and-knowledge-base-work-order.md",
+      "sha256": "39b8f072046d51e6562b570677ed73b228c5214588649a175fdfc86a0578647e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-08-estate-world-model-simulate-before-execute.md",
+      "sha256": "e25baf3731761a8f149aa2eba918dd7187f36e2a080dcb5d8af91cbe0e1a39bd",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-09-autonomous-company-grounded-research.md",
+      "sha256": "e897787deec97e9a2ae604df3b5e7b43935a379262bed7424fe42c44dd7cde80",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-12-estate-twin-complete-spec.md",
+      "sha256": "4c6d689d0871247ec9f111415348f19f132d946139670b590f29cb34f90ccfe8",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-13-wartime-multidimensional-plan.md",
+      "sha256": "0b31b5fd3e99642f437b8a2d4d3ae6c63a23438a8dabd4c982d0b5a1a52de3dd",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-24-estate-agent-enforcement-platform.md",
+      "sha256": "2102f3c043480881416023c73709bd2cbd253f8337a1bca00eab90b65ce3e7bf",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-24-llm-routing-cost-layer.md",
+      "sha256": "c1b72de3c04604bd838b5cfe61869e6f27a1928de361cb835ce1b94f76282755",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-09-24-spire-key-broker.md",
+      "sha256": "8574f0cc32068012dee64357ff1d0dffc3ea7b3923ac8a5e0b92362917dc6c07",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-23-the-delegated-estate.md",
+      "sha256": "221401eb7b297f4d5c0c6f665878aa24890437ff2b7da758cd7ce21ba3f551cb",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-26-efda-spine.md",
+      "sha256": "ea30eb6b147b01cb88bf1dc24c8ca44a96ed58b8b8f8135248743bc4d9b1e42e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-26-estate-catalog-phase0.md",
+      "sha256": "d11dfaa67af6389e0e30cd30c0910e57d0892e159d4b9f993ee5faacbbc5e981",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-26-micro-token-integration-plan.md",
+      "sha256": "68b995c98bc1c56847d5853f1f10db61e2f04644c6ec3d5435b176cb7155450f",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-26-the-estate-llm-spend-floor.md",
+      "sha256": "3e1aab264add0d13d736a88edd6cdee801e79c703ddb769ca7b6df6524581aa0",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-26-verified-completion-v2.md",
+      "sha256": "e7358f92aab1cc9bb4b85c268c46fb078af973720c32cd3e64db624c7a8c54a5",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-28-estate-reliability-plan.md",
+      "sha256": "4d987685470b414655f28675c67a5b7ec2ea31212dbf45f048a8bfc29dc08fa2",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/2026-10-28-the-fallback-ladder-and-the-drill.md",
+      "sha256": "f8b384b9f129c476dfa680c19a923c977b2103da55854591515517d0e3a37f5a",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/backstage-as-a-product.md",
+      "sha256": "6887437db76294b6333bc4c6b3ae8b29072f9b1eeae61b71ff9a8b6471cbf114",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/deepseek-work-order.md",
+      "sha256": "359f2ae284719963619ec129316234fd6b430643603f745743d5b74e4ceede12",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/issue-3448.md",
+      "sha256": "0d0e3d3b9ed400476ae32f08b27d1c7720b93497c85eae2d08dd246dcff70bca",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/orbstack-event-driven-agents.md",
+      "sha256": "7169926ce43cde4d1a00552d5cf2363d97cd7ff3c52571bc7a5104deb5c674d8",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/otto-capability-inventory.md",
+      "sha256": "aebecc0105127a8c7568126f0d97de3d3e3b9b99a858ce4eb5288ba39d1446ad",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/otto-five-capabilities-finished.md",
+      "sha256": "3e52fc8a23c7673bacfaec58785691e990cc52d35c68b201cddf27cc976e659e",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/self-service-golden-paths.md",
+      "sha256": "70c0eb20e9fb58065b476338be7a3785488e3131d746e3b18d44a6f1956203a3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/specs/zero-trust-boundary.md",
+      "sha256": "24b343f0b5475583e4cd64f22a7f3609609c7b79cc7269abcd977fbb105af785",
+      "dedicated": false
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-harness-composition-and-enforcement.html",
+      "sha256": "500afd31a23bd07e6a8f1fe9577d110c3ba3f6b67d47e7d853352de0053a21c3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-harness-composition-and-enforcement.md",
+      "sha256": "18e9fca59f58408b625ddec71a36d0e5f59a02dd91c77f24b09c990f6a884957",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md",
+      "sha256": "587ed1fd01796160773b436cce4f0a6a2cfc8d991a353fafa91934f70d16a972",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tickets/2026-09-27-voice-umbrella-features-and-composition-bench.md",
+      "sha256": "f381cdd5443cc9ee144caf302aaa33caa408905cba98d9cdde4dd224e7c50b6c",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tickets/2026-09-28-sovereign-identity-substrate-dros.md",
+      "sha256": "258dc6ca0e75eed56489e7e46db11c2087d896b64117e64fa66240493c180289",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tickets/2026-10-03-quad-ledger-consume-liveness.md",
+      "sha256": "ec7f7e03295102194b9ec509da136d996b5d567d4cfa4f0d25842322cf57ceca",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/commerce.md",
+      "sha256": "4c67e12d2775af78d0f510c9adb4fb0cc873eb42ed64a0cca6d74eb2f856d933",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/dod-live-claim-gate.md",
+      "sha256": "a9120475feaecb00576d3d9688c7d61b46ee54ca9f5bd5185cbfe4afd0302251",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/fleetview.md",
+      "sha256": "1a60e1bef81f7970a839150fb8c763a90bebcf8a00b852e8a194daa2e9341bd3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/healthcheck-exists.md",
+      "sha256": "6376ad94c1be4d467a680bd6c1311a8d4e43efc8dbe0b2872f1d4d4c4c5664d0",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/oke.md",
+      "sha256": "d2a646482d766db3af4879eae69c76e9aefd1265233d452202756131b18c0c49",
+      "dedicated": true
+    },
+    {
+      "path": "docs/tutorials/demo/otto-golden.md",
+      "sha256": "e5910bf542e09ab045caccc15d4bd1c414af68cc6b25754793f3f537020ac319",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/otto-three-homes.md",
+      "sha256": "33a43eaeaed671c02aac5347b1f4d06586caafa5666e8926467f719ef99058e3",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/scheduling-immunity.md",
+      "sha256": "e55c86b0b6fe528eee3f39ac71b51123478a8f5f62a6736c6ef16e6f91e7be27",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/signoz.md",
+      "sha256": "110b191b81e478386254894867dc460253a0a4f213cff37ef60bff2d5a66b3ff",
+      "dedicated": false
+    },
+    {
+      "path": "docs/tutorials/demo/telemetry-coverage.md",
+      "sha256": "7bce191ebf5c6ccd704543f80a0cc998a65123ea7f311b8606dc6371fb6943af",
+      "dedicated": false
+    },
+    {
+      "path": "docs/vendor-swap-paths.md",
+      "sha256": "ec37acd7f1b280f13d67734a2b44d2d95ba74510db0edf4f444f2bdf70f59f29",
+      "dedicated": false
+    },
+    {
+      "path": "docs/vendors/tailscale.md",
+      "sha256": "6ec114ff4e6898cdcdeaea21d849e765327328f7bc0d119c722b13968461b929",
+      "dedicated": false
+    },
+    {
+      "path": "efda/k8s.py",
+      "sha256": "7c520296451217398bbb3ad2dafeb4baa52266caca4fec79168daa2cb4d51d1a",
+      "dedicated": false
+    },
+    {
+      "path": "efda/verify.py",
+      "sha256": "c427bde9ffd78dd32aabdcff170cfba0491adbdaa0f1f5414377ce9b88d5ce99",
+      "dedicated": false
+    },
+    {
+      "path": "efda/wrapper.py",
+      "sha256": "1815f47d7dcad3f97152cdf64dfd32ed483b2d3bd49945a9ec84495ad333216e",
+      "dedicated": false
+    },
+    {
+      "path": "estate-defaults.yaml",
+      "sha256": "f14e8fcc01279319a210132e8f652add98cbfcd28f5e2817e736534ac15e7db9",
+      "dedicated": false
+    },
+    {
+      "path": "estate-mcp.Dockerfile",
+      "sha256": "9b62a958dc924f87f62b76310dd7109ca6c5d3d7a5a662375f4a4b97515526b4",
+      "dedicated": false
+    },
+    {
+      "path": "eval/estate-context/questions.seed.json",
+      "sha256": "d5843b74b2e58072a35fd28ccc6be51ccc8253b66c5d0fd5a8161ecb75b7496b",
+      "dedicated": false
+    },
+    {
+      "path": "features/cognitive-stack/cp1_ingestion_topics.feature",
+      "sha256": "8f541999063a1d75659ec61d696c61a69b8f9c6e377a5ddc3b0fc594388032d8",
+      "dedicated": false
+    },
+    {
+      "path": "features/efda/l2_evidence.feature",
+      "sha256": "61e1d978e169a9b79940060e74267338dbdaf3d4e37dff0657d08c92eb01f44a",
+      "dedicated": false
+    },
+    {
+      "path": "features/estate-rebuild/rebuild-and-gates.feature",
+      "sha256": "403500d5df70aa05b706583f63587ed16b8743c1cc9d0658beb96b88b562a5ae",
+      "dedicated": false
+    },
+    {
+      "path": "features/identity/front-door-oidc-client.feature",
+      "sha256": "b15b2a524287edbd599aefa35ed397ee477d46b8367b4290903617399d910d39",
+      "dedicated": false
+    },
+    {
+      "path": "features/sovereign-bus/cp0_temporal_in_cluster.feature",
+      "sha256": "acb884a86a2649d7898732ad2e88e3cf7f9bf9655acdf4e8bed5697356bf1bd9",
+      "dedicated": false
+    },
+    {
+      "path": "fleetview-backend.Dockerfile",
+      "sha256": "948784e24721b767070f1cd5f065d8fb5fa8b953a770c9ce12d8545f93840a38",
+      "dedicated": false
+    },
+    {
+      "path": "greenlane/event_filter.py",
+      "sha256": "a854bb88813e63561511e58eb7048f081816758a3215054c61b27ab8cf14c100",
+      "dedicated": false
+    },
+    {
+      "path": "infra/macos/tools/disk-sentinel/sentinel.sh",
+      "sha256": "16ba70d11ea8981802963b94291c83e047a1e4fe116dd9bfc1b06fd6395f7ec7",
+      "dedicated": false
+    },
+    {
+      "path": "launchd/ai.estate.research-tunnel.plist.tmpl",
+      "sha256": "38a555b0992400f04549c1780bdc9131ba2e755b8f62930d2c46e82374b8dbf6",
+      "dedicated": false
+    },
+    {
+      "path": "llm/config.base.yaml",
+      "sha256": "a864083e8815b005132bc51270afc4b61d7eac7dbf8e9ce1ac8bf927a2f18925",
+      "dedicated": false
+    },
+    {
+      "path": "llm/config.yaml",
+      "sha256": "ffa322cf222b536a5e8763f5751fcf4b6c73e135aa29cff5de90cb978bc04ca2",
+      "dedicated": false
+    },
+    {
+      "path": "mcp/plugins/estate_mcp.py",
+      "sha256": "8b19d65899521ce61f2333647b6bc4a662acd268aeeac927eee8507d5ad1f2a4",
+      "dedicated": false
+    },
+    {
+      "path": "mcp/plugins/pobr_orchestrator.py",
+      "sha256": "6f0dd526ee9204f3b4f13c12f6b39b40449bc89d6e3ecffee857b1195e881594",
+      "dedicated": false
+    },
+    {
+      "path": "mcp/plugins/workload_state.py",
+      "sha256": "6ec795b90ff5fa3236becc3b857415ae4ba52b746b236e5facf9bc0693690860",
+      "dedicated": false
+    },
+    {
+      "path": "packages/aei/docs/RESEARCH.md",
+      "sha256": "66afcccfa6f87001d84cb80d5df0fd528e7f086a2a04941d0345adc313734f3f",
+      "dedicated": false
+    },
+    {
+      "path": "packages/aei/src/aei/pgstore.py",
+      "sha256": "97b33f05b191de754e0936af0c87d83fa2ab5824c956295b8fb7146c826727f5",
+      "dedicated": false
+    },
+    {
+      "path": "packages/aei/src/aei/server.py",
+      "sha256": "3412d42e22e9d27c341dc09bb0c99987225ae2f780b1a32d3c771ad0aaa816c7",
+      "dedicated": false
+    },
+    {
+      "path": "packages/aei/viewer.html",
+      "sha256": "a4eb57ed60e0029c3b78bc5a05ed3a2fc24e131acb4bc42418e5a51c89594852",
+      "dedicated": false
+    },
+    {
+      "path": "packages/sdk-rust/Cargo.lock",
+      "sha256": "8fbfd813d7bd67d75a342fc1ce2ca9b0b97d01303f9f069d6495af1ea47a246d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/active-runtime/package-lock.json",
+      "sha256": "a3a4bfc6bf8cd9784010c7735bb449f8d93994eae67adcf9ec997353141e9ecd",
+      "dedicated": false
+    },
+    {
+      "path": "platform/aei/aei.yaml",
+      "sha256": "6e3d5a02327caf9c8611d4c34bad87c9edb15bb0871d9c73b0f0807d287619bd",
+      "dedicated": false
+    },
+    {
+      "path": "platform/aei/kustomization.yaml",
+      "sha256": "f4d8417cbd6edc5daf492dabe211c950b8afb450d9e2d32e9f898a10caafc4c9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/agent-workforce/cronjob.yaml",
+      "sha256": "8a0cbdab056ad4071f1960f1586bbda703dbe705272bc0270be26b47e36161d6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/agent-workforce/external-secret.yaml",
+      "sha256": "c910c4aeaac7d5af58c8e6f1fba6678d1f6efbd0b23d5bd1c923c6441524b8f7",
+      "dedicated": false
+    },
+    {
+      "path": "platform/availability.yaml",
+      "sha256": "a59f4dd73757f944c167d44adf1002c04038fe6b9d901680427dd9dd256b2e43",
+      "dedicated": false
+    },
+    {
+      "path": "platform/backstage/namespace/overlays/oke/kustomization.yaml",
+      "sha256": "9a035fe7112bf02f6d00dbdf60940b55c72954b571dfdd82c083b1d42424492c",
+      "dedicated": true
+    },
+    {
+      "path": "platform/backstage/overlays/local/kustomization.yaml",
+      "sha256": "8af7cc1f50132c2562d716854e3029f9506b0a4ba3de47f5b8d14af2b0599b33",
+      "dedicated": false
+    },
+    {
+      "path": "platform/backstage/overlays/oke/github-token.yaml",
+      "sha256": "7342f17d769c9f37536de58f13914840d46c777447c0455d09cdb04c2ad10557",
+      "dedicated": true
+    },
+    {
+      "path": "platform/backstage/overlays/oke/kustomization.yaml",
+      "sha256": "dbc01f93fc2f6209e573a4e1b2b1d945ad7c2261a609233a2396fc19108e6190",
+      "dedicated": true
+    },
+    {
+      "path": "platform/backstage/overlays/oke/sunshine-egress.yaml",
+      "sha256": "0cffe8fb82cec758db16717871da050979d1135dccd2293a4402628ed75beb5d",
+      "dedicated": true
+    },
+    {
+      "path": "platform/bridge/kustomization.yaml",
+      "sha256": "98cdbec5003ea7301e8e5409411bf88eb7733587be4572a03032386f3dc1f9f6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/calico/README.md",
+      "sha256": "ccd72b4e268907c6e42ac657b79343cd9db290912b21fc71164e3364a3ced7bb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/calico/kustomization.yaml",
+      "sha256": "5a8ab945d23d0544a5d63425711ca752c994d4cac1fd6d4ba0d6b51fff62a565",
+      "dedicated": false
+    },
+    {
+      "path": "platform/calico/raw/README.md",
+      "sha256": "52fbe4421779cbb6cb6987a76593d38aa51dcc427accd329f3ee12d69c6fd318",
+      "dedicated": false
+    },
+    {
+      "path": "platform/calico/raw/calico-node.yaml",
+      "sha256": "ac73153ab082b35ddb3b797bb634a2101afdd8898270a43b20bf98a4f6d12e81",
+      "dedicated": false
+    },
+    {
+      "path": "platform/calico/raw/kustomization.yaml",
+      "sha256": "8f1f29103904cb7b97b6beb5f8d642fcd1ba1e6bb36617060009967b3b124f44",
+      "dedicated": false
+    },
+    {
+      "path": "platform/cni/cilium-values.yaml",
+      "sha256": "41fc7f355c0731348ca930a243d53d3b994e13ed79d03b04c4a553e73d50921c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/commerce/app/lago.yaml",
+      "sha256": "5f6dd2e79fcd4765774c2ab25024aaa872b9d86a3c4b65925ad3b8fa107a3219",
+      "dedicated": false
+    },
+    {
+      "path": "platform/commerce/data/external-secret.yaml",
+      "sha256": "8b1f40ea5618c8ea2920a89eb6dc7c414037cc211df40f0a0cdc0a1c773f399b",
+      "dedicated": false
+    },
+    {
+      "path": "platform/crossplane/capabilities/storage/composition-bucket.yaml",
+      "sha256": "e5853a945fc6a168a38272b8dd0e32e75e49bc9419a724b65ce3e3c7ac5528b9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/crossplane/providerconfig/kustomization.yaml",
+      "sha256": "81dc301c8df39f4f2fbb0b34ede026383f8b30817348f4f31f20becf2b322cec",
+      "dedicated": false
+    },
+    {
+      "path": "platform/crossplane/providers/runtime.yaml",
+      "sha256": "7c2b5da866266baa3d58113e41c956738d21ccab6afd5bb34efcd4554ee31677",
+      "dedicated": false
+    },
+    {
+      "path": "platform/dagster/dagster.yaml",
+      "sha256": "4c1b1d96145d1c17de529bdd9ab8093293fbdf0675ff2fb3d88e8f18ce418bf6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/dns/external-dns.yaml",
+      "sha256": "744149980926ac48cf06fe546b53fe363922d90e554ad96356381e9b3f0fcf25",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge-runtime/Cargo.lock",
+      "sha256": "c4d82fe5c093d445176e3f93ce19176c1e448f718c1fe3aff2a4151a47c34d21",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/cert-manager.yaml",
+      "sha256": "8af2afdd298133f0ca2b29eed7be03d2e5cbde17eebc8c2c5dc173c9ca4e04a9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/dagster-exception.yaml",
+      "sha256": "a69e999ef3d022c0272d7b30b392c4458d2531c1ce025240997744f644385398",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/flux-only-writes.yaml",
+      "sha256": "2a66020af481f11ee8ff0c5bdfc46179f06308e3f517cac5a3ccb25b4c05b1c6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/kustomization.yaml",
+      "sha256": "4fb29a8e90a02f990f6f8853211bec49a1547fbcf5f80347b6f18bced9a6ae65",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/provider-edge-exception.yaml",
+      "sha256": "565d74200ac41d1423dbdd92d854ce64675e10fdb7811f7baa37fe21749bb46d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/provider-independence.yaml",
+      "sha256": "967ea21e76b41a36c453dec03e1d149ec343d8db61efd5f9d3144666374c1db5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/require-auto-reload.yaml",
+      "sha256": "a14c2e76de58266e904a8897c112a82e9c138a91aef505c8420ff9edc3336917",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/require-registry-host.yaml",
+      "sha256": "ecc3511569eb0242dc9b41a4305d4c6b29a09e7f05a01e87c44def5ca4e93d81",
+      "dedicated": false
+    },
+    {
+      "path": "platform/edge/traefik.yaml",
+      "sha256": "cd0078e690e5a608641aed59acec8b33eb279267b846bde35591b634a4da86c9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/efda/controller.yaml",
+      "sha256": "911870f6a770572740ecd53d3b838481fe8e45204a2ee722b6f18c91aeb72111",
+      "dedicated": false
+    },
+    {
+      "path": "platform/efda/namespace.yaml",
+      "sha256": "3fd0e00bcbb81463e0b5283d4cd9853f2c0b5f6173fd8b062607ed1b667438de",
+      "dedicated": false
+    },
+    {
+      "path": "platform/epistemic-fabric/ingest.yaml",
+      "sha256": "632e7d58663ee10137a341317ef303ae186199e48cb7efe790945822d7193e59",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate-db/backup/estate-db-backup.sh",
+      "sha256": "b5705616d8453e894beb503dcf7ce00e69fd8d7a5c95e8ef3c6f4ec3efde2eeb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate-db/migrate/jobs.yaml",
+      "sha256": "3ed63b295a25ba191ed731f6001b28bd2daf28fe80a8f78a84064a394eb3d2b6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate-db/migrate/kustomization.yaml",
+      "sha256": "6bfc0540cd3abae4a459ab2022be5b02c04e0b332dc940ee697903dd01dfae66",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate-state/example.json",
+      "sha256": "474a28c135e4da58c278d81af4a0e403641cb8af62137e3e45e66148c26ac6a7",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate-state/schema.json",
+      "sha256": "3b1e24ac0e3e3db9a9667e7ae1a060783b9adaa107c200c42e01ae7a7da903c7",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/bin/estate-mcp",
+      "sha256": "cb4cc83551a49b84d89a25954c77a04536a45efff21cdfe803c5050557b33145",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/bin/k8s-debug.sh",
+      "sha256": "1becd7228ec21a83f246e630b2736ccb51025ffae55a76aea2f802e93fea2e29",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/eval/net-crossnode/scenarios.json",
+      "sha256": "eae149d94f6814e239ae88b71e5147432a8e35b985a28cf6af89e89c55b2482e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/intents/estate-inventory.yaml",
+      "sha256": "d6503af88dbc2f393deabef6ea3fd96d0ae6b822a8793de12896471aaef8a20f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/intents/flux-kick.yaml",
+      "sha256": "61e05f2c7370c7c5242e14297e23722ced610640313d06a49edcb10c54f12ad5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/intents/map.greenlane-live.yaml",
+      "sha256": "182b688a23cb1aee6224abc3aec68a3c76c774e796ec33eece53d3238a47ddfb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/intents/oci-reclaim.yaml",
+      "sha256": "1889773831c34fe0866db9249df6b3e1cc1ccbbd480e3f21f11029cc74425f0b",
+      "dedicated": true
+    },
+    {
+      "path": "platform/estate/intents/secrets-discovery.yaml",
+      "sha256": "dacbdf8eaba0ceddd4fdc16ebe4ae605217f14fe4690e47c7b5ab451afa5ddf4",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/intents/spire-proof-run.yaml",
+      "sha256": "b3aa638a6b0c761ea68f2b34d4657d0eb6c6fe51b2cbb72c8896fd57f355a2e5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/cfs-throttle.sh",
+      "sha256": "278997b917486803a98ed0ea1c18ac237c5fbee98ddca97de242f5e44f4627d0",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/cluster-health.sh",
+      "sha256": "3b907e562237af37050e357288dc29d478f97011f8ac9ef75423cde39f7b8b3d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/control-plane.sh",
+      "sha256": "d81e61abe24e476b7eddb7522d1a6bb42fae8f90b7e21f065f6bb8f96bf5f961",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/critical-watch.py",
+      "sha256": "96ed39ee27fa2de7446907304c72bc3ec01504db3464f87cdc6c0028f8e4cfb8",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/estate-inventory.py",
+      "sha256": "5cde40eb30581e85561a6185c5e18eb0530cf5a34e8f93a805019aa79eba5b9d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/gadget.sh",
+      "sha256": "404dddbce21530841782d2739543daee44481e1aae70317edfd1a2a62fb122c9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/litellm-status.sh",
+      "sha256": "350b270fbce1c24dd10976aed1c2b4f910383a9d08d03b1b41a87efb09835789",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/node-pressure.sh",
+      "sha256": "3ceeea9fa837a38535dc9179530c78bf1118d09c86af3f4241e3595f3fe60f01",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/oci-kubeconfig-refresh.sh",
+      "sha256": "f3101e788d274f99bcf33a3f5369d3e3bb9330bf1fb74e02685a22858c54d71e",
+      "dedicated": true
+    },
+    {
+      "path": "platform/estate/libexec/oci-reclaim.py",
+      "sha256": "4406b0c8fe9ca88d3b2c05f1b3d59333a24a1934d8c94e9699fff1113111dea0",
+      "dedicated": true
+    },
+    {
+      "path": "platform/estate/libexec/oci-reclaim.sh",
+      "sha256": "20ead869e900bafbc7b6c1ffe57911cae9582f4ff9dae34bd1d90b79f6e46cee",
+      "dedicated": true
+    },
+    {
+      "path": "platform/estate/libexec/oom.sh",
+      "sha256": "31dd742578a5516674a9ea3727d66f8c5a944f4fa8f69a2c84777952d4d8063b",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/popeye.sh",
+      "sha256": "03d20ffbbeac48f6e01fd44aef98d7a6a187d64f9a45d5d03844b93d198abb7a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/site-onboard.py",
+      "sha256": "01cfc13a606317fe194defeea8b5e333b9fe004f259f3a1774a9cdbede73325b",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/spire-agent-logs.sh",
+      "sha256": "c51f784ceab5794e908df3b7f4387dd5eecc4cbd42cbb56d63e45be648d1d0fb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/spire-csi-check.sh",
+      "sha256": "53e1ce569268c373c81b1efccf0d80b6b893fc64d77dad0d840a35f286cfb60e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/spire-entries-list.sh",
+      "sha256": "8264a00b64622935605d6a27e5cf41b650fab4a26eb18ebe3503b659a96a0629",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/spire-proof-run.sh",
+      "sha256": "3d672e2055933a42335e58ac4bb3e3a30d5acbcb85ef70241c6e650d2fd3570d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/storage.sh",
+      "sha256": "c2c1e7281f79959089d154f2d5929b06b8f2707ec8352f672607a30f87e77e05",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/telegram-agent-doctor.py",
+      "sha256": "3ae604dcfdbb2cde0d5c39c2d20a615fdc3c4a1ac16ef2d36eaed772dcc65eff",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/vault-ocid-get.sh",
+      "sha256": "5a5a050f47ea508781d2c5a3a80d8aa121b1fb74f472224cda5a8cf549392e42",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/libexec/voice-doctor.py",
+      "sha256": "a930997f217d88ace2e51ae85ab9b495397ac06e71fc58d9254ffe7df1d4deb4",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/pf/estate-session",
+      "sha256": "019243ab20fac56f913ef2f898eaf0183d33d75d5a676e16abdf10d2c207ce10",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/skills/packs/gsap-skills/upstream/skills/gsap-plugins/SKILL.md",
+      "sha256": "5838b856c74c07fbc9fa99b6dfd1eee34ea554c3e530c30e0d58014b707d70a4",
+      "dedicated": false
+    },
+    {
+      "path": "platform/estate/skills/packs/open-design/upstream/README.md",
+      "sha256": "dbd9cd62043f52a7c38af33b10dc6dd66f7c01a88211d2a3ce8dbfd5a00ed74a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/features/features.yaml",
+      "sha256": "51304636554813d5e89c2149789e89aa720ade3f9eede00f547e04ede82148a4",
+      "dedicated": false
+    },
+    {
+      "path": "platform/github/oidc-trust.json",
+      "sha256": "73ebf00bf60d08a3c40af5779fab32f00462fe5d5a12d86cfa726eb13a35934a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/guacamole/httproute.yaml",
+      "sha256": "22486dd5ce34bd0486f078ca44c20143575d8bfe62588c010ea5897a0ec65a7a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/guacamole/mac-egress.yaml",
+      "sha256": "65d5bf5344259564eba943ea0a7de34d8d93d65dee58432dd6cb786cbcc67983",
+      "dedicated": false
+    },
+    {
+      "path": "platform/healing/descheduler.yaml",
+      "sha256": "34a9031042b857a3955977de22d25eb851822e82bfed9c874116bd9576d43a6e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/healing/kustomization.yaml",
+      "sha256": "15d8ee2ef779cf95b72cf1ce41bcf85eb7d776a3e85a0fe72cdcf1b6016cc338",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/README.md",
+      "sha256": "90e68c162a589940c4f703624d2fed01c2de2df27f5fd884a40e2b1678061d8f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/estate.yaml",
+      "sha256": "75d782a0042a08853c6243b1d3c0067d78d5a7820b54ae29bee4f7d4b459d382",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/gateway.yaml",
+      "sha256": "90b167894b55145cfde05210543e01af303ade888e58f74fbd0677fa9d19f9c3",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/kustomization.yaml",
+      "sha256": "ba75f27e125ceedfdb5f30da3520d19a8a5a789255f759e0eca246427456c07f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/mac-run-key.yaml",
+      "sha256": "a50f58dbce4d4bca507c7c57d0c80bb0c09ee94c2d5a9893e1a4c17aee1fa8e7",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hermes-agent/mac-run.tpl",
+      "sha256": "7ec4cd59970f7f0e76d564a0f891fbd9a7908c2fb6acd83aef4f7e658704de5d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/hindsight/hindsight.yaml",
+      "sha256": "46a921178d4d61495ddafc1f86e221ba92a56a9f2c038eaa0e69ecb618af61b7",
+      "dedicated": false
+    },
+    {
+      "path": "platform/human-vault-bridge/kustomization.yaml",
+      "sha256": "e4bed30f54bf9ed458ed43861db44c926f63d2d8aec28c92027fcc5b68be687e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/human-vault/access-token.yaml",
+      "sha256": "029eb77f122b4cdf88b7c5b7661ce1eced7993f0119219e5ead4cb5d423fb322",
+      "dedicated": false
+    },
+    {
+      "path": "platform/human-vault/store.yaml",
+      "sha256": "785c6a2287add2f85ef20e6758d5112d00b12f36daac36a87b4e356e289fc52d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/identity/external-secret.yaml",
+      "sha256": "15d2f34f9fc980ff588ba310167a56f9d05114158cc4aad5cf236b94cdadb663",
+      "dedicated": false
+    },
+    {
+      "path": "platform/identity/front-door-heartbeat.yaml",
+      "sha256": "41f13c774d85e255659e1489d5329b659447f1de624e6ab4408cdc20a63cfff9",
+      "dedicated": false
+    },
+    {
+      "path": "platform/image-automation/backstage.yaml",
+      "sha256": "0e28f87dda6509fb47d8adf23ed34db9d3fe73b9af19546668f6faca6edce3ef",
+      "dedicated": false
+    },
+    {
+      "path": "platform/image-automation/flux-writer.yaml",
+      "sha256": "da63f3a3c6ea1badd0366ae68844efdd053af3983e978d3bbad3611544a9ac06",
+      "dedicated": false
+    },
+    {
+      "path": "platform/image-automation/prospector.yaml",
+      "sha256": "a728977a269750bec4d05b78a02982fa6ef7eef23f68b51d7e5330e139f595a5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/image-automation/voice-router.yaml",
+      "sha256": "9cbdecb9cdf88767853389a353951d1f6aa99b21385e0771db6db3bcd9cb2ff3",
+      "dedicated": false
+    },
+    {
+      "path": "platform/infra-budget.yaml",
+      "sha256": "683b6db30aae5ddb0d5e06dc761cb65693d3dd245dec3aa9dbd17e1a368f624f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/intent/observer.py",
+      "sha256": "39cbbdc581b88a707fdd871c2028d51353ce742c7d8e0d0defd88ac31a9768e6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/jit/broker/broker.py",
+      "sha256": "9942286ea3a90c4708fd37915034bbc5efefb887e8105bb36abd796c3e698d13",
+      "dedicated": false
+    },
+    {
+      "path": "platform/jit/deployment.yaml",
+      "sha256": "600bb774b55ba4d68de2e42794681dbd719e03c2069f99438f6b357dfc42b505",
+      "dedicated": false
+    },
+    {
+      "path": "platform/jit/grants.yaml",
+      "sha256": "98e6469d1de2117a9e833062b2cfc2f0c63356b44f5ac99ad9d238cc3e8d22db",
+      "dedicated": false
+    },
+    {
+      "path": "platform/kyverno/kyverno.yaml",
+      "sha256": "3563c7139849bcdafd489a714cf5882f43c3e5b0b26d0959217222c1aa29bf05",
+      "dedicated": false
+    },
+    {
+      "path": "platform/lifeboat/src/homes.js",
+      "sha256": "fba1f3d4ff86c55f85f4af5f954007788fdf99b2386d72217512b431cf84eeeb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/llm/external-secret.yaml",
+      "sha256": "b1ec3c0097be9443462d17b25fdd3f57ca955f0db88d7b2b8b7d8785eb33b339",
+      "dedicated": false
+    },
+    {
+      "path": "platform/llm/front.py",
+      "sha256": "02ee95ddc0ce1aebc644b155db52196de1ad4b0cff56cf46c2c8ca71ef40014b",
+      "dedicated": false
+    },
+    {
+      "path": "platform/llm/spire-key-broker/server.go",
+      "sha256": "eec2095e2910e59ba6946272100ee35a85055df6a905476622c705ac2218567e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/mcp/estate-mcp.yaml",
+      "sha256": "b9cb116a8bf35ea492902bede62e5b2a2e27461a47322be25fe678444aedfa4c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/meridian/deployment.yaml",
+      "sha256": "7ba96c48784a40716a61e0ccd0f8e2bf6c8c58f5abc577c239aead858997fbf5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/meridian/public-door.yaml",
+      "sha256": "bcab4c8d9a9c968882ea1a6a31c41d12fdb7867e8e943fd1a2b270a02be270a4",
+      "dedicated": false
+    },
+    {
+      "path": "platform/metrics-server/metrics-server.yaml",
+      "sha256": "ae00e033ea313159bc9ec07cc1a5c9d765d4baea479b5049093e74754e9ca738",
+      "dedicated": false
+    },
+    {
+      "path": "platform/monitoring/kube-prometheus-stack.yaml",
+      "sha256": "526faed69ca896755908334f54d68dd40b9d5203a0bf7f3cfae775c623c25b03",
+      "dedicated": false
+    },
+    {
+      "path": "platform/nodesoftware-operator/deployment.yaml",
+      "sha256": "310785791042a87b389570c9a42a1645b50f4ace9453b777e31b88f2994daaa5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/nodesoftware-operator/kustomization.yaml",
+      "sha256": "6c40809fcbd5498421d2c47acb8fbbb2bc04c5b4e56221dbdf0dc31f744d9e9c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/notify/apprise-api.yaml",
+      "sha256": "f1ea93ae93eaed660f3f7fb5ca113b6caffa11468f1ade74e658243a0db52cac",
+      "dedicated": false
+    },
+    {
+      "path": "platform/ns-fences/allowances.yaml",
+      "sha256": "ad3a96edd67536577bdeef61a2f27c7c17f485d8a188f869577fea70103af5cd",
+      "dedicated": false
+    },
+    {
+      "path": "platform/ns-fences/network/README.md",
+      "sha256": "b7aae47e15d7cf762ab375baa8b2bdcee8ec380124c4919b04b2d34ac47d673f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability-collector/k8s-infra.yaml",
+      "sha256": "2e7480e320e22d8ea3ba2e7a677ffa885881b2445c785d0fe90ffb3c962dedbf",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability/httproute.yaml",
+      "sha256": "ef8c6f510522cf7d54ef97f40c42c749e8a273bc9d365b82c55822d26d9e99f0",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability/kustomization.yaml",
+      "sha256": "2575fa99d10cc939535c8b062e6a382df5bc66e44bd86db94b7d140e8d278e33",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability/langfuse-values.yaml",
+      "sha256": "c806b04771d0f8b3828fa7ddd742118f71fcd1a5f14f3611b9f1d7ebfd91c9d6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability/telemetry-coverage.yaml",
+      "sha256": "8bef0c2dc6199c6a782ba55d6904dd4fc5a156180e56be59e06a07ff82d53c79",
+      "dedicated": false
+    },
+    {
+      "path": "platform/observability/values.yaml",
+      "sha256": "6bba20bb17ae66e4af193847ef4c69349144f897e1c41490598b36ea3be82787",
+      "dedicated": false
+    },
+    {
+      "path": "platform/oci/README.md",
+      "sha256": "5fe812353a4758572cae103d245ee90d73f0c9006bec71ca7893b96686e67587",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/autoscaler.tf",
+      "sha256": "111eee6223fd88b88b1e5b6436fd4c65351465b5bb927dab62e8834a9bdd8432",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/bridge.tf",
+      "sha256": "cee45f00127f4ac534ab4d31a7f2e67d5113c6798334a5d7ecb558a970260bc6",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/clusters/estate.env",
+      "sha256": "3f51fed7015a49c569a6f9c45062404c658a2c149de767b3e221126e2d9a4ebe",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/crossplane.tf",
+      "sha256": "1e693186c5b82f6912b9a28359c200fe8414a011961883ad4916890a0698d8f4",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/estate-db-backups.tf",
+      "sha256": "232b89f659556da40f6987bbb9351807ec75facbb8f6666438fdf6733ccf07b0",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/healthchecks.tf",
+      "sha256": "28b9974103cec27780695230bc3cac9453b5c8363db7261b4ac9fe9e0a35c1a4",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/iam.tf",
+      "sha256": "8d3963c44ffa7e1aad0014e728e036fdc36b681ede51632330a8a9d5fccd780b",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/identity/variables.tf",
+      "sha256": "56a99d2bcc72d15a23b6973468c8e284b339d0d2b1d87fb501b5afdde9db8317",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/main.tf",
+      "sha256": "bb87f285b316f7986ee797f49b3bb3417b5f61df403ebb259d998ea8ada68fa8",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/provers.tf",
+      "sha256": "4667bbfd6ddaca22680f66cab9c56e0242fafdb773fa9a86d0b6705a534e57e8",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/receipts.tf",
+      "sha256": "4039b5a69bef916fa80183efb9cd5e6121edba1d968fb419c349f3a7ac1a73cc",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/recovery-host.tf",
+      "sha256": "590321c8c886fe9f9920870fba224da615e2db756b029b9d795a9222938e43ff",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/variables.tf",
+      "sha256": "022730e10187ae8cfead4dbd5a764431d8373e396ca13107e48dd9daa5d55b3a",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/vault.tf",
+      "sha256": "ed6124d8c9ced963d2c01f065e1e84466fa4c77877584a48b8bff4a943ca7755",
+      "dedicated": true
+    },
+    {
+      "path": "platform/oci/versions.tf",
+      "sha256": "66dcd5d1e28150ff9ce610ad11d7f455247af0098d96253c66b0d3a3ca777707",
+      "dedicated": true
+    },
+    {
+      "path": "platform/otto-gateway/agent-env.yaml",
+      "sha256": "f44eb33c0f459cf4319a68be03c25c848ef9f334df8eb79f566b5c198d8497ec",
+      "dedicated": false
+    },
+    {
+      "path": "platform/otto-gateway/deployment.yaml",
+      "sha256": "68ad4eeedc8a22f0510b02503d5ed07174025a21e546f27830f88499bafcf30a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/otto-gateway/three-homes.yaml",
+      "sha256": "6e33675b17f815266223231e16e706cbbe216b3107ccf9a4d5a839188a5fe086",
+      "dedicated": false
+    },
+    {
+      "path": "platform/otto-golden/deployment.yaml",
+      "sha256": "3d891cac450c284360376a4d564cdb1699e04001a8038a7245c63ecc30685b3a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/quad/ledger-exception/exception.yaml",
+      "sha256": "a9a8afed748062226a3bba88ae1e06959d7e327f3a51e01bc73a5d796d378e49",
+      "dedicated": false
+    },
+    {
+      "path": "platform/rbac-floor/kustomization.yaml",
+      "sha256": "07f9d16bd0d1576c4512f312d03ffb25cdf57a419150866490a78833de86ad02",
+      "dedicated": false
+    },
+    {
+      "path": "platform/rbac/bridge.yaml",
+      "sha256": "de1fc34992c2214f1b62d387203f4ec2e642e99e1cd551b41f5bdf132b15224c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/reloader/reloader.yaml",
+      "sha256": "a0b7c75e43e07e0b27d8acf0efaabff5e8fc0aac4670b7681dc223584219b9f0",
+      "dedicated": false
+    },
+    {
+      "path": "platform/research-engine/github-app.yaml",
+      "sha256": "9adb389e640d6a506f5c90eabff8fc0e46b84ce1c18963c343b6cc98c72ec38a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/launch/gitrepository.yaml",
+      "sha256": "1cdbc24fcaf2451a0560c7933b3f349e937bc064ad66845f84f20ffbd8a9b21e",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/launch/kustomization.yaml",
+      "sha256": "2a29cf8b2a21017df55696151aade60eafd291e03a1b85cf7e7c90ee6f366526",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/launch/shadow-runner.yaml",
+      "sha256": "67b642789dfe47a75a05efe87a0b05b6f36968b28ca62f1b5a43f832b3d22bd8",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/vcluster/helmrelease.yaml",
+      "sha256": "7ad5155792d6f26e34baec47bf4a68ad8285be523f314de6db25ccff02527565",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/vcluster/idp-sandbox-sweep",
+      "sha256": "58cf5bebd58391502233f7f0f6b0237e8e839b3d081b366d997c14b8c04d82ca",
+      "dedicated": false
+    },
+    {
+      "path": "platform/sandbox/vcluster/kustomization.yaml",
+      "sha256": "dc9bdf10fcac86478f79602ae39ed4afb95a88858469d6995a1db17d70531e44",
+      "dedicated": false
+    },
+    {
+      "path": "platform/scheduling/balloon.yaml",
+      "sha256": "d19f5681ba1822d66b50da78c54a4221f9b9ff44d5e6a167a475281783bafe00",
+      "dedicated": false
+    },
+    {
+      "path": "platform/scheduling/one-scheduler.yaml",
+      "sha256": "88f114e5f3eb794bca277b30d93198e7614d868a5afb30cfb15c2788dc46345b",
+      "dedicated": false
+    },
+    {
+      "path": "platform/searxng/searxng.yaml",
+      "sha256": "7a8b2bdb3f8e5a72364ad094f0ee1f3e7c73387bfde45bf5f185d8909b4c738c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/secrets/external-secrets.yaml",
+      "sha256": "a704f33488875f1ef91dfc07b6d72e094bd228509f838af5709468ef1566c0f5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/spine/bridge.yaml",
+      "sha256": "89a6a3d9222ce8ce9011269f7c7fa92de7a9dbcde492ced3c83b23a71877febf",
+      "dedicated": false
+    },
+    {
+      "path": "platform/spine/events/provider.yaml",
+      "sha256": "a5d6c46f142b638f843b71e8c9e43644f3dbe140a63346fa746674502de36d6a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/spire/helmrelease.yaml",
+      "sha256": "82725d0e7746eb45db59a9c133ff269961115aab3288bf2c8aeecbde10566eb5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/spire/proof-cronjob.yaml",
+      "sha256": "09ffcd9b234e8580c4301bc9b31d1a3dca4153c49173c881600b6ece5876f4d3",
+      "dedicated": false
+    },
+    {
+      "path": "platform/spire/values.yaml",
+      "sha256": "95eca5e9b41353d5b8de23d5bf1d996a2f688c7354d8bb6314871a0a81fd2f75",
+      "dedicated": false
+    },
+    {
+      "path": "platform/state/cluster-state.yaml",
+      "sha256": "4caffde2d9f3e2ba93b85950cc2e7b608c8cf6347a0a23f49c74aca94985f1fb",
+      "dedicated": false
+    },
+    {
+      "path": "platform/state/rotation-canary.yaml",
+      "sha256": "d1d53f395ce99ed1edbfcf53241ef6b1eeb033cbd58f8929dbf0261d6963059c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/tailscale/kustomization.yaml",
+      "sha256": "5ce95993bd63520a94181f2901ec12bb333561dd031ec71b06fe7ad3563b82d6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/tailscale/operator.yaml",
+      "sha256": "7554fe9d2e223b1ee928e8652c48ea20d67991898d456929de77f7c4f60b0ad5",
+      "dedicated": false
+    },
+    {
+      "path": "platform/tailscale/policy.hujson",
+      "sha256": "9ae32b48536e1c4016357e578040e9ca561069dcc28f93c358570f878c5e908f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/trivy/trivy.yaml",
+      "sha256": "6a2ab173085b662d4d6512b89302f5cab64ac4d6b36b72f75aa18b13e3cf6f5f",
+      "dedicated": false
+    },
+    {
+      "path": "platform/unified-memory-server/consolidation.py",
+      "sha256": "7019d9f135dbfc9f2e7f15707b3350629089ceab16c21d5770be31241bee70ba",
+      "dedicated": false
+    },
+    {
+      "path": "platform/unified-memory-server/kustomization.yaml",
+      "sha256": "06e4fc3cab99d409813dc87be8f0b9c790dcc92313825c564434b883828271c6",
+      "dedicated": false
+    },
+    {
+      "path": "platform/unified-memory-server/tests/test_ranking_and_consolidation.py",
+      "sha256": "351e58bf1270918941d7be26b4f277f1c47df0595019cd1caed5b9988cb86dea",
+      "dedicated": false
+    },
+    {
+      "path": "platform/verification/kustomization.yaml",
+      "sha256": "90d54f209292216e354c9f6754e61c6803cdda6eb5dfdddc11c8c9b9a4c609c0",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-gate/Cargo.lock",
+      "sha256": "4ce3c5850844ed82c329b9d885d17cd05e9503716a5ea7531d5ee52567893b2c",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/README.md",
+      "sha256": "b256822403b808e7bec7cef37f2c3571da53c6bdaa9b98decc5037abb6c17105",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/cmd/voice-router/newsroom.go",
+      "sha256": "6830b8b9ec0e434f952635834fa778082e1a77115d5a9d93b812290c3cfba401",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/deploy/director.yaml",
+      "sha256": "4c94ff93415d45bd714a749720dabb9cd49a26bffd9f0319806115dd3856ca6a",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/deploy/external-secret.yaml",
+      "sha256": "888f064687ace62788679bc06990d372c78d270f4160512fd71d074abc2243ae",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/deploy/router.yaml",
+      "sha256": "fe2166aa102d656b4a4ef538ff097f50987171ed0572e2b7ff79bbcdee2081fe",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/internal/newsroom/newsroom.go",
+      "sha256": "29fe18800de3e1be9a6422dc754ea732e5e3134d859872335e0972bc36d7f26d",
+      "dedicated": false
+    },
+    {
+      "path": "platform/voice-router/internal/newsroom/newsroom_test.go",
+      "sha256": "20140bce11bee53e1ded33a9a90965cf905d45d6dfa29b4b596f5a9e940163fa",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/headroom-ceiling-raised.json",
+      "sha256": "4032efd899f08fa52bc2f2446b39fb6828bf9d0e03afe210601b336af0107cc1",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-approval-other-word.json",
+      "sha256": "b4ed95beb1079a0e823893eda3c11d06222dab19244bd6d01a6385e88cfa7335",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-approval-pending.json",
+      "sha256": "c3c27667007c4190e187092608c1e5e9aeeda7b461589cf3d548d607f84d2fc5",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-denied.json",
+      "sha256": "8b98cfa5bfb026fcbddb8f28faa22d0191f91160bc4080182ab9d571e63c1e81",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-gui.json",
+      "sha256": "026d983c0d9248f796933800df3ba6f17d245eac4b849d3e0b3b1cb21f178ca5",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-half-provisioned.json",
+      "sha256": "191af9b058efd44581f03b0c1fd81ba63ae6480a143af07d75a7828498f4a9b7",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-no-approval.json",
+      "sha256": "30a7bf8835eb9705fe839d487f97f74714da570e435b4a07a8a8e2612a42142d",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-no-canary.json",
+      "sha256": "f68b4914138a994b5c9da8af4421854cdccaa330113266b4b10b02fc6d51d992",
+      "dedicated": false
+    },
+    {
+      "path": "policy/fixtures/opmodel-ok.json",
+      "sha256": "f88fb7bf4f27afb5dc94eadba7fc9c142f6915c0c2fe7345f0ee2315b7eeddb4",
+      "dedicated": false
+    },
+    {
+      "path": "policy/operating_model.rego",
+      "sha256": "9092e40236c0288fa4d19894dd779c18cbdb9009428a95a8a5a1d7ef3512f2ad",
+      "dedicated": false
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "978047f4b279913c6fd130c50396facf7c1be84f3c911476a2353b7f94cdb701",
+      "dedicated": false
+    },
+    {
+      "path": "scheduler/estate_scheduler/definitions.py",
+      "sha256": "b6d69f408fe33bbe3a3649450a9542b4b6a23e750234d92ce554d1c6d2b62b3c",
+      "dedicated": false
+    },
+    {
+      "path": "scheduler/schedule.yml",
+      "sha256": "644119a53bc18ac75efcfc923acdb47f2d88173af101d2a6d37b78d098c6fdd7",
+      "dedicated": false
+    },
+    {
+      "path": "schema/identity0_registry.sql",
+      "sha256": "fdde277cadd66278d68ba666c6b8190514fbd6319f01ab6900a4b2495f63f028",
+      "dedicated": false
+    },
+    {
+      "path": "schema/intent/action-contract.schema.json",
+      "sha256": "4055395448b3dc64bba37a2ba8c965a8ed02198a3c8c4a819cdfc90c82730eb8",
+      "dedicated": false
+    },
+    {
+      "path": "sovereign/cockpit/README.md",
+      "sha256": "db197845c427ea9d610213d582e3c940370927fbc5f238971432ec7600a59141",
+      "dedicated": false
+    },
+    {
+      "path": "sovereign/config.py",
+      "sha256": "225ed71adea0e78a13b1eaeb6d187180b57ceb51fda07d51076855783b8ff343",
+      "dedicated": false
+    },
+    {
+      "path": "sovereign/tests/bdd/test_cp0_temporal_in_cluster.py",
+      "sha256": "c0d229760746425f40e01fedefff294b32c2922884614b008529dc4436dc2eac",
+      "dedicated": false
+    },
+    {
+      "path": "sovereign/tests/bdd/test_identity_front_door.py",
+      "sha256": "2cdf134943c98495ab53a0e25b2b4b13dd49a2b32fed058fd6ef7a9668633836",
+      "dedicated": false
+    },
+    {
+      "path": "tests/agent_prison_eyetest.py",
+      "sha256": "97b922dd8a31f2101a5728cec32bb893919e4440805b4b58e0287eccfc175e79",
+      "dedicated": false
+    },
+    {
+      "path": "tests/bdd/test_always_on_kustomization_never_drops.py",
+      "sha256": "dd2863a468aa98f2888c8dedc07ffeba55fc8f7372e530598fb6eb02e29d90ac",
+      "dedicated": false
+    },
+    {
+      "path": "tests/bdd/test_healthcheck_names_a_real_object.py",
+      "sha256": "bbbcb9f1487be9f4d6190b069ca67e2b8f0d15e78fb349ea3532ba48026c4051",
+      "dedicated": false
+    },
+    {
+      "path": "tests/bdd/test_image_pin_exists.py",
+      "sha256": "8fe27494b9c8d607160e91b0500afcb54f9f63f268a1c199c346a0ddad75d5f8",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_critical_watch.py",
+      "sha256": "1a19b55afbc109c09d5f6fa677b833c16091b8d19ac650d617b07910491997f0",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_estate_db_backup_workflow.py",
+      "sha256": "7cb9580ce2b9b38558aa512721e8519bfea46af4afe12e535edd09e52ccbbf2f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_estate_inventory_tiers.py",
+      "sha256": "e02a0c112c4c058868585f38fa65e4e44e60150e04067fe9f78ff1e6a25fe65b",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_oci_reclaim.py",
+      "sha256": "26d78c8f31826ba963ec26dad4cb3605ea87172a2ec565eafd6727b366293271",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_recovery_host_placement.py",
+      "sha256": "66ffd57ba40169b0a7a48893d7db84fa2ed87f182e07c1578718ae84a0071e13",
+      "dedicated": false
+    },
+    {
+      "path": "tests/estate/test_site_onboard.py",
+      "sha256": "01821c84faba36fc7e704f431c5c8c625fa51030a00101a66fca92797c15c658",
+      "dedicated": false
+    },
+    {
+      "path": "tests/fixtures/dod-live-claim/bad.md",
+      "sha256": "87ead98d65c893f0d2577d6769cbe7de3aebe4389ef0209ec908c316d76d5714",
+      "dedicated": false
+    },
+    {
+      "path": "tests/fixtures/dod-live-claim/good-deployed.md",
+      "sha256": "b2bb07198c7791afaf50c13459b6c6297c2d354b1f044bb23da2886d9c6c8126",
+      "dedicated": false
+    },
+    {
+      "path": "tests/fixtures/dod-live-claim/good.md",
+      "sha256": "247b90d3e5efccd1c254ab2424f852532dbbfd77558552dd209bcb3668f5428c",
+      "dedicated": false
+    },
+    {
+      "path": "tests/fixtures/jit-grants/good.yaml",
+      "sha256": "93c6f3d117b38d2139d5a28c121da751c6036292bd73e8df4c27c404ebcc8fee",
+      "dedicated": false
+    },
+    {
+      "path": "tests/fixtures/kyverno/provider-coupled/clean.yaml",
+      "sha256": "928e073e54b2ac2e20a8f477bbb0c8326cde2d715b7753308566112297e06644",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_aei_features.py",
+      "sha256": "bb78a4c9ba76f6bdf939b7bd2b0c0d6460808f63e35c493cc24a33188604033e",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_breakglass_blind_verdict.py",
+      "sha256": "143e327000843a6dc067fb7ed4c5d090f3044a92c2b72f081e72d41850657d68",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_breakglass_tigera_reset_wiring.py",
+      "sha256": "eaf43692eda51bb98777654a120a1ddcb8c0536aae428694df3ef930a1183ad6",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_demo_sandbox_is_defined_and_expires.py",
+      "sha256": "4a1dfd1ce4f2eef6a17f6796845dea4f0654f69557a65472063d70b9f0b0521e",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_dof_gate.py",
+      "sha256": "d442a52a7eba24b558faadfd5d3be5fbff6db5f725413df14decd8564e61e99b",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_contract.py",
+      "sha256": "2a8e4bdcb38f8e9640ff9ba52e7d64e2f93c756148ccd207fba54c2d43d0d944",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_features.py",
+      "sha256": "160f0f13750f77b2ffe79c6f6a556ce9d0770951f3b458f90ebe7e91c2f0e4c1",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_manifests.py",
+      "sha256": "9673edf52f72ae434e04322d23fc67df89b24cb14eeda27f75b6837db828951f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_reasoning.py",
+      "sha256": "5fd028767bb5d8ebb89911688d3fa53b2fbe8e4eade32f67bfeaf3aa3b8cc62c",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_synth.py",
+      "sha256": "f0b9a7f719773641a5e93b988ec08c2223c81b6f2587bd43d6bafd3dda6b0c77",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_validation.py",
+      "sha256": "a278a37da0614b42fb60750f35eb9418a937882f3e83d09c88c6ba4308507a66",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_efda_wrapper.py",
+      "sha256": "6fe5d297a6769afdc8e9932b862bade66e109e153d6bffb0e0514911376e662c",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_epistemic_fabric_row.py",
+      "sha256": "05f2ff61635e13bd74fa219ce9d0a5b76131cdc1c16131b4e1c81fea60625a45",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_estate_capacity.py",
+      "sha256": "3ad749b2b25b43f2fd1e74c203b1e8786aea4c6bdc6a5c3ed6b7d6ce85993eee",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_estate_db_backup.py",
+      "sha256": "b55a3dc35d5568caff17fc67f377cb6d9a81d9d30064e8254ac8277cd786a78d",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_estate_homes.py",
+      "sha256": "4ab1e2bc5a75eff178fe21d8f91963e98ba177d3cbce575ff782d6c1f32540e5",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_estate_simulate.py",
+      "sha256": "31022b4db9b8f039639aaefed47df76bd81fb264784a20f3ad6e56c7d1261804",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_fleet_agent_jobs.py",
+      "sha256": "22867c5b8a956f733814b06663dd21551e049c0cd8d5a73069a15d6a7dd99504",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_fleetview_image_imports.py",
+      "sha256": "8beaec2bb78f51b58a362e8393acb3aaf94ffadb755c7783b56804f19b5e9acb",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_greenlane_event_filter.py",
+      "sha256": "84f22e1689b92b9d0b2f8ab5f848c269754569c9a5dd8da01d19f7e10b142c75",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_hermes_agent_row.py",
+      "sha256": "b68ec78d99e53cff35086ffe60eae04de3e975605e1a06aef5aedbbc3f0dccf7",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_hermes_v2_rides_the_hermes_agent_row.py",
+      "sha256": "1f5dbfe368a384ab4c4a4d6d9a64c849d87a013eb798e00a67bf7d0906a2b212",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_idp_cloud.py",
+      "sha256": "0977b663729312bab883e703c2ae825bf675dc04cd9625e8fc2cf9f309160a44",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_incident_crew227_cp4_svid_proof_is_in_the_receipt.py",
+      "sha256": "2b7ecdf7e79323c4c5eaa83f9c67738409fd4a78f790067c601531e60d2513fe",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py",
+      "sha256": "89bfe69eaf94f7a85f38ab62b74085d78f32db467bb51a8a1287eff29780b282",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_intent_observer.py",
+      "sha256": "918ef842729e650be71d344222bcfa65a35946160920d569a4fe8dd5d1f3d84c",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_mcp_plugins_load_like_datasette.py",
+      "sha256": "84376dbae9807db0829ce420204c6b1d879fdac9d6b054072e8fcb6207353e38",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_memory_router_key_covers_its_lanes.py",
+      "sha256": "2be7f4fffc6b1aa9f5927ee6c1d92452f7655818627ba01fa0cc5cb4e9754569",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_oke_node_prune.py",
+      "sha256": "1598d221a48cae4c76238e4f3ced5d89a348b4ecbd01fb17d66df4e4ca303557",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_otto_parity_workflow.py",
+      "sha256": "43c86704766c927d68128ca6c76c7221cce6504fd053bbec64bf30329b99527e",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_router_doctor_names_dropped_lanes.py",
+      "sha256": "b395de36e2abe3a559c58d84badddd796c46e4fc58000cf630c3eda48e0085a6",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_router_drift_check.py",
+      "sha256": "7b2930c8854ce03668778e7965c210cda778978d1a00b484e094fa3207cbafac",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_router_front_fails_over_to_the_cloud.py",
+      "sha256": "f642a29a98e9cc1db1de92f3271711a05888fd793b4f416f80846bc069942bf9",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py",
+      "sha256": "4a18bee30de5e5e3e7cd8e1c4117c26de5f45f5f179c9b8b64a72b7268088a29",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_spine_manifests.py",
+      "sha256": "79cfe027bbcf8c153ae8441fba0c10cd2d629413215a5f20de5c3fbf4d4fbac6",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_spire_row.py",
+      "sha256": "6cf09dc77f3a2110a8b6ed622bf5f804ae509491c280c932a27647504988f273",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_apiserver_reaches_the_webhook_it_fences.py",
+      "sha256": "78625f40883d066b05204dbf2298c0636d9ff7293497325047d1d08d3ef2d31f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_face_route_keeps_identity_in_front.py",
+      "sha256": "fff9e321f583d0110cb719771aa1b63507b05fdaffce90fdcd6fdfd1822f410f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_fence_gate_measures_the_cni_instead_of_naming_it.py",
+      "sha256": "e92ee7682ce99d09447818ecb5c35ffb70b4a3094ce7b714933cfffba9d7dde1",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_fences_have_a_flux_row.py",
+      "sha256": "7069d65149d1455ad52119c1874f67e0a7f2282005a647147dedef29268b9c3c",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_memory_server_asks_its_lane_as_a_question.py",
+      "sha256": "fd5db2c57db7ae0954e76f98f86630e35579afe1d20cecc3b2c437c1ba4628ac",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_memory_server_can_reach_the_lane_it_embeds_with.py",
+      "sha256": "4e3978891615261af590ae121ec28ddfe49a6c62da53d6cc1409543a02aa03fe",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_shadow_lays_the_estate_floor_before_any_path.py",
+      "sha256": "360c6750b0d3a271cb7a2ed3ea344aa90b6df7508ce06d52085e25a49979a05f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_shadow_stands_in_a_database_url.py",
+      "sha256": "c3b8548bfada54730ddea0078b3e20b01875b762315a2d7f7c08ff6e2ef9d16f",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_shadow_substitutes_the_estate_zone.py",
+      "sha256": "10ab8222d9a53eee49fb64352136c15385eabef76e157ace743b606e376894d4",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_signin_page_uses_a_provider_the_door_serves.py",
+      "sha256": "00b49f3b02c4a3161128456d17bec2e8070ed75204cfe6d5de015451abccff9d",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_the_voice_socket_has_a_workload_behind_it.py",
+      "sha256": "62d91ed914f421dbc40a078764f58460fc66bca8b9c96dc7da1cb43bd3316d9a",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_unified_memory_server.py",
+      "sha256": "389bbe7b6466359575dc4025bf4d950ef9540db7891de3c6be688e655921de88",
+      "dedicated": false
+    },
+    {
+      "path": "tests/test_voice_router_newsroom_deploy.py",
+      "sha256": "582e296e26833d21f995b7073f4f97d8d42fed49158569dd89c370a7ceb3d7fa",
+      "dedicated": false
+    },
+    {
+      "path": "web/meridian.Dockerfile",
+      "sha256": "170c921a5324d6a8d9e0aec5a5d533eddb7b197d8d6a3d0d93998da94f802364",
+      "dedicated": false
+    },
+    {
+      "path": "web/out/deploy-observatory.html",
+      "sha256": "518ffb2c811d645ac21a0bf66c25165e2cf3076a720437571adbefd21fb26bc8",
+      "dedicated": false
+    },
+    {
+      "path": "web/out/deploy-river.html",
+      "sha256": "da1a78a65f5bd3b24cee0f5d646bd32c9825c68b189f927c26e0676256843743",
+      "dedicated": false
+    },
+    {
+      "path": "web/public/favicon.svg",
+      "sha256": "84d7e35ac1261d7a4c0985463d215d88404aaafe17e1288318772e5ff21c4c45",
+      "dedicated": false
+    },
+    {
+      "path": "web/templates/deploy-observatory.html",
+      "sha256": "5d02ed209a44caf9dc1efc507c4fb313aeeb7d1d6b5c47595c7010bbcc528d9d",
+      "dedicated": false
+    },
+    {
+      "path": "web/templates/deploy-river.html",
+      "sha256": "538e54fbcb247825cb27a504f9d08ad2320e24da22342aa0e3d5aafb98d5f3ac",
+      "dedicated": false
+    },
+    {
+      "path": "web/tests/smoke.test.mjs",
+      "sha256": "d35037ef734e464f9211801d32eb648f62d43e140068ad68c72b42415066f962",
+      "dedicated": false
+    }
+  ],
+  "count": 667,
+  "skipped_large_or_binary": [
+    "backstage/.yarn/releases/yarn-4.13.0.cjs",
+    "backstage/packages/app/public/face/brunette.glb",
+    "backstage/packages/app/public/face/estate.glb",
+    "backstage/packages/app/public/face/three/build/three.core.js",
+    "backstage/packages/app/public/face/three/build/three.module.js",
+    "backstage/packages/app/public/voice/ort-wasm-simd-threaded.jsep.wasm",
+    "backstage/packages/app/public/voice/ort-wasm-simd-threaded.wasm",
+    "backstage/packages/app/public/voice/silero_vad.onnx",
+    "backstage/yarn.lock",
+    "catalog/estate-capability-registry.json",
+    "docs/audits/2026-10-30-claude-code-session-stalls/sessions.json",
+    "docs/research/2026-10-25-constrained-formats-harvest.json",
+    "forge/datasets/ci-flake-triage.jsonl",
+    "forge/datasets/ticket-lane-triage.jsonl",
+    "tests/fixtures/kubeconform/crd-schemas/kyverno.io/clusterpolicy_v1.json"
+  ],
+  "zip_sha256": "2db1b7cb4d3322c13689ce743c49e4cd0117022156a2c4ccfb25676f66946597"
+}
