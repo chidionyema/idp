@@ -13,7 +13,7 @@ export default function ContactPage() {
   const [availability, setAvailability] = useState<"checking" | "available" | "unavailable" | "unknown">("checking");
 
   // Read-only readiness probe; no customer details are sent. If it fails, we
-  // don't guess: keep the form available and let POST report delivery failure.
+  // don't guess: fail closed until the destination explicitly confirms availability.
   const checkAvailability = useCallback(async () => {
     setAvailability("checking");
     try {
@@ -40,7 +40,7 @@ export default function ContactPage() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (status === "sending") return;
+    if (status === "sending" || availability !== "available") return;
     const validation = validateContact(form);
     if (!validation.ok) { setErrors(validation.errors); setStatus("idle"); return; }
 
@@ -104,7 +104,7 @@ export default function ContactPage() {
                 <h2>Thank you for reaching out.</h2>
                 <p>Your message was accepted by our enquiry service. We&apos;ll review the details before taking the next step.</p>
               </div>
-            ) : availability === "unavailable" ? (
+            ) : availability !== "available" && availability !== "checking" ? (
               <div className="mi-contact-success" role="status" aria-live="polite">
                 <span className="mi-eyebrow">ENQUIRY SERVICE / TEMPORARILY UNAVAILABLE</span>
                 <h2>Online enquiries are paused.</h2>
