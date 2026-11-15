@@ -712,8 +712,14 @@ def main(argv: list[str] | None = None) -> int:
             for item in plan.get("items") or []:
                 print(f"  {item.get('rank')}. {item.get('file')}  ({item.get('tokens')} tokens) -- {item.get('why')}")
             dropped = plan.get("dropped") or []
+            for entry in dropped:
+                if entry.get("reason") == "historical" and entry.get("current"):
+                    print(f"  Current guidance for {entry['source']}: {entry['current']}")
             if dropped:
-                print(f"  dropped {len(dropped)}: " + ", ".join(f"{d.get('file')} ({d.get('reason')})" for d in dropped[:8]))
+                print(
+                    f"  dropped {len(dropped)}: "
+                    + ", ".join(f"{d.get('source')} ({d.get('reason')})" for d in dropped[:8])
+                )
             uncovered = (plan.get("coverage") or {}).get("uncovered_impact_nodes") or []
             if uncovered:
                 print(f"  uncovered impact nodes: {len(uncovered)}")
