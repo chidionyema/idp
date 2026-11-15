@@ -18,9 +18,36 @@ import sys
 import time
 
 HOME = pathlib.Path.home()
-BIN = pathlib.Path(
-    os.environ.get("ESTATE_NATS_BIN", HOME / ".cache/estate-tools/nats-server")
-)
+
+
+def resolve_bin() -> pathlib.Path:
+    """The broker binary, with a declared fallback.
+
+    Measured 2026-11-15: the cache path was empty (a cleaner removed the broker) while a
+    working binary sat at /usr/local/bin, so the bus stayed BLIND even though the estate
+    could run it. A missing preferred path is not evidence that no broker exists. Use the
+    explicit override first, then the cache path the estate provisions, then PATH.
+    """
+    override = os.environ.get("ESTATE_NATS_BIN")
+    if override:
+        return pathlib.Path(override)
+    preferred = HOME / ".cache/estate-tools/nats-server"
+    if preferred.exists():
+        return preferred
+    for candidate in ("/usr/local/bin/nats-server", "/opt/homebrew/bin/nats-server"):
+        if pathlib.Path(candidate).exists():
+            return pathlib.Path(candidate)
+    found = None
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if directory:
+            candidate = pathlib.Path(directory) / "nats-server"
+            if candidate.exists():
+                found = candidate
+                break
+    return found or preferred
+
+
+BIN = resolve_bin()
 STORE = pathlib.Path(os.environ.get("ESTATE_NATS_STORE", HOME / ".estate/nats"))
 PORT = os.environ.get("ESTATE_NATS_PORT", "4222")
 HTTP_PORT = os.environ.get("ESTATE_NATS_HTTP_PORT", "8222")

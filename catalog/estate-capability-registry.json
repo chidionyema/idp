@@ -3,10 +3,10 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 118,
+    "intent": 121,
     "layer": 261,
     "service": 121,
-    "tool": 492,
+    "tool": 493,
     "workflow": 106
   },
   "records": [
@@ -5369,6 +5369,159 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/snapshot.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.generate",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Generate one typed SPEC/1 packet for an existing canonical issue. Fills only the fields the caller actually knows; proof fields stay UNKNOWN until independently resolved. A populated destination is refused, so this can never overwrite another agent's packet. The packet is a candidate authored for the issue's existing owner, never a new mission, lease or approval. class: mutate args: type: {type: string, default: \"defect\", description: \"a profile from spec.types\"} title: {type: string, default: \"\", description: \"the bounded outcome, in one line\"} repo: {type: string, default: \"\", description: \"owning repository or system of record\"} issue: {type: string, default: \"\", description: \"existing canonical issue URL or ID; do not invent\"} owner: {type: string, default: \"OpenCode\", description: \"accountable owner\"} effect: {type: string, default: \"\", description: \"isolated_research|sandbox_prototype|commercial|shared_infra\"} risk: {type: string, default: \"medium\", description: \"low|medium|high|critical\"} out: {type: string, default: \"\", description: \"new output directory; must be empty or absent\"} steps: - name: generate cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; e={{effect}}; python3 \"$IDP/bin/spec-factory\" new --type {{type}} --title {{title}} --repo {{repo}} --issue {{issue}} --owner {{owner}} --risk {{risk}} --out {{out}} ${e:+--effect \"$e\"}",
+      "contract": {
+        "inputs": [
+          "effect",
+          "issue",
+          "out",
+          "owner",
+          "repo",
+          "risk",
+          "title",
+          "type"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.generate.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.types",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "List the Estate Spec Factory work classes and their default effect classes. Read-only discovery step for an agent that needs to choose a profile before writing a SPEC/1 packet. It creates no file and grants no authority; the packet is still a candidate for the existing issue owner. class: read args: {} steps: - name: types cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; python3 \"$IDP/bin/spec-factory\" types",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.types.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/spec.validate",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Validate one SPEC/1 packet at a declared stage. 'shape' checks structure only; 'intake', 'execution' and 'verified' also refuse missing essential fields. Even 'verified' certifies only declared fields, never the underlying GitHub, CI, deployment or business facts. class: read args: file: {type: string, default: \"\", description: \"path to spec.json\"} stage: {type: string, default: \"shape\", description: \"shape|intake|execution|verified\"} steps: - name: validate cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; python3 \"$IDP/bin/spec-factory\" validate {{file}} --stage {{stage}}",
+      "contract": {
+        "inputs": [
+          "file",
+          "stage"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/spec.validate.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -47479,6 +47632,10 @@
         {
           "id": "cap:tool/estate-fleet",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -54420,6 +54577,53 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/spec-factory",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "spec-factory -- discover the Estate Spec Factory authoring tool and run it.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/spec-factory",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/spec-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -54574,6 +54778,7 @@
         "cap:tool/idp-room-prove",
         "cap:tool/idp-science-facts",
         "cap:tool/idp-script-compiles",
+        "cap:tool/idp-session-bootstrap",
         "cap:tool/idp-shadow",
         "cap:tool/idp-simulate-gate",
         "cap:tool/idp-sleep-ban",
