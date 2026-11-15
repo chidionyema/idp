@@ -53,9 +53,9 @@ jobs:
             --branch lane/aistudio-io-import-probe-20261112 \
             https://github.com/chidionyema/argon.git "$root/argon"
           cd "$root/argon"
-          test "$(git hash-object ops/io/recover_aistudio_preview.py)" = "3ecc81d097b33ee2a34e5bdad49d36ad28125477" || {
+          test "$(git hash-object ops/io/recover_aistudio_preview.py)" = "513f7695b0e57498b813974f26e4c4017d13f300" || {
             echo "::error::ARGON_IMPORTER_SOURCE_DRIFT"; exit 2; }
-          test "$(git hash-object ops/io/recover_aistudio_preview.test.py)" = "5cc44861da3e362a0dc946568f7d0e0657e43284" || {
+          test "$(git hash-object ops/io/recover_aistudio_preview.test.py)" = "b042a0d999881e77a9a08142d6539418f7be53b8" || {
             echo "::error::ARGON_IMPORTER_TEST_SOURCE_DRIFT"; exit 2; }
           # These tests execute only pinned, previously inspected importer code;
           # never execute untrusted package scripts with the App token.
