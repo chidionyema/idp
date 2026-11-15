@@ -1,5 +1,7 @@
 # FINAL SPECIFICATION: VERIFIED COMPLETION (v2.0) — with the estate review
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - **Source**: supplied by the founder, verbatim in [Appendix A](#appendix-a--the-supplied-specification-verbatim).
 - **Provenance of the source text**: the supplier marked it *"This response is AI-generated, for reference only."* It is therefore a **reference specification, not an authority**. Every requirement below is graded against the estate's own measured state before anything is built from it.
 - **Status here**: reviewed, mapped, and reconciled with the estate's existing layers. **Nothing in this document is a new layer.** It is a mapping of the supplied Tier 1/2/3/ledger requirements onto the doors the estate already owns.

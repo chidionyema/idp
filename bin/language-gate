@@ -50,12 +50,16 @@ TRAILER_RE = re.compile(r"^Language-Exception:\s*(\S+)\s*--\s*\S.*$", re.MULTILI
 def _is_python(head: str, path: str) -> bool:
     if path.endswith(".py"):
         return True
+    # Bytes, not text: a changed file can be a zip or any other binary, and a gate that dies with
+    # UnicodeDecodeError on it cannot judge the rest of the push (it refused lane 32bf4192 on the
+    # OKE archive zip). Undecodable bytes are simply not a Python shebang.
     shown = subprocess.run(
-        ["git", "show", f"{head}:{path}"], capture_output=True, text=True, check=False
+        ["git", "show", f"{head}:{path}"], capture_output=True, check=False
     )
     if shown.returncode != 0:
         return False
-    first_line = shown.stdout.splitlines()[0] if shown.stdout else ""
+    first_line = shown.stdout.decode("utf-8", errors="replace").splitlines()[:1]
+    first_line = first_line[0] if first_line else ""
     return first_line.startswith("#!") and "python" in first_line
 
 
@@ -82,10 +86,13 @@ def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 def _index_is_python(path: str) -> bool:
     if path.endswith(".py"):
         return True
-    shown = _git("show", f":{path}", check=False)
+    shown = subprocess.run(
+        ["git", "show", f":{path}"], capture_output=True, check=False
+    )
     if shown.returncode != 0:
         return False
-    first_line = shown.stdout.splitlines()[0] if shown.stdout else ""
+    first_line = shown.stdout.decode("utf-8", errors="replace").splitlines()[:1]
+    first_line = first_line[0] if first_line else ""
     return first_line.startswith("#!") and "python" in first_line
 
 

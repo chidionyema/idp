@@ -1,5 +1,7 @@
 # Every interface is a door
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder ruling, 2026-08-29 (crew#307): "how was even a surface allowed into the estate without
 being on Backstage", "is that not our inventory", "if a surface is not registered in the
 inventory, the cluster must refuse to boot it". This page is the policy; the enforcement is the

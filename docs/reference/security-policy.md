@@ -1,5 +1,7 @@
 # Security policy
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Owner:** the founder (chidionyema). **Scope:** every repository under the estate
 account, every image the estate publishes, every host it runs on, every secret it
 holds. **Review:** each row is re-run by `bin/idp-ci` on every pull request and by

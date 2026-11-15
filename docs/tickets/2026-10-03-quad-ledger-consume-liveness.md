@@ -9,6 +9,8 @@ created: 2026-10-03
 
 # Why
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 On 2026-10-03 the quad-ledger Deployment reached admission for the first time (it had never been
 built -- the row was missing from `clusters/oke/kustomization.yaml` from `390ec4875` until
 `3bbd3b2d`, and the depended-on Kustomization was named `secrets` when the row is

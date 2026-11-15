@@ -1,5 +1,7 @@
 # 0005. Chaos Mesh is the chaos-testing framework, delivered by Flux, gated by a steady-state probe
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: DECIDED 2026-08-25. Founder: "we need well designed chaos testing framework, research
   and see whats out there, open source". Manifests are in `platform/chaos/`; nothing runs until
   the OKE cluster from ADR 0004 exists.

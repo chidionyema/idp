@@ -1,5 +1,7 @@
 # Incident report: Otto's Telegram door closed for eleven hours, and five P0 issues nobody read
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Date: 2026-09-01. Author session: `a2aed3c9`. Founder words that opened this report, 11:30Z, verbatim
 from the prompt: "icident reort, shoud be auto, should not nneed to renind any agennt." His earlier
 analysis of the same outage is captured as

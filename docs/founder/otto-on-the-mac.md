@@ -1,5 +1,7 @@
 # Otto, on your Mac
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Otto is the one agent that acts for you from anywhere. Message it on Telegram; it answers with
 what it did and a link. Since crew#516 CP5, it can also reach your Mac directly — your files, your
 tools — over your own private network (Tailscale), with no key it holds and no browser step it

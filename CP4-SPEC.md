@@ -1,5 +1,7 @@
 # crew#892 CP4 (idp slice) — gVisor cell for execute_code
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 State: grounding complete on branch `feat/crew892-cp4-gvisor-sandbox` off
 origin/main `bd2c2e76` (live cluster esttare-crq7jwxsjxq: 2 Ready nodes, no
 RuntimeClass today). This repo slice closes the tracked estate gap named in

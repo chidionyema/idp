@@ -1,5 +1,7 @@
 # The Anthropic credential moves to Workload Identity Federation, and the router is what blocks it
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 2026-09-04. The founder, reading the Anthropic console while minting a replacement key: "With
 identity federation, you don't need an API key ... Nothing to store in env vars, config files, or
 secret managers. Tokens rotate automatically and expire in minutes." He is right, it is exactly what

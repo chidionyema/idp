@@ -1,5 +1,7 @@
 # 0007. Bootstrap depends on the OpenTofu half of decision 0026, not on the Crossplane operator
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 2026-09-08. The bootstrap path (`bin/idp-bootstrap-estate`, the cloud workflow at
 `.github/workflows/estate-bootstrap.yml`, the Backstage scaffolder tile at
 `backstage/templates/estate-bootstrap-preflight/`) was built on the assumption that the OCI half

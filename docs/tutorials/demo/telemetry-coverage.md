@@ -1,5 +1,7 @@
 # Demo: telemetry coverage
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 LAW 50 (founder, 2026-08-27): every workload emits to the central collector, and coverage is
 proved by querying the backend, never by scanning files. `platform/observability/telemetry-coverage.yaml`
 is that query. Every 15 minutes it lists the pods that have been Running for more than ten

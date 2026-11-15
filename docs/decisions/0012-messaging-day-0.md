@@ -1,5 +1,7 @@
 # 0012. Messaging day 0: NATS JetStream behind a transactional outbox, contracts locked, broker replaceable
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: PROPOSED 2026-08-29 (founder specification v0.1; principal review on crew#639)
 - Date: 2026-08-29
 - Deciders: founder (the specification and the locked contracts), session 80471694 (the review against the estate)

@@ -1,5 +1,7 @@
 # The estate catalog, phase 0 — the record, the join, and the bar
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Status:** implemented and measured, 2026-10-26. **Claim:** chidionyema/idp#7097.
 **Implements:** `~/.estate/proposals/2026-10-24-estate-catalog.md` (the accepted
 proposal), phase 0 only. **Does not implement:** the proposal's phases 1–3

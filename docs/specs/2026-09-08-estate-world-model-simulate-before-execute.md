@@ -1,5 +1,7 @@
 # The estate world model: simulate before execute, on the door that already exists
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder record: `~/.claude/docs/founder/2026-09-08T2341Z-and-thislaos-link-the-tickets-28028451.md`
 ("ok lets design and build the whole thing ... considering all edge cases", "genius high tech ...
 asymmetrically production ready for enterprise", "dont wanna pay for gpu"). Board row: MUM-288,

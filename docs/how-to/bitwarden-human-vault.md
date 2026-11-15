@@ -1,5 +1,7 @@
 # Bitwarden human vault — operator setup
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 One-time bootstrap for the human secret door (decision 0017), written for the operator role:
 today that is the founder, on a customer estate it is the platform admin — the steps are
 identical. The Bitwarden steps are browser steps quoted from the vendor; the vault write is
