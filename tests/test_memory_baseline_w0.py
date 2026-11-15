@@ -42,12 +42,18 @@ def _obsolete_hit(path: str, rules: list[dict]) -> dict | None:
     for rule in rules:
         match = rule["match"].lower()
         for part in parts:
-            if part == match or part.startswith(match + "-") or part.startswith(match + "_"):
+            if (
+                part == match
+                or part.startswith(match + "-")
+                or part.startswith(match + "_")
+            ):
                 return rule
     return None
 
 
-def select_route(path: str, inventory: dict | None = None, obsolete: list[dict] | None = None) -> dict:
+def select_route(
+    path: str, inventory: dict | None = None, obsolete: list[dict] | None = None
+) -> dict:
     inv = inventory if inventory is not None else load_inventory()
     rules = obsolete if obsolete is not None else load_obsolete()
     hit = _obsolete_hit(path, rules)
@@ -72,17 +78,23 @@ def test_mem_001_pos_route_matches_current_authority_and_installed_revision() ->
     assert route["sha256"] == DOOR_SHA256
     assert route["sha256"] == _sha256(REPO / route["path"])
     assert "chidionyema/idp#6164" in inventory["authority"]["canonical_issues"]
-    assert inventory["authority"]["adr"].endswith("0048-the-estate-runs-on-one-node-with-an-admission-list.md")
+    assert inventory["authority"]["adr"].endswith(
+        "0048-the-estate-runs-on-one-node-with-an-admission-list.md"
+    )
 
 
 def test_mem_001_pos_every_engine_component_matches_disk() -> None:
     for component in load_inventory()["components"]:
         if component["id"] == "brief":
-            assert component.get("successor"), "the brief must carry a successor pointer"
+            assert component.get("successor"), (
+                "the brief must carry a successor pointer"
+            )
             continue
         path = REPO / component["path"]
         assert path.is_file(), component["path"]
-        assert _sha256(path) == component["sha256"], f"drift from the pinned revision: {component['path']}"
+        assert _sha256(path) == component["sha256"], (
+            f"drift from the pinned revision: {component['path']}"
+        )
 
 
 def test_mem_001_neg_obsolete_oke_route_is_refused() -> None:
