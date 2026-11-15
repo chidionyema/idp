@@ -27529,6 +27529,7 @@
         "cap:tool/catalog-render",
         "cap:tool/claim-open",
         "cap:tool/estate-memory-enforce",
+        "cap:tool/idp-bdd-proof-gate",
         "cap:tool/idp-ci",
         "cap:tool/idp-install-deps",
         "cap:tool/idp-machine-submit",
@@ -34333,13 +34334,10 @@
       "summary": "No pull request without BDD proof, across all agent sessions.",
       "contract": {
         "inputs": [
-          "--head",
           "--help",
-          "--json",
-          "--limit",
+          "--jq",
           "--live",
-          "--self-test",
-          "--state"
+          "--self-test"
         ],
         "outputs": [
           "stdout",
@@ -34375,6 +34373,10 @@
       "writer": "repo",
       "path": "bin/idp-bdd-proof-gate",
       "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-ci",
           "edge": "invokes"
