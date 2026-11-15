@@ -1,20 +1,11 @@
 name: voice-doctor
-description: >
-  Is voice working end to end, and if not, which link broke? Walks the chain a spoken turn
-  meets -- machine load, speech models, router up, router `voice` lane, voice-router /readyz,
-  speech synthesis errors, a real spoken turn through cmd/talk -- then OKE's image policy and
-  voice-router deployments, and names the first broken link with the action that fixes it.
-  Use this first whenever voice is not answering.
+description: Measure the laptop voice path. Cloud placement requires current runtime evidence.
 args:
-  scope: {type: string, default: "all"}
+  scope: {type: string, default: "laptop"}
 steps:
-    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
-    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
-    # guess about someone else's work, and where it fired it invented a failure.
   - name: diagnose
     cmd: |
-      case "{{scope}}" in
-        laptop) python3 ~/.estate/libexec/voice-doctor.py --laptop-only ;;
-        oke) python3 ~/.estate/libexec/voice-doctor.py --oke-only ;;
-        *) python3 ~/.estate/libexec/voice-doctor.py ;;
+      case {{scope}} in
+        laptop|all) python3 ~/.estate/libexec/voice-doctor.py --laptop-only ;;
+        *) printf '%s\n' 'Unsupported voice scope. Use the current infrastructure authority.' >&2; exit 78 ;;
       esac

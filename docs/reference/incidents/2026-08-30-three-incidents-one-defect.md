@@ -1,5 +1,7 @@
 # Incident report: three incidents, one defect
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Date: 2026-08-30. Author of the analysis: the founder, in two messages at 23:26Z and 23:32Z,
 captured verbatim by `founder-doc-capture.py` as
 `~/.claude/docs/founder/2026-08-30T2326Z-1-delete-the-enumerated-list-secret-reloader-stakater-4ca529a0.md`

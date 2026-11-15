@@ -1,5 +1,7 @@
 # 0019 — Credentials federate; a human pastes at most one seed
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Date: 2026-09-02. Status: accepted.
 Founder record: `~/.claude/docs/founder/2026-09-02T1155Z-in-on-loptop-at-see-i-idn-tthikn-9ddeac68.md`
 (his laptop, 11:55Z): pinned terminal commands for a person are rejected — a person acting as a

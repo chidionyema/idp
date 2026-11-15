@@ -1,5 +1,7 @@
 # 0006. The platform answers for itself over the one estate MCP server
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: DECIDED 2026-08-25. Founder: "the platform should be self aware ... it has all the maps
   and internal state to be able to answer any question about itself ... one interface, MCP or
   otherwise, where you could just query and it responds accurately." Tracked as crew#216

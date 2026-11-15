@@ -1,5 +1,7 @@
 # The Micro-Token integration plan — the lean-agent spec, mapped onto what the estate already runs
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Status: ADOPTED — 2026-10-26.** Founder, reviewing the "Micro-Token" lean agentic pipeline spec
 (Tree-sitter slicing, tiered routing, stateful diff tracking, local validation gates, >90% token
 reduction on a bootstrap budget): "review and plan how we integrate these concepts into our

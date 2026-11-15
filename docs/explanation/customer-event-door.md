@@ -1,5 +1,7 @@
 # One door for every customer's messages
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Otto's first door was built for one bot talking to one person. The route matched one exact
 path, the pod held one bot's token, and the code that handled a message knew it was a
 Telegram message. That works until the second customer arrives, and then every part of it

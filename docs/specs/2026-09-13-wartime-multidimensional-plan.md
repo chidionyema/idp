@@ -1,5 +1,7 @@
 # Wartime Multidimensional AI Inference Plan (estate canonical)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 > Date: 2026-09-13
 > Lead: keep lights on 24/7 within a $50/month operational target (under the $150/month contract ceiling),
 >       with the best reasoning models, ultra-intelligent seamless routing, GPU options included,

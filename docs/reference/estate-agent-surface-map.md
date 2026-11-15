@@ -1,5 +1,7 @@
 # The estate agent surface, measured
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date:** 2026-10-26
 **Kind:** reference — the stored output of a measurement, not a hand-written description
 **Measured by:** `bin/estate-surface-map` (re-runnable: `bin/estate-surface-map`, `--json`,

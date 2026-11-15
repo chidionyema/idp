@@ -1,5 +1,7 @@
 # ADR 0048  --  The estate runs on one node, and everything it runs is on a list
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - **Status:** accepted
 - **Date:** 2026-10-30
 - **Supersedes:** nothing. **Refines:** ADR 0034 (workloads are placed by the free tier, not by the cluster)

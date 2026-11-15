@@ -5,6 +5,8 @@ The architect-doctor run 33272111128 (2026-08-29 19:40Z) read Otto's state out o
 Port 22 is macOS Remote Login; Otto's identity to it is an ed25519 key minted on the apply runner (`bin/idp-bootstrap-macrun`, vault `hermes-mac-run`, private half base64 in one line), mounted into the pod (`mac-run-key.yaml`), used by `mac-run`, and authorised on the Mac by `bin/idp-mac-adopt-otto`, which reads the public half from the apply run's log. The tailnet policy is two rules: `tag:k8s` to `tag:founder-mac` on 22 and 5900 (Guacamole), `group:founder` to `tag:founder-mac:*` and `autogroup:self:*`; tagOwners for both tags are admins only. The from-scratch proof is break-glass playbook `otto-parity`: gateway ready and not restarting, key mounted, tailnet up, `mac-run hostname`, memory service, cron lanes, model lane — from inside the pod.
 
 ## Options considered
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 - Replace the founder's App Store Tailscale with the open-source `tailscaled` so Tailscale SSH runs: a hand on his machine at every reinstall and a client he did not choose; rejected (LAW 31, R52).
 - Write the rules on the founder's login and `autogroup:self` (the first shape of this branch): the Mac is tagged, so neither matches it (kb/1068); rejected on measurement.
 - Chosen: rules name `tag:founder-mac`; sshd on 22; a CI-minted key; `group:founder` is the only source that reaches every port.

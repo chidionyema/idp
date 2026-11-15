@@ -1,5 +1,7 @@
 # Onboarding: k8s-infra
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Nothing to do per workload. Every pod on the cluster gets metrics and logs collected the moment
 it is scheduled; the agent runs on every node and the Deployment watches the API server.
 

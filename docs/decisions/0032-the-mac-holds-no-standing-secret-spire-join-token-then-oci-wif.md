@@ -1,5 +1,7 @@
 # 0032. The Mac holds no standing secret: SPIRE join_token, then OCI WIF over a public OIDC issuer
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 2026-09-21. Status: accepted. Supersedes nothing; extends the identity row of
 `docs/reference/security-policy.md` (A.5.16, A.8.24) and the zero-trust row of
 `docs/decisions/0029-definition-of-done-v3-is-five-checks-none-self-graded.md`.

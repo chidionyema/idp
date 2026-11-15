@@ -1,5 +1,7 @@
 # Otto capability inventory: every iota, built first
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-09-05: "we need to dig up every single iota of capability even potential not yet
 built but more important what is built", "no inch given", "every iota". Records:
 `~/.claude/docs/founder/2026-09-05T2224Z-what-else-is-left-all-gates-on-pr-3f4054b0.md`,

@@ -1,5 +1,7 @@
 # Estate 360: where it is, where the founder wants it, and how the OKE loss changes the plan
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Author: claude-architect, 2026-10-29. Every number was measured this turn (git, `gh`, `work-audit days=7`, curl probes).
 Three states are kept apart on purpose: **landed** (on main), **in flight** (lane or PR, not on main), **operational**
 (a real production line proves it). Landed is not operational.

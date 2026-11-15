@@ -1,5 +1,7 @@
 # Rebuilding this estate from nothing
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-08-31: "i need estate audit and explain how we cann bootstrap estate fron scratch we
 need to start all over again," then "THIS PROCEES NEEDS AUTOMATION and rerunnable."
 

@@ -1,5 +1,7 @@
 # Demo: The SigNoz check
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Every hour at :47 the estate signs a statement about the SigNoz that is running: it answers, its
 dashboards API answers the checker's key, it refuses a caller holding no key, and the front-door
 walk to `signoz.<zone>` landed where a person would land. Run it by hand from a laptop, where the

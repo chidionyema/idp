@@ -1,5 +1,7 @@
 # Epic — Otto's minimum viable programme
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date:** 2026-10-28 · **Claim:** idp#7347 · agent `pi`
 **Decision:** `docs/decisions/2026-10-28-one-doctor-door-for-every-telegram-agent.md`
 **Spec:** `docs/specs/2026-10-28-the-telegram-agent-doctor.md`

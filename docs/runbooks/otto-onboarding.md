@@ -1,5 +1,7 @@
 # Runbook: onboarding Otto into the estate
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date:** 2026-10-29 · **Claim:** idp#7432 · agent `pi`
 **Decision:** `docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md`
 **Spec:** `docs/specs/2026-10-29-otto-is-the-estates-front-door.md`

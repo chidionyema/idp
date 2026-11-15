@@ -1,5 +1,7 @@
 # Runbook: a new site or backend API
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Founder, 2026-10-18, after meridian: *"we need a parameterized intent to deploy a new website or
 backend API."* Meridian's application was written once; standing it up took **four** merged fixes
 afterwards, and not one was a bug in the application. Each was a declaration missing from a

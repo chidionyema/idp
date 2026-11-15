@@ -1,5 +1,7 @@
 # Product Audit v2 — 2026-09-07
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Owner: chidionyema. Scope: every capability in this estate, against the commercial
 opportunity the platform-engineering market actually buys. v2 supersedes v1: the v1
 inventory stopped at the 23 selectable platform features and 8 product candidates.

@@ -1,5 +1,7 @@
 # Build an image
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Demo: `bin/multiarch-gate` on main prints `ok    multiarch 0 findings across 1 root(s)`.
 
 Ruling R24 (2026-08-25): every estate image carries `linux/amd64` and `linux/arm64` under one

@@ -1,5 +1,7 @@
 # Runbook: The estate inventory run is red or blind
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 | Symptom on the run | What it means | What to do |
 |---|---|---|
 | `BLIND inventory oci` | the discovery search did not answer (session token, region) | rerun; if it repeats, `bin/idp-oke-rebuild --check` row `api-answers` names the door |

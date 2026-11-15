@@ -1,5 +1,7 @@
 # 0012. Staging is a namespace on the one cluster; every platform option is a switch that carries its own infra cost; a namespace is never pruned
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 - Status: ACCEPTED 2026-08-29 (founder's words in sessions a0d64ea4 and f3f21d6e, 00:44Z to 01:55Z; recorded here on his ask "it was yesterday, go and dig it up").
 - Date: 2026-08-29
 - Deciders: founder; sessions a0d64ea4 (staging, cost, options), f3f21d6e (namespace prune).

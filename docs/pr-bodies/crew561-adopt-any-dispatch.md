@@ -8,6 +8,8 @@ Drill: oke-check
 Lifecycle: hermes-mac-run row on docs/reference/policy/credential-lifecycle.md
 
 ## Definition of done
+
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
 1. Founder used it — not yet; this is INVENTORY until `bin/idp-mac-adopt-otto` runs on his Mac and otto-parity is green
 2. Green CI — this PR's checks
 3. Gate proved both ways — the test fails on the old selector text and passes on the new (35 passed)

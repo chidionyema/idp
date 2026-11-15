@@ -1,5 +1,7 @@
 # Mac remote desk (iPhone → Mac): Jump Desktop
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 The founder opens his Mac on his iPhone by tapping one icon. Nothing to pair, no PIN, no
 virtual-display app to babysit, no Shortcut. That is the whole design, and it is bought, not
 built (LAW 43, THE HEADLINE).

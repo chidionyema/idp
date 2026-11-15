@@ -1,5 +1,7 @@
 # The estate's LLM spend is cut at the router, on the cloud route, and every saving is measured
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 **Date:** 2026-10-26
 **Status:** accepted (founder, 2026-10-26 — "the decision record is solid")
 **Receipt:** [idp#7248 — the founder's ruling](https://github.com/chidionyema/idp/issues/7248#issuecomment-6430382067)

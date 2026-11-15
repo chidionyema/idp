@@ -1,5 +1,7 @@
 # Founder tutorial: picking and adding models (the router, llm.<zone>)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 Executable spec: `features/gates/model-routing.feature`, graded by `tests/test_llm_row.py`.
 Tracked on crew#400. `<zone>` is `estate.zone` in `clusters/<cluster>/estate-config.yaml`
 (today `mumchimp.com`); the founder-surface card "Model router (llm)" in the catalogue at

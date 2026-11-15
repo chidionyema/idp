@@ -1,5 +1,7 @@
 # Crossplane owns Day-2, OpenTofu owns the ground, and one target never has two owners
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 2026-09-08. The founder, reading the Diamond Standard record's rejection line: "i think if
 crossplane has benefits for us we need to work out how to fit it in."
 Record: `~/.claude/docs/founder/2026-09-07T2331Z-like-why-cant-they-coexist-ntyring-to-undertsd-8fd87e60.md`.

@@ -1,5 +1,7 @@
 # Estate Adaptive Intelligence & Execution Economy (AEE)
 
+> **OKE is retired.** Any OKE or OCI reference below is historical. Current infrastructure authority: `AGENTS.md` and `docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md`.
+
 ## Research (G0) and build proposal (G1–G9)
 
 **Date:** 2026-10-28

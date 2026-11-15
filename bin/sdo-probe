@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""sdo-probe -- is the Sovereign Dispatch Orchestrator's shared bus actually here?
+
+The estate rule is that a declared home is operational only after a real probe.
+SDO is claimed to write JSON turn packets to a SQLite WAL bus at
+/var/lib/genesis/genesis.db. This command answers, with machine output, whether
+that bus exists and carries a turn/instruction table. It never creates the bus:
+an absent bus is reported, never faked.
+
+    bin/sdo-probe                       # probe the declared path and $SDO_DB
+    bin/sdo-probe --db PATH --json
+
+Exit codes: 0 bus present and shaped as expected; 3 bus absent or unshaped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+
+DECLARED = "/var/lib/genesis/genesis.db"
+CANDIDATES = (
+    os.path.join(os.path.expanduser("~"), ".estate/sdo/genesis.db"),
+    os.path.join(os.path.expanduser("~"), ".genesis/genesis.db"),
+)
+EXPECTED = ("instructions", "turn_packets", "events")
+REQUIRED_COLUMNS = ("instruction_id", "payload")
+
+
+def probe(path: str) -> dict:
+    row = {
+        "db": path,
+        "exists": os.path.isfile(path),
+        "tables": [],
+        "verdict": "SDO_ABSENT",
+    }
+    if not row["exists"]:
+        return row
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        row["tables"] = sorted(
+            r[0]
+            for r in con.execute("select name from sqlite_master where type='table'")
+        )
+        for table in row["tables"]:
+            if table not in EXPECTED:
+                continue
+            cols = [c[1] for c in con.execute(f"pragma table_info({table})")]
+            if all(col in cols for col in REQUIRED_COLUMNS):
+                row["verdict"] = "SDO_AVAILABLE"
+                row["shape_table"] = table
+                break
+        con.close()
+    except sqlite3.Error as exc:
+        row["verdict"] = "SDO_UNREADABLE"
+        row["error"] = str(exc)
+    return row
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="sdo-probe")
+    ap.add_argument(
+        "--db", action="append", default=[], help="bus path to probe (repeatable)"
+    )
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    paths = a.db or ([os.environ["SDO_DB"]] if os.environ.get("SDO_DB") else []) + [
+        DECLARED,
+        *CANDIDATES,
+    ]
+    rows = [probe(p) for p in paths]
+    available = [r for r in rows if r["verdict"] == "SDO_AVAILABLE"]
+    payload = {
+        "ok": bool(available),
+        "probed": rows,
+        "verdict": "SDO_AVAILABLE" if available else "SDO_ABSENT",
+    }
+
+    if a.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"sdo-probe: {'AVAILABLE' if available else 'ABSENT'}")
+        for r in rows:
+            print(
+                f"  {r['verdict']:<15} {r['db']}"
+                + (f" tables={','.join(r['tables'])}" if r["tables"] else "")
+            )
+        if not available:
+            print(
+                "  the declared SDO bus does not exist on this machine; do not claim it is in use"
+            )
+    return 0 if available else 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
