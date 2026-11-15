@@ -98,12 +98,6 @@ if [ -n "$_readiness_sha" ]; then
   fi
 fi
 
-_free_mb=$(/bin/df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
-if [ -n "${_free_mb:-}" ] && [ "$_free_mb" -lt 3000 ]; then
-  echo "ok    pre-push: ${_free_mb}MB free (<3000MB) -- verification offloaded to Greenlane CI" >&2
-  exit 0
-fi
-
 # Run Layer 0 inline — exit 1 here exits the whole hook, not a subshell
 if ! _no_claude_guard <<<"$push_refs"; then
   exit 1
@@ -161,6 +155,17 @@ EOF
 lane_branch=""
 if ! _claim_guard; then
   exit 1
+fi
+
+# The disk floor buys skipping the EXPENSIVE verification (bin/idp-ci, below), never the cheap
+# authorities above it (2026-11-15). Measured: free space sat at 780-1100 MB all afternoon, and
+# this exit fired on every push, so the claim guard and Layer 0 never ran -- eight lanes reached
+# the merge queue with no Claim line and could not land. A refusal that costs one HTTP call is
+# not the thing to trade for disk.
+_free_mb=$(/bin/df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -n "${_free_mb:-}" ] && [ "$_free_mb" -lt 3000 ]; then
+  echo "ok    pre-push: ${_free_mb}MB free (<3000MB) -- idp-ci fast gate offloaded to Greenlane CI (claim + structure still enforced)" >&2
+  exit 0
 fi
 
 # Idempotent protection against fast-gate / python-strict failures reaching the OKE CI.
