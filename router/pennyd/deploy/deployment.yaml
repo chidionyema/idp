@@ -12,7 +12,9 @@ spec:
       labels:
         app: pennyd
     spec:
+      automountServiceAccountToken: false
       securityContext:
+        # Keep the image's nobody identity and make the log volume writable for it.
         runAsNonRoot: true
         runAsUser: 65534
         runAsGroup: 65534
@@ -22,6 +24,10 @@ spec:
         - name: pennyd
           image: ghcr.io/chidionyema/pennyd:v0.2.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
           # no args: the image ENTRYPOINT already supplies /app/config.toml,
           # which the config volume mounts at that exact path
           ports: [{containerPort: 4000}]
@@ -29,9 +35,10 @@ spec:
             - secretRef: {name: pennyd-keys}
           volumeMounts:
             - {name: providers, mountPath: /etc/pennyd/providers, readOnly: true}
-            - {name: config, mountPath: /app/config.toml, subPath: config.toml}
+            - {name: config, mountPath: /app/config.toml, subPath: config.toml, readOnly: true}
             - {name: keys, mountPath: /etc/pennyd/keys.toml, subPath: keys.toml, readOnly: true}
             - {name: log, mountPath: /var/lib/pennyd}
+            # the root filesystem is read-only, so /tmp is the only scratch path
             - {name: tmp, mountPath: /tmp}
           readinessProbe:
             httpGet: {path: /health, port: 4000}
@@ -39,11 +46,6 @@ spec:
           resources:
             requests: {cpu: "50m", memory: "64Mi"}
             limits: {cpu: "500m", memory: "256Mi"}
-          securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities: {drop: [ALL]}
-          # the only writable paths: the request log (PVC above) and scratch
       volumes:
         - name: providers
           configMap: {name: pennyd-providers}
@@ -51,7 +53,7 @@ spec:
           configMap: {name: pennyd-config}
         - name: log
           persistentVolumeClaim: {claimName: pennyd-log}
+        - name: tmp
+          emptyDir: {}
         - name: keys
           secret: {secretName: pennyd-edge-keys}
-        - name: tmp
-          emptyDir: {sizeLimit: 64Mi}
