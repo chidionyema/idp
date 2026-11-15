@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+python=python3
+if [ -z "${CI:-}" ] && [ -x "$HOME/.estate/venv-ci/bin/python" ]; then
+  python="$HOME/.estate/venv-ci/bin/python"
+fi
+exec "$python" -B -m pytest -q -p no:cacheprovider --strict-config --strict-markers \
+  tests/test_greenlane_merges_a_head_it_proves.py \
+  tests/test_greenlane_state_cas.py \
+  tests/test_greenlane_unallocated_runner_circuit.py
