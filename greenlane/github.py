@@ -1466,15 +1466,39 @@ class GitHubBackend:
         found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         return found[0] if found else None
 
+    def _proof_head(self, lane: str, rebased: str) -> str:
+        """The sha the PR head really is, when it carries exactly the proven tree.
+
+        The proof must name the PR head (bin/idp-bdd-proof-gate). The lane on origin can hold
+        a different commit than `rebased` with the SAME tree and parent -- an earlier squash of
+        the same work. Measured twice: #8117 (204bd87 vs head 2646a47, tree 80269896) and
+        #8124 (dbd5d78 vs head 18d8606, tree 630c04aa): the gate refused a proven change for a
+        sha it never looked inside. Name the real head only when its tree and parents are
+        identical to what was proven; anything else keeps `rebased`, and the gate refuses it.
+        """
+        actual = self._ref(lane)
+        if not re.fullmatch(r"[0-9a-f]{40}", actual or "") or actual == rebased:
+            return rebased
+
+        def shape(sha: str) -> tuple[str, str]:
+            tree = self.git("rev-parse", f"{sha}^{{tree}}", check=False)
+            parents = self.git("rev-parse", f"{sha}^@", check=False)
+            return tree, parents
+
+        a, r = shape(actual), shape(rebased)
+        proven = re.fullmatch(r"[0-9a-f]{40}", r[0] or "") is not None
+        return actual if proven and a == r else rebased
+
     def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
+        proved = self._proof_head(lane, rebased)
         body = (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
             f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
             f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
-            f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
+            f"BDD-PROOF\nhead: {proved}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
         if existing:
