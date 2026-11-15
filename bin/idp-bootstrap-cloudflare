@@ -161,8 +161,20 @@ R2_GID=$(gid "Workers R2 Storage Write" com.cloudflare.api.account); [ -n "$R2_G
 WS_GID=$(gid "Workers Scripts Write" com.cloudflare.api.account); [ -n "$WS_GID" ] || fail perms "no permission group 'Workers Scripts Write' (account)"
 WR_GID=$(gid "Workers Routes Write" com.cloudflare.api.account.zone); [ -n "$WR_GID" ] || fail perms "no permission group 'Workers Routes Write' (zone)"
 WAI_GID=$(gid "Workers AI Write" com.cloudflare.api.account)   # newer than the others; optional
-zone=$(cf "$ROOT" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty'); [ -n "$zone" ] || fail zone "$ZONE is not a zone of this account"
-ZONE_ID=$(jq -r .id <<<"$zone"); ACCOUNT_ID=$(jq -r .account.id <<<"$zone")
+zone=$(cf "$ROOT" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty')
+if [ -n "$zone" ]; then
+  ZONE_ID=$(jq -r .id <<<"$zone"); ACCOUNT_ID=$(jq -r .account.id <<<"$zone")
+else
+  # idp#7814, the "two-account stitch": the zone lives in another Cloudflare account than this
+  # root (failed runs 42385416630, 42489994627, 42602043437). The Workers lane does not need the
+  # zone: mint for the root's own account and let bin/idp-otto-homes deploy on workers.dev.
+  # Exactly one visible account, or refuse: guessing an account deploys into the wrong one.
+  accts=$(cf "$ROOT" GET /accounts | jq -r '[.result[]?.id] | join(" ")')
+  set -- $accts
+  [ "$#" -eq 1 ] || fail zone "$ZONE is not a zone of this account, and the root sees $# accounts; refusing to guess"
+  ZONE_ID=""; ACCOUNT_ID=$1
+  say ok zone "$ZONE is in another account (idp#7814); minting for account-only workers.dev deploy"
+fi
 mint() { # <name> <policies-json> -> token JSON {id,value}
   cf "$ROOT" POST /user/tokens "$(jq -nc --arg n "$1" --argjson p "$2" '{name:$n, policies:$p}')" | jq -e 'select(.success) | .result | {id, value}'
 }
@@ -172,6 +184,20 @@ wrkpol=$(jq -nc --arg s "$WS_GID" --arg r "$WR_GID" --arg ai "$WAI_GID" --arg a 
   '[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"},
      permission_groups:([{id:$s}] + (if $ai == "" then [] else [{id:$ai}] end))},
     {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$r}]}]')
+if [ -z "$ZONE_ID" ]; then
+  # account-only Workers token: scripts (+AI); no zone route permission, no DNS token
+  wrkpol=$(jq -nc --arg s "$WS_GID" --arg ai "$WAI_GID" --arg a "$ACCOUNT_ID" \
+    '[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"},
+       permission_groups:([{id:$s}] + (if $ai == "" then [] else [{id:$ai}] end))}]')
+  wrktok=$(mint "estate-workers $ACCOUNT_ID" "$wrkpol") || fail mint "Workers token not created"
+  WRK=$(jq -r .value <<<"$wrktok"); unset wrktok
+  verify "$WRK" || fail verify "Workers token does not verify"
+  cf "$WRK" GET "/accounts/$ACCOUNT_ID/workers/scripts" | jq -e .success >/dev/null || fail verify "Workers token cannot list the account's scripts, so it cannot deploy one"
+  printf '%s' "$WRK" > "$P/wrk"; "$IDP/bin/idp-cloud" secret put cloudflare-workers-token --file "$P/wrk" >/dev/null || fail vault "cloudflare-workers-token write refused"
+  unset WRK ROOT
+  say ok cloudflare "cloudflare-workers-token (account-only, workers.dev) written; DNS and R2 tokens unchanged"
+  exit 0
+fi
 dnstok=$(mint "estate-dns $ZONE" "$dnspol") || fail mint "DNS token not created"
 r2tok=$(mint "estate-r2 $BUCKET" "$r2pol") || fail mint "R2 token not created"
 wrktok=$(mint "estate-workers $ZONE" "$wrkpol") || fail mint "Workers token not created"
