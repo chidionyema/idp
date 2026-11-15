@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Protect IDP test inputs in staged changes and outbound branch updates."""
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import sys
+
+HASH = re.compile(r"[0-9a-f]{40}")
+ZERO = "0" * 40
+CONFIG = {
+    "conftest.py", "pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg", "setup.py",
+    "package.json", "pnpm-lock.yaml", "yarn.lock", "package-lock.json",
+    "Cargo.toml", "Cargo.lock", "go.mod", "go.sum", "Makefile",
+}
+TEST_CONFIG = re.compile(r"^(jest|vitest|playwright|cypress)\.config\.")
+SUITES = {"test", "tests", "__tests__", "features", "fixtures", "testdata", ".countercheck", ".githooks"}
+
+
+def git(*args):
+    return subprocess.run(["git", *args], capture_output=True, check=True).stdout
+
+
+def protected(path):
+    parts = PurePosixPath(path).parts
+    name = parts[-1]
+    return (
+        SUITES.intersection(parts[:-1])
+        or parts[:2] == (".github", "workflows")
+        or name in CONFIG
+        or TEST_CONFIG.match(name)
+        or name.startswith("test_")
+        or name.endswith(("_test.go", "_test.py", "_test.rs", ".test.ts", ".test.tsx", ".test.js",
+                          ".test.jsx", ".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx"))
+    )
+
+
+def changes(*diff_args):
+    # 2026-11-15: the blanket rule refused NEW tests as well as weakened ones, which taxes every
+    # agent asked to add coverage (R14). An added test file cannot weaken an existing test;
+    # a modified, deleted or renamed one still can. Keep that distinction, do not drop the gate.
+    fields = [os.fsdecode(chunk) for chunk in git(
+        "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z",
+        *diff_args, "--").split(b"\0")]
+    blocked = set()
+    for status, name in zip(fields[0::2], fields[1::2]):
+        if name and protected(name) and not status.startswith("A"):
+            blocked.add(name)
+    return blocked
+
+
+def outgoing(refs):
+    blocked = set()
+    for line in refs.splitlines():
+        fields = line.split()
+        if len(fields) != 4:
+            raise ValueError("Invalid pre-push input")
+        _, local_sha, remote_ref, remote_sha = (field.decode("ascii") for field in fields)
+        if not HASH.fullmatch(local_sha) or not HASH.fullmatch(remote_sha):
+            raise ValueError("Invalid pre-push commit ID")
+        if local_sha in (ZERO, remote_sha) or not remote_ref.startswith("refs/heads/"):
+            continue
+        base = git("merge-base", "refs/remotes/origin/main", local_sha).decode().strip()
+        blocked.update(changes(base, local_sha))
+    return blocked
+
+
+def main():
+    hook, *args = sys.argv[1:]
+    # Git gives the pre-push refs only once. Replay them unchanged to the original hook.
+    push_input = sys.stdin.buffer.read() if hook == "pre-push" else None
+    try:
+        if hook == "pre-commit":
+            blocked = changes("--cached")
+        elif hook == "pre-push":
+            blocked = outgoing(push_input)
+        else:
+            blocked = set()
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        print(f"Test integrity guard could not verify the change. {exc}", file=sys.stderr)
+        return 1
+    if blocked:
+        print("Test integrity guard refused protected paths:", file=sys.stderr)
+        for name in sorted(blocked):
+            print(f"  {name!r}", file=sys.stderr)
+        return 1
+
+    repo = Path(os.fsdecode(git("rev-parse", "--show-toplevel").rstrip(b"\n")))
+    original = repo / ".githooks" / hook
+    if original.is_file() and os.access(original, os.X_OK):
+        return subprocess.run([str(original), *args], input=push_input).returncode
+    # FAIL CLOSED (2026-11-15). This returned 0 for a hook that exists but is not executable, so a
+    # one-character file-mode change switched off every gate in .githooks/ silently -- measured:
+    # .githooks/pre-push was 100644, and eight lanes reached the merge queue with no Claim line.
+    # A hook that exists and cannot run is a broken boundary, not an absent one.
+    if original.is_file():
+        print(
+            f"REFUSED: {original} exists but is not executable, so every gate in it would be "
+            f"skipped. Fix: chmod +x {original}",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
