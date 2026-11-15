@@ -1,0 +1,22 @@
+{
+  "acceptance": "ACCEPTED",
+  "artifact_complete": true,
+  "artifact_sha256": "ab144360fcd97412dc2e023ec77d9333dd5750cf2a5dbdb3c9a7332496c6f16e",
+  "attempt_a": {"epoch": 1, "id": "a-48c9964d-3de8-40ee-8d94-f140b49d4860"},
+  "attempt_b": {"epoch": 2, "id": "a-f8ab1e0e-f526-49cf-979a-aac1a5c53124"},
+  "events": 12,
+  "fenced_attempt": "a-48c9964d-3de8-40ee-8d94-f140b49d4860",
+  "final_state": "OPERATING",
+  "goal": "land the continuity substrate",
+  "kill": {"by": "SIGKILL", "checkpoints_before_kill": 3, "returncode": -9},
+  "no_duplicate_lines": true,
+  "operational_verdict": "OPERATING",
+  "restored_completed_work": 3,
+  "takeover_detection": {"needed": true, "reasons": ["lease expired 1s ago"]},
+  "zombie_rejected": true,
+  "receipt_sha256_of_this_run_output": "5b9f7b5f2f0fea6058e2c6bf899c60636f7e317762775a3f9a83e0e8ee5a7702",
+  "command": "python3 platform/estate/continuity/canary.py",
+  "exit_status": 0,
+  "date": "2026-11-15",
+  "note": "regression form: tests/estate/test_continuity_canary.py re-proves this in CI"
+}
