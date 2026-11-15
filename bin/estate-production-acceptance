@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Check hosted QA at a specific SHA before sending work to a release branch."""
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from urllib.parse import quote, urlencode
+
+SHA = re.compile(r"[a-f0-9]{40}")
+REPO = re.compile(r"chidionyema/[a-zA-Z0-9_.-]+")
+PROFILES = {
+    "idp": (
+        "ci.yml",
+        {
+            "production-readiness": [],
+            "offline-gate": [],
+            "bdd-suites (tests, all)": [],
+            "bdd-suites (acceptance, render)": [],
+            "bdd-suites (acceptance, 1/2)": [],
+            "bdd-suites (acceptance, 2/2)": [],
+            "ci-success": [],
+        },
+    ),
+    "argon": (
+        "genesis-founder-production-acceptance.yml",
+        {
+            "founder-production-acceptance": [
+                "Integration",
+                "Failure recovery",
+                "Concurrent load",
+                "Production build and budget",
+                "Browser viewport and route acceptance",
+            ]
+        },
+    ),
+}
+DEFAULT = (
+    "estate-production-acceptance.yml",
+    {
+        "integration": [],
+        "failure-recovery": [],
+        "concurrent-load": [],
+        "production-build": [],
+    },
+)
+POLICY_SCRIPTS = {
+    "idp": ("bin/idp-production-readiness", "bin/idp-ci"),
+    "argon": (
+        "ops/git/check_production_readiness.sh",
+        "scripts/founder-browser-release-qa.mjs",
+    ),
+}
+DEFAULT_POLICY_SCRIPTS = ("ops/git/check_production_readiness.sh",)
+
+
+def github(path):
+    result = subprocess.run(
+        ["gh", "api", path],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    return json.loads(result.stdout)
+
+
+def observe(repository, sha, lookup=github):
+    profile = repository.split("/", 1)[1].lower()
+    workflow, required = PROFILES.get(profile, DEFAULT)
+    prefix = f"repos/{repository}"
+    report = {
+        "repository": repository,
+        "sha": sha,
+        "workflow": workflow,
+        "state": "unavailable",
+    }
+    try:
+        query = urlencode({"head_sha": sha, "per_page": 5})
+        records = lookup(f"{prefix}/actions/workflows/{workflow}/runs?{query}")[
+            "workflow_runs"
+        ]
+        matches = [r for r in records if r["head_sha"] == sha]
+        if profile == "idp":
+            # An IDP pull_request run may check GitHub's synthetic merge tree.
+            # Greenlane's queue push and main pushes check the SHA itself.
+            matches = [
+                r
+                for r in matches
+                if r.get("event") == "push"
+                and (
+                    r.get("head_branch") == "main"
+                    or r.get("head_branch", "").startswith("queue/")
+                )
+            ]
+        if not matches:
+            return {**report, "state": "missing-run"}
+        run = max(matches, key=lambda row: row["id"])
+        run_id = run["id"]
+        attempt = run["run_attempt"]
+        if (
+            type(run_id) is not int
+            or type(attempt) is not int
+            or min(run_id, attempt) < 1
+        ):
+            return report
+        report["run_url"] = f"https://github.com/{repository}/actions/runs/{run_id}"
+        if run["status"] != "completed":
+            return {**report, "state": "pending"}
+
+        jobs = lookup(
+            f"{prefix}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+        )["jobs"]
+        checks = {}
+        for name, steps in required.items():
+            matching = [
+                j for j in jobs if j["name"] == name and j.get("head_sha") == sha
+            ]
+            if len(matching) != 1:
+                checks[name] = "missing"
+                continue
+            job = matching[0]
+            runner = job.get("runner_id")
+            ran = type(runner) is int and runner > 0 and bool(job.get("steps"))
+            step_results = {s["name"]: s["conclusion"] for s in job.get("steps", [])}
+            if not ran:
+                checks[name] = "not-run"
+            elif job.get("conclusion") != "success":
+                checks[name] = "failed"
+            elif any(step_results.get(step) != "success" for step in steps):
+                checks[name] = "incomplete"
+            else:
+                checks[name] = "passed"
+        report["checks"] = checks
+        if run["conclusion"] != "success" or any(
+            result != "passed" for result in checks.values()
+        ):
+            return {**report, "state": "checks-incomplete"}
+
+        default = quote(lookup(prefix)["default_branch"], safe="")
+        base = lookup(f"{prefix}/git/ref/heads/{default}")["object"]["sha"]
+        if not SHA.fullmatch(base):
+            return report
+        paths = (
+            f".github/workflows/{workflow}",
+            *POLICY_SCRIPTS.get(profile, DEFAULT_POLICY_SCRIPTS),
+        )
+        for relative in paths:
+            path = f"{prefix}/contents/{relative}"
+            source = lookup(f"{path}?ref={base}")["sha"]
+            selected = lookup(f"{path}?ref={sha}")["sha"]
+            if not SHA.fullmatch(source) or source != selected:
+                state = "workflow-changed" if relative == paths[0] else "policy-changed"
+                return {**report, "state": state, "file": relative}
+        return {**report, "state": "passed"}
+    except (subprocess.SubprocessError, OSError, KeyError, TypeError, ValueError):
+        return report
+
+
+def pre_push(repository, refs):
+    for line in refs:
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 4 or not all(SHA.fullmatch(value) for value in fields[1::2]):
+            print("Invalid Git pre-push input", file=sys.stderr)
+            return 1
+        _, local, remote_ref, current = fields
+        if not remote_ref.startswith("refs/heads/release/") or local == current:
+            continue
+        if local == "0" * 40:
+            print("Release branch deletion refused", file=sys.stderr)
+            return 1
+        report = observe(repository, local)
+        print(json.dumps(report, sort_keys=True), file=sys.stderr)
+        if report["state"] != "passed":
+            return 1
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("repository")
+    parser.add_argument("sha", nargs="?")
+    parser.add_argument("--pre-push", action="store_true")
+    args = parser.parse_args()
+    if not REPO.fullmatch(args.repository):
+        parser.error("expected chidionyema/REPO")
+    if args.pre_push and args.sha is None:
+        return pre_push(args.repository, sys.stdin)
+    if args.pre_push or not SHA.fullmatch(args.sha or ""):
+        parser.error("expected chidionyema/REPO and a full 40-character commit SHA")
+    result = observe(args.repository, args.sha)
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["state"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
