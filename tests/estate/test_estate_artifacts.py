@@ -15,10 +15,12 @@ FILES = [
     "bin/estate-topology",
     "bin/estate-debug-pack",
     "bin/estate-service-grade",
-    "bin/estate-itest",
     "bin/estate-metrics-push",
     "bin/estate-assurance-selftest",
     "bin/estate-certify",
+]
+SHELL = [
+    "bin/estate-itest",
 ]
 
 
@@ -33,3 +35,13 @@ def test_scripts_compile():
     for rel in FILES:
         source = (IDP / rel).read_text()
         compile(source, rel, "exec")
+
+
+def test_shell_scripts_parse():
+    import subprocess
+
+    for rel in SHELL:
+        result = subprocess.run(
+            ["bash", "-n", str(IDP / rel)], capture_output=True, text=True
+        )
+        assert result.returncode == 0, rel + ": " + result.stderr
