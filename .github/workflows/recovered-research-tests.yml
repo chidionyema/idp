@@ -1,0 +1,89 @@
+name: Recovered research source falsification
+on:
+  push:
+    branches:
+      - research/reconcile-chatgpt-today-20261116
+      - main
+    paths:
+      - 'tools/academy/triad/**'
+      - 'bin/idp-passkey-verify.mjs'
+      - 'bin/idp-plan-ceremony-observe'
+      - 'platform/founder-passkey/worker.js'
+      - 'tests/test_idp_passkey_verifier.mjs'
+      - 'tests/test_founder_passkey_worker.py'
+      - 'tests/test_idp_plan_ceremony_observe.py'
+      - 'tests/test_agents_md_size_ratcheting.py'
+      - '.github/workflows/agents-md-gate.yml'
+      - '.github/workflows/recovered-research-tests.yml'
+  pull_request:
+    paths:
+      - 'tools/academy/triad/**'
+      - 'bin/idp-passkey-verify.mjs'
+      - 'bin/idp-plan-ceremony-observe'
+      - 'platform/founder-passkey/worker.js'
+      - 'tests/test_idp_passkey_verifier.mjs'
+      - 'tests/test_founder_passkey_worker.py'
+      - 'tests/test_idp_plan_ceremony_observe.py'
+      - 'tests/test_agents_md_size_ratcheting.py'
+      - '.github/workflows/agents-md-gate.yml'
+      - '.github/workflows/recovered-research-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  falsify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Assert safe same-main transplant with zero deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor 2268863bf339194847adac154f70df64d19e0055 HEAD; then
+            if git diff --name-only --diff-filter=D 2268863bf339194847adac154f70df64d19e0055 HEAD | grep -q .; then
+              echo 'FAIL: historical source deletion introduced'; exit 1
+            fi
+          else
+            echo 'BLIND: missing expected recovery parent'; exit 2
+          fi
+          test -f platform/lifeboat/src/aistudio.js
+          test -f ops/aistudio/genesis-mycelium.user.js
+          test -f .github/workflows/genesis-aistudio-source-intake.yml
+          echo 'PASS: no deletion and original AI Studio source files preserved'
+      - name: Run original and adaptive TRIAD falsifiers
+        run: |
+          set -euo pipefail
+          node --test tools/academy/triad/evaluate.test.mjs tools/academy/triad/adaptive.test.mjs
+      - name: Run WebAuthn cryptographic negatives
+        run: |
+          set -euo pipefail
+          node --check bin/idp-passkey-verify.mjs
+          node --test tests/test_idp_passkey_verifier.mjs
+      - name: Run read-only observer and protected gate falsifiers
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q 'pytest==8.4.2'
+          python3 -m pytest -q tests/test_idp_plan_ceremony_observe.py tests/test_agents_md_size_ratcheting.py tests/test_founder_passkey_worker.py
+      - name: Generate and execute the portable learner studio in real browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v google-chrome >/dev/null || { echo 'BLIND: no Chrome binary'; exit 2; }
+          node tools/academy/triad/build-standalone.mjs triad-standalone.html
+          timeout 35 google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=5000 --dump-dom "file://$GITHUB_WORKSPACE/triad-standalone.html" > /tmp/triad-reconciled-dom.html 2>/tmp/triad-reconciled-browser.log
+          grep -Fq 'What would you expect?' /tmp/triad-reconciled-dom.html || { cat /tmp/triad-reconciled-browser.log; exit 1; }
+          echo 'PASS: portable actual browser rendering; not a learner efficacy claim'
+      - name: Explicit non-admission boundary
+        run: |
+          echo "TESTED_SOURCE_SHA=$GITHUB_SHA"
+          echo "VERDICT=RESEARCH_ENGINEERING_TEST_ONLY"
+          echo "AUTHORISED_GATE=NOT_PROMOTED"
+          echo "LEARNER_EFFICACY=UNKNOWN"
+          echo "FAMILY_RELEASE=FALSE"
+          echo "PRODUCTION_YIELD=NOT_CLAIMED"
