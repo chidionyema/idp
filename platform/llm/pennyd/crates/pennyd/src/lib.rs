@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod gateway;
+pub mod instance;
 pub mod lanes;
 pub mod metrics;
 pub mod settle_stream;

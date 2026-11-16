@@ -235,6 +235,7 @@ mod tests {
         estimated_input_tokens: u64,
     ) -> (SettleStream, Arc<Ledger>, Arc<TraceStore>) {
         let budgets = Budgets::new();
+        budgets.ensure("edge-key", 5.0);
         budgets.reserve("edge-key", 0.01, now()).unwrap();
         let ledger = Arc::new(Ledger::default());
         let traces = Arc::new(TraceStore::default());

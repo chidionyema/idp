@@ -23,6 +23,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "config.toml".into());
     let cfg = Config::load(&cfg_path)?;
 
+    // ONE WRITER. A second daemon would interleave the ledger and the budgets.
+    let lock_path = cfg
+        .lock_path
+        .clone()
+        .unwrap_or_else(|| format!("{}.lock", cfg.log_path));
+    let _instance = match pennyd::instance::acquire(&lock_path) {
+        Ok(guard) => guard,
+        Err(why) => {
+            tracing::error!("{why}");
+            eprintln!("pennyd: {why}");
+            std::process::exit(pennyd::instance::EXIT_ALREADY_RUNNING);
+        }
+    };
+
     let registry = Arc::new(Registry::load_dir(Path::new(&cfg.providers_dir))?);
     let lanes = lanes_from_registry(&registry, cfg.shaping.cache_control)?;
     let lane_router = Arc::new(LaneRouter::new(

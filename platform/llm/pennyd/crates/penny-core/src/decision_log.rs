@@ -35,6 +35,15 @@ pub struct DecisionLog {
     path: PathBuf,
     file: File,
     pub seq: u64,
+    /// Tail-anchored: the next sequence number is the last row's seq + 1, even
+    /// when the chain broke before it. A restart must never reuse a seq that is
+    /// already in the file (the 4,961-duplicate incident), and a break must not
+    /// make the daemon silently start again at 1.
+    pub next_seq: u64,
+    /// The last non-empty line is not valid JSON (a torn write). Appending would
+    /// guess a sequence number that may already exist, so the log refuses to
+    /// extend a torn tail until it is quarantined.
+    pub torn_tail: bool,
     pub head: String,
     /// P1-5: first tampered/corrupt row observed at open. NEVER truncated
     /// away — the chain keeps the invalid region visible forever, and the
@@ -46,6 +55,8 @@ impl DecisionLog {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let mut seq = 0u64;
+        let mut tail_seq: Option<u64> = None;
+        let mut tail_unparsed = false;
         let mut head = "0".repeat(64);
         let mut tampered_at: Option<u64> = None;
         if let Ok(f) = File::open(&path) {
@@ -54,6 +65,15 @@ impl DecisionLog {
                 let line = line?;
                 if line.trim().is_empty() {
                     continue;
+                }
+                match serde_json::from_str::<Value>(&line) {
+                    Ok(rec) => {
+                        tail_unparsed = false;
+                        if let Some(s) = rec["seq"].as_u64() {
+                            tail_seq = Some(s);
+                        }
+                    }
+                    Err(_) => tail_unparsed = true,
                 }
                 let valid = parsed_ok(&line, &head, expect_seq);
                 if let Some((rseq, h)) = valid {
@@ -68,11 +88,24 @@ impl DecisionLog {
                 }
             }
         }
+        let next_seq = tail_seq.map(|s| s + 1).unwrap_or(seq + 1).max(seq + 1);
+        if tail_seq.is_some_and(|s| s > seq) {
+            // The file has rows past the verified prefix: keep them visible, but
+            // resume numbering from the real tail instead of duplicating seqs.
+            tracing::warn!(
+                verified_seq = seq,
+                tail_seq = tail_seq.unwrap_or_default(),
+                next_seq,
+                "decision log tail is ahead of the verified chain; numbering from the tail"
+            );
+        }
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(Self {
             path,
             file,
             seq,
+            next_seq,
+            torn_tail: tail_unparsed,
             head,
             tampered_at,
         })
@@ -84,7 +117,13 @@ impl DecisionLog {
     }
 
     pub fn append(&mut self, ts: u64, decision: &Value) -> io::Result<()> {
-        let seq = self.seq + 1;
+        if self.torn_tail {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "decision log tail is torn; refusing to extend a broken chain",
+            ));
+        }
+        let seq = self.next_seq;
         let hash = record_hash(seq, ts, &self.head, decision);
         let line = json!({
             "seq": seq, "ts": ts, "decision": decision,
@@ -105,6 +144,7 @@ impl DecisionLog {
             })?;
         }
         self.seq = seq;
+        self.next_seq = seq + 1;
         self.head = hash;
         Ok(())
     }
@@ -242,6 +282,74 @@ mod tests {
         assert_eq!(log2.seq, 1);
         assert_eq!(log2.tampered_at, Some(2));
         assert_eq!(log2.verify().unwrap(), Some(2));
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::*;
+
+    fn tmp(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("pennyd-tail-{}-{name}.jsonl", std::process::id()))
+    }
+
+    #[test]
+    fn a_restart_resumes_from_the_tail_not_from_one() {
+        let p = tmp("resume");
+        let _ = std::fs::remove_file(&p);
+        {
+            let mut log = DecisionLog::open(&p).unwrap();
+            log.append(1, &json!({"a": 1})).unwrap();
+            log.append(2, &json!({"b": 2})).unwrap();
+        }
+        let mut again = DecisionLog::open(&p).unwrap();
+        assert_eq!(again.next_seq, 3);
+        again.append(3, &json!({"c": 3})).unwrap();
+        assert_eq!(again.next_seq, 4);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_valid_tail_past_a_break_is_not_reused() {
+        let p = tmp("broken-tail");
+        let _ = std::fs::remove_file(&p);
+        {
+            let mut log = DecisionLog::open(&p).unwrap();
+            log.append(1, &json!({"a": 1})).unwrap();
+        }
+        {
+            use std::io::Write as _;
+            let mut f = OpenOptions::new().append(true).open(&p).unwrap();
+            writeln!(
+                f,
+                "{{\"seq\":9,\"ts\":2,\"decision\":{{\"x\":1}},\"prev_hash\":\"{}\",\"hash\":\"deadbeef\"}}",
+                "0".repeat(64)
+            )
+            .unwrap();
+        }
+        let log = DecisionLog::open(&p).unwrap();
+        assert!(log.tampered_at.is_some(), "the break stays visible");
+        assert_eq!(log.next_seq, 10, "numbering follows the real tail");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_torn_tail_is_refused_rather_than_duplicated() {
+        let p = tmp("torn");
+        let _ = std::fs::remove_file(&p);
+        {
+            let mut log = DecisionLog::open(&p).unwrap();
+            log.append(1, &json!({"a": 1})).unwrap();
+        }
+        {
+            use std::io::Write as _;
+            let mut f = OpenOptions::new().append(true).open(&p).unwrap();
+            f.write_all(b"{\"seq\":2,\"ts\":2,\"torn").unwrap();
+        }
+        let mut log = DecisionLog::open(&p).unwrap();
+        assert!(log.torn_tail);
+        assert!(log.append(3, &json!({"c": 3})).is_err());
         let _ = std::fs::remove_file(&p);
     }
 }

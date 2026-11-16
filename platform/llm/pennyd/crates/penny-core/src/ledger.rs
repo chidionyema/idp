@@ -1,8 +1,13 @@
-//! Founder-visible spend ledger. All counters are atomic; micro-USD avoids
-//! float atomics. `savings` = input tokens served from cache, priced at the
-//! cheapest paid lane (conservative underestimate).
+//! Founder-visible spend ledger. All counters are atomic; integer nano-USD
+//! (1 NUSD = 1e-9 USD) avoids float atomics and float drift. `savings` = input
+//! tokens served from cache, priced at the cheapest paid lane (conservative
+//! underestimate). One rounding happens when a USD rate card meets the ledger;
+//! every addition after that is exact.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Integer nano-dollars per US dollar. The ledger never accumulates f64.
+pub const NUSD_PER_USD: u64 = 1_000_000_000;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Snapshot {
@@ -12,8 +17,17 @@ pub struct Snapshot {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub input_tokens_saved: u64,
+    /// Exact accumulated spend in integer nano-USD.
+    pub spend_nusd: u64,
+    /// Exact accumulated avoided spend in integer nano-USD.
+    pub saved_nusd: u64,
     pub spend_usd: f64,
     pub saved_usd: f64,
+}
+
+/// Whole nano-USD for one rate-card amount. The only rounding in the path.
+pub fn nusd(usd: f64) -> u64 {
+    (usd.max(0.0) * NUSD_PER_USD as f64).round() as u64
 }
 
 impl Snapshot {
@@ -34,8 +48,8 @@ pub struct Ledger {
     input_tokens: AtomicU64,
     output_tokens: AtomicU64,
     input_tokens_saved: AtomicU64,
-    spend_micros: AtomicU64,
-    saved_micros: AtomicU64,
+    spend_nusd: AtomicU64,
+    saved_nusd: AtomicU64,
 }
 
 impl Ledger {
@@ -47,8 +61,8 @@ impl Ledger {
         self.requests.fetch_add(1, Ordering::Relaxed);
         self.input_tokens.fetch_add(in_tok, Ordering::Relaxed);
         self.output_tokens.fetch_add(out_tok, Ordering::Relaxed);
-        self.spend_micros
-            .fetch_add((usd.max(0.0) * 1_000_000.0) as u64, Ordering::Relaxed);
+        self.spend_nusd
+            .fetch_add(nusd(usd), Ordering::Relaxed);
     }
 
     pub fn record_hit(&self, saved_in_tok: u64, saved_usd: f64) {
@@ -56,8 +70,8 @@ impl Ledger {
         self.cache_hits.fetch_add(1, Ordering::Relaxed);
         self.input_tokens_saved
             .fetch_add(saved_in_tok, Ordering::Relaxed);
-        self.saved_micros
-            .fetch_add((saved_usd.max(0.0) * 1_000_000.0) as u64, Ordering::Relaxed);
+        self.saved_nusd
+            .fetch_add(nusd(saved_usd), Ordering::Relaxed);
     }
 
     pub fn cache_hit_rate(&self) -> f64 {
@@ -77,8 +91,10 @@ impl Ledger {
             input_tokens: self.input_tokens.load(Ordering::Relaxed),
             output_tokens: self.output_tokens.load(Ordering::Relaxed),
             input_tokens_saved: self.input_tokens_saved.load(Ordering::Relaxed),
-            spend_usd: self.spend_micros.load(Ordering::Relaxed) as f64 / 1_000_000.0,
-            saved_usd: self.saved_micros.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            spend_nusd: self.spend_nusd.load(Ordering::Relaxed),
+            saved_nusd: self.saved_nusd.load(Ordering::Relaxed),
+            spend_usd: self.spend_nusd.load(Ordering::Relaxed) as f64 / NUSD_PER_USD as f64,
+            saved_usd: self.saved_nusd.load(Ordering::Relaxed) as f64 / NUSD_PER_USD as f64,
         }
     }
 }
@@ -99,7 +115,24 @@ mod tests {
         assert_eq!(s.cache_eligible_requests, 2);
         assert_eq!(s.cache_hits, 1);
         assert!((s.cache_hit_rate() - 0.5).abs() < 1e-9);
-        assert!(s.spend_usd >= 0.001);
-        assert!(s.saved_usd >= 0.0005);
+        assert_eq!(s.spend_nusd, 1_000_000);
+        assert_eq!(s.saved_nusd, 500_000);
+        assert!((s.spend_usd - 0.001).abs() < 1e-12);
+    }
+
+    #[test]
+    fn sub_micro_charges_are_exact_and_never_lost() {
+        let l = Ledger::default();
+        for _ in 0..1000 {
+            l.charge(1, 1, 0.000_000_001); // one nano-dollar
+        }
+        assert_eq!(l.snapshot().spend_nusd, 1000);
+        assert!(l.snapshot().spend_usd > 0.0, "micro-USD truncation lost it");
+    }
+
+    #[test]
+    fn the_conversion_rounds_once_and_not_toward_zero() {
+        assert_eq!(nusd(0.000_000_0015), 2, "half a nano rounds up");
+        assert_eq!(nusd(-1.0), 0, "a negative rate card cannot become spend");
     }
 }

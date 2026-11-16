@@ -10,6 +10,9 @@ use serde::Deserialize;
 pub struct Config {
     pub bind: String,
     pub log_path: String,
+    /// Exclusive single-writer lock. Defaults to `<log_path>.lock`.
+    #[serde(default)]
+    pub lock_path: Option<String>,
     pub providers_dir: String,
     /// Optional secret-mounted file with extra [[keys]] entries. Edge API
     /// keys belong in a Secret, not in a ConfigMap (deployment finding).

@@ -114,7 +114,15 @@ impl Budgets {
         let key = budget_fingerprint(key);
         let (result, snapshot) = {
             let mut m = self.map.write().unwrap();
-            let b = m.get_mut(&key).expect("call ensure() before reserve()");
+            // A key with no entry is not "unlimited": it is an unknown key, and
+            // an unknown key gets a zero budget. A panic here would be a remote
+            // crash; a refusal is the fail-closed answer.
+            let b = m.entry(key.clone()).or_insert(Budget {
+                daily_limit_usd: 0.0,
+                spent_usd: 0.0,
+                reserved_usd: 0.0,
+                day: 0,
+            });
             let today = (now_unix / 86_400).max(b.day);
             Self::rollover(b, today);
             let result = if b.spent_usd + b.reserved_usd + est_usd > b.daily_limit_usd {
@@ -263,5 +271,26 @@ mod tests {
         b.settle("k", 0.0, 0.9, 200_000).unwrap();
         assert!(b.reserve("k", 0.9, 100_000).is_err());
         assert!((b.remaining("k", 100_000) - 0.1).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod unknown_key_tests {
+    use super::*;
+
+    #[test]
+    fn an_unknown_key_is_refused_not_panicked() {
+        let b = Budgets::new();
+        // No ensure(): this used to panic inside reserve(), which is a remote crash
+        // for any key the config did not pre-register.
+        let r = b.reserve("never-seen", 0.01, 1_700_000_000);
+        assert!(matches!(r, Err(PennyError::BudgetExceeded { .. })));
+    }
+
+    #[test]
+    fn an_ensured_key_can_reserve() {
+        let b = Budgets::new();
+        b.ensure("known", 5.0);
+        assert!(b.reserve("known", 0.01, 1_700_000_000).is_ok());
     }
 }
