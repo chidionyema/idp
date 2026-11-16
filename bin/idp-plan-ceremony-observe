@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""Observe actual estate PLAN ceremony without changing any safety gate.
+
+Reads the existing ~/.estate/plans/ append-only ledgers; never prints prompt,
+command, goal text, session identity, or any source payload. No network/write.
+Does NOT certify operating yield. An observed plan completion is NOT a verified
+operational outcome. This tool deliberately cannot make an enforcement decision.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+
+TOOLS = (
+    "declare_plan", "revise_plan", "add_bdd", "address_edgecases",
+    "address_2nd_order_effects", "complete_goal",
+)
+SPECIAL = {"observe.jsonl", "refusals.jsonl", "intents.jsonl"}
+MAX_BYTES = 8 * 1024 * 1024
+MAX_RECORDS = 100_000
+
+
+def _records(path: Path, errors: list[str], category: str):
+    """Read only regular files, bounded, using no contents in error messages."""
+    try:
+        meta = path.lstat()
+        if not stat.S_ISREG(meta.st_mode):
+            errors.append(f"{category}:NONREGULAR_FILE")
+            return
+        if meta.st_size > MAX_BYTES:
+            errors.append(f"{category}:OVERSIZED_FILE")
+            return
+        with path.open(encoding="utf-8") as handle:
+            for i, raw in enumerate(handle):
+                if i >= MAX_RECORDS:
+                    errors.append(f"{category}:RECORD_LIMIT")
+                    break
+                try:
+                    obj = json.loads(raw)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    errors.append(f"{category}:MALFORMED_JSONL")
+                    continue
+                if not isinstance(obj, dict):
+                    errors.append(f"{category}:INVALID_RECORD")
+                    continue
+                yield obj
+    except (OSError, UnicodeDecodeError):
+        errors.append(f"{category}:UNREADABLE_FILE")
+
+
+def _timestamp(obj: dict) -> float | None:
+    value = obj.get("at")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        out = float(value)
+        return out if 0 < out < 4_102_444_800 else None
+    return None
+
+
+def observe(root: Path, now: dt.datetime | None = None) -> dict:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    errors: list[str] = []
+    counts = Counter()
+    calls = Counter()
+    all_spans: list[float] = []
+    witnessed_sessions = 0
+    declared_sessions = 0
+    with_any_bdd = 0
+    plan_done_claim_sessions = 0
+    sessions_with_edgecases = 0
+    sessions_with_effects = 0
+    sessions_with_repeat_steps = 0
+    sessions_with_bad_sequence = 0
+    plan_files: list[Path] = []
+    try:
+        if root.is_symlink() or not root.is_dir():
+            errors.append("ledger_root:MISSING_OR_UNSAFE")
+        else:
+            for path in root.iterdir():
+                if path.name.endswith(".jsonl") and path.name not in SPECIAL and not path.name.startswith("session-"):
+                    plan_files.append(path)
+    except OSError:
+        errors.append("ledger_root:UNREADABLE")
+
+    for path in sorted(plan_files):
+        events = list(_records(path, errors, "plan") or [])
+        if not events:
+            counts["empty_session_ledgers"] += 1
+            continue
+        witnessed_sessions += 1
+        seen = Counter()
+        phases = defaultdict(set)
+        declared = False
+        any_bdd = any_edge = any_effect = any_complete = bad_seq = False
+        first = last = None
+        for obj in events:
+            tool = obj.get("tool")
+            if tool not in TOOLS and tool != "session_start":
+                counts["unrecognized_events"] += 1
+                continue
+            at = _timestamp(obj)
+            if at is None:
+                counts["events_without_valid_time"] += 1
+            if tool == "session_start":
+                continue
+            if at is not None:
+                first = at if first is None else min(first, at)
+                last = at if last is None else max(last, at)
+            calls[tool] += 1
+            args = obj.get("args") if isinstance(obj.get("args"), dict) else {}
+            if tool in ("declare_plan", "revise_plan"):
+                declared = True
+                if tool == "declare_plan":
+                    phases.clear()
+            else:
+                gid = args.get("goal_id")
+                key = gid if isinstance(gid, str) and 0 < len(gid) < 200 else "<unknown>"
+                seen[(tool, key)] += 1
+                phases[key].add(tool)
+                if not declared:
+                    bad_seq = True
+                if tool == "add_bdd":
+                    any_bdd = True
+                elif tool == "address_edgecases":
+                    any_edge = True
+                    if "add_bdd" not in phases[key]:
+                        bad_seq = True
+                elif tool == "address_2nd_order_effects":
+                    any_effect = True
+                    if "add_bdd" not in phases[key]:
+                        bad_seq = True
+                elif tool == "complete_goal":
+                    any_complete = True
+                    if not {"add_bdd", "address_edgecases", "address_2nd_order_effects"}.issubset(phases[key]):
+                        bad_seq = True
+        if declared:
+            declared_sessions += 1
+        if any_bdd:
+            with_any_bdd += 1
+        if any_edge:
+            sessions_with_edgecases += 1
+        if any_effect:
+            sessions_with_effects += 1
+        if any_complete:
+            plan_done_claim_sessions += 1
+        if any(n > 1 for n in seen.values()):
+            sessions_with_repeat_steps += 1
+        if bad_seq:
+            sessions_with_bad_sequence += 1
+        if first is not None and last is not None:
+            all_spans.append(max(0.0, last-first))
+
+    for kind, name in (("refusal", "refusals.jsonl"), ("unplanned", "observe.jsonl"), ("intent", "intents.jsonl")):
+        path = root / name
+        if not path.exists() and not path.is_symlink():
+            counts[f"{kind}_log_missing"] += 1
+            continue
+        for obj in _records(path, errors, kind) or []:
+            counts[f"{kind}_records"] += 1
+            if kind == "refusal":
+                reason = obj.get("reason")
+                if isinstance(reason, str) and reason in {
+                    "plan_not_declared", "subgoal_scenario_missing", "plan_complete",
+                }:
+                    counts[f"refusal_{reason}"] += 1
+                else:
+                    counts["refusal_other_or_unknown"] += 1
+                if obj.get("fatal") is False:
+                    counts["nonfatal_refusals"] += 1
+            elif kind == "intent" and obj.get("session") in ("anonymous", "", None):
+                counts["anonymous_intents"] += 1
+
+    if errors:
+        status = "PARTIAL_OR_BLIND"
+    elif witnessed_sessions == 0:
+        status = "BLIND_NO_SESSIONS"
+    else:
+        status = "OBSERVED_UNVERIFIED_EFFECT"
+
+    # A span between two plan-tool invocations INCLUDES all intervening work.
+    # It is never described as 'ceremony time', agent tokens or cost.
+    return {
+        "schema": "estate.plan_ceremony.observation.v1",
+        "observed_at": now.astimezone(dt.timezone.utc).isoformat(),
+        "status": status,
+        "ledger_session_files": len(plan_files),
+        "sessions_with_events": witnessed_sessions,
+        "sessions_with_plan_declaration": declared_sessions,
+        "sessions_with_bdd": with_any_bdd,
+        "sessions_with_edgecase_records": sessions_with_edgecases,
+        "sessions_with_second_order_records": sessions_with_effects,
+        "sessions_with_completion_claims": plan_done_claim_sessions,
+        "sessions_with_repeated_per_goal_calls": sessions_with_repeat_steps,
+        "sessions_with_out_of_order_calls": sessions_with_bad_sequence,
+        "plan_tool_calls": dict(sorted(calls.items())),
+        "event_counts": dict(sorted(counts.items())),
+        "session_plan_event_span_seconds_sum": round(sum(all_spans), 3),
+        "plan_sole_execution_duration_seconds": None,
+        "tokens_spent_on_ceremony": None,
+        "ceremony_cost": None,
+        "first_pass_delivery_delta": None,
+        "independently_verified_operational_yield": None,
+        "redacted_parse_errors_by_class": dict(sorted(Counter(errors).items())),
+        "next_evidence": "Join this read-only observation with real executor step durations, CI/Greenlane exact-SHA outcomes and independent deployed-effect receipts; do not remove the edge-case or goal/subgoal ceremony on these counts alone.",
+    }
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--ledger-root", type=Path, default=Path.home() / ".estate" / "plans")
+    p.add_argument("--json", action="store_true")
+    a = p.parse_args(argv)
+    report = observe(a.ledger_root)
+    print(json.dumps(report, sort_keys=True, indent=2 if a.json else None))
+    # Read-only observation cannot block legitimate work. Partial and blind are
+    # nevertheless explicit in its payload, never converted into a PASS.
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
