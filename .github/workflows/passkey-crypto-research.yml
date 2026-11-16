@@ -1,0 +1,33 @@
+name: Passkey cryptographic falsification (isolated)
+on:
+  push:
+    branches:
+      - research/passkey-cryptographic-verifier-20261116
+    paths:
+      - bin/idp-passkey-verify.mjs
+      - tests/test_idp_passkey_verifier.mjs
+      - .github/workflows/passkey-crypto-research.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  falsify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Check source and execute adversarial WebAuthn falsifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check bin/idp-passkey-verify.mjs
+          node --test tests/test_idp_passkey_verifier.mjs
+      - name: Explicit evidence and authority boundary
+        run: |
+          echo "SOURCE_SHA=$GITHUB_SHA"
+          echo "VERDICT=CRYPTOGRAPHIC_RESEARCH_ONLY"
+          echo "FOUNDER_APPROVAL=NOT_GRANTED"
+          echo "MERGE_PERMITTED=FALSE"
