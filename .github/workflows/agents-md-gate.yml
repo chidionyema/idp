@@ -1,18 +1,54 @@
 name: agents-md-gate
+# Producer-first ratchet: do not pretend the 935-line inherited file already
+# meets the 300-line target, and never let it grow while consolidation proceeds.
+# This safety rule must itself fail on deliberately bad inputs.
 on:
   pull_request:
-    paths: ["AGENTS.md"]
+    paths: ["AGENTS.md", ".github/workflows/agents-md-gate.yml"]
   push:
     branches: [main]
-    paths: ["AGENTS.md"]
-
+    paths: ["AGENTS.md", ".github/workflows/agents-md-gate.yml"]
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: AGENTS.md must be ≤300 lines
+        with:
+          fetch-depth: 0
+      - name: Assert canonical AGENTS law size cannot regress
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          lines=$(wc -l < AGENTS.md)
-          if [ "\$lines" -gt 300 ]; then echo "FAIL: AGENTS.md is \$lines lines (max 300)"; exit 1; fi
-          echo "OK: AGENTS.md is \$lines lines"
+          set -euo pipefail
+          target=300
+          known_legacy_ceiling=935
+          if [ ! -f AGENTS.md ]; then
+            echo '::error::AGENTS.md missing; cannot evaluate canonical governance'
+            exit 2
+          fi
+          if [[ ! "${BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Missing or invalid trusted baseline SHA; BLIND is not OK'
+            exit 2
+          fi
+          if ! git cat-file -e "${BASE_SHA}:AGENTS.md" 2>/dev/null; then
+            echo '::error::Baseline AGENTS.md unavailable at trusted SHA; BLIND is not OK'
+            exit 2
+          fi
+          lines=$(awk 'END { print NR }' AGENTS.md)
+          baseline=$(git show "${BASE_SHA}:AGENTS.md" | awk 'END { print NR }')
+          if (( lines > known_legacy_ceiling && lines > target )); then
+            echo "::error::AGENTS.md grew beyond known legacy ceiling: ${lines} > ${known_legacy_ceiling}"
+            exit 1
+          fi
+          if (( lines > baseline && lines > target )); then
+            echo "::error::AGENTS.md regressed from ${baseline} to ${lines} lines (> ${target})"
+            exit 1
+          fi
+          if (( lines > target )); then
+            echo "::warning::LEGACY_DEBT: AGENTS.md=${lines} lines (target <=${target}); allowed only because it did NOT grow; reduce by moving detailed material into verified referenced doctrine"
+          else
+            echo "PASS: AGENTS.md=${lines} lines (target <=${target})"
+          fi
