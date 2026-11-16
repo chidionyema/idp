@@ -6,6 +6,8 @@ on:
     paths:
       - bin/idp-passkey-verify.mjs
       - tests/test_idp_passkey_verifier.mjs
+      - tests/test_founder_passkey_worker.py
+      - platform/founder-passkey/worker.js
       - .github/workflows/passkey-crypto-research.yml
   workflow_dispatch:
 permissions:
@@ -25,6 +27,12 @@ jobs:
           set -euo pipefail
           node --check bin/idp-passkey-verify.mjs
           node --test tests/test_idp_passkey_verifier.mjs
+      - name: Exercise actual Cloudflare relay module (registration, identity and malformed requests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q 'pytest==8.4.2'
+          python3 -m pytest -q tests/test_founder_passkey_worker.py
       - name: Explicit evidence and authority boundary
         run: |
           echo "SOURCE_SHA=$GITHUB_SHA"
