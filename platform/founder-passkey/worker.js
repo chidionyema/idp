@@ -61,7 +61,7 @@ if(h.get('register')){
   btn('Approve with Face ID',async()=>{
    const ch=await crypto.subtle.digest('SHA-256',raw);
    const a=await navigator.credentials.get({publicKey:{challenge:ch,rpId:location.hostname,userVerification:'required',allowCredentials:[]}});
-   const body={authenticatorData:b64u.enc(a.response.authenticatorData),clientDataJSON:b64u.enc(a.response.clientDataJSON),signature:b64u.enc(a.response.signature)};
+   const body={credentialId:b64u.enc(a.rawId),authenticatorData:b64u.enc(a.response.authenticatorData),clientDataJSON:b64u.enc(a.response.clientDataJSON),signature:b64u.enc(a.response.signature)};
    const r=await fetch('/approve/'+b64u.enc(ch),{method:'POST',body:JSON.stringify(body)});
    if(!r.ok) throw new Error('relay answered '+r.status);
    say('Approved. The estate lands it from here.','ok')});
@@ -114,7 +114,7 @@ export default {
         if (req.method === 'POST') {
           if (list.length >= 5) return json({ error: 'full' }, 429);
           const b = await readBody(req);
-          if (!okB64u(b.authenticatorData, 2048) || !okB64u(b.clientDataJSON, 4096) || !okB64u(b.signature, 512))
+          if (!okB64u(b.credentialId, 512) || !okB64u(b.authenticatorData, 2048) || !okB64u(b.clientDataJSON, 4096) || !okB64u(b.signature, 512))
             return json({ error: 'bad assertion' }, 400);
           list.push({ authenticatorData: b.authenticatorData, clientDataJSON: b.clientDataJSON, signature: b.signature });
           await env.APPROVALS.put(k, JSON.stringify(list), { expirationTtl: TTL });
