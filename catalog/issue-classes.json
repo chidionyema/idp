@@ -1,5 +1,5 @@
 {
- "revision": "2026-11-14",
+ "revision": "2026-11-15",
  "note": "One record per failure class. A class may occur once; a second instance of an open class is a governance failure, not a new incident.",
  "classes": [
   {
@@ -127,6 +127,28 @@
    ],
    "status": "open",
    "recurrence_checks": []
+  },
+  {
+   "class": "synchronous-status-polling",
+   "first_seen": "2026-11-11",
+   "instances": [
+    "133 poll incidents in 24h (docs/diagnoses/2026-11-11-reactive-wakeup-signaling-gap.md)",
+    "498 distinct command forms for one question, 193 git fetch (bin/lane-where header)",
+    "PR #8161 worker ran a 14-iteration gh pr view + sleep-15 loop, 2026-11-15, after the diagnosis and replacements existed"
+   ],
+   "gap": "the positive replacements (bin/estate-wait, bin/lane-where, greenlane convergence) shipped but nothing refused the poll construct at the execution boundary, so any worker could relapse",
+   "compensating_action": "bin/zero-poll-guard.py refuses watch/wait verbs and convergence-polling loops with exit 78 at the pre-exec boundary (harness hooks call it); a zeropoll rung in bin/idp-ci grades every diff's added lines with the same matcher; one status read per (lease, target, head) when ESTATE_LEASE_ID is set, and reads are revoked after a greenlane handoff",
+   "falsifier": "tests/test_zero_poll.py (5 cases, both directions, on the CLI's real path) + bin/zero-poll-guard.py --selftest (5 bad refused, 4 good allowed)",
+   "owner": "chidionyema/idp#8057",
+   "surfaces": [
+    "agent bash tool",
+    "scripts in bin/ platform/ scripts/ src/ .github/",
+    "daemon entry points"
+   ],
+   "status": "closed",
+   "recurrence_checks": [
+    "PR #8161: a worker relapsed AFTER the replacements existed -- the refusal gate is the missing half this class now carries; recurrence = any new diff introducing a polling construct, refused by the zeropoll rung before merge"
+   ]
   }
  ]
 }
