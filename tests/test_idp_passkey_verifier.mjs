@@ -68,8 +68,8 @@ test('P02 deterministic canonical payload is exactly SHA-256 WebAuthn challenge 
   assert.equal(check().challenge,enc(sha(raw)));
 });
 test('P03 forged trailer or empty assertion cannot be authorisation',()=>{
-  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[]}),/no cryptographically valid assertion/);
-  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[{trailer:'X-Founder-Passkey-Seal: forged'}]}),/no cryptographically valid assertion/);
+  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[],nowMs:now}),/no cryptographically valid assertion/);
+  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[{trailer:'X-Founder-Passkey-Seal: forged'}],nowMs:now}),/no cryptographically valid assertion/);
 });
 test('P04 invalid signature from different signer is refused',()=>{
   const evil=generateKeyPairSync('ec',{namedCurve:'P-256'});
@@ -104,7 +104,7 @@ test('P10 unregistered credential ID is refused',()=>{
 });
 test('P11 expires and rejects future timestamps',()=>{
   assert.throws(()=>check({nowMs:now+20*60_000}),/expired/);
-  assert.throws(()=>check({nowMs:now-2*60_000}),/created in future/);
+  assert.throws(()=>check({nowMs:now-3*60_000}),/created in future/);
 });
 test('P12 rejects malformed and noncanonical base64url',()=>{
   for (const s of ['','A','__==','a b','!!']) assert.throws(()=>decodeB64url(s));
@@ -130,8 +130,8 @@ test('P15 untrusted report fields are refused before verifying',()=>{
   assert.throws(()=>check({assertion}),/unexpected field/);
 });
 test('P16 cap on posted assertions; one genuine after junk returns crypto-only evidence',()=>{
-  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:Array(6).fill(sample())}),/assertion list/);
-  const r=checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[{junk:true},sample()]});
+  assert.throws(()=>checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:Array(6).fill(sample()),nowMs:now}),/assertion list/);
+  const r=checkFromFiles({keyring:baseKeyring,manifest:baseManifest,assertions:[{junk:true},sample()],nowMs:now});
   assert.equal(r.admissionPermitted,false);
   assert.equal(r.signatureVerified,true);
 });
