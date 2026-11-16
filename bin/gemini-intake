@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Preserve recovered Gemini work into quarantine with a sha256 manifest.
+
+    bin/gemini-intake                       newest ~/.estate/handover-*
+    bin/gemini-intake --source DIR          an explicit handover/source directory
+    bin/gemini-intake --dest DIR            write into an explicit destination
+    bin/gemini-intake --dry-run             report what would be copied
+
+Why (founder, 2026-11-15): Gemini work was stranded because nothing captured it. This is the
+intake half of the fix: it copies a source tree into quarantine, writes MANIFEST.json and
+SHA256SUMS, never overwrites a file that differs, and is idempotent -- a second run copies 0 and
+reports SKIPPED-IDENTICAL. A file that exists with a different hash is ON-DISK-DIFFERS and is
+left untouched, so a recovery can never masquerade as a rewrite.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import shutil
+import sys
+
+
+def sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def newest_handover() -> str:
+    base = os.path.expanduser("~/.estate")
+    try:
+        names = [n for n in os.listdir(base) if n.startswith("handover-")]
+    except OSError:
+        return ""
+    if not names:
+        return ""
+    names.sort(key=lambda n: os.path.getmtime(os.path.join(base, n)), reverse=True)
+    return os.path.join(base, names[0])
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--source", default="")
+    ap.add_argument("--dest", default="")
+    ap.add_argument("--quarantine", default=os.path.expanduser("~/.estate/quarantine"))
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args(argv)
+
+    source = args.source or newest_handover()
+    if not source or not os.path.isdir(source):
+        print(f"gemini-intake: no source ({source or 'none'})", file=sys.stderr)
+        return 1
+
+    stamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dest = args.dest or os.path.join(args.quarantine, f"gemini-{stamp}")
+
+    counts = {"SAFE-COPIED": 0, "SKIPPED-IDENTICAL": 0, "ON-DISK-DIFFERS": 0, "DRY-RUN": 0}
+    files: list[dict] = []
+    for root, _dirs, names in os.walk(source):
+        for name in names:
+            src = os.path.join(root, name)
+            rel = os.path.relpath(src, source)
+            dst = os.path.join(dest, rel)
+            src_sha = sha256(src)
+            if os.path.exists(dst):
+                if sha256(dst) == src_sha:
+                    verdict = "SKIPPED-IDENTICAL"
+                else:
+                    verdict = "ON-DISK-DIFFERS"
+            elif args.dry_run:
+                verdict = "DRY-RUN"
+            else:
+                verdict = "SAFE-COPIED"
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+                # BIND THE DIGEST TO THE BYTES THAT LANDED (2026-11-15). The manifest used to
+                # record the SOURCE hash and never look at the copy, so a short write left an
+                # entry asserting a hash the quarantined file did not have -- the same defect that
+                # got the recovered Gemini Rust middleware quarantined: a claimed digest that was
+                # never bound to the payload. Recovery cannot ship that at its front door.
+                copied_sha = sha256(dst)
+                if copied_sha != src_sha:
+                    print(
+                        f"gemini-intake: {rel} copied as {copied_sha[:12]}, not {src_sha[:12]} "
+                        f"-- refusing; the manifest would assert a hash the file does not have",
+                        file=sys.stderr,
+                    )
+                    return 1
+            counts[verdict] += 1
+            files.append({"rel": rel, "sha256": src_sha, "verdict": verdict})
+
+    manifest = {
+        "source": source,
+        "dest": dest,
+        "generated_at": stamp,
+        "dry_run": args.dry_run,
+        "counts": counts,
+        "files": files,
+    }
+    if not args.dry_run:
+        # The intake's own records live under .intake/ so they never collide with, or
+        # overwrite, a source file that also happens to be named MANIFEST.json/SHA256SUMS.
+        records = os.path.join(dest, ".intake")
+        os.makedirs(records, exist_ok=True)
+        with open(os.path.join(records, "MANIFEST.json"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(manifest, indent=2) + "\n")
+        with open(os.path.join(records, "SHA256SUMS"), "w", encoding="utf-8") as handle:
+            for entry in files:
+                if entry["verdict"] in ("SAFE-COPIED", "SKIPPED-IDENTICAL"):
+                    handle.write(f"{entry['sha256']}  {entry['rel']}\n")
+
+    print(json.dumps({"source": source, "dest": dest, "counts": counts}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
