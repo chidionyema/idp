@@ -419,6 +419,31 @@ def assurance_target(now: int) -> dict:
     }
 
 
+def fleet_target(now: int) -> dict:
+    st = {"available": False, "at": 0, "sessions": 0}
+    try:
+        st = json.loads((BASE / "fleet.json").read_text())
+    except (OSError, ValueError):
+        pass
+    age = now - int(st.get("at") or 0)
+    healthy = bool(st.get("available")) and age < 180
+    return {
+        "id": "fleet-view",
+        "name": "Fleet sessions (FleetView)",
+        "kind": "push",
+        "owner": "platform",
+        "slo": 99.0,
+        "runbook": "estate-fleet; fleet.json/fleet.html in ~/.estate/topology",
+        "dns": "127.0.0.1:18790",
+        "expect": 1,
+        "state": "up" if healthy else "down",
+        "http_code": 0,
+        "latency_ms": 0.0,
+        "detail": "" if healthy else (st.get("error") or "no fresh collection (%ss)" % age),
+        "checked_at": now,
+    }
+
+
 def main() -> int:
     targets = json.loads(TARGETS.read_text())
     now = int(time.time())
@@ -426,7 +451,7 @@ def main() -> int:
         "collected_at": now,
         "collected_at_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
         "host": socket.gethostname(),
-        "targets": [probe(t, now) for t in targets] + [push_target(now), bws_target(now), grade_target(now), assurance_target(now)],
+        "targets": [probe(t, now) for t in targets] + [push_target(now), bws_target(now), grade_target(now), assurance_target(now), fleet_target(now)],
     }
     write_atomic(TOPOLOGY, json.dumps(doc, indent=2, sort_keys=True) + "\n")
     write_atomic(KB, render_kb(doc))
