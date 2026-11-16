@@ -48,7 +48,10 @@ RUN set -eux; \
     test -n "${binary}"; \
     install -m 0755 "${binary}" /usr/local/bin/gortex; \
     rm -rf /tmp/gortex /tmp/gortex.tar.gz; \
-    gortex --version
+    # The smoke test proves the binary RUNS. `gortex --version` is not a flag this CLI
+    # has: build-multiarch run 43774918311 died with "unknown flag: --version" on both
+    # arches, so main's image was red for a smoke test that tested the wrong interface.
+    gortex --help >/dev/null
 USER engine
 ENV HOME=/data/home
 EXPOSE 7411
