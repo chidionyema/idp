@@ -28,9 +28,42 @@ const ITEMS = Object.freeze({
 
 function clone(x) { return structuredClone(x); }
 function assertSession(s) {
-  if (!s || !ARMS.includes(s.arm) || !['diagnostic', 'teach', 'transfer', 'remediation', 'retest', 'complete'].includes(s.phase) || !Array.isArray(s.answers)) {
+  if (!s || s.version !== PILOT_VERSION || !ARMS.includes(s.arm) ||
+      !['diagnostic', 'teach', 'transfer', 'remediation', 'retest', 'complete'].includes(s.phase) ||
+      !Array.isArray(s.answers) || s.answers.length > 6) {
     throw new TypeError('Invalid TRIAD research session');
   }
+  let expectedRetest = null;
+  for (let i = 0; i < s.answers.length; i++) {
+    const a = s.answers[i];
+    const expectedPhase = i < 2 ? 'diagnostic' : i < 5 ? 'transfer' : 'retest';
+    if (!a || a.phase !== expectedPhase) throw new TypeError('Invalid assessment ordering');
+    if (i === 5) {
+      expectedRetest = s.answers.slice(2, 5).find(v => !v.correct)?.skill;
+      if (!expectedRetest || s.retestSkill !== expectedRetest) throw new TypeError('Forged or unneeded retest');
+    }
+    const item = i < 2 ? ITEMS.diagnostic[i] : i < 5 ? ITEMS.transfer[i - 2] : ITEMS.retest[expectedRetest];
+    if (!item || a.itemId !== item.id || a.skill !== item.skill ||
+        !Number.isInteger(a.choice) || a.choice < 0 || a.choice >= item.choices.length ||
+        a.correct !== (a.choice === item.correct) ||
+        typeof a.confidence !== 'number' || !Number.isFinite(a.confidence) ||
+        a.confidence < 0 || a.confidence > 1) {
+      throw new TypeError('Tampered, duplicated or invalid assessment record');
+    }
+  }
+  const n = s.answers.length;
+  if ((n < 2 && s.phase !== 'diagnostic') ||
+      (n === 2 && !['teach', 'transfer'].includes(s.phase)) ||
+      (n > 2 && n < 5 && s.phase !== 'transfer') ||
+      (n === 5 && s.answers.slice(2,5).every(a=>a.correct) && s.phase !== 'complete') ||
+      (n === 5 && s.answers.slice(2,5).some(a=>!a.correct) && !['remediation','retest'].includes(s.phase)) ||
+      (n === 6 && s.phase !== 'complete')) {
+    throw new TypeError('Forged or inconsistent assessment lifecycle');
+  }
+  if (n >= 5) {
+    const shouldRetest = s.answers.slice(2,5).find(a => !a.correct)?.skill || null;
+    if (s.retestSkill !== shouldRetest) throw new TypeError('Incorrect remediation target');
+  } else if (s.retestSkill !== null) throw new TypeError('Premature remediation target');
 }
 function safeQuestion(q) {
   const { id, skill, prompt, choices } = q;
