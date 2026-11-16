@@ -65,6 +65,17 @@ jobs:
           timeout 35 google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1440,1100 --virtual-time-budget=5000 --screenshot=triad-browser.png http://127.0.0.1:8765/studio.html >/tmp/triad-screenshot.log 2>/tmp/triad-browser-screenshot.err
           [ -s triad-browser.png ] || { echo "FAIL: no real screenshot"; exit 1; }
           echo "PASS: browser executed the learner UI; screenshot captured. No human transfer outcome implied."
+      - name: Build one-file offline studio and execute it in headless Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/academy/triad/build-standalone.mjs
+          node tools/academy/triad/build-standalone.mjs triad-standalone.html
+          [ -s triad-standalone.html ]
+          timeout 35 google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=5000 --dump-dom "file://$GITHUB_WORKSPACE/triad-standalone.html" >/tmp/triad-onefile-browser.html 2>/tmp/triad-onefile-errors.txt
+          grep -Fq "What would you expect?" /tmp/triad-onefile-browser.html || { echo "FAIL: offline learner UI did not run"; cat /tmp/triad-onefile-errors.txt; exit 1; }
+          grep -Fq "A signed photo archive" /tmp/triad-onefile-browser.html || { echo "FAIL: offline learner question missing"; exit 1; }
+          echo "PASS: portable one-file HTML executed in real Chrome, no web server or network."
       - name: Package and validate private research prototype
         shell: bash
         run: |
@@ -76,6 +87,7 @@ jobs:
           name: triad-research-prototype
           path: |
             triad-pilot.zip
+            triad-standalone.html
             triad-browser.png
           retention-days: 14
       - name: Print scoped source identity and evidence boundary
