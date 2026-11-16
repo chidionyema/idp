@@ -74,7 +74,7 @@ export function approvalPayload(m) {
   validateManifest(m);
   return Buffer.from([
     VERSION,m.requestedAt,m.baseSha,m.contentSha256,m.change,
-    ...m.targets.map(t=>\`PR #\${t.pr} @ \${t.head}\`),
+    ...m.targets.map(t=>'PR #' + t.pr + ' @ ' + t.head),
   ].join('\n'),'utf8');
 }
 
