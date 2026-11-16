@@ -105,3 +105,12 @@ This review can establish **source-level** drift from the old writeup; it cannot
 - Factual post-commit: `greenlane/{engine,forensics,brief}.py`, `.github/workflows/greenlane.yml`.
 - Existing accountable-yield doctrine: `docs/training/2026-11-12-karma-operating-doctrine.md` and `AGENTS.md`.
 - Existing founder operating/first-use law issue: `chidionyema/idp#7771`.
+## 7. Newly falsified upstream guard: AGENTS.md workflow false-green (2026-11-16)
+
+**Measured defect:** Main `.github/workflows/agents-md-gate.yml` compares the escaped literal string `\$lines` to an integer. Bash responds `integer expression expected`, but its `if` body is skipped, the script then prints `OK: AGENTS.md is $lines lines` and exits 0. This was reproduced with the actual shell expression, not inferred solely from prose. The main file has **935 physical newline-terminated lines** while the stated eventual target is 300. A naïve fix (`set -e; test "$lines" -le 300`) would break legitimate existing governance updates.
+
+**Producer-stage repair candidate:** The same audit branch changes the workflow to count integer physical lines, require a resolvable trusted base commit SHA, reject any growth beyond that base when over 300, and independently cap known legacy debt at 935. At 301–935 lines with **no growth** the workflow emits `LEGACY_DEBT`, not `PASS`. At 300 or fewer it emits `PASS`. Invalid/missing baseline or missing AGENTS.md fails as `BLIND`. This ratchet is not the final 300-line consolidation.
+
+**Independent isolated negative test result:** `tests/test_agents_md_size_ratcheting.py` executed the extracted actual workflow Bash against real temporary Git repositories and returned **9/9 passes**, including 936-line growth refusal, no regrowth after reduction to 300/500, invalid/missing baseline, missing AGENTS and preserved 935-line legacy warning. Since this test was not run by the protected estate CI and the branch has not landed, it is a **candidate**, not a production fix.
+
+**Permanent prevention lesson:** Every policy must prove it can reject a known-bad input and let a known-good input through before first use. A printed `OK` or completed job is not a functioning gate. Do not increase the existing AGENTS debt; consolidate with content-preserving pointers after canary and keep the authoritative KARMA/first-use doctrine discoverable.
