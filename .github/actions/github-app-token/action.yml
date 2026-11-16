@@ -67,3 +67,19 @@ runs:
         echo "::add-mask::$tok"
         echo "token=$tok" >> "$GITHUB_OUTPUT"
         echo "ok      github-app-token  lane $LANE (expires in 1h); a merge armed with it starts main's workflows"
+    - id: assert_boundary
+      shell: bash
+      env:
+        MINTED: ${{ steps.mint.outputs.token }}
+      run: |
+        set -euo pipefail
+        # FAIL CLOSED AT THE BOUNDARY (2026-11-16). Run 43792501522: this composite reported
+        # success while the caller's `steps.app.outputs.token` was empty, so the AI Studio intake
+        # died one step later with PRIVATE_GITHUB_APP_TOKEN_ABSENT. A credential door that hands
+        # out nothing and says ok is the same class as a gate that passes on BLIND. Autonomy needs
+        # the door to refuse here, where the cause is, not three steps later.
+        if [ -z "${MINTED}" ]; then
+          echo "::error::GITHUB_APP_TOKEN_EMPTY_AT_BOUNDARY  lane minted no token; the caller must not proceed"
+          exit 2
+        fi
+        echo "ok      github-app-token  output reaches the caller (${#MINTED} chars)"
