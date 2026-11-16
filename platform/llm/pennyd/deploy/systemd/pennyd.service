@@ -1,0 +1,19 @@
+[Unit]
+Description=pennyd token-efficiency daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/home/%i/.estate/bin/pennyd /home/%i/.estate/config/pennyd.toml
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+# hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.estate
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
