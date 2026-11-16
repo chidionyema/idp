@@ -1,0 +1,14 @@
+resources:
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+  - pvc.yaml
+  - external-secret.yaml
+
+labels:
+  - pairs:
+      app: pennyd
+    includeSelectors: true
+
+# pennyd-edge-keys comes from the estate vault through External Secrets. Its
+# single `keys.toml` entry contains edge-client entries, never provider keys.
