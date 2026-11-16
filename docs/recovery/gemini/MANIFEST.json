@@ -1,0 +1,44 @@
+{
+  "packet": "opencode-1-forensics-recovery",
+  "issue": "chidionyema/idp#7819",
+  "claim": {
+    "agent": "oc6-7c1a",
+    "heartbeat": "2026-11-15T22:33:10Z",
+    "lease_until": "2026-11-15T23:33:10Z",
+    "paths": "docs/recovery/gemini/*,bin/gemini-intake,tests/test_gemini_intake.py,tests/fixtures/gemini/*"
+  },
+  "sources": [
+    {
+      "path": "~/.estate/handover-20261111T1010Z",
+      "checksums": {"entries": 42, "payload_ok": 41, "self_entry": "SHA256SUMS lists itself; cannot match"},
+      "verdict": "PRESERVED"
+    },
+    {
+      "path": "~/.estate/quarantine/codex-company-assets-20261111T1020Z",
+      "verdict": "PRESENT"
+    },
+    {
+      "path": "~/.estate/instructions/ledger.jsonl",
+      "counts": {"rego": 6, "symbiont": 13, "investor": 2, "topological": 60},
+      "verdict": "PRESENT (instruction evidence, not source)"
+    }
+  ],
+  "branches": [
+    {"branch": "lane/dsh-output-continuity", "head": "d287a7818", "worktree": "present", "bundle": "PARTIAL missing 4fcdfd86"},
+    {"branch": "lane/foreground-budget", "head": "1980abebe", "worktree": "present", "bundle": "NONE"},
+    {"branch": "lane/goal-progress-timeline", "head": "b2415b26c", "worktree": "present dirty=6", "bundle": "PARTIAL missing 471366be", "patch": "patches/idp-tracker-dirty.patch"},
+    {"branch": "lane/memory-bridge-live-20261111", "head": "e2c102208c", "worktree": "absent", "bundle": "OK against idp"}
+  ],
+  "workstreams": {
+    "BEAST / Mini-NASA": "SOURCE UNKNOWN (instruction/topological evidence; no source tree found this pass)",
+    "Genesis control plane": "SOURCE UNKNOWN",
+    "Genesis Symbiont / ICP": "SOURCE PRESENT (handover-20261111T1010Z/ins-00006)",
+    "Genesis Kernel": "SOURCE UNKNOWN",
+    "OMEGA / BEAST governance": "SOURCE UNKNOWN (rego instructions only)",
+    "Investor / commercial surfaces": "SOURCE UNKNOWN (investor instructions only)"
+  },
+  "known_failure_preserved": "Rust middleware signature check verified a claimed body hash without binding the body; quarantined, not deployed.",
+  "not_inspected": ["private Gemini conversation history", "AI Studio workspaces"],
+  "intake": "bin/gemini-intake + tests/test_gemini_intake.py",
+  "operational_status": "NOT_RUN"
+}
