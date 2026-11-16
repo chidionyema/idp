@@ -18,6 +18,7 @@ FILES = [
     "bin/estate-metrics-push",
     "bin/estate-assurance-selftest",
     "bin/estate-certify",
+    "bin/estate-fleet",
 ]
 SHELL = [
     "bin/estate-itest",
