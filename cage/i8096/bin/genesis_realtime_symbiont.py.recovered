@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""
+bin/genesis_realtime_symbiont.py — 4KB Spore Compiler, Reversible Science Streamer & Browser Userscript Generator
+Commands:
+  python3 bin/genesis_realtime_symbiont.py pack-spore
+  python3 bin/genesis_realtime_symbiont.py science-stream
+  python3 bin/genesis_realtime_symbiont.py emit-userscript
+"""
+
+import base64
+import hashlib
+import json
+import os
+import sqlite3
+import sys
+import time
+import urllib.request
+import zlib
+from pathlib import Path
+
+DB_PATH = Path(os.environ.get("GENESIS_DB_PATH", "/var/lib/genesis/genesis.db"))
+REALTIME_BASE_URL = os.environ.get("REALTIME_BASE_URL", "http://127.0.0.1:4001")
+FOUNDER_PUBKEY_HEX = os.environ.get("FOUNDER_ED25519_PUBLIC_KEY", "0" * 64)
+
+
+def assert_not_history_db(db_path: Path) -> None:
+    path_str = str(db_path)
+    if "/.estate/" in path_str or path_str.endswith("/estate.db"):
+        raise RuntimeError(
+            f"HISTORY_QUARANTINE_VIOLATION: Symbiont cannot mount legacy History ledger {path_str}"
+        )
+
+
+def post_json(path: str, payload: dict, sig_headers: dict | None = None) -> dict:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if sig_headers:
+        headers.update(sig_headers)
+    req = urllib.request.Request(
+        f"{REALTIME_BASE_URL.rstrip('/')}{path}",
+        data=body,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def build_4kb_genesis_spore(output_path: Path = Path("GENESIS_SPORE.dna")) -> dict:
+    """Packs the irreducible Genesis DNA + Latest Known-Good Checkpoint into a <= 4,096-byte self-extracting quine."""
+    assert_not_history_db(DB_PATH)
+    conn = sqlite3.connect(str(DB_PATH))
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT seq_id, merkle_root, fencing_token FROM realtime_event_ring ORDER BY seq_id DESC LIMIT 1"
+    ).fetchone()
+    latest_seq = row[0] if row else 0
+    latest_merkle = row[1] if row else ("0" * 64)
+    latest_fence = row[2] if row else 45
+
+    cp_row = cur.execute(
+        "SELECT checkpoint_id, seq_id, merkle_root, git_commit_sha FROM known_good_checkpoints ORDER BY seq_id DESC LIMIT 1"
+    ).fetchone()
+    known_good = (
+        {"id": cp_row[0], "seq": cp_row[1], "merkle": cp_row[2], "git": cp_row[3]}
+        if cp_row
+        else {"id": "KGC-0", "seq": 0, "merkle": "0" * 64, "git": "da1536c7"}
+    )
+
+    antibodies = [
+        {"id": r[0], "sig": r[1], "cmd": r[2]}
+        for r in cur.execute(
+            "SELECT antibody_id, failure_class_signature, remediation_cmd FROM catechism_antibodies LIMIT 10"
+        ).fetchall()
+    ]
+
+    core_dna = {
+        "v": "0.8.0-SOVEREIGN",
+        "pub": FOUNDER_PUBKEY_HEX,
+        "seq": latest_seq,
+        "fence": latest_fence,
+        "merkle": latest_merkle,
+        "known_good": known_good,
+        "invariants": [
+            "LAW:HardHistoryQuarantine_GenesisDbOnly",
+            "LAW:AutoPromptToBddCompilation",
+            "LAW:DarwinThinClient_NoLocalPorts",
+            "TLA+:AuthoritativeMainRequiresCertifierSig",
+            "TLA+:MonotonicPromotionFence",
+            "TLA+:UniversalReversibilityToKnownGood",
+            "BDD:G1_SplitAuthority",
+            "BDD:G2_WelchTTest_MinN2",
+            "BDD:G3_ZeroPassAntibody",
+            "BDD:G4_ByzantineQuarantine",
+            "BDD:G5_CVaR99Cap",
+            "BDD:G6_Sub50msRealtimeWALAndRollback",
+        ],
+        "antibodies": antibodies,
+        "endpoints": [
+            "https://genesis-founder-surface.pages.dev/api/realtime/ws",
+            "https://genesis-founder-surface.pages.dev/api/realtime/rollback",
+            "https://llm.mumchimp.com/v1",
+            "https://otto.mumchimp.com/healthz",
+        ],
+    }
+
+    compressed = zlib.compress(json.dumps(core_dna, separators=(",", ":")).encode("utf-8"), level=9)
+    b64_payload = base64.urlsafe_b64encode(compressed).decode("ascii")
+    digest = hashlib.sha256(compressed).hexdigest()[:16]
+
+    spore_text = (
+        f"#!/usr/bin/env python3\n"
+        f"# GENESIS_SPORE.dna v0.8.0-SOVEREIGN | SHA256:{digest} | KNOWN_GOOD:{known_good['id']}\n"
+        f"import base64,json,zlib;DNA=json.loads(zlib.decompress(base64.urlsafe_b64decode('{b64_payload}')))\n"
+        f"if __name__=='__main__':print('HYDRATED_GENESIS_SPORE:',DNA['known_good']['id'],DNA['merkle'])\n"
+    )
+    raw_bytes = spore_text.encode("utf-8")
+    assert len(raw_bytes) <= 4096, f"Spore exceeded 4096B budget: {len(raw_bytes)}B"
+    output_path.write_bytes(raw_bytes)
+
+    meta = {
+        "size_bytes": len(raw_bytes),
+        "seq_id": latest_seq,
+        "fencing_token": latest_fence,
+        "merkle_root": latest_merkle,
+        "known_good_checkpoint": known_good["id"],
+        "sha256_prefix": digest,
+    }
+    post_json("/api/realtime/publish", {"topic": "chronicle.anchor", "source_node": "spore-packer", "payload": meta})
+    return meta
+
+
+USERSCRIPT_TEMPLATE = """// ==UserScript==
+// @name         Genesis Symbiont Mycelium Bridge (v0.8.0-SOVEREIGN)
+// @namespace    https://genesis-founder-surface.pages.dev
+// @version      0.8.0
+// @description  Colonizes Kimi Web, ChatGPT Web, DeepSeek Web & Gemini Web into the Real-Time Genesis Bus
+// @match        https://kimi.moonshot.cn/*
+// @match        https://chatgpt.com/*
+// @match        https://chat.deepseek.com/*
+// @match        https://gemini.google.com/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+  'use strict';
+  const GATEWAY = 'https://genesis-founder-surface.pages.dev';
+  const SURFACE = window.location.hostname;
+
+  async function leaseAndExecute() {
+    try {
+      const res = await fetch(`${GATEWAY}/api/mycelium/lease`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_surface: SURFACE, model_id: 'web-symbiont' })
+      });
+      const data = await res.json();
+      if (data && data.ok && data.task) {
+        await fetch(`${GATEWAY}/api/realtime/publish`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'mycelium.heartbeat',
+            source_node: SURFACE,
+            payload: { taskId: data.task.taskId, status: 'EXECUTING_ON_WEB_SURFACE' }
+          })
+        });
+      }
+    } catch (_) {}
+  }
+
+  setInterval(leaseAndExecute, 3000);
+})();
+"""
+
+
+def emit_userscript(output_path: Path = Path("genesis-mycelium.user.js")) -> dict:
+    output_path.write_text(USERSCRIPT_TEMPLATE, encoding="utf-8")
+    return {"ok": True, "path": str(output_path), "bytes": len(USERSCRIPT_TEMPLATE)}
+
+
+def run_reversible_science_stream() -> None:
+    assert_not_history_db(DB_PATH)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    while True:
+        unrun = conn.execute(
+            """
+            SELECT p.experiment_id, p.hypothesis, p.min_sample_size, p.min_welch_t
+            FROM experiment_preregistrations p
+            LEFT JOIN experiment_trial_runs t ON p.experiment_id = t.experiment_id
+            GROUP BY p.experiment_id
+            HAVING COUNT(t.trial_id) < (p.min_sample_size * 2)
+            """
+        ).fetchall()
+
+        for exp in unrun:
+            exp_id = exp["experiment_id"]
+            cp_res = post_json("/api/realtime/checkpoint", {"label": f"PRE_EXP_{exp_id}"})
+            cp_id = cp_res.get("checkpoint", {}).get("checkpoint_id")
+
+            post_json(
+                "/api/realtime/publish",
+                {
+                    "topic": "science.dispatch",
+                    "source_node": "science-ephemeral-controller",
+                    "payload": {
+                        "experimentId": exp_id,
+                        "hypothesis": exp["hypothesis"],
+                        "preExperimentCheckpoint": cp_id,
+                        "status": "STREAMING_TRIALS",
+                    },
+                },
+            )
+        time.sleep(1.0)
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "pack-spore"
+    if cmd == "pack-spore":
+        print(json.dumps(build_4kb_genesis_spore(), indent=2))
+    elif cmd == "emit-userscript":
+        print(json.dumps(emit_userscript(), indent=2))
+    elif cmd == "science-stream":
+        run_reversible_science_stream()
