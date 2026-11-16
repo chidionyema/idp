@@ -35,6 +35,12 @@ ACCEPT = ", ".join(
     ]
 )
 TAG = re.compile(r'newTag:\s*(\S+)\s*#\s*\{"\$imagepolicy"')
+# platform/*/kustomization.yaml documents the estate's "not yet built" placeholder: run 0 and a
+# zero sha ("the number is 0, so any real build wins it"). image-automation replaces it with the
+# first real build's tag. Asking the registry for it can only answer 404, and MEASURED
+# 2026-11-16 that 404 held main red (offline-gate) for every lane waiting to land. A placeholder
+# is not a wrong pin; it is the documented state before a build exists.
+PLACEHOLDER = re.compile(r'^main-0-0{40}$')
 NAME = re.compile(r"^\s*-?\s*(?:newName|name):\s*(\S+)")
 
 
@@ -79,6 +85,9 @@ def main() -> int:
     missing = 0
     checked = 0
     for path, line, repo, tag in pins(root):
+        if PLACEHOLDER.match(tag):
+            print(f"skip  {path}:{line} ghcr.io/{repo}:{tag} is the documented not-yet-built placeholder")
+            continue
         checked += 1
         s = status(repo, tag)
         if s == 404:
