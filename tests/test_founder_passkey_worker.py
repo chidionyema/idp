@@ -37,8 +37,9 @@ out.regAgain = await call('POST', '/registration/' + N, { credentialId: 'evil', 
 out.regRead = await call('GET', '/registration/' + N);
 out.badPath = await call('GET', '/registration/short');
 out.apMissing = await call('GET', '/approve/' + C);
-for (let i = 0; i < 5; i++) out['ap' + i] = await call('POST', '/approve/' + C, { authenticatorData: 'AA' + i, clientDataJSON: 'BB', signature: 'CC' });
-out.apFull = await call('POST', '/approve/' + C, { authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
+out.apNoCredential = await call('POST', '/approve/' + C, { authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
+for (let i = 0; i < 5; i++) out['ap' + i] = await call('POST', '/approve/' + C, { credentialId: 'cred123', authenticatorData: 'AA' + i, clientDataJSON: 'BB', signature: 'CC' });
+out.apFull = await call('POST', '/approve/' + C, { credentialId: 'cred123', authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
 out.apRead = await call('GET', '/approve/' + C);
 out.apJunk = await call('POST', '/approve/' + 'd'.repeat(43), 'not json');
 const m = out.page.text.match(/<script>([\s\S]*)<\/script>/);
@@ -95,6 +96,7 @@ def test_unknown_or_short_paths_are_refused(results: dict) -> None:
 
 
 def test_approvals_are_kept_capped_and_validated(results: dict) -> None:
+    assert results["apNoCredential"]["status"] == 400
     assert results["apMissing"]["status"] == 404
     assert all(results[f"ap{i}"]["status"] == 200 for i in range(5))
     assert results["apFull"]["status"] == 429
