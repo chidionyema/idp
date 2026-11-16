@@ -21,10 +21,12 @@ ALLOW_FILE = BASE / "allow.txt"
 KEY_FILE = BASE / "action.key"
 DOOR_URL = "http://127.0.0.1:18790/intent/execute"
 TOPO = HOME / ".estate" / "topology"
+FLEET = TOPO / "fleet.json"
+FLEET_HTML = TOPO / "fleet.html"
 SECRET = HOME / ".estate" / "secrets" / "dev" / "fleetview-intent.yaml"
 AGE_KEY = HOME / ".config" / "prospector" / "age-key.txt"
 SOPS = "/usr/local/bin/sops"
-BIND = ("127.0.0.1", 18791)
+BIND = ("127.0.0.1", int(os.environ.get("ESTATE_DISPATCH_PORT", "18791")))
 MAX_BODY = 1_048_576
 RUN_TIMEOUT = 600
 PLAN_BIN = HOME / ".estate" / "memory" / "bin" / "estate-plan"
@@ -344,6 +346,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._authed():
             self._auth_fail()
+            return
+        if path in ("/fleet", "/fleet.json"):
+            f = FLEET_HTML if path == "/fleet" else FLEET
+            ctype = "text/html; charset=utf-8" if path == "/fleet" else "application/json"
+            try:
+                raw = f.read_bytes()
+            except OSError:
+                self._send(503, {"detail": "fleet not collected yet", "run": "estate-fleet"})
+                return
+            self._send_raw(200, raw, ctype)
             return
         if path == "/intents":
             self._send(200, {"intents": sorted(_allow())})
