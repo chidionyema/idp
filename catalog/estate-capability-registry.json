@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 279,
     "service": 121,
-    "tool": 500,
+    "tool": 502,
     "workflow": 105
   },
   "records": [
@@ -28809,6 +28809,7 @@
         "cap:tool/idp-install-deps",
         "cap:tool/idp-machine-submit",
         "cap:tool/media-dept-baseline",
+        "cap:tool/pr-parity",
         "cap:tool/process-census",
         "cap:workflow/gha-ci"
       ],
@@ -37071,6 +37072,7 @@
         "cap:tool/ns-fence-gate",
         "cap:tool/pin-open",
         "cap:tool/port-gate",
+        "cap:tool/pr-parity",
         "cap:tool/process-census",
         "cap:tool/test-catalog-projection",
         "cap:workflow/gha-agent-trunk-batch",
@@ -37302,6 +37304,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/pr-parity",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/registry-gate",
           "edge": "invokes"
         },
@@ -37429,6 +37435,7 @@
       "consumers": [
         "cap:tool/idp-auth",
         "cap:tool/idp-guarded-paths",
+        "cap:tool/pr-parity",
         "cap:workflow/gha-guarded-paths"
       ],
       "cost": {
@@ -48513,7 +48520,8 @@
       },
       "consumers": [
         "cap:tool/idp-ruff-format",
-        "cap:tool/idp-ruff-ratchet"
+        "cap:tool/idp-ruff-ratchet",
+        "cap:tool/pr-parity"
       ],
       "cost": {
         "estimate": null,
@@ -50476,6 +50484,7 @@
         "cap:tool/idp-ci",
         "cap:tool/idp-slow-tests",
         "cap:tool/media-dept-baseline",
+        "cap:tool/pr-parity-checks",
         "cap:workflow/gha-ci"
       ],
       "cost": {
@@ -54728,6 +54737,133 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/pr-parity",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "pr-parity -- the wall: every check GitHub reports on a pull request, run before the push.",
+      "contract": {
+        "inputs": [
+          "--base",
+          "--head",
+          "--json",
+          "--mode",
+          "--name-only",
+          "--only",
+          "--proof",
+          "--timeout"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/pr-parity",
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-guarded-paths",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ruff",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/pr-parity-checks",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/pr-parity-checks",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-tests-for",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/pr-report",
       "schema_version": 1,
       "kind": "tool",
@@ -57055,12 +57191,14 @@
       "id": "cap:tool/verify_three_proofs.py",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env python3",
+      "summary": "The '+' lines of the staged change for rel_path; whole file when nothing is staged.",
       "contract": {
         "inputs": [
+          "--cached",
           "--commit-sha",
           "--files",
           "--founder-seal",
+          "--no-color",
           "--repo-root",
           "--timestamp"
         ],

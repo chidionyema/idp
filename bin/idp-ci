@@ -1823,6 +1823,30 @@ else
   fi
 fi
 
+# 9a. THE WALL (lib/pr-checks.json). Founder, 2026-11-15: "all this failing checks needs to
+# happen pre-push" and "I don't ever want to see a red PR ever again". A red PR is a check graded
+# after the push by a tool that lives in this repository. The manifest names the local command for
+# every context GitHub reports; this rung runs it inside the same gate the pre-push hook already
+# calls, so the laptop wall and the server grade the same diff. BLIND (a tool that cannot run) is a
+# refusal, never a pass; SKIP names the path scope that was not touched.
+# The wall is the PRE-PUSH rung: it grades the diff at the moment the agent still owns it. In CI
+# every check in the manifest IS its own job already, so running the manifest again here would
+# grade the same work twice -- measured 2026-11-15: 1809s added to offline-gate, and a wall that
+# refused because offline-gate's image has no ruff (`FAIL: ruff not installed`), which is a fact
+# about that image, not about the change. CI proves the checks; the hook prevents the red push.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  say "skip  parity the wall runs at pre-push; CI grades each manifest check as its own job"
+elif [ -x "$IDP/bin/pr-parity" ] && [ -f "$IDP/lib/pr-checks.json" ]; then
+  parity_base="${IDP_CI_BASE:-origin/main}"
+  if par_out=$("$IDP/bin/pr-parity" --mode prepush --base "$parity_base" --head HEAD 2>&1); then
+    say "ok    parity $(printf '%s\n' "$par_out" | grep -cE '^(PASS|SKIP)') wall check(s) green (lib/pr-checks.json)"
+  else
+    say "FAIL  parity the wall is red -- a check GitHub would grade after the push refused here"
+    printf '%s\n' "$par_out" | grep -E '^(FAIL|BLIND)' -A6 | head -40 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 # A rung that CRASHES is a rung that could not observe, so it must fail closed. Found by running
 # this gate on itself (2026-11-10): a rung touched an unset variable under `set -u`, bash aborted
 # the whole script at that line, and the process still exited 0 -- so a gate that died halfway

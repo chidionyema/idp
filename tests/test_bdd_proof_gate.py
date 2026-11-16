@@ -573,7 +573,7 @@ def test_live_rerun_recovers_same_head_proof_corrected_after_event(
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake, asserted never to reach a real API
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(log),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -601,7 +601,7 @@ def test_live_rerun_never_accepts_changed_head_from_same_pr(tmp_path: Path) -> N
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake, asserted never to reach a real API
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -627,7 +627,7 @@ def test_live_rerun_never_accepts_foreign_pr_proof(tmp_path: Path) -> None:
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake, asserted never to reach a real API
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
@@ -654,10 +654,46 @@ def test_live_rerun_github_lookup_failure_keeps_original_refusal(
         ["--live"],
         clean_env(
             GITHUB_EVENT_PATH=str(ev),
-            GH_TOKEN="read-only-test-token",
+            GH_TOKEN="read-only-test-token",  # noqa: S106 -- a fake, asserted never to reach a real API
             PATH=f"{bindir}:{os.environ.get('PATH', '')}",
             FAKE_GH_LOG=str(tmp_path / "gh.log"),
             FAKE_GH_OUT=str(tmp_path / "gh-out.json"),
+        ),
+    )
+    assert rc == 1, err
+
+
+def test_json_mode_accepts_a_node_test_summary() -> None:
+    """node --test is a runner; its own "# pass N" line is counts, not prose.
+
+    Measured 2026-11-15 on a web-only pull request: the gate spoke only pytest and
+    cucumber shapes, so a green `node --test` run (web/tests/*.test.mjs) was refused as
+    "no passing BDD run" -- a guard refusing correct work (AGENTS.md 9 R14).
+    """
+    rc, out, err = run_gate(
+        [],
+        clean_env(),
+        stdin=json.dumps(
+            {
+                "title": "t",
+                "headRefOid": HEAD,
+                "body": proof_body(HEAD, evidence="# pass 3\n# fail 0"),
+            }
+        ),
+    )
+    assert rc == 0, f"rc={rc} out={out} err={err}"
+
+
+def test_json_mode_still_refuses_a_zero_pass_node_summary() -> None:
+    rc, _out, err = run_gate(
+        [],
+        clean_env(),
+        stdin=json.dumps(
+            {
+                "title": "t",
+                "headRefOid": HEAD,
+                "body": proof_body(HEAD, evidence="# pass 0\n# fail 0"),
+            }
         ),
     )
     assert rc == 1, err

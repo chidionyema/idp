@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""pr-parity -- the wall: every check GitHub reports on a pull request, run before the push.
+
+Why this exists. A red pull request is a check that was graded after the push. The engine that
+grades it is this repository's own tools (bin/idp-ci, bin/claim-gate, bin/idp-ci-guarded-paths,
+bin/idp-ruff, ...), so the same tools can grade the same diff at the last moment the agent still
+owns it: pre-push. lib/pr-checks.json is the one manifest; this script runs it and writes a
+sha256 proof. `.githooks/pre-push` calls it, and CI's parity job calls it, so the local wall and
+the remote gate cannot drift.
+
+Refusals are explicit:
+  FAIL   a check ran and refused
+  BLIND  a check could not run (no command, no diff, timeout) -- fail closed, never a pass
+  DERIVED an aggregator (ci-success, greenlane): green only because the checks under it passed
+  SKIP   the check's path scope was not touched by this diff (named, never silent)
+
+    bin/pr-parity                      prepush mode against origin/main
+    bin/pr-parity --mode pr            CI mode (same manifest, no path-scope shortcuts)
+    bin/pr-parity --only claim-gate    one check
+    bin/pr-parity --proof path.json    write the sha256 proof
+    bin/pr-parity --json               machine output
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+MANIFEST = os.environ.get(
+    "PR_PARITY_MANIFEST", os.path.join(ROOT, "lib", "pr-checks.json")
+)
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(  # noqa: S603 -- fixed argv, never a shell string
+        ["git", *args], cwd=ROOT, capture_output=True, text=True  # noqa: S607
+    ).stdout.strip()
+
+
+def _touched(base: str, head: str) -> list[str]:
+    out = _git("diff", "--name-only", f"{base}...{head}")
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def _matches(path: str, patterns: list[str]) -> bool:
+    for pat in patterns:
+        if fnmatch.fnmatch(path, pat):
+            return True
+        if pat.startswith("**/") and fnmatch.fnmatch(path, pat[3:]):
+            return True
+        if pat.endswith("/**") and (
+            path == pat[:-3] or path.startswith(pat[:-3] + "/")
+        ):
+            return True
+    return False
+
+
+def _expand(argv: list[str], base: str, head: str) -> list[str]:
+    return [a.replace("{base}", base).replace("{head}", head) for a in argv]
+
+
+def _run(check: dict, base: str, head: str, timeout: int) -> dict:
+    argv = _expand(check["cmd"], base, head) + _expand(
+        check.get("args", []), base, head
+    )
+    exe = argv[0]
+    if "/" in exe and not os.path.isabs(exe):
+        argv[0] = os.path.join(ROOT, exe)
+    env = dict(os.environ)
+    env.update(
+        {
+            k: v.replace("{base}", base).replace("{head}", head)
+            for k, v in check.get("env", {}).items()
+        }
+    )
+    stdin = None
+    if check.get("stdin") == "diff":
+        stdin = _git("diff", f"{base}...{head}")
+        if not stdin.strip():
+            return {
+                "context": check["context"],
+                "rc": 0,
+                "secs": 0.0,
+                "sha256": hashlib.sha256(b"").hexdigest(),
+                "tail": "",
+                "verdict": "SKIP",
+                "note": "empty diff between base and head",
+            }
+    started = time.time()
+    try:
+        proc = subprocess.run(  # noqa: S603 -- argv is the manifest command, never a shell string
+            argv,
+            cwd=ROOT,
+            env=env,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        rc, out = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except FileNotFoundError:
+        rc, out = 127, f"BLIND: command not found: {argv[0]}"
+    except subprocess.TimeoutExpired:
+        rc, out = 124, f"BLIND: timeout after {timeout}s: {' '.join(argv)}"
+    result = {
+        "context": check["context"],
+        "rc": rc,
+        "secs": round(time.time() - started, 1),
+        "sha256": hashlib.sha256(out.encode("utf-8", "replace")).hexdigest(),
+        "tail": "\n".join(out.strip().splitlines()[-15:]),
+    }
+    result["verdict"] = "PASS" if rc == 0 else ("BLIND" if rc in (124, 127) else "FAIL")
+    return result
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default="origin/main")
+    ap.add_argument("--head", default="HEAD")
+    ap.add_argument("--mode", choices=["prepush", "pr"], default="prepush")
+    ap.add_argument("--only", action="append", default=[])
+    ap.add_argument("--proof")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--timeout", type=int, default=900)
+    args = ap.parse_args()
+
+    if not os.path.exists(MANIFEST):
+        print(f"BLIND: manifest missing: {MANIFEST}", file=sys.stderr)
+        return 2
+    with open(MANIFEST, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+
+    base = args.base
+    if args.mode == "prepush":
+        merge_base = _git("merge-base", "origin/main", args.head)
+        if merge_base:
+            base = merge_base
+    touched = _touched(base, args.head)
+    if args.mode == "pr":
+        touched = []  # CI runs the full set; path scope is a pre-push courtesy, not a gate
+
+    results, failures, skipped = [], [], []
+    for check in manifest["checks"]:
+        name = check["context"]
+        if args.only and name not in args.only:
+            continue
+        if check["kind"] == "derived":
+            skipped.append(
+                {"context": name, "verdict": "DERIVED", "note": check["reason"]}
+            )
+            continue
+        scope = check.get("paths")
+        if scope and touched and not any(_matches(p, scope) for p in touched):
+            skipped.append(
+                {
+                    "context": name,
+                    "verdict": "SKIP",
+                    "note": f"no touched path in {scope}",
+                }
+            )
+            continue
+        r = _run(check, base, args.head, args.timeout)
+        results.append(r)
+        if r["verdict"] in ("FAIL", "BLIND"):
+            failures.append(r)
+
+    verdict = "PASS" if not failures else "FAIL"
+    proof = {
+        "verdict": verdict,
+        "mode": args.mode,
+        "base": base,
+        "head": _git("rev-parse", args.head),
+        "touched": touched if args.mode == "pr" else touched,
+        "checks": results,
+        "derived": skipped,
+    }
+    proof["sha256"] = hashlib.sha256(
+        json.dumps(proof, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+    if args.proof:
+        os.makedirs(os.path.dirname(os.path.abspath(args.proof)) or ".", exist_ok=True)
+        with open(args.proof, "w", encoding="utf-8") as fh:
+            json.dump(proof, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+
+    if args.json:
+        print(json.dumps(proof, indent=2, sort_keys=True))
+    else:
+        for r in results:
+            print(
+                f"{r['verdict']:<5} {r['context']} rc={r['rc']} {r['secs']}s sha256={r['sha256'][:12]}"
+            )
+            if r["verdict"] != "PASS":
+                for line in r["tail"].splitlines():
+                    print(f"      {line}")
+        for s in skipped:
+            print(f"{s['verdict']:<5} {s['context']} ({s['note']})")
+        print(f"VERDICT {verdict} proof={proof['sha256']}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
