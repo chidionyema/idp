@@ -31143,6 +31143,10 @@
       "path": "bin/estate-dispatch-action",
       "depends_on": [
         {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/estate-plan",
           "edge": "invokes"
         },
@@ -31501,14 +31505,9 @@
       "id": "cap:tool/estate-fleet",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "idp#7481: real-time fleet messaging with a durable, acknowledged inbox.",
+      "summary": "<!doctype html><meta charset=utf-8>",
       "contract": {
-        "inputs": [
-          "--ack",
-          "--desc",
-          "--pipe",
-          "--type"
-        ],
+        "inputs": [],
         "outputs": [
           "stdout",
           "exit code"
@@ -31532,8 +31531,10 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-dispatch-action",
         "cap:tool/estate-fleet-telegram",
         "cap:tool/estate-fleet-voice",
+        "cap:tool/estate-topology",
         "cap:tool/estate-wait",
         "cap:tool/idp-session-bootstrap",
         "cap:tool/uncalled-gate"
@@ -34149,6 +34150,10 @@
         },
         {
           "id": "cap:tool/estate-debug-pack",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-fleet",
           "edge": "invokes"
         },
         {
