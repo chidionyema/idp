@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 from typing import Dict, List, Tuple
@@ -49,6 +50,33 @@ MAX_FILES_PER_CHANGE = 5
 MAX_CLOCK_DRIFT_SECONDS = 300
 
 
+def _introduced_lines(repo_root: str, rel_path: str) -> str:
+    """The '+' lines of the staged change for rel_path; whole file when nothing is staged."""
+    try:
+        diff = subprocess.run(  # noqa: S603 -- fixed argv, no shell, path is a repo file
+            ["git", "diff", "--cached", "--unified=0", "--no-color", "--", rel_path],  # noqa: S607
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except OSError:
+        diff = ""
+    added = [
+        ln[1:]
+        for ln in diff.splitlines()
+        if ln.startswith("+") and not ln.startswith("+++")
+    ]
+    if added:
+        return "\n".join(added)
+    abs_path = os.path.join(repo_root, rel_path)
+    try:
+        with open(abs_path, "rb") as fh:
+            return fh.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return ""
+
+
 def verify_proof_1_physical_reality(
     repo_root: str, changed_files: List[str], expected_hashes: Dict[str, str]
 ) -> Tuple[bool, Dict]:
@@ -61,12 +89,19 @@ def verify_proof_1_physical_reality(
             }
         with open(abs_path, "rb") as f:
             raw = f.read()
-        text_sample = raw.decode("utf-8", errors="ignore")
+        # Three fixes, one rule: the ghost that must be refused is a line this change
+        # INTRODUCES, not a historical mention inside a file that happens to be edited
+        # (AGENTS.md 3a: history is evidence), and not a generator-owned artifact that
+        # quotes retired surfaces as its census. MEASURED 2026-11-15: the capability
+        # snapshot's own record mentions the retired check name, so scanning whole files
+        # refused every legitimate regeneration -- a guard refusing the estate's own work
+        # (AGENTS.md 9 R14).
         if rel_path not in GHOST_SCAN_EXEMPT:
+            text_sample = _introduced_lines(repo_root, rel_path)
             for ghost in STALE_OKE_GHOSTS:
                 if ghost in text_sample:
                     return False, {
-                        "error": f"PROOF_1_FAILED: Stale OKE ghost '{ghost}' detected in '{rel_path}'"
+                        "error": f"PROOF_1_FAILED: Stale OKE ghost '{ghost}' introduced in '{rel_path}'"
                     }
         actual_sha256 = hashlib.sha256(raw).hexdigest()
         if rel_path in expected_hashes and expected_hashes[rel_path] != actual_sha256:

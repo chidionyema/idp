@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "note": "One manifest: every check GitHub reports on a pull request maps to the local command that proves it. bin/pr-parity runs this set at pre-push and in CI, so a red check cannot be discovered after the push. A context with no command must be DERIVED (an aggregator of checks above it) and say why.",
+  "checks": [
+    {
+      "context": "fast-gate / fast-gate",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-ci (IDP_CI_FAST=1)"
+      ],
+      "reason": ".githooks/pre-push already runs IDP_CI_FAST=1 IDP_CI_BASE=<merge-base> bin/idp-ci and exits non-zero before the wall is reached; CI's fast-gate job runs the same script against the PR base."
+    },
+    {
+      "context": "gate / fast-gate",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-ci (IDP_CI_FAST=1)"
+      ],
+      "reason": "the gate/nightly variant of the same script on the same base; pre-push proves the fast half and the CI job proves the rest. Nothing here can go red without the hook having refused first."
+    },
+    {
+      "context": "claim-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/claim-gate"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "guarded-paths",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-guarded-paths"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "no-harness-folders",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "no-harness"
+      ],
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "deterministic-gate / control-primitive-freeze",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "control-freeze"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "deterministic-gate / rust-and-bdd-verify",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "rust"
+      ],
+      "args": [],
+      "paths": [
+        "Cargo.toml",
+        "platform/**",
+        "**/*.rs"
+      ]
+    },
+    {
+      "context": "ruff-required",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-ruff (pre-push Layer 1c)",
+        "CI ruff-required job"
+      ],
+      "reason": "the pre-push hook already runs ruff (E9,F,B,S + format) on every pushed Python in Layer 1c, using the estate's own pyproject rule set, and CI's ruff-required job runs bin/idp-ruff on the runner that has ruff installed. A wall that repeats it inside idp-ci refuses in images without ruff, which is a fact about the image, not the change (measured 2026-11-15: offline-gate)."
+    },
+    {
+      "context": "test",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "tests"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": [
+        "tests/**",
+        "bin/**",
+        "platform/**",
+        "**/*.py"
+      ]
+    },
+    {
+      "context": "bdd",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "tests"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": [
+        "tests/**",
+        "bin/**",
+        "platform/**",
+        "**/*.py"
+      ]
+    },
+    {
+      "context": "executes-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/test-executes-gate"
+      ],
+      "args": [],
+      "paths": [
+        "**/*.py",
+        "tests/**",
+        "bin/**",
+        "platform/**"
+      ]
+    },
+    {
+      "context": "verifier / verifier",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-verify"
+      ],
+      "stdin": "diff",
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "verify / verifier",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-verify"
+      ],
+      "stdin": "diff",
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "ui-kit",
+      "kind": "check",
+      "cmd": [
+        "npm",
+        "--prefix",
+        "packages/estate-ui-kit",
+        "run",
+        "build"
+      ],
+      "args": [],
+      "paths": [
+        "packages/estate-ui-kit/**"
+      ]
+    },
+    {
+      "context": "law-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/estate-law-gate"
+      ],
+      "args": [],
+      "paths": [
+        "docs/**",
+        "AGENTS.md",
+        "platform/**",
+        "bin/**"
+      ]
+    },
+    {
+      "context": "dof-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/dof-gate"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": [
+        "dof-registry/**",
+        "**/*.json",
+        "bin/**"
+      ]
+    },
+    {
+      "context": "scope",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-pr-scope-audit --live"
+      ],
+      "reason": "bin/idp-pr-scope-audit grades a pull-request TITLE against the paths it touches; the title exists only after the PR opens, so there is nothing to grade at pre-push. It is deterministic given the title, and the agent chooses the title: type(scope) must match the changed paths or the body must enumerate them under co-changes. CI runs --live on the PR; a red scope is a wrong title, not an unproven diff."
+    },
+    {
+      "context": "portal-app",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-checks",
+        "portal"
+      ],
+      "args": [],
+      "paths": [
+        "backstage/**",
+        "**/*.tsx",
+        "**/*.ts",
+        "**/*.css"
+      ]
+    },
+    {
+      "context": "feature-request-plan",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-features"
+      ],
+      "reason": "the job applies a platform-feature request named by the pull-request template; it is a mutation of the PR branch, not a predicate on the diff. Pre-push proves the same predicate with `bin/idp-features plan --base {base} --head {head}` when the template names a feature."
+    },
+    {
+      "context": "ci-success",
+      "kind": "derived",
+      "derived_from": [
+        "all checks above"
+      ],
+      "reason": "aggregator: green iff every check above is green. bin/pr-parity exits nonzero on the first failing check, so this cannot be red while the wall passed."
+    },
+    {
+      "context": "greenlane",
+      "kind": "derived",
+      "derived_from": [
+        "bin/pr-parity proof"
+      ],
+      "reason": "the Greenlane engine posts this status after the lane lands; locally it is the sha256 proof that bin/pr-parity wrote (--proof), so a lane cannot be offered to the engine without the wall having passed."
+    }
+  ]
+}

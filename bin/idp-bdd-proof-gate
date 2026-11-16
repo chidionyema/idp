@@ -85,6 +85,10 @@ PASS_PATTERNS = [
     re.compile(r"^---\s*PASS:\s*\w", re.M),
     # pytest
     re.compile(r"\b[1-9]\d*\s+passed\s+in\s+[\d.]+s", re.I),
+    # node --test, the runner the estate's web tests already use (web/tests/*.test.mjs).
+    # Its own summary line is "# pass 3"; measured 2026-11-15 on Node v22. A gate that
+    # only spoke pytest refused a real, green node run (a guard refusing correct work).
+    re.compile(r"^#?\s*pass\s+[1-9]\d*\s*$", re.I | re.M),
 ]
 
 # A block that only asserts in prose, with no runner output at all. Refused separately so

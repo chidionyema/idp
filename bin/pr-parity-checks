@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# pr-parity-checks <check> [base] [head] -- the local form of the checks in lib/pr-checks.json
+# that are a few git/cargo/npm commands. One file, one concern each, named in the manifest.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+case "${1:-}" in
+  no-harness)
+    found="$(git ls-files | grep -E '(^|/)\.claude(/|$)' || true)"
+    if [ -n "$found" ]; then
+      echo "FAIL no-harness-folders: harness folder in the tree (founder 2026-09-30: no .claude anywhere):"
+      printf '%s\n' "$found"
+      exit 1
+    fi
+    echo "ok   no-harness-folders $(git ls-files | wc -l | tr -d ' ') tracked files, no .claude path"
+    ;;
+  control-freeze)
+    base="${2:-origin/main}"; head="${3:-HEAD}"
+    if git rev-parse --verify --quiet 937dda9d >/dev/null 2>&1 && git merge-base --is-ancestor 937dda9d "$head"; then
+      echo "FAIL control-primitive-freeze: breach commit 937dda9d (dof-registry tamper) is in ancestry"
+      exit 1
+    fi
+    changed="$(git diff --name-only "$base...$head")"
+    seal="$(git log -1 --format=%B "$head")"
+    rc=0
+    for protected in "dof-registry" ".github/workflows/" "catalog/genesis-protocols.json" ".github/CODEOWNERS"; do
+      if printf '%s\n' "$changed" | grep -q "^${protected}"; then
+        if ! printf '%s\n' "$seal" | grep -q "^X-Founder-Passkey-Seal: "; then
+          echo "FAIL control-primitive-freeze: ${protected} changed without an X-Founder-Passkey-Seal trailer"
+          rc=1
+        fi
+      fi
+    done
+    [ "$rc" = 0 ] && echo "ok   control-primitive-freeze"
+    exit "$rc"
+    ;;
+  rust)
+    [ -f Cargo.toml ] || { echo "SKIP rust-and-bdd-verify: no Cargo.toml"; exit 0; }
+    cargo check --workspace --locked
+    cargo test --workspace --locked
+    echo "ok   rust-and-bdd-verify"
+    ;;
+  tests)
+    bin/idp-tests-for --base "${2:-origin/main}"
+    ;;
+  portal)
+    [ -f backstage/package.json ] || { echo "SKIP portal-app: no backstage/package.json"; exit 0; }
+    command -v corepack >/dev/null 2>&1 || { echo "BLIND portal-app: corepack missing (npm i -g corepack)"; exit 1; }
+    if [ ! -d backstage/node_modules ]; then
+      echo "BLIND portal-app: backstage/node_modules missing; run: corepack enable && (cd backstage && yarn install --immutable)"
+      exit 1
+    fi
+    (cd backstage && corepack yarn tsc && corepack yarn lint)
+    echo "ok   portal-app"
+    ;;
+  *)
+    echo "usage: pr-parity-checks {no-harness|control-freeze|rust|tests|portal} [base] [head]" >&2
+    exit 2
+    ;;
+esac

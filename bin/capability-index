@@ -570,7 +570,9 @@ def _answered_last_verified(record):
 def _answered_dependencies(record):
     # An explicitly referenced GitHub action is a real execution dependency,
     # even if it is not an internal cap: graph node.
-    return bool(_dependency_edges(record)) or bool((record.get("contract") or {}).get("uses"))
+    return bool(_dependency_edges(record)) or bool(
+        (record.get("contract") or {}).get("uses")
+    )
 
 
 def _answered_interfaces(record):
@@ -1117,7 +1119,6 @@ def _yaml_top_keys(text, key):
     return keys
 
 
-
 # A GitHub workflow is a real dependency-bearing capability. Its "uses:" entries
 # declare concrete execution dependencies, including third-party actions and
 # reusable workflows. Keep these distinct from graph edges to internal cap: IDs.
@@ -1235,10 +1236,12 @@ def build_repo_workflows(ctx: Context):
                 relative = target.removeprefix("./.github/workflows/")
                 workflow_path = wf_dir / relative
                 if workflow_path.is_file() and relative != path.name:
-                    edges.append({
-                        "id": "cap:workflow/gha-{}".format(workflow_path.stem),
-                        "edge": "calls",
-                    })
+                    edges.append(
+                        {
+                            "id": "cap:workflow/gha-{}".format(workflow_path.stem),
+                            "edge": "calls",
+                        }
+                    )
         edges.sort(key=lambda edge: (edge["id"], edge["edge"]))
         workflow = make_record(
             "cap:workflow/gha-{}".format(stem),
@@ -3139,14 +3142,23 @@ def snapshot_drift(ctx: Context, committed_path: Path = SNAPSHOT_PATH):
     removed = sorted(old_ids - new_ids)
     added = sorted(new_ids - old_ids)
     identical = committed_text == fresh
+    # A record that is PRESENT but whose content differs is neither "added" nor "removed", so
+    # MEASURED 2026-11-15 the drift verdict read "LAG -- 0 record(s) added" after a tool's own
+    # docstring changed, which names nothing an agent can act on. The changed ids are named.
+    old_recs = {r["id"]: r for r in committed.get("records", [])}
+    new_recs = {r["id"]: r for r in json.loads(fresh).get("records", [])}
+    changed = sorted(i for i in old_ids & new_ids if old_recs.get(i) != new_recs.get(i))
     return {
         "verdict": "OK" if identical else ("FAIL" if removed else "LAG"),
         "identical": identical,
         "added": added,
         "removed": removed,
+        "changed": changed,
         "detail": "the committed snapshot equals a fresh generation"
         if identical
-        else "{} record(s) added, {} removed".format(len(added), len(removed)),
+        else "{} record(s) added, {} removed, {} changed".format(
+            len(added), len(removed), len(changed)
+        ),
         "command": "bin/capability-index emit --write",
     }
 
