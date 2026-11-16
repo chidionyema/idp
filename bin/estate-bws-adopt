@@ -52,21 +52,16 @@ def recipient() -> str:
 
 def store(tok: str, rcpt: str) -> None:
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    plain = Path("/tmp/.bws-adopt.tmp")
-    plain.write_text("token: " + json.dumps(tok) + "\n")
-    os.chmod(plain, 0o600)
-    try:
-        p = subprocess.run([SOPS, "-e", "--age", rcpt, "--input-type", "yaml",
-                            "--output-type", "yaml", str(plain)],
-                           capture_output=True, text=True, timeout=30)
-        if p.returncode != 0:
-            raise RuntimeError((p.stderr or "sops failed")[:200])
-        tmp = TARGET.with_suffix(".tmp")
-        tmp.write_text(p.stdout)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, TARGET)
-    finally:
-        plain.unlink(missing_ok=True)
+    p = subprocess.run([SOPS, "-e", "--age", rcpt, "--input-type", "yaml",
+                        "--output-type", "yaml", "/dev/stdin"],
+                       input="token: " + json.dumps(tok) + "\n",
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0:
+        raise RuntimeError((p.stderr or "sops failed")[:200])
+    tmp = TARGET.with_suffix(".tmp")
+    tmp.write_text(p.stdout)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, TARGET)
 
 
 def main() -> int:
