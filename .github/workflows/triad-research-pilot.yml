@@ -1,0 +1,36 @@
+name: TRIAD isolated research falsification
+on:
+  push:
+    branches:
+      - research/triad-transfer-pilot-20261116
+    paths:
+      - 'tools/academy/triad/**'
+      - '.github/workflows/triad-research-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  falsify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Execute ten independent Node falsifier cases
+        run: node --test tools/academy/triad/evaluate.test.mjs
+      - name: Verify CLI refuses incomplete responses without fabricated success
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"t1":"A","t2":"A","t3":"A"}' | node tools/academy/triad/run.mjs --score > /tmp/triad-negative.json
+          node -e 'const r=require("/tmp/triad-negative.json");if(r.result.correct!==0||r.verifiedOperationalYield!==false||r.mastery!=="UNKNOWN") process.exit(1)'
+          if printf '{"t1":"B"}' | node tools/academy/triad/run.mjs --score; then
+            echo "FALSE GREEN: partial answers accepted" >&2
+            exit 1
+          fi
+      - name: Print scoped source identity and evidence boundary
+        run: |
+          echo "TRIAD_SOURCE_SHA=$GITHUB_SHA"
+          echo "VERDICT=ISOLATED_TEST_EXECUTION_ONLY; NO LEARNER OUTCOME; NO OPERATIONAL_YIELD"
