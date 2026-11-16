@@ -58,6 +58,14 @@ reversible and enforced by existing authorisation/lease doors; the agent
 cannot issue, sign, or restore its own enforcement verdict. A successor must
 still be able to inspect, diagnose, test and repair.
 
+## First-use prevention and machine-agent boundary (founder, 2026-11-16)
+
+**Standing doctrine, not a claim of enforced fleet-wide deployment.** Every capability must be useful to a real, authorised consumer and measurably contribute to actual operations or a reproducible real research experiment. A test, UI badge, static metric, receipt signature, PR, or plan-tool completion cannot self-award verified yield. Place prevention at the earliest authorised producer; continuous independent assurance is the safety net, and recovery is a bounded exception that closes its upstream failure class.
+
+**Retain goals and subgoals and their Pi BDD, edge-case, second-order and completion tools.** No ceremony removal, simulated output promotion, rewritten attribution or bypass of signed claim/Greenlane gates on the strength of a historical design document. First observe actual cost and protective effects, then preregister a matched safe cohort with equivalent type-state/BDD/evidence coverage before considering a mechanical replacement. Absence of runtime observations means UNKNOWN, never evidence that the ceremony can safely be dropped.
+
+The current thirteen-pin forensic audit, first-use falsifiers, teaching/consulting/IP framing and **read-only ceremony observer** live in [2026-11-16 producer-first machine-agent boundary](2026-11-16-producer-first-machine-agent-boundary.md). The observer reuses `~/.estate/plans/{refusals,observe,intents}.jsonl` and per-session plan records; it does not create a second plan ledger or alter any gate. An independent live executor result, not the existence of this source, is required before the observer is called operational.
+
 ## Concrete first canary (execution, not a new control plane)
 
 `bin/idp-karma-observe --json` reads current GitHub Actions evidence via
