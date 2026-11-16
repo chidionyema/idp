@@ -45,6 +45,39 @@ jobs:
           if (/<script[^>]+src="https?:/i.test(html)) throw new Error('External script forbidden');
           console.log('PASS: local-only accessible scaffold static checks; browser operation NOT VERIFIED');
           NODE
+      - name: Render the actual learner-facing studio in headless Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v google-chrome >/dev/null || { echo "BLIND: Chrome not available, cannot claim browser proof"; exit 2; }
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory tools/academy/triad >/tmp/triad-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8765/studio.html >/dev/null; then ready=1; break; fi
+            sleep 0.25
+          done
+          [ "$ready" -eq 1 ] || { echo "BLIND: studio HTTP serving unavailable"; exit 2; }
+          timeout 35 google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8765/studio.html >/tmp/triad-browser.html 2>/tmp/triad-browser.err
+          grep -Fq "What would you expect?" /tmp/triad-browser.html || { cat /tmp/triad-browser.err; echo "FAIL: module did not render learner question"; exit 1; }
+          grep -Fq "A signed photo archive" /tmp/triad-browser.html || { echo "FAIL: no real question rendered"; exit 1; }
+          timeout 35 google-chrome --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1440,1100 --virtual-time-budget=5000 --screenshot=triad-browser.png http://127.0.0.1:8765/studio.html >/tmp/triad-screenshot.log 2>/tmp/triad-browser-screenshot.err
+          [ -s triad-browser.png ] || { echo "FAIL: no real screenshot"; exit 1; }
+          echo "PASS: browser executed the learner UI; screenshot captured. No human transfer outcome implied."
+      - name: Package and validate private research prototype
+        shell: bash
+        run: |
+          set -euo pipefail
+          ( cd tools/academy/triad && zip -qr "$GITHUB_WORKSPACE/triad-pilot.zip" . )
+          unzip -t triad-pilot.zip | grep -Fq 'No errors detected'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: triad-research-prototype
+          path: |
+            triad-pilot.zip
+            triad-browser.png
+          retention-days: 14
       - name: Print scoped source identity and evidence boundary
         run: |
           echo "TRIAD_SOURCE_SHA=$GITHUB_SHA"
