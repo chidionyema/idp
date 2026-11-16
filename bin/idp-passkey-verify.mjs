@@ -137,11 +137,11 @@ export function verifyAssertion({ keyring, manifest, assertion, nowMs = Date.now
     note:'Caller must authenticate trusted-main enrollment commit, check live PR heads, consume challenge once atomically and run the actual signed guard. This receipt cannot release production.',
   });
 }
-export function checkFromFiles({keyring,manifest,assertions}) {
+export function checkFromFiles({keyring,manifest,assertions,nowMs=Date.now()}) {
   if (!Array.isArray(assertions) || assertions.length > 5) reject('invalid assertion list');
   let receipts=[];
   for (const assertion of assertions) {
-    try { receipts.push(verifyAssertion({keyring,manifest,assertion})); }
+    try { receipts.push(verifyAssertion({keyring,manifest,assertion,nowMs})); }
     catch { /* Ignore untrusted malformed candidates, but do NOT admit anything. */ }
   }
   if (!receipts.length) reject('no cryptographically valid assertion for requested target heads');
