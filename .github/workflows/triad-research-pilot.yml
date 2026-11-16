@@ -18,8 +18,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - name: Execute ten independent Node falsifier cases
-        run: node --test tools/academy/triad/evaluate.test.mjs
+      - name: Execute all deterministic teaching and adaptive falsifiers
+        run: node --check tools/academy/triad/adaptive.mjs
+          node --check tools/academy/triad/studio.mjs
+          node --test tools/academy/triad/evaluate.test.mjs tools/academy/triad/adaptive.test.mjs
       - name: Verify CLI refuses incomplete responses without fabricated success
         shell: bash
         run: |
@@ -30,6 +32,19 @@ jobs:
             echo "FALSE GREEN: partial answers accepted" >&2
             exit 1
           fi
+      - name: Static study surface admission (no fake learner receipts)
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const html=readFileSync('tools/academy/triad/studio.html','utf8');
+          for (const s of ['<main id="lab"', 'aria-live="polite"', 'role="progressbar"', 'src="./studio.mjs"', 'No analytics']) {
+            // Case-insensitive: text display is not a browser-executed effect witness.
+            if (!html.toLowerCase().includes(s.toLowerCase())) throw new Error('Missing research surface invariant: '+s);
+          }
+          if (/<script[^>]+src="https?:/i.test(html)) throw new Error('External script forbidden');
+          console.log('PASS: local-only accessible scaffold static checks; browser operation NOT VERIFIED');
+          NODE
       - name: Print scoped source identity and evidence boundary
         run: |
           echo "TRIAD_SOURCE_SHA=$GITHUB_SHA"
