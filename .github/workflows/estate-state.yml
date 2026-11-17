@@ -10,8 +10,9 @@
 # empty section in the document, never a green row.
 name: estate-state
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  # 2026-11-17 frozen with the OKE retirement (idp#0048); re-enable on the k3s cutover.
+  # schedule:
+  #   - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
     paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "bin/idp-image-builds", "platform/estate-state/**"]

@@ -1,0 +1,62 @@
+# button: Bind hostnames to a Cloudflare tunnel in a zone
+# founder: the zone cutover needs names that answer. This workflow creates (or re-points) the
+# DNS records that send a hostname to an EXISTING tunnel, using the standing Cloudflare root
+# token the estate already keeps (SEED_CLOUDFLARE_ROOT_TOKEN; the same root router-recovery.yml
+# uses). It changes DNS records and nothing else: no tunnel is created, no secret is written,
+# no vault is touched.
+#
+# WHY NOT router-recovery.yml: that workflow publishes the recovery host (a new tunnel, a vault
+# entry, a config bundle). Binding the estate's live tunnel is a different, side-effect-free
+# operation, so it gets its own door.
+name: zone-bind
+on:
+  workflow_dispatch:
+    inputs:
+      hosts:
+        description: "comma-separated hostnames to bind (e.g. llm.$ZONE, where ZONE is vars.ESTATE_ZONE)"
+        required: true
+      tunnel_id:
+        description: "the tunnel id that already serves these hosts"
+        required: true
+      zone:
+        description: "the zone that holds the names (default: vars.ESTATE_ZONE)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: zone-bind
+  cancel-in-progress: false
+jobs:
+  bind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: bind the names to the tunnel
+        env:
+          API: https://api.cloudflare.com/client/v4
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          HOSTS: ${{ inputs.hosts }}
+          TUNNEL_ID: ${{ inputs.tunnel_id }}
+          ZONE: ${{ inputs.zone || vars.ESTATE_ZONE }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] || { echo "BLIND   cloudflare  no SEED_CLOUDFLARE_ROOT_TOKEN repository secret"; exit 2; }
+          [ -n "$HOSTS" ] && [ -n "$TUNNEL_ID" ] && [ -n "$ZONE" ] || { echo "BLIND   zone-bind  hosts, tunnel_id and zone are all required"; exit 2; }
+          cf() { curl -sS -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' "$@"; }
+          zone=$(cf "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+          [ -n "$zone" ] || { echo "FAIL    zone       no zone named $ZONE in this account"; exit 1; }
+          echo "ok      zone       $ZONE ($zone)"
+          target="$TUNNEL_ID.cfargotunnel.com"
+          for h in $(echo "$HOSTS" | tr ',' ' '); do
+            rec=$(cf "$API/zones/$zone/dns_records?name=$h" | jq -r '.result[0].id // empty')
+            want=$(jq -nc --arg n "$h" --arg c "$target" --arg z "$ZONE" '{type:"CNAME", name:$n, content:$c, proxied:true, comment:("zone-bind (" + $z + " cutover)")}')
+            if [ -n "$rec" ]; then
+              cf -X PUT "$API/zones/$zone/dns_records/$rec" -d "$want" | jq -e .success >/dev/null
+              echo "ok      dns       $h -> $target (updated)"
+            else
+              cf -X POST "$API/zones/$zone/dns_records" -d "$want" | jq -e .success >/dev/null
+              echo "ok      dns       $h -> $target (created)"
+            fi
+          done
