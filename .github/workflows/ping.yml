@@ -11,8 +11,10 @@
 # GitHub cron ticks can drift a few minutes under load; the schedule is a floor, not a clock.
 name: ping
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # 2026-11-17 frozen: surfaces still point at retired OKE; every tick fails into Telegram.
+  # Re-enable when meridianlabs.cloud routes answer 200.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
 permissions:
   contents: read

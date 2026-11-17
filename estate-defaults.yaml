@@ -4,7 +4,10 @@
 # host: the zone stays in clusters/<cluster>/estate-config.yaml (LAW 46), this file only says
 # which one is authoritative.
 infrastructure:
-  dns_zone_source: clusters/oke/estate-config.yaml#ESTATE_ZONE   # one value, one place (idp#140)
+  # The zone lives in the cluster tree Flux applies (clusters/oke/flux-system/gotk-sync.yaml
+  # path). The glob keeps the value cluster-agnostic: when the tree is renamed for the k3s
+  # cutover (idp#0048), this file and the readers do not have to know the new name.
+  dns_zone_source: clusters/*/estate-config.yaml#ESTATE_ZONE   # one value, one place (idp#140)
 node_pool:
   # 2026-09-26: prefer_free, budget_monthly_usd 50, burst_hours_monthly and spot_hours_monthly are
   # deleted. They said "free is the floor, paid growth up to $50 is STAGED", and the estate ran

@@ -4,5 +4,5 @@
   "component": "sneaky",
   "purpose": "fixture that MUST be refused: schema-valid, but an env value speaks the estate zone",
   "port": 8080,
-  "env": { "API_BASE": "https://api.mumchimp.com/v1" }
+  "env": { "API_BASE": "https://api.estate.invalid/v1" }
 }
