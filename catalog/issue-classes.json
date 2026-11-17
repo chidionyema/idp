@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "updated": "2026-11-16",
+  "classes": [
+    {
+      "id": "CLASS-MANUAL-EXPORT-FRICTION",
+      "state": "closed",
+      "instruction": "I-8096-REV2",
+      "title": "AI Studio work could not reach the fleet without a human export step",
+      "root_cause": "Capture depended on the founder clicking Save to GitHub or downloading a zip, then a manual lane trigger; the turn itself was never an event the estate could observe.",
+      "fix": "Channel 1 tees the AI Studio stream in the browser (ops/aistudio/genesis-mycelium.user.js); channel 2 accepts Google Drive changes.watch pushes at the edge (platform/lifeboat/src/aistudio.js, /api/ingest/drive-webhook). Both resolve to one (path, sha256)-keyed commit on lane/aistudio-auto-intake, post OMNIFLOW-EVENT/v1 to idp#8133, broadcast chronicle.aistudio_ready and dispatch greenlane.yml.",
+      "falsifier": "tests/test_aistudio_zero_click_ingest.py",
+      "unit_evidence": "platform/lifeboat/test/aistudio.test.mjs",
+      "closed_on": "2026-11-16",
+      "law": "AGENTS.md section 9.3 (one class, one claim, one sweep) and 9.7 (a gate that cannot fail is not a gate)"
+    }
+  ]
+}

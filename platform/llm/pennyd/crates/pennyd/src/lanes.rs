@@ -11,6 +11,25 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// A lane bound to a registry entry: dialect translation + HTTP transport.
+/// A provider endpoint must be TLS, or loopback for a local lane. Sending a
+/// prompt or an Authorization header over cleartext to a remote host is never
+/// an acceptable trade for convenience.
+fn require_safe_transport(raw: &str) -> Result<reqwest::Url, PennyError> {
+    let parsed = reqwest::Url::parse(raw)
+        .map_err(|e| PennyError::Config(format!("provider URL {raw:?}: {e}")))?;
+    let loopback = matches!(
+        parsed.host_str(),
+        Some("127.0.0.1") | Some("localhost") | Some("[::1]") | Some("::1")
+    );
+    if parsed.scheme() == "https" || (parsed.scheme() == "http" && loopback) {
+        Ok(parsed)
+    } else {
+        Err(PennyError::Config(format!(
+            "provider URL must be https or loopback http, refusing {raw}"
+        )))
+    }
+}
+
 pub struct ProviderLane {
     entry: ModelEntry,
     canonical: String,
@@ -110,9 +129,10 @@ impl LlmLane for ProviderLane {
                 headers.insert(name, value);
             }
         }
+        let target = require_safe_transport(&t.url)?;
         let resp = self
             .client
-            .post(&t.url)
+            .post(target)
             .headers(headers)
             .json(&t.body)
             .send()
@@ -159,7 +179,8 @@ impl LlmLane for ProviderLane {
             &self.api_key,
             &body,
         )?;
-        let mut req = self.client.post(&t.url);
+        let target = require_safe_transport(&t.url)?;
+        let mut req = self.client.post(target);
         for (k, v) in &t.headers {
             req = req.header(k, v);
         }

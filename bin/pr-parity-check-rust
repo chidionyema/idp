@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# deterministic-gate / rust-and-bdd-verify, at the door: the same two cargo commands CI runs.
+set -euo pipefail
+[ -f Cargo.toml ] || { echo "SKIP rust-and-bdd-verify: no Cargo.toml"; exit 0; }
+cargo check --workspace --locked
+cargo test --workspace --locked
+echo "ok   rust-and-bdd-verify"

@@ -122,6 +122,71 @@ if ! _claim_guard; then
   exit 1
 fi
 
+# BDD-PROOF at the door (founder, 2026-11-16: "no BDD-PROOF ... END-BDD-PROOF, this
+# should never happen ... should happen before PR pre push"). CI grades the pull-request
+# body; here that same body is graded against the commit about to become (or replace) the
+# head, through the gate's own predicate so the two cannot drift. No open pull request yet
+# is not a failure -- opening one is where the block is written. Unable to read it: BLIND,
+# and BLIND refuses.
+_grade_pr_body() {
+  python3 - "$1" "$2" "${repo_root:-$root}" <<'PYGATE'
+import json, subprocess, sys
+body, head, root = sys.argv[1], sys.argv[2], sys.argv[3]
+payload = json.dumps({"number": 0, "title": "", "body": body, "headRefOid": head})
+p = subprocess.run([root + "/bin/idp-bdd-proof-gate", "-"], input=payload,
+                   capture_output=True, text=True)
+print((p.stdout + p.stderr).strip())
+sys.exit(p.returncode)
+PYGATE
+}
+
+_bdd_proof_guard() {
+  gh_bin="$(command -v gh || true)"
+  if [ -z "$gh_bin" ]; then
+    echo "BLIND bdd-proof: gh is not on PATH, the pull request cannot be read"
+    return 1
+  fi
+  repo="${GITHUB_REPOSITORY:-chidionyema/idp}"
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    set -- $line
+    [ "$#" -ge 4 ] || continue
+    lsha="$2"; rref="$3"
+    case "$rref" in refs/heads/*) ;; *) continue ;; esac
+    [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue
+    branch="${rref#refs/heads/}"
+    out="$("$gh_bin" pr list --repo "$repo" --head "$branch" --state open --json number,body 2>/dev/null)" || {
+      echo "BLIND bdd-proof: cannot read the open pull request for $branch"; return 1; }
+    [ -z "$out" ] && out="[]"
+    body="$(printf '%s' "$out" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+print(d[0]["body"] if d else "")' 2>/dev/null)"
+    if [ -z "$body" ]; then
+      echo "ok    bdd-proof: $branch has no open pull request yet (the block is written when it is opened)"
+      continue
+    fi
+    if ! msg="$(_grade_pr_body "$body" "$lsha")"; then
+      echo "FAIL  bdd-proof  $branch: $msg"
+      echo "" >&2
+      echo "pre-push REFUSED: the pull request body does not prove THIS head commit." >&2
+      echo "   The body needs a block naming $lsha:" >&2
+      echo "     BDD-PROOF" >&2
+      echo "     head: $lsha" >&2
+      echo "     required checks green on candidate $lsha: <contexts you ran>" >&2
+      echo "     END-BDD-PROOF" >&2
+      echo "   A proof for any other commit is not a proof of this one." >&2
+      return 1
+    fi
+    echo "ok    bdd-proof: $branch proof names $lsha"
+  done <<EOF_REFS
+$push_refs
+EOF_REFS
+}
+
+if ! _bdd_proof_guard; then
+  exit 1
+fi
+
 # Idempotent protection against fast-gate / python-strict failures reaching the OKE CI.
 # Refuses the push if `bin/idp-ci` (fast mode) reports red. This is the 29% class: ruff
 # E9/F/B/S, hardcode scan, shellcheck. They have hit the remote CI 33 times in the last
@@ -187,6 +252,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.js|*.mjs|*.cjs) echo javascript ;;
       *.rs) echo rust ;;
       *.toml) echo toml ;;
+      *.service) echo service ;;
       *) echo unknown ;;
     esac
   }
@@ -380,6 +446,17 @@ if not isinstance(d, dict) or "Label" not in d:
       fi
       continue
     fi
+    # A systemd unit is declarative, like a plist: it must still parse. Without this
+    # the recovered pennyd unit could not be pushed at all ("readable as neither shell
+    # nor Python"), and the workaround would be an untracked unit -- the orphan this
+    # hook exists to prevent.
+    if [ "$kind" = "service" ]; then
+      if ! grep -q '^\[Service\]' "$f" || ! grep -q '^ExecStart=' "$f"; then
+        echo "pre-push REFUSED: $f is not a systemd unit (no [Service]/ExecStart)" >&2
+        exit 1
+      fi
+      continue
+    fi
     case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
@@ -486,6 +563,33 @@ EOF
 fi
 
 echo "✅ idp-fast-gate: green"
+
+# ---------------------------------------------------------------------------
+# THE WALL (lib/pr-checks.json): every check GitHub reports on the pull request, before the
+# push. Founder, 2026-11-15: "all this failing checks needs to happen pre-push" and "I don't
+# ever want to see a red PR ever again". A red PR is a check graded after the push; the tools
+# that grade it live in this repository, so they grade the same diff here, at the last moment
+# the agent still owns it. CI's `parity` job runs the same script over the same diff, so the
+# laptop wall and the server cannot drift. BLIND (cannot run) is a REFUSAL, never a pass.
+if [ -x "$repo_root/bin/pr-parity" ]; then
+  proof_dir="${HOME:-/tmp}/.estate/parity"
+  mkdir -p "$proof_dir" 2>/dev/null || true
+  proof="$proof_dir/$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo head).json"
+  # bounded: a wall that hangs is a wall agents learn to bypass (measured 2026-11-16:
+  # pr-parity --head <sha> ran past 300s). Timeout is BLIND, and BLIND refuses.
+  if ! timeout 240 "$repo_root/bin/pr-parity" --mode prepush --base "${base:-origin/main}" --head HEAD --proof "$proof"; then
+    cat <<'PARITY_EOF' >&2
+
+pre-push REFUSED: the parity wall (lib/pr-checks.json) is red.
+   A red check must never be discovered after the push. Fix the check named above, then push again.
+   One check:  bin/pr-parity --only "<context>"
+   Full set:   bin/pr-parity --mode pr
+   Proof:      each check's output sha256 is in the JSON above; the laptop and CI produce the same record.
+PARITY_EOF
+    exit 1
+  fi
+  echo "✅ parity: every check GitHub reports is green locally (proof: $proof)"
+fi
 
 # ---------------------------------------------------------------------------
 # JEV ADVISORY (advice, never a refusal).

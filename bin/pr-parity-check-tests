@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# test + bdd, at the door: the same path-selected suite CI's test job runs.
+set -euo pipefail
+base="${1:-origin/main}"
+bin/idp-tests-for --base "$base"

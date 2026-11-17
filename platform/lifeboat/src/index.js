@@ -38,6 +38,7 @@
 // silicon, is all Cloudflare's.
 
 import { HOMES, ORIGIN_TIMEOUT_MS, keyMatches, think } from "./homes.js";
+import { DRIVE_PATH, INTAKE_PATH, handleIngest } from "./aistudio.js";
 
 function json(body, status = 200, extra = {}) {
   return new Response(JSON.stringify(body), {
@@ -184,6 +185,7 @@ export default {
         origin: Boolean(env.ORIGIN_WEBHOOK_URL),
         macbook: Boolean(env.MACBOOK_WEBHOOK_URL),
         door: Boolean(env.TELEGRAM_WEBHOOK_SECRET && env.TELEGRAM_BOT_TOKEN),
+        ingest: Boolean(env.AI_STUDIO_INGEST_SECRET),
       });
     }
 
@@ -192,6 +194,13 @@ export default {
       // one has to survive being forwarded to two homes in turn.
       const rawBody = await request.text();
       return handleTelegram(request, env, rawBody);
+    }
+
+    // I-8096-REV2: the two zero-click capture channels. They authenticate with their own
+    // secret rather than LIFEBOAT_KEY because the browser userscript and Google Drive's
+    // webhook are not estate API clients, and a lifeboat key in a page would be a leaked key.
+    if (url.pathname === INTAKE_PATH || url.pathname === DRIVE_PATH) {
+      return handleIngest(request, env);
     }
 
     // Everything below is the brain, and the brain is behind a key.

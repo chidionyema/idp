@@ -29,3 +29,7 @@ binding = "AI"
 #   ORIGIN_WEBHOOK_URL       home 1, the cluster's real Otto
 #   MACBOOK_WEBHOOK_URL      home 3, set only once the founder has given his Mac a public door
 #   GROQ_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY   the free lanes, same keys home 1 uses
+#   AI_STUDIO_INGEST_SECRET  the token the userscript and the Drive webhook present to /api/ingest/*
+#   OMNIFLOW_GH_TOKEN        the App token the ingest engine writes lane/aistudio-auto-intake with
+#   OMNIFLOW_RELAY_URL       optional: route the OMNIFLOW assignment through the relay
+#   GENESIS_REALTIME_URL     optional: where chronicle.aistudio_ready is posted

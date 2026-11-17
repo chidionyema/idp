@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# portal-app, at the door: the backstage type-check and lint CI runs.
+set -euo pipefail
+[ -f backstage/package.json ] || { echo "SKIP portal-app: no backstage/package.json"; exit 0; }
+command -v corepack >/dev/null 2>&1 || { echo "BLIND portal-app: corepack missing (npm i -g corepack)"; exit 1; }
+if [ ! -d backstage/node_modules ]; then
+  echo "BLIND portal-app: backstage/node_modules missing; run: corepack enable && (cd backstage && yarn install --immutable)"
+  exit 1
+fi
+(cd backstage && corepack yarn tsc && corepack yarn lint)
+echo "ok   portal-app"

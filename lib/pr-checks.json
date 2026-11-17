@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "note": "One manifest: every check GitHub reports on a pull request maps to the local command that proves it. bin/pr-parity runs this set at pre-push and in CI, so a red check cannot be discovered after the push. A context with no command must be DERIVED (an aggregator of checks above it) and say why.",
+  "checks": [
+    {
+      "context": "fast-gate / fast-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci"
+      ],
+      "env": {
+        "IDP_CI_FAST": "1"
+      },
+      "args": [
+        "{base}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "gate / fast-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci"
+      ],
+      "env": {
+        "IDP_CI_FAST": "1"
+      },
+      "args": [
+        "{base}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "claim-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/claim-gate"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "guarded-paths",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-guarded-paths"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "no-harness-folders",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-no-harness"
+      ],
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "deterministic-gate / control-primitive-freeze",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-control-freeze"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": null
+    },
+    {
+      "context": "deterministic-gate / rust-and-bdd-verify",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-rust"
+      ],
+      "args": [],
+      "paths": [
+        "Cargo.toml",
+        "platform/**",
+        "**/*.rs"
+      ]
+    },
+    {
+      "context": "ruff-required",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ruff"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": [
+        "**/*.py",
+        "pyproject.toml",
+        ".ruff.toml"
+      ]
+    },
+    {
+      "context": "test",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-tests"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": [
+        "tests/**",
+        "bin/**",
+        "platform/**",
+        "**/*.py"
+      ]
+    },
+    {
+      "context": "bdd",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-tests"
+      ],
+      "args": [
+        "{base}"
+      ],
+      "paths": [
+        "tests/**",
+        "bin/**",
+        "platform/**",
+        "**/*.py"
+      ]
+    },
+    {
+      "context": "executes-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/test-executes-gate"
+      ],
+      "args": [],
+      "paths": [
+        "**/*.py",
+        "tests/**",
+        "bin/**",
+        "platform/**"
+      ]
+    },
+    {
+      "context": "verifier / verifier",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-verify"
+      ],
+      "stdin": "diff",
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "verify / verifier",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-ci-verify"
+      ],
+      "stdin": "diff",
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "ui-kit",
+      "kind": "check",
+      "cmd": [
+        "npm",
+        "--prefix",
+        "packages/estate-ui-kit",
+        "run",
+        "build"
+      ],
+      "args": [],
+      "paths": [
+        "packages/estate-ui-kit/**"
+      ]
+    },
+    {
+      "context": "law-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/estate-law-gate"
+      ],
+      "args": [],
+      "paths": [
+        "docs/**",
+        "AGENTS.md",
+        "platform/**",
+        "bin/**"
+      ]
+    },
+    {
+      "context": "dof-gate",
+      "kind": "check",
+      "cmd": [
+        "bin/dof-gate"
+      ],
+      "args": [
+        "{base}",
+        "{head}"
+      ],
+      "paths": [
+        "dof-registry/**",
+        "**/*.json",
+        "bin/**"
+      ]
+    },
+    {
+      "context": "scope",
+      "kind": "check",
+      "cmd": [
+        "bin/idp-pr-scope-audit"
+      ],
+      "args": [],
+      "paths": null
+    },
+    {
+      "context": "portal-app",
+      "kind": "check",
+      "cmd": [
+        "bin/pr-parity-check-portal"
+      ],
+      "args": [],
+      "paths": [
+        "backstage/**",
+        "**/*.tsx",
+        "**/*.ts",
+        "**/*.css"
+      ]
+    },
+    {
+      "context": "feature-request-plan",
+      "kind": "derived",
+      "derived_from": [
+        "bin/idp-features"
+      ],
+      "reason": "the job applies a platform-feature request named by the pull-request template; it is a mutation of the PR branch, not a predicate on the diff. Pre-push proves the same predicate with `bin/idp-features plan --base {base} --head {head}` when the template names a feature."
+    },
+    {
+      "context": "ci-success",
+      "kind": "derived",
+      "derived_from": [
+        "all checks above"
+      ],
+      "reason": "aggregator: green iff every check above is green. bin/pr-parity exits nonzero on the first failing check, so this cannot be red while the wall passed."
+    },
+    {
+      "context": "greenlane",
+      "kind": "derived",
+      "derived_from": [
+        "bin/pr-parity proof"
+      ],
+      "reason": "the Greenlane engine posts this status after the lane lands; locally it is the sha256 proof that bin/pr-parity wrote (--proof), so a lane cannot be offered to the engine without the wall having passed."
+    }
+  ]
+}

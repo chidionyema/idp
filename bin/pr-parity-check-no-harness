@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# The no-harness-folders job, at the door. A .claude/ path is stitching (AGENTS.md R6).
+set -euo pipefail
+found="$(git ls-files | grep -E '(^|/)\.claude(/|$)' || true)"
+if [ -n "$found" ]; then
+  echo "FAIL no-harness-folders: harness folder in the tree (founder 2026-09-30: no .claude anywhere):"
+  printf '%s\n' "$found"
+  exit 1
+fi
+echo "ok   no-harness-folders $(git ls-files | wc -l | tr -d ' ') tracked files, no .claude path"

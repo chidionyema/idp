@@ -54,6 +54,25 @@ fn valid_id(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
+/// The path must stay under the provider directory even if `valid_id` ever
+/// changes; canonicalise and compare, which is the check a scanner understands.
+fn confined_provider_file(root: &FsPath, provider: &str) -> Result<PathBuf, PennyError> {
+    let candidate = root.join(format!("{provider}.toml"));
+    let canon_root = fs::canonicalize(root)
+        .map_err(|e| PennyError::Config(format!("providers dir {:?}: {e}", root)))?;
+    // Canonicalise and REFUSE when it cannot be resolved: returning the
+    // unresolved candidate would hand the tainted string to the caller.
+    let canon = fs::canonicalize(&candidate).map_err(|e| {
+        PennyError::BadRequest(format!("provider file {candidate:?}: {e}"))
+    })?;
+    if !canon.starts_with(&canon_root) {
+        return Err(PennyError::BadRequest(
+            "provider path escapes the providers directory".into(),
+        ));
+    }
+    Ok(canon)
+}
+
 fn class_name(class: penny_core::config::LaneClass) -> &'static str {
     match class {
         penny_core::config::LaneClass::Local => "local",
@@ -291,7 +310,10 @@ pub async fn upsert(
         ));
     }
     let providers = PathBuf::from(&app.cfg.providers_dir);
-    let file = providers.join(format!("{provider}.toml"));
+    let file = match confined_provider_file(&providers, &provider) {
+        Ok(file) => file,
+        Err(error) => return api_error(error),
+    };
     let existing = match fs::read_to_string(&file) {
         Ok(value) => value,
         Err(error) => {
@@ -375,7 +397,10 @@ pub async fn remove(
         ));
     }
     let providers = PathBuf::from(&app.cfg.providers_dir);
-    let file = providers.join(format!("{provider}.toml"));
+    let file = match confined_provider_file(&providers, &provider) {
+        Ok(file) => file,
+        Err(error) => return api_error(error),
+    };
     let existing = match fs::read_to_string(&file) {
         Ok(value) => value,
         Err(error) => {

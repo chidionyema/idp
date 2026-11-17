@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# deterministic-gate / control-primitive-freeze, at the door.
+# 1) Trojan commit 937dda9d must never be in ancestry.
+# 2) A change to a protected control primitive needs an X-Founder-Passkey-Seal trailer.
+set -euo pipefail
+base="${1:-origin/main}"; head="${2:-HEAD}"
+if git rev-parse --verify --quiet 937dda9d >/dev/null 2>&1 && git merge-base --is-ancestor 937dda9d "$head"; then
+  echo "FAIL control-primitive-freeze: breach commit 937dda9d (dof-registry tamper) is in ancestry"
+  exit 1
+fi
+changed="$(git diff --name-only "$base...$head")"
+seal="$(git log -1 --format=%B "$head")"
+rc=0
+for protected in "dof-registry" ".github/workflows/" "catalog/genesis-protocols.json" ".github/CODEOWNERS"; do
+  if printf '%s\n' "$changed" | grep -q "^${protected}"; then
+    if ! printf '%s\n' "$seal" | grep -q "^X-Founder-Passkey-Seal: "; then
+      echo "FAIL control-primitive-freeze: ${protected} changed without an X-Founder-Passkey-Seal trailer"
+      rc=1
+    fi
+  fi
+done
+[ "$rc" = 0 ] && echo "ok   control-primitive-freeze"
+exit "$rc"

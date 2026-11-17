@@ -546,6 +546,26 @@ def main() -> int:
     if "-h" in sys.argv or "--help" in sys.argv:
         print((__doc__ or "bdd-proof-gate").split("\n")[0])
         return 0
+    if "--commit" in sys.argv:
+        # The same predicate, applied to what this machine can see before a push: the
+        # commit message of the head being pushed. Exists so the pre-push hook refuses a
+        # proofless branch instead of letting CI discover it on the pull request (the
+        # founder: this should never happen, it should happen before the PR).
+        try:
+            sha = sys.argv[sys.argv.index("--commit") + 1]
+        except (ValueError, IndexError):
+            print("bdd-proof-gate: --commit needs a sha", file=sys.stderr)
+            return EXIT_BLIND
+        out = subprocess.run(["git", "show", "-s", "--format=%B", sha],
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            print(f"bdd-proof-gate: cannot read commit {sha}", file=sys.stderr)
+            return EXIT_BLIND
+        full = subprocess.run(["git", "rev-parse", sha], capture_output=True, text=True).stdout.strip()
+        rc, msg = grade(out.stdout, full, f"commit {full[:8]}")
+        print(msg, file=sys.stdout if rc == EXIT_PROVED else sys.stderr)
+        return rc
+
     if "--live" in sys.argv:
         rc, msg = live_grade(os.environ)
         stream = sys.stdout if rc == EXIT_PROVED else sys.stderr

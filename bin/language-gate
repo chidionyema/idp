@@ -51,7 +51,8 @@ def _is_python(head: str, path: str) -> bool:
     if path.endswith(".py"):
         return True
     shown = subprocess.run(
-        ["git", "show", f"{head}:{path}"], capture_output=True, text=True, check=False
+        ["git", "show", f"{head}:{path}"], capture_output=True, text=True,
+        errors="replace", check=False
     )
     if shown.returncode != 0:
         return False
@@ -64,6 +65,7 @@ def _added_python_files(base: str, head: str) -> list[str]:
         ["git", "diff", "--diff-filter=A", "--name-only", f"{base}...{head}"],
         capture_output=True,
         text=True,
+        errors="replace",
         check=True,
         cwd=Path.cwd(),
     )
@@ -76,7 +78,7 @@ def _added_python_files(base: str, head: str) -> list[str]:
 
 
 def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], capture_output=True, text=True, check=check)
+    return subprocess.run(["git", *args], capture_output=True, text=True, errors="replace", check=check)
 
 
 def _index_is_python(path: str) -> bool:
