@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 
 CF_API = "https://api.cloudflare.com/client/v4"
-ZONE = os.environ.get("ESTATE_ZONE", "mumchimp.com")
+ZONE = os.environ["ESTATE_ZONE"]
 
 
 def cf(

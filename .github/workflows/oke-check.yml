@@ -17,8 +17,10 @@
 # daily audit behind it is not a door. Do not re-add an audit to this file.
 name: oke-check
 on:
-  schedule:
-    - cron: "17 6 * * *"   # daily; crew#220 drill row
+  # 2026-11-17 OKE retired (idp#0048; ARM k3s declared replacement). Schedule frozen to stop the
+  # runner bleed against a dead cluster; workflow_dispatch kept as the recovery door.
+  # schedule:
+  #   - cron: "17 6 * * *"   # daily; crew#220 drill row
   workflow_dispatch:
     inputs:
       mode:

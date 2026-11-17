@@ -31,7 +31,7 @@ CONSOLE=${CLOUDFLARE_CONSOLE_URL:-https://dash.cloudflare.com/profile/api-tokens
 HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
 PROFILE="$HOME_DIR/cloudflare-browser"
 VENV="$HOME_DIR/bootstrap-venv"
-CFG="$IDP/clusters/oke/estate-config.yaml"
+CFG="$IDP/clusters/k3s/estate-config.yaml"
 MODE=${1:-mint}
 case "$MODE" in mint|--preflight|--rotate) ;; *) sed -n 2,5p "$0"; exit 2;; esac
 

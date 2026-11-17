@@ -62,7 +62,7 @@ model_list:
   - model_name: default
     litellm_params:
       model: deepseek/deepseek-v4-flash
-      api_base: https://llm.mumchimp.com/v1
+      api_base: https://llm.${ESTATE_ZONE}/v1
       api_key: os.environ/DEEPSEEK_API_KEY
       timeout: 60
       max_tokens: 8192
@@ -83,7 +83,7 @@ model_list:
   - model_name: fast
     litellm_params:
       model: deepseek/deepseek-v4-flash
-      api_base: https://llm.mumchimp.com/v1
+      api_base: https://llm.${ESTATE_ZONE}/v1
       api_key: os.environ/DEEPSEEK_API_KEY
       timeout: 60
       max_tokens: 8192

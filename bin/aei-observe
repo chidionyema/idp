@@ -41,7 +41,7 @@ from aei.core import utc_now  # noqa: E402
 
 TOKEN_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "token"
 PORT_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "port"
-DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
+DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL") or "https://llm." + os.environ["ESTATE_ZONE"]
 
 
 def _collector_url() -> str:

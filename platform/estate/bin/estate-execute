@@ -883,8 +883,9 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     if agent_key:
         os.environ["OPENAI_API_KEY"] = agent_key
         os.environ["ANTHROPIC_API_KEY"] = agent_key
-    os.environ["OPENAI_BASE_URL"] = "https://llm.mumchimp.com/v1"
-    os.environ["ANTHROPIC_BASE_URL"] = "https://llm.mumchimp.com/v1"
+    _router = (os.environ.get("ESTATE_ROUTER_URL") or "https://llm." + os.environ["ESTATE_ZONE"]) + "/v1"
+    os.environ["OPENAI_BASE_URL"] = _router
+    os.environ["ANTHROPIC_BASE_URL"] = _router
     os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
     os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
 

@@ -84,7 +84,9 @@ PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_US-lessac-medium")
 # to stand in for it. The model string here should name a lane the spec's Llama is actually routed
 # to, not a hardcoded default that is nobody's declared choice -- the drift the 2026-09-24 trace
 # found (every completion hung on the default while /v1/models listed the real lanes).
-ROUTER_HOST = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
+ROUTER_HOST = (
+    os.environ.get("LITELLM_HOST") or "https://llm." + os.environ["ESTATE_ZONE"]
+)
 ROUTER_MODEL = os.environ.get("VOICE_LLM_MODEL", "default")
 
 # A clause ends at a breath. The regex demands punctuation FOLLOWED BY SPACE, so "3.5" and "e.g."

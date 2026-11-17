@@ -53,7 +53,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IDP = Path(__file__).resolve().parent.parent
-CFG = IDP / "clusters/oke/estate-config.yaml"
+CFG = IDP / "clusters/k3s/estate-config.yaml"
 LIFEBOAT = IDP / "platform/lifeboat"
 
 OK, FAIL, UNKNOWN = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN"
@@ -87,6 +87,8 @@ SECRETS = [
                         ("litellm-upstream", "GEMINI_API_KEY")]),
     ("OPENROUTER_API_KEY", [("human-openrouter", "OPENROUTER_API_KEY"),
                             ("litellm-upstream", "OPENROUTER_API_KEY")]),
+    ("AI_STUDIO_INGEST_SECRET", [("otto-lifeboat", "AI_STUDIO_INGEST_SECRET")]),
+    ("OMNIFLOW_GH_TOKEN", [("otto-lifeboat", "OMNIFLOW_GH_TOKEN")]),
 ]
 
 

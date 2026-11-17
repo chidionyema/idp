@@ -10,7 +10,22 @@
 // It is NOT evidence about an iPhone: that needs WebKit in CI (playwright.mobile.config.ts).
 import { chromium } from 'playwright';
 
-const URL = process.argv[2] || 'https://catalogue.mumchimp.com/fleet';
+const URL = process.argv[2] || `https://catalogue.${estateZone()}/fleet`;
+
+/**
+ * The estate's DNS zone, read from the environment. It is written once, in
+ * clusters/k3s/estate-config.yaml; every other file in the estate says ${ESTATE_ZONE}.
+ * No literal here.
+ */
+function estateZone(): string {
+  const zone = (process.env.ESTATE_ZONE || '').trim();
+  if (!zone) {
+    throw new Error(
+      'ESTATE_ZONE is not set; the zone is declared once in clusters/k3s/estate-config.yaml',
+    );
+  }
+  return zone;
+}
 
 const browser = await chromium.launch({
   channel: 'chrome', // system Chrome is the only browser on this laptop

@@ -36,7 +36,11 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 BREWFILE="$IDP/infra/macos/Brewfile"
 LD_DIR="$IDP/infra/macos/LaunchDaemons"
 SPIRE_TEMPLATE="$IDP/infra/macos/spire-agent.conf.template"
-ESTATE_ZONE="${ESTATE_ZONE:-mumchimp.com}"
+# The estate's DNS zone. It is written once, in clusters/k3s/estate-config.yaml, and every
+# other file says ${ESTATE_ZONE}; the environment wins when it carries one (CI sets it from
+# the repository variable). No literal is written here.
+ESTATE_ZONE="${ESTATE_ZONE:-$(awk '/^[[:space:]]*ESTATE_ZONE:/ {print $2; exit}' "$IDP/clusters/k3s/estate-config.yaml")}"
+[ -n "$ESTATE_ZONE" ] || { printf 'FAIL    mac-provision  no ESTATE_ZONE in clusters/k3s/estate-config.yaml and none in the environment\n' >&2; exit 2; }
 SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN:-estate.internal}"
 
 # --- print helpers ---------------------------------------------------------
@@ -51,7 +55,7 @@ usage() {
 Usage: bin/idp-mac-provision {install|upgrade|uninstall|status|doctor|self-test}
 
 Options (env vars):
-  ESTATE_ZONE            DNS zone the estate lives under (default: mumchimp.com)
+  ESTATE_ZONE            DNS zone the estate lives under (default: read from clusters/k3s/estate-config.yaml)
   SPIRE_TRUST_DOMAIN     SPIFFE trust domain (default: estate.internal)
   IDP_MAC_PROVISION_DRY  1 = run with --dry-run writes
 
@@ -156,7 +160,11 @@ render_and_load_plists() {
     && ok "LaunchAgent com.estate.jit-device-renew loaded" \
     || warn "LaunchAgent bootstrap refused (often benign — the plist is in place)"
 
-  cp -f "$LD_DIR/com.idp.spire-agent.plist" "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist"
+  # The zone is written once, in clusters/k3s/estate-config.yaml; the plist says ${ESTATE_ZONE}
+  # and this render puts the value in, so the installed file names no zone.
+  sed "s|\${ESTATE_ZONE}|$ESTATE_ZONE|g" \
+    "$LD_DIR/com.idp.spire-agent.plist" > "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist" 2>/dev/null \
+    || warn "spire-agent plist render failed; the installed file still says \${ESTATE_ZONE}"
   chmod 644 "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist"
   launchctl bootstrap gui/"$(id -u)" "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist" 2>/dev/null \
     && ok "LaunchAgent com.idp.spire-agent loaded" \

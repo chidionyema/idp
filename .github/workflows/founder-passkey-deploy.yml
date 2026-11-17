@@ -38,8 +38,8 @@ jobs:
       - name: Hostname from the estate zone
         run: |
           set -euo pipefail
-          zone=$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' clusters/oke/estate-config.yaml | head -1)
-          [ -n "$zone" ] || { echo "FAIL    passkey  ESTATE_ZONE missing from clusters/oke/estate-config.yaml"; exit 1; }
+          zone=$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' clusters/k3s/estate-config.yaml | head -1)
+          [ -n "$zone" ] || { echo "FAIL    passkey  ESTATE_ZONE missing from clusters/k3s/estate-config.yaml"; exit 1; }
           { echo "ZONE=$zone"; echo "HOST=passkey.$zone"; } >> "$GITHUB_ENV"
 
       - name: Mint a Workers token for this run only

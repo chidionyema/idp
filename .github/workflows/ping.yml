@@ -11,8 +11,10 @@
 # GitHub cron ticks can drift a few minutes under load; the schedule is a floor, not a clock.
 name: ping
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # 2026-11-17 frozen: surfaces still point at retired OKE; every tick fails into Telegram.
+  # Re-enable when meridianlabs.cloud routes answer 200.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,7 +32,7 @@ jobs:
         id: probe
         run: |
           set -uo pipefail
-          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
+          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/k3s/estate-config.yaml)
           test -n "$zone"
           # github.com rows are the repo links on the portal, not cluster surfaces; oke-check probes those.
           grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \

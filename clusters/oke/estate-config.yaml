@@ -11,7 +11,8 @@ metadata:
   name: estate-config
   namespace: flux-system
 data:
-  ESTATE_ZONE: mumchimp.com
+  # ESTATE_ZONE moved to clusters/k3s/estate-config.yaml (OKE retired, idp#0048). The zone
+  # gate reads every clusters/*/estate-config.yaml; this retired cluster no longer declares one.
   # The identity domain the front door signs people in against (platform/oci/identity). Same value
   # as the DOMAIN_BASE_URL variable bin/idp-oci-bootstrap writes; oauth2-proxy sees only this name.
   ESTATE_OIDC_DOMAIN_URL: https://idcs-e664824341af437895312af8a61882b1.identity.oraclecloud.com

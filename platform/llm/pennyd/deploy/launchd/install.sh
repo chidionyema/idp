@@ -198,6 +198,17 @@ if zai:
     primary = "zai.toml"
 else:
     text = (root / "deploy" / "local" / "estate-cloud.toml").read_text()
+    # The zone is written in one place (clusters/k3s/estate-config.yaml). This template carries
+    # the placeholder; the installer resolves it, so the name is never spelled here.
+    zone = os.environ.get("ESTATE_ZONE", "").strip()
+    if not zone:
+        import re as _re
+        cfg = root.parents[2] / "clusters" / "k3s" / "estate-config.yaml"
+        m = _re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", cfg.read_text(), _re.M)
+        zone = m.group(1) if m else ""
+    if not zone:
+        raise SystemExit("BLIND: no ESTATE_ZONE in the environment or in clusters/k3s/estate-config.yaml")
+    text = text.replace("__ESTATE_ZONE__", zone)
     text = text.replace(
         "__PENNYD_HOME__/secrets/litellm/LITELLM_API_KEY",
         str(stage / "secrets" / "litellm" / "LITELLM_API_KEY"),

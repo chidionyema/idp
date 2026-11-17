@@ -441,18 +441,42 @@ IMAGE_CONTROLLERS = ("image-reflector-controller", "image-automation-controller"
 # estate-config ConfigMap (clusters/oke/estate-config.yaml); the shadow had neither the ConfigMap
 # nor the postBuild, so every path that publishes a hostname was refused for a gap in the shadow.
 # The ConfigMap is the head's own copy: configuration, like the vault stand-in, not the change.
-ESTATE_CONFIG = os.path.join(REPO, "clusters", "oke", "estate-config.yaml")
+# Every clusters/*/estate-config.yaml declares the SAME ConfigMap (estate-config,
+# flux-system), so applying two files is last-writer-wins and drops half the keys --
+# idp#4582 one layer up. estate_config() below merges them into one object.
+CLUSTER_DIR = os.path.join(REPO, "clusters")
+KEY_RX = re.compile(r"^  ([A-Z][A-Z0-9_]*):[ \t]*(\S+)[ \t]*$")
+
+
+def merged_estate_config() -> str:
+    """One ConfigMap: every clusters/*/estate-config.yaml's data, merged."""
+    data = {}
+    for cluster in sorted(os.listdir(CLUSTER_DIR)):
+        path = os.path.join(CLUSTER_DIR, cluster, "estate-config.yaml")
+        if os.path.isfile(path):
+            for line in open(path, encoding="utf-8"):
+                m = KEY_RX.match(line.rstrip("\n"))
+                if m:
+                    data[m.group(1)] = m.group(2)
+    return json.dumps({
+        "apiVersion": "v1", "kind": "ConfigMap",
+        "metadata": {"name": "estate-config", "namespace": "flux-system"},
+        "data": data,
+    })
 
 
 def estate_config():
     """Lay the head's estate-config ConfigMap. Returns the failure, or None."""
     p = subprocess.run(
-        ["kubectl", "apply", "-f", ESTATE_CONFIG], capture_output=True, text=True
+        ["kubectl", "apply", "-f", "-"], input=merged_estate_config(),
+        capture_output=True, text=True
     )
     if p.returncode != 0:
         return f"could not lay estate-config: {(p.stderr or '').strip()[-400:]}"
+    if "ESTATE_ZONE" not in (json.loads(merged_estate_config())["data"] or {}):
+        return "no ESTATE_ZONE in any clusters/*/estate-config.yaml"
     print(
-        "ok      shadow  estate-config laid from the head (clusters/oke/estate-config.yaml)"
+        "ok      shadow  estate-config laid (every clusters/*/estate-config.yaml merged)"
     )
     return None
 

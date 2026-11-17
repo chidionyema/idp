@@ -193,7 +193,7 @@ install_launchd() {
   local TEMPORAL_BIN
   TEMPORAL_BIN="$(command -v temporal || true)"
   local PYTHON_BIN="$PYTHON"
-  local ESTATE_ZONE; ESTATE_ZONE="$(awk '/^[[:space:]]*ESTATE_ZONE:/ {print $2; exit}' "$IDP/clusters/oke/estate-config.yaml")"
+  local ESTATE_ZONE; ESTATE_ZONE="$(awk '/^[[:space:]]*ESTATE_ZONE:/ {print $2; exit}' "$IDP/clusters/k3s/estate-config.yaml")"
   IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" ESTATE_ZONE="$ESTATE_ZONE" \
     envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN} ${ESTATE_ZONE}' \
     < "$tmpl" > "$dest" || { warn "$name envsubst failed"; return; }

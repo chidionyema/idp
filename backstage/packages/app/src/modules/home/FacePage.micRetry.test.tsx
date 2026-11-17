@@ -24,6 +24,13 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FacePage } from './FacePage';
 
+// The estate's DNS zone, read from the environment. It is written once, in
+// clusters/k3s/estate-config.yaml; every other file in the estate says ${ESTATE_ZONE}. The
+// fixture below is a STAND-IN for a recovery URL the hook set -- what this suite grades is that
+// the page hands that URL to the browser unchanged -- so the reserved `.invalid` name is used
+// when the environment does not carry the zone.
+const ZONE = (process.env.ESTATE_ZONE || '').trim() || 'zone.invalid';
+
 // This suite pins the LEGACY voice path's button mapping (useEstateVoice). FacePage's default
 // path is the router (useVoiceRouter, 2026-10-16); the flag is read per render, so the suite
 // routes itself to the path it tests before each render.
@@ -150,11 +157,11 @@ describe('FacePage — the mic button', () => {
   // standalone icon (useEstateVoice.ts: isStandaloneHomeScreen) -- the page must offer the one
   // fix that actually clears the refusal, and must not offer it when there is nothing to escape.
   it('offers a real link to Safari when the hook sets micRecoveryUrl', () => {
-    mocked.mockReturnValue(voiceIn('error', 'https://catalogue.mumchimp.com/face'));
+    mocked.mockReturnValue(voiceIn('error', `https://catalogue.${ZONE}/face`));
     render(<FacePage />);
     const link = screen.getByText('Open in Safari to use the mic') as HTMLAnchorElement;
     expect(link.tagName).toBe('A');
-    expect(link.getAttribute('href')).toBe('https://catalogue.mumchimp.com/face');
+    expect(link.getAttribute('href')).toBe(`https://catalogue.${ZONE}/face`);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener');
   });

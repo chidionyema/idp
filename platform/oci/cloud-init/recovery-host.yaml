@@ -67,7 +67,7 @@ write_files:
       ExecStartPre=-/usr/bin/podman rm -f estate-router
       ExecStart=/usr/bin/podman run --name estate-router --network host --env-file /etc/estate/router.env \
         -e PYTHONPATH=/bundle/modules -e ESTATE_ROUTER_CONFIG=/bundle/config.yaml \
-        -e ESTATE_ROUTER_HOSTS=llm.mumchimp.com,llm-recovery.mumchimp.com,127.0.0.1:4000,localhost:4000 \
+        -e ESTATE_ROUTER_HOSTS=llm.meridianlabs.cloud,llm-recovery.meridianlabs.cloud,127.0.0.1:4000,localhost:4000 \
         --memory 900m --log-opt max-size=20m --log-opt max-file=3 \
         -v /etc/estate/router:/bundle:ro,Z ghcr.io/berriai/litellm:v1.98.0 \
         --config /bundle/config.yaml --host 127.0.0.1 --port 4000
@@ -81,7 +81,7 @@ write_files:
   - path: /etc/systemd/system/estate-tunnel.service
     content: |
       [Unit]
-      Description=Cloudflare Tunnel for llm.mumchimp.com (#7387)
+      Description=Cloudflare Tunnel for llm.meridianlabs.cloud (#7387)
       # NOT After=estate-router.service (2026-10-29). The tunnel's origin is the router's
       # 127.0.0.1:4000, but the tunnel must not WAIT for the router to start: estate-router
       # restarts forever on any failure, and a unit that never reaches active blocks every unit

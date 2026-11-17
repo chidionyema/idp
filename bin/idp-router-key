@@ -91,7 +91,7 @@ if [ "${1:-}" = "--reap-orphans" ]; then
   done
   IDP_CLOUD_BIN=${IDP_CLOUD:-$IDP/bin/idp-cloud}
   for t in curl jq python3; do command -v "$t" >/dev/null || { echo "BLIND   router-key   $t missing"; exit 2; }; done
-  CFG="$IDP/clusters/oke/estate-config.yaml"
+  CFG="$IDP/clusters/k3s/estate-config.yaml"
   ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
   [ -n "$ZONE" ] || { echo "BLIND   router-key   no ESTATE_ZONE in $CFG"; exit 2; }
   LLM=${ROUTER_URL:-https://llm.$ZONE}
@@ -178,7 +178,7 @@ done
 CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}            # overridable so a test needs no vault
 VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}
 for t in curl jq python3; do command -v "$t" >/dev/null || { echo "BLIND   router-key   $t missing"; exit 2; }; done
-CFG="$IDP/clusters/oke/estate-config.yaml"
+CFG="$IDP/clusters/k3s/estate-config.yaml"
 ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
 [ -n "$ZONE" ] || { echo "BLIND   router-key   no ESTATE_ZONE in $CFG"; exit 2; }
 LLM=${ROUTER_URL:-https://llm.$ZONE}

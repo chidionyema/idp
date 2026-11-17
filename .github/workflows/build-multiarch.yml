@@ -131,9 +131,9 @@ jobs:
             # as a literal. web/meridian.Dockerfile bakes it into the site's canonical and
             # OpenGraph urls; a build that cannot read it must stop rather than ship localhost
             # as the canonical on a client-facing page.
-            zone=$(sed -n 's/^  ESTATE_ZONE: *//p' clusters/oke/estate-config.yaml | head -1)
+            zone=$(sed -n 's/^  ESTATE_ZONE: *//p' clusters/k3s/estate-config.yaml | head -1)
             if [ -z "$zone" ]; then
-              echo "cannot read ESTATE_ZONE from clusters/oke/estate-config.yaml" >&2
+              echo "cannot read ESTATE_ZONE from clusters/k3s/estate-config.yaml" >&2
               exit 1
             fi
             echo "zone=$zone"

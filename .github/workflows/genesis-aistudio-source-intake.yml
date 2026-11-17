@@ -1,3 +1,7 @@
+# RETIRED FOR APP INTAKE (I-8096-REV2): AI Studio turns now land through the zero-click edge
+# path -- docs/specs/2026-11-16-aistudio-zero-click-ingest.md. This workflow remains only for
+# the SHA-pinned private archive; do not use it to move app work.
+#
 # PRIVATE SOURCE ONLY: never upload Google AI Studio archive or extracted code
 # to the public IDP repository, Actions artifacts or job summaries.
 # Trusted main workflow definition; no pull_request/branch-token execution.

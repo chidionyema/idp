@@ -177,8 +177,8 @@ else say "FAIL      describe  a scheduled job would reach the UI with no descrip
 # a browser would follow. Unauthenticated -> 302 to GitHub's authorize page, either directly
 # (skip-provider-button, measured live 2026-08-26 after idp#147) or via /oauth2/start on the
 # catalogue host. A 401, a 200, a 500 or any other Location is a FAIL, never a wait.
-zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-if [ -z "$zone" ]; then say "BLIND     login     no ESTATE_ZONE in clusters/oke/estate-config.yaml"
+zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/k3s/estate-config.yaml" | head -1)
+if [ -z "$zone" ]; then say "BLIND     login     no ESTATE_ZONE in clusters/k3s/estate-config.yaml"
 else
   hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "https://catalogue.$zone/" 2>/dev/null || echo "000")
   case "$hop" in

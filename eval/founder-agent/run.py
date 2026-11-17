@@ -3,7 +3,7 @@
 
     python3 eval/founder-agent/run.py --self-test                 # prove the verifiers can fail
     python3 eval/founder-agent/run.py --gates                     # G2/G4/G5, no agent
-    python3 eval/founder-agent/run.py --suite --agent door --door https://otto.mumchimp.com --allow-door
+    python3 eval/founder-agent/run.py --suite --agent door --door https://otto.${ESTATE_ZONE} --allow-door
     python3 eval/founder-agent/run.py --round 0 --agent door ...  # records rounds.json
 
 What it will not do: grade a proxy, invent a pass, or print a number it did not measure. A task the
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -402,7 +403,11 @@ def main(argv: list[str] | None = None) -> int:
         "--command",
         help="command: the loop under test, one JSON Run on stdout per turn",
     )
-    ap.add_argument("--door", default="https://otto.mumchimp.com")
+    ap.add_argument(
+        "--door",
+        default=os.environ.get("ESTATE_DOOR_URL")
+        or "https://otto." + os.environ["ESTATE_ZONE"],
+    )
     ap.add_argument("--channel", default="telegram")
     ap.add_argument(
         "--allow-door", action="store_true", help="actually POST turns to the door"

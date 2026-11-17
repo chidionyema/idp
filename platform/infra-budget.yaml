@@ -539,7 +539,7 @@ refused:
   memory: 768Mi
   reason: a local model lane on the node is a third copy of the floor the cloud router already holds;
     the cloud route is the default and this node is the fallback of the fallback
-  destination: the cloud router's free ollama floor lane (llm.mumchimp.com)
+  destination: the cloud router's free ollama floor lane (llm.${ESTATE_ZONE})
   rung: '1'
 - workload: llm/job/estate-db-copy-litellm-r2
   cpu: 50m

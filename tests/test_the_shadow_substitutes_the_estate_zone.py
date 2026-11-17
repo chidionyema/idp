@@ -65,7 +65,8 @@ def test_every_path_under_test_substitutes_from_the_estate_config_it_lays(
 
     shadow.verify("abc123", ["platform/llm"])
 
-    assert files == [str(REPO / "clusters" / "oke" / "estate-config.yaml")]
+    laid = [o for o in applied if o.get("kind") == "ConfigMap"]
+    assert laid and "ESTATE_ZONE" in laid[0]["data"]
     (ks,) = [o for o in applied if o["kind"] == "Kustomization"]
     assert ks["spec"]["path"] == "platform/llm"
     # #5747 (2026-10-11): the shadow substitutes from the sources production rows name, and four
@@ -79,10 +80,8 @@ def test_every_path_under_test_substitutes_from_the_estate_config_it_lays(
 
 
 def test_the_config_it_lays_defines_every_variable_the_llm_route_names():
-    text = (REPO / "clusters" / "oke" / "estate-config.yaml").read_text()
-    assert re.search(r"^\s*name: estate-config\s*$", text, re.M)
-    assert re.search(r"^\s*namespace: flux-system\s*$", text, re.M)
-    keys = set(re.findall(r"^  ([A-Z][A-Z0-9_]*):", text, re.M))
+    shadow = load_shadow()
+    keys = set(json.loads(shadow.merged_estate_config())["data"])
     used = set(
         re.findall(
             r"\$\{([A-Z][A-Z0-9_]*)\}",

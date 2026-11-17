@@ -20,7 +20,9 @@ from pathlib import Path
 
 HOME = Path.home()
 IDP = HOME / "Documents/code/idp"
-ROUTER = "https://llm.mumchimp.com/v1/chat/completions"
+ROUTER = (
+    os.environ.get("ESTATE_ROUTER_URL") or "https://llm." + os.environ["ESTATE_ZONE"]
+) + "/v1/chat/completions"
 # The router this tier calls is the cluster's, and its key is model-allowlisted
 # (default, ollama, deepseek, gemini, kimi, minimax, minimax_m27, groq, ... --
 # 'gpt-4o-mini' was never on it, so this tier could not have made a call). The

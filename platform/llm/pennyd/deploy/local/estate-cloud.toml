@@ -2,7 +2,7 @@
 # The installer replaces __PENNYD_HOME__ with the protected local stage path.
 id = "estate-cloud"
 dialect = "openai"
-base_url = "https://llm.mumchimp.com/v1"
+base_url = "https://llm.__ESTATE_ZONE__/v1"
 request_path = "/chat/completions"
 api_key_file = "__PENNYD_HOME__/secrets/litellm/LITELLM_API_KEY"
 

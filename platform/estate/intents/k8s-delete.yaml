@@ -11,7 +11,7 @@ description: >
   reconciles is changed in git and converged (AGENTS.md 2), and kube-system is refused outright.
   It exists because before it, a cluster object that had gone stale could not be cleared at all --
   the kubectl door was get-only and k8s-apply was apply-only, so a stuck CertificateRequest held
-  meridian.mumchimp.com's HTTPS down with no governed way to remove it (2026-10-18).
+  meridian.${ESTATE_ZONE}'s HTTPS down with no governed way to remove it (2026-10-18).
 args:
   resource:   {type: string, description: "kind, e.g. certificaterequest (no 'kind/name' form)"}
   name:       {type: string, description: "the object's name"}

@@ -177,7 +177,7 @@ export function micPlatform(): MicPlatform {
  * WHAT A `denied` PERMISSION STATE MEANS, AND WHY THIS NO LONGER MENTIONS A SETTING (2026-10-06).
  *
  * Measured on the founder's iPhone from live production: tapping the mic on
- * https://catalogue.mumchimp.com/fleet rendered "microphone is off for this page -- tap the mic
+ * https://catalogue.${ESTATE_ZONE}/fleet rendered "microphone is off for this page -- tap the mic
  * again to be asked". That string is produced by ONE branch: `permissions.query({name:'microphone'})`
  * returning `denied` in micBlocker(). So Safari is telling the page the mic is off for THIS site,
  * and the page passed that on -- but the word "off" reads as a setting to go and find, which is
@@ -254,7 +254,7 @@ function osRefusalFix(): string {
 /**
  * WHY THE MICROPHONE'S REFUSAL MUST BE NAMED, NOT SUMMARIZED (2026-10-03).
  *
- * The founder spent eight hours with voice dead on catalogue.mumchimp.com while the surface
+ * The founder spent eight hours with voice dead on the catalogue host while the surface
  * said only "microphone blocked — allow it for this site". That sentence guesses ONE cause
  * (the site setting) and is wrong for the two that actually hold a Mac hostage:
  *
@@ -276,7 +276,7 @@ export async function micBlocker(): Promise<string | null> {
   //
   // Measured on LIVE production 2026-10-04 with an iPhone and a Pixel user-agent: this function
   // returned "this page is not on https" while the page WAS on https (the address bar was
-  // https://catalogue.mumchimp.com). The cause was `||` here: `!isSecureContext` and
+  // https://the catalogue host). The cause was `||` here: `!isSecureContext` and
   // `!mediaDevices.getUserMedia` are not the same fault, and only the first is about the URL. On a
   // phone the second is what fires -- Safari on iOS exposes `navigator.mediaDevices` as undefined
   // to a page it is not prepared to grant, which says nothing about https. The page then sent the
@@ -286,7 +286,12 @@ export async function micBlocker(): Promise<string | null> {
   // So: an insecure origin names the URL. A SECURE origin with no getUserMedia names the DEVICE,
   // and asks the platform helper for the path that device can actually follow.
   if (!window.isSecureContext) {
-    return 'microphone needs a secure page — open it over https://catalogue.mumchimp.com';
+    // The address to open is THIS page's own address over https. The page is already on the
+    // estate's hostname, so the origin names the zone without anything here naming it -- and
+    // Backstage's bundler does not inline `process.env`, so a build-time ESTATE_ZONE would be
+    // undefined in the browser anyway (measured on the shipped bundle, 2026-10-04).
+    const origin = window.location.origin.replace(/^http:/, 'https:');
+    return `microphone needs a secure page — open it over ${origin}`;
   }
   // NO DEVICE NAMED, NO SETTINGS SENT: the caller now simply calls getUserMedia, which IS the
   // request. If the browser will not even expose the API there is nothing a user can reach from a

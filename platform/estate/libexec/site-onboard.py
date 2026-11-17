@@ -78,7 +78,7 @@ RESERVED = {
     "ns-fences",
     "image-automation",
 }
-REPO_MARKERS = ("clusters/oke/estate-config.yaml", "platform/estate/intents")
+REPO_MARKERS = ("clusters/k3s/estate-config.yaml", "platform/estate/intents")
 
 
 class Refused(Exception):
@@ -1172,7 +1172,7 @@ def verify(repo: Path, name: str) -> int:
         )
 
     zone = ""
-    for doc in _docs(repo / "clusters/oke/estate-config.yaml"):
+    for doc in _docs(repo / "clusters/k3s/estate-config.yaml"):
         zone = (doc.get("data") or {}).get("ESTATE_ZONE") or zone
     literal = [
         f.name for f in sorted(site.glob("*.yaml")) if zone and zone in f.read_text()

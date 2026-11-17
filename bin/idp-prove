@@ -39,7 +39,7 @@ def run(cmd, env=None, timeout=600):
 
 
 def zone():
-    cfg = os.path.join(IDP, "clusters", "oke", "estate-config.yaml")
+    cfg = os.path.join(IDP, "clusters", "k3s", "estate-config.yaml")
     m = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", open(cfg).read(), re.M)
     return m.group(1) if m else None
 

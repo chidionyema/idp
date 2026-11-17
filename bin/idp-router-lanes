@@ -4,7 +4,7 @@
 person hits it).
 
     LITELLM_API_KEY=... bin/idp-router-lanes --config platform/llm/config.yaml \\
-        --zone-from clusters/oke/estate-config.yaml --out lanes.json
+        --zone-from clusters/k3s/estate-config.yaml --out lanes.json
 
 The mature tool rejected: LiteLLM's own `/health` does exactly this per model, but it answers only
 to the master key, which lives in the vault the cluster reads and no CI run holds (crew#579).
@@ -105,7 +105,7 @@ def call(url: str, key: str, lane: str, timeout: int) -> dict:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", required=True, help="the router config with model_list")
-    p.add_argument("--zone-from", required=True, help="clusters/oke/estate-config.yaml")
+    p.add_argument("--zone-from", required=True, help="clusters/k3s/estate-config.yaml")
     p.add_argument("--timeout", type=int, default=25)
     p.add_argument("--out", required=True)
     a = p.parse_args(argv)

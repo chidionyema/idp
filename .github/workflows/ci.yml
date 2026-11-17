@@ -658,6 +658,38 @@ jobs:
           # judged by BASE's gate when it has one, so a change cannot rewrite its own judge
           if git show "$base:bin/dof-gate" > /tmp/dof-gate 2>/dev/null; then python3 /tmp/dof-gate "$base" "$HEAD"; else python3 bin/dof-gate "$base" "$HEAD"; fi
 
+  # THE WALL, replayed. bin/pr-parity runs lib/pr-checks.json -- the same manifest the pre-push
+  # hook runs -- over this pull request's own diff. A green laptop wall and a red server here is
+  # drift, and drift is what let a red PR reach the founder. Path-scoped like pre-push, so a
+  # Rust-free change does not pay for cargo twice; the proof (each check's output sha256) is the
+  # artifact the Greenlane reads.
+  parity:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: tools the wall calls
+        run: pip install -q ruff==0.6.9
+      - name: the wall (lib/pr-checks.json)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: |
+          base="${BASE:-$(git merge-base origin/main "$HEAD")}"
+          bin/pr-parity --mode prepush --base "$base" --head "$HEAD" --proof parity-proof.json || {
+            cat parity-proof.json 2>/dev/null || true
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: parity-proof
+          path: parity-proof.json
+          if-no-files-found: warn
+
   ci-success:
     if: always()
     # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
@@ -679,7 +711,7 @@ jobs:
     # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
     # The loop now judges every key of `needs`, so this is the one list, and
     # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
-    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate]
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate, parity]
     runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped

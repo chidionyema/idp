@@ -1,0 +1,13 @@
+# The estate's DNS zone, written once. Home moved from clusters/oke (OKE retired, idp#0048)
+# to clusters/k3s, the declared ARM k3s replacement. Gate: bin/estate-zone-gate rglobs
+# clusters/*/estate-config.yaml, so this file is now the one source of ESTATE_ZONE.
+# Zone cutover 2026-11-17: mumchimp.com remains a Meridian group brand (storefront links
+# are exempt); every estate service host moves to meridianlabs.cloud (Cloudflare zone,
+# NS danica/tony.ns.cloudflare.com, verified 2026-11-17).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: estate-config
+  namespace: flux-system
+data:
+  ESTATE_ZONE: meridianlabs.cloud

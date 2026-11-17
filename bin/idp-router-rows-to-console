@@ -2,7 +2,7 @@
 """Copy the git-owned router lanes into the router's own console, from CI.
 
     bin/idp-router-rows-to-console --config platform/llm/config.yaml \\
-        --zone-from clusters/oke/estate-config.yaml [--dry-run]
+        --zone-from clusters/k3s/estate-config.yaml [--dry-run]
 
 Founder, 2026-09-03, on the console's greyed-out "Update API Key" button: "enable the thing".
 LiteLLM locks every row that comes from config.yaml ("defined in config"); only a row the
@@ -106,7 +106,7 @@ def main(argv=None) -> int:
     p.add_argument(
         "--config", required=True, help="the rendered router config with model_list"
     )
-    p.add_argument("--zone-from", required=True, help="clusters/oke/estate-config.yaml")
+    p.add_argument("--zone-from", required=True, help="clusters/k3s/estate-config.yaml")
     p.add_argument(
         "--dry-run", action="store_true", help="say what would move, POST nothing"
     )

@@ -141,7 +141,7 @@ jobs:
             # into litellm-db with the vendor key the vault already holds, so the founder changes a
             # key in the console from then on. Not under `all`: it is a one-time move, and it is run
             # by the founder, never by an agent (R65). Idempotent: a lane the console owns is kept.
-            bin/idp-router-rows-to-console --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml
+            bin/idp-router-rows-to-console --config platform/llm/config.yaml --zone-from clusters/k3s/estate-config.yaml
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = k8sgpt ]; then
             # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).

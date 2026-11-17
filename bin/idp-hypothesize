@@ -83,7 +83,7 @@ LAYER_PRIORS_DEFAULT = {
 LAYER_ORDER = ["caller", "checkout", "script", "config", "daemon", "upstream"]
 
 DEFAULT_ROUTER_PORT = 4000
-DEFAULT_ROUTER_URL = "https://llm.mumchimp.com"
+DEFAULT_ROUTER_URL = "https://llm." + os.environ["ESTATE_ZONE"]
 EXT_DIR = "$HOME/.pi/agent/extensions"
 
 ERROR_PATTERNS = [
@@ -516,7 +516,7 @@ def synthesize(
         )
 
     script = script or ctx.get("script") or "estate-execute"
-    host = host or _host_of(ctx) or "llm.mumchimp.com"
+    host = host or _host_of(ctx) or "llm." + os.environ["ESTATE_ZONE"]
     port = port or ctx.get("port") or str(DEFAULT_ROUTER_PORT)
     url = url or ctx.get("url") or DEFAULT_ROUTER_URL
     if url.endswith("/"):

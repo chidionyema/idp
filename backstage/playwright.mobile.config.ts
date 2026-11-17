@@ -20,7 +20,24 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com';
+const BASE =
+  process.env.PLAYWRIGHT_URL ??
+  `https://catalogue.${estateZone()}`;
+
+/**
+ * The estate's DNS zone, read from the environment. It is written once, in
+ * clusters/k3s/estate-config.yaml, and every other file in the estate says ${ESTATE_ZONE};
+ * CI sets the variable from the repository variable (portal-app.yml). No literal here.
+ */
+function estateZone(): string {
+  const zone = (process.env.ESTATE_ZONE || '').trim();
+  if (!zone) {
+    throw new Error(
+      'ESTATE_ZONE is not set; the zone is declared once in clusters/k3s/estate-config.yaml',
+    );
+  }
+  return zone;
+}
 
 export default defineConfig({
   testDir: './packages/app/e2e-tests',

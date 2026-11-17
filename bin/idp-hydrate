@@ -12,7 +12,27 @@ set -euo pipefail
 : "${SHA:?commit to pin}" "${REF:?branch holding SHA}" "${GITHUB_REPOSITORY:?owner/repo}"
 here=$(cd "$(dirname "$0")/.." && pwd)
 flux install --components-extra=image-reflector-controller,image-automation-controller
-kubectl apply -f "$here/clusters/oke/estate-config.yaml"
+estate_config_merged() {
+  python3 - "$here" <<'PY'
+import json, os, re, sys
+root = sys.argv[1]
+data = {}
+for cluster in sorted(os.listdir(os.path.join(root, "clusters"))):
+    path = os.path.join(root, "clusters", cluster, "estate-config.yaml")
+    if os.path.isfile(path):
+        for line in open(path, encoding="utf-8"):
+            m = re.match(r"^  ([A-Z][A-Z0-9_]*):[ \t]*(\S+)[ \t]*$", line.rstrip("\n"))
+            if m:
+                data[m.group(1)] = m.group(2)
+print(json.dumps({"apiVersion": "v1", "kind": "ConfigMap",
+                  "metadata": {"name": "estate-config", "namespace": "flux-system"},
+                  "data": data}))
+PY
+}
+estate_config_merged | kubectl apply -f -
 flux create source git flux-system --url="https://github.com/${GITHUB_REPOSITORY}" --branch="$REF" --commit="$SHA" --interval=10m
 for f in "$here"/clusters/oke/*.yaml; do kubectl apply -f "$f"; done
+# the loop re-applied the oke copy of estate-config; the merged ConfigMap wins last so
+# the zone (clusters/k3s) and the oke-only keys are both present when the rows substitute.
+estate_config_merged | kubectl apply -f -
 echo "applied $(kubectl get kustomizations -A --no-headers | wc -l) Kustomizations"

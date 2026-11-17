@@ -45,7 +45,7 @@
 <key>EnvironmentVariables</key>
     <dict>
         <key>ESTATE_ZONE</key>
-        <string>mumchimp.com</string>
+        <string>${ESTATE_ZONE}</string>
         <key>SPIRE_SERVER_ADDRESS</key>
         <string>spire-server.jit.svc.cluster.local</string>
         <key>SPIRE_SERVER_PORT</key>

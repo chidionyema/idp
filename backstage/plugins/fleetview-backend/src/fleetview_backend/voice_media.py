@@ -245,7 +245,10 @@ async def speculate(
 
             from . import voice  # noqa: PLC0415
 
-            router_host = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
+            router_host = (
+                os.environ.get("LITELLM_HOST")
+                or "https://llm." + os.environ["ESTATE_ZONE"]
+            )
             # voice.router_key(), not a bare env read: it re-reads LITELLM_API_KEY_FILE on every
             # call so a rotated mounted key is picked up, falling back to LITELLM_API_KEY for
             # local/dev launches that have no mounted file.
@@ -1114,7 +1117,7 @@ def log(limit: int = 50) -> dict[str, Any]:
     (`bin/dockerfiles`), so the repo-root `sovereign/` package is NOT installed here and
     `_voice_package()` raises ModuleNotFoundError. This function was the sibling that guard was
     never added to, so `/voice/log` answered 500 to a bare traceback (measured live 2026-04-10 on
-    catalogue.mumchimp.com: `GET /voice/log?limit=40` -> 500, pod log `ModuleNotFoundError: No
+    the catalogue host: `GET /voice/log?limit=40` -> 500, pod log `ModuleNotFoundError: No
     module named 'sovereign'`). The face page calls it on mount, so a working page carried a red
     500 in the console. An endpoint that cannot reach its engine is absent, not broken: it says so
     and returns an empty turn list, which is a true statement about this image.

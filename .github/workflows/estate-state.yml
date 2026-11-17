@@ -10,8 +10,9 @@
 # empty section in the document, never a green row.
 name: estate-state
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  # 2026-11-17 frozen with the OKE retirement (idp#0048); re-enable on the k3s cutover.
+  # schedule:
+  #   - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
     paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "bin/idp-image-builds", "platform/estate-state/**"]
@@ -174,7 +175,7 @@ jobs:
           LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}
         run: |
           set -uo pipefail
-          bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/k3s/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: build and validate against platform/estate-state/schema.json
         env:
           GH_TOKEN: ${{ github.token }} # the document's clock is GitHub's Date header (crew#583)

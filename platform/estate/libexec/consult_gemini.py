@@ -4,7 +4,7 @@
 Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.5-flash]
                         [max_bytes=400000] [timeout=70]
 
-One door. The call goes to the estate router (llm.mumchimp.com), never to Google direct, so
+One door. The call goes to the estate router (the router host), never to Google direct, so
 spend lands on the router ledger and under its daily ceiling. If the consultant lane refuses or
 is slow the helper retries once on the neutral `default` lane and SAYS SO in the output: a
 consultant that quietly answers as a different model is worse than one that fails loudly.
@@ -24,7 +24,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
+ROUTER = (
+    os.environ.get("ESTATE_ROUTER_URL") or "https://llm." + os.environ["ESTATE_ZONE"]
+)
 # The router's `gemini` lane named gemini-2.5-flash, which Google 404s for new users
 # (measured 2026-10-30), so it silently fell back to MiniMax. The lane now names
 # gemini-3.5-flash (2026-10-30), so the alias and this name ask for the same model. The name

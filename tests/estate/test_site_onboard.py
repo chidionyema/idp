@@ -137,7 +137,7 @@ def repo(tmp_path: Path) -> Path:
     """A checkout with the real shape of the files site-onboard edits."""
     put(
         tmp_path,
-        "clusters/oke/estate-config.yaml",
+        "clusters/k3s/estate-config.yaml",
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: estate-config\n"
         "  namespace: flux-system\ndata:\n  ESTATE_ZONE: mumchimp.com\n",
     )

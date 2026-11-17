@@ -16,7 +16,7 @@ WHY (2026-10-21). The laptop ran out of memory (load 95, 4 GB in swap) and the r
 went on accepting connections without answering them, so the twin fallback never fired: it only
 caught a refused connect. Later that day the router's venv was missing and every slot refused,
 with no twin booted. Both times every agent on the laptop lost every model, while the OKE router
-(llm.mumchimp.com, which takes the same laptop key) was up. Founder: no laptop overload or OKE
+(the router host, which takes the same laptop key) was up. Founder: no laptop overload or OKE
 outage may take out every model. So the front now asks each slot /health/liveliness every
 PROBE_EVERY seconds; a slot that misses DOWN_AFTER probes in a row (refused, or slower than
 PROBE_TIMEOUT) is passed over for new connections until it answers UP_AFTER in a row. With no
@@ -108,7 +108,9 @@ ACTIVE = pathlib.Path(
 )
 SLOTS = (4001, 4002)
 # Empty turns the cloud leg off.
-CLOUD = os.environ.get("ESTATE_ROUTER_CLOUD", "https://llm.mumchimp.com")
+CLOUD = (
+    os.environ.get("ESTATE_ROUTER_CLOUD") or "https://llm." + os.environ["ESTATE_ZONE"]
+)
 # The User-Agent the front presents to the cloud route, in place of the caller's own.
 # The cloud route sits behind Cloudflare, whose browser-signature rules refuse some client
 # signatures with "403 error code: 1010" before the request reaches the router at all.

@@ -10,7 +10,7 @@ pass out proto tcp to 127.0.0.1
 pass out proto udp to 127.0.0.1
 
 # Allow router (LiteLLM)
-pass out proto tcp to llm.mumchimp.com port {443}
+pass out proto tcp to llm.meridianlabs.cloud port {443}
 
 # Allow GitHub
 pass out proto tcp to github.com port {22,443}

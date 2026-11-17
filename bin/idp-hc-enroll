@@ -16,7 +16,7 @@
 set -u
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 ZONE=${1:-${ESTATE_ZONE:-}}
-[ -n "$ZONE" ] || ZONE=$(sed -n 's/^  ESTATE_ZONE: *//p' "$(dirname "$0")/../clusters/oke/estate-config.yaml" 2>/dev/null)
+[ -n "$ZONE" ] || ZONE=$(sed -n 's/^  ESTATE_ZONE: *//p' "$(dirname "$0")/../clusters/k3s/estate-config.yaml" 2>/dev/null)
 [ -n "$ZONE" ] || { echo "BLIND   hc-enroll  no zone: pass it or set ESTATE_ZONE"; exit 2; }
 BUCKET=${HC_RECEIPTS_BUCKET:-estate-drill-receipts}
 NAME=healthchecks/ping_key.age

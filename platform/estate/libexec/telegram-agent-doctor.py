@@ -61,14 +61,11 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-# The estate's DNS zone. The one place it is written is clusters/oke/estate-config.yaml
-# (ESTATE_ZONE: mumchimp.com); every platform file says ${ESTATE_ZONE} and the zone gate
-# refuses a literal. This is the fallback for a runtime install that has no checkout to read
-# it from and no ESTATE_ZONE in the environment.
-ESTATE_ZONE_DEFAULT = "mumchimp.com"
-
-# The one place the zone is written, when this script runs from a checkout.
-ZONE_CONFIG_RELATIVE = ("clusters", "oke", "estate-config.yaml")
+# The estate's DNS zone. The one place it is written is clusters/k3s/estate-config.yaml;
+# every platform file says ${ESTATE_ZONE} and the zone gate refuses a literal. There is no
+# default here: the environment or that one file is the answer, and neither means the probe
+# is BLIND rather than measured against a name this file invented.
+ZONE_CONFIG_RELATIVE = ("clusters", "k3s", "estate-config.yaml")
 
 CLUSTER_TIMEOUT = 20  # a cluster link that cannot be read is blind, not a hang
 HEAL_TIMEOUT = 45  # flux reconcile has its own 2m budget; we give up first
@@ -316,7 +313,11 @@ def probe_workflow(workflow: str, run=None) -> tuple:
 # BLIND, and that is the whole point of the BLIND state.
 # --------------------------------------------------------------------------------------
 def resolve_zone() -> str:
-    """The estate's DNS zone, from the environment, the checkout, or the declared default."""
+    """The estate's DNS zone, from the environment or from the one place it is written.
+
+    Empty when neither carries it: a probe with no zone is BLIND, not measured against a name
+    this file invented.
+    """
     zone = os.environ.get("ESTATE_ZONE", "").strip()
     if zone:
         return zone
@@ -331,11 +332,16 @@ def resolve_zone() -> str:
                         return line.split(":", 1)[1].strip().strip('"')
         except OSError:
             pass
-    return ESTATE_ZONE_DEFAULT
+    return ""
 
 
 def probe_http(link: dict, zone: str) -> tuple:
     """Read a public path. The only link that can be read without the cluster."""
+    if not zone:
+        return (
+            BLIND,
+            "no ESTATE_ZONE in the environment or in clusters/k3s/estate-config.yaml",
+        )
     url = link["url"].replace("${ESTATE_ZONE}", zone)
     started = time.time()
     try:

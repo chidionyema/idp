@@ -24,6 +24,15 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+// The estate's DNS zone, read from the environment. It is written once, in
+// clusters/k3s/estate-config.yaml; every other file in the estate says ${ESTATE_ZONE}.
+const ZONE = (process.env.ESTATE_ZONE || '').trim();
+if (!ZONE) {
+  throw new Error(
+    'ESTATE_ZONE is not set; the zone is declared once in clusters/k3s/estate-config.yaml',
+  );
+}
+
 // The app serves its shell on /face and /fleet to a signed-out browser. Anything that redirects to
 // an identity provider is the wall, named so a failure is readable.
 const LOGIN_WALL =
@@ -32,7 +41,7 @@ const LOGIN_WALL =
 // PRESS THE GUEST WALL'S Enter, WAITING FOR WHICHEVER OF IT OR THE MIC DRAWS FIRST (2026-10-09).
 // This used to be `if (await enter.isVisible({ timeout: 20_000 }))`, and `isVisible` IGNORES its
 // timeout: it reads the page once. Measured on ubuntu-latest WebKit (the iPhone project) against
-// live catalogue.mumchimp.com: at `load` the body is still empty, so the check said "no wall",
+// the live catalogue host: at `load` the body is still empty, so the check said "no wall",
 // Enter was never pressed, and the page sat on "Enter as a Guest User" for the full 90s -- every
 // iPhone mic test red, and Pixel red whenever its paint lost the same race. Waiting on
 // `enter.or(mic)` presses Enter when the wall shows and skips it when a session already exists.
@@ -89,7 +98,7 @@ test.describe('mobile microphone reachability', () => {
       // stands in for a granted prompt so the code path past the permission is exercised.
       await context.grantPermissions(['microphone'], {
         origin: new URL(
-          process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com',
+          process.env.PLAYWRIGHT_URL ?? `https://catalogue.${ZONE}`,
         ).origin,
       });
 
@@ -450,7 +459,7 @@ test.describe('mobile microphone refusal names the device', () => {
       // THE FIRST ASSERTION, and the one this test was missing. The old version asserted only
       // `/microphone (blocked|unavailable)/`, which the WRONG message also matches: measured on LIVE
       // production 2026-10-04, an iPhone and a Pixel descriptor were both told "this page is not on
-      // https" while the page WAS on https (https://catalogue.mumchimp.com). The test was green
+      // https" while the page WAS on https (https://catalogue.${ESTATE_ZONE}). The test was green
       // while the page named a cause that was false and a fix that was impossible to follow. The
       // page under test here is served over https by construction, so a message that blames the URL
       // is itself the defect.

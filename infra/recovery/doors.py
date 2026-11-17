@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 
 DOORS = ["llm", "otto", "auth", "api", "mcp", "catalogue", "deck", "lifeboat"]
-ZONE = os.environ.get("ESTATE_ZONE", "mumchimp.com")
+ZONE = os.environ["ESTATE_ZONE"]
 CF_API = "https://api.cloudflare.com/client/v4"
 
 

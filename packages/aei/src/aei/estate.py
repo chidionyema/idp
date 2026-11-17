@@ -33,7 +33,9 @@ from .core import utc_now
 
 # The estate's default model route is the cloud router (AGENTS.md 7a). It is the one place every
 # agent's model call passes, so it is the one place the evidence has to come from.
-ROUTER_URL = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com").rstrip("/")
+ROUTER_URL = (
+    os.environ.get("ESTATE_ROUTER_URL") or "https://llm." + os.environ["ESTATE_ZONE"]
+).rstrip("/")
 COLLECTOR_URL = os.environ.get("AEI_COLLECTOR_URL", "http://127.0.0.1:8766").rstrip("/")
 IDP_ROOT = Path(__file__).resolve().parents[4]
 

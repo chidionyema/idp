@@ -81,7 +81,11 @@ ROUTER_CORE_LANES = (
 )
 
 ROUTER_RUNGS = (
-    ("cloud", os.environ.get("ESTATE_ROUTER_BASE", "https://llm.mumchimp.com")),
+    (
+        "cloud",
+        os.environ.get("ESTATE_ROUTER_BASE")
+        or "https://llm." + os.environ["ESTATE_ZONE"],
+    ),
     ("laptop", os.environ.get("ESTATE_ROUTER_FALLBACK", "http://127.0.0.1:4000")),
 )
 

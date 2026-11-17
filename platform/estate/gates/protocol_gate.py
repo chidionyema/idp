@@ -50,7 +50,10 @@ DEFAULT_PROTOCOLS = {
             r"memdoor",
             r"no MCP_GATEWAY_KEY",
         ],
-        "probes": ["%s %s probe-http https://mcp.mumchimp.com/" % (PY, SELF)],
+        "probes": [
+            ("%s %s probe-http https://mcp." + os.environ["ESTATE_ZONE"] + "/")
+            % (PY, SELF)
+        ],
         "roundtrip": [],  # ADD a real authenticated remember+recall round trip here; transport-only proof is weaker
         "repair_scope": [],  # path globs agents may edit while this break is open, e.g. "*/cloudflare/*"
         "required_action": "Restore the memory door (or move it off the dead cluster). Name who must act and give the exact command.",
@@ -63,7 +66,10 @@ DEFAULT_PROTOCOLS = {
             r"llm\.mumchimp\.com.*(fail|unreachable|timeout|EOF)",
             r"router.*(SPOF|single point of failure)",
         ],
-        "probes": ["%s %s probe-http https://llm.mumchimp.com/" % (PY, SELF)],
+        "probes": [
+            ("%s %s probe-http https://llm." + os.environ["ESTATE_ZONE"] + "/")
+            % (PY, SELF)
+        ],
         "roundtrip": [],
         "repair_scope": [],
         "required_action": "Restore the LLM router (or point agents at the Cloudflare router). Name who must act and give the exact command.",

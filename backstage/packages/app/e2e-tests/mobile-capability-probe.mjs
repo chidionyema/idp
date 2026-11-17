@@ -9,7 +9,22 @@
 // the whole point: a desktop fake-flag result is not evidence about a phone.
 import { webkit, chromium, devices } from 'playwright';
 
-const URL = process.env.URL || 'https://catalogue.mumchimp.com/fleet';
+const URL = process.env.URL || `https://catalogue.${estateZone()}/fleet`;
+
+/**
+ * The estate's DNS zone, read from the environment. It is written once, in
+ * clusters/k3s/estate-config.yaml; every other file in the estate says ${ESTATE_ZONE}.
+ * No literal here.
+ */
+function estateZone(): string {
+  const zone = (process.env.ESTATE_ZONE || '').trim();
+  if (!zone) {
+    throw new Error(
+      'ESTATE_ZONE is not set; the zone is declared once in clusters/k3s/estate-config.yaml',
+    );
+  }
+  return zone;
+}
 const targets = [
   ['iPhone 13 (WebKit)', webkit, devices['iPhone 13']],
   ['Pixel 7 (Chromium)', chromium, devices['Pixel 7']],

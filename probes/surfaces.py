@@ -16,6 +16,7 @@ Output contract, like every bin/idp-* helper: one grading line per assertion,
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -169,7 +170,7 @@ def l1_gate_battery(
     host: str, inv: dict[str, list[str]], get=http, timeout: int = 15
 ) -> list:
     """This is the probe that was missing on 2026-10-02: it fetches the face assets
-    (public/face/*.glb, discovered from the tree) through catalogue.mumchimp.com and refuses to
+    (public/face/*.glb, discovered from the tree) through the catalogue host and refuses to
     accept a login redirect (followed redirects surface as 200 + HTML sign-in page, so the BODY
     is graded, not just status)."""
     out = []
@@ -274,7 +275,11 @@ def probe(host: str, token: str | None = None, get=http) -> list:
 
 
 if __name__ == "__main__":
-    host = sys.argv[1] if len(sys.argv) > 1 else "https://catalogue.mumchimp.com"
+    host = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "https://catalogue." + os.environ["ESTATE_ZONE"]
+    )
     inv = enumerate_inventory()
     fails = 0
     lines = (
