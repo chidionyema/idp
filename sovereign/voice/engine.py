@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import re
 import time
 from dataclasses import dataclass, field
@@ -79,12 +80,40 @@ KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", "af_heart")
 SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", "Samantha")
 PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_US-lessac-medium")
 
+
 # The router is the estate's own (LAW 34: one router key per identity, no vendor keys on the Mac).
 # The spec's LLM leg is vLLM/Llama-3.3-70B streamed; the deployment note permits the estate router
 # to stand in for it. The model string here should name a lane the spec's Llama is actually routed
 # to, not a hardcoded default that is nobody's declared choice -- the drift the 2026-09-24 trace
 # found (every completion hung on the default while /v1/models listed the real lanes).
-ROUTER_HOST = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
+def _zone() -> str:
+    """The estate's zone: from the environment, else from the file that declares it.
+
+    The zone is written once, in clusters/<cluster>/estate-config.yaml. The engine
+    runs from a shell that need not export ESTATE_ZONE (measured 2026-11-17:
+    printenv ESTATE_ZONE is empty in this machine's session), so a bare
+    os.environ["ESTATE_ZONE"] raised KeyError at import and the voice loop never
+    started. Which cluster tree holds the file is a Flux decision, not this
+    reader's: every clusters/*/estate-config.yaml is a candidate.
+    """
+    z = os.environ.get("ESTATE_ZONE", "").strip()
+    if z:
+        return z
+    root = pathlib.Path(__file__).resolve().parents[2] / "clusters"
+    if root.is_dir():
+        for cfg in sorted(root.glob("*/estate-config.yaml")):
+            m = re.search(
+                r"^\s*ESTATE_ZONE:\s*(\S+)", cfg.read_text(errors="replace"), re.M
+            )
+            if m:
+                return m.group(1)
+    return ""
+
+
+_ZONE = _zone()
+ROUTER_HOST = os.environ.get("LITELLM_HOST") or (
+    "https://llm." + _ZONE if _ZONE else ""
+)
 ROUTER_MODEL = os.environ.get("VOICE_LLM_MODEL", "default")
 
 # A clause ends at a breath. The regex demands punctuation FOLLOWED BY SPACE, so "3.5" and "e.g."
@@ -301,6 +330,12 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
     key = os.environ.get("LITELLM_API_KEY", "")
     if not key:
         yield "Voice has no router key on this host, so I cannot answer."
+        return
+
+    if not ROUTER_HOST:
+        # The zone is declared in clusters/<cluster>/estate-config.yaml and neither the
+        # environment nor that file answered. Say so instead of dialling "/v1/chat/completions".
+        yield "Voice does not know the estate's zone on this host, so I cannot answer."
         return
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]

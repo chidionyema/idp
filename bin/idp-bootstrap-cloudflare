@@ -31,7 +31,13 @@ CONSOLE=${CLOUDFLARE_CONSOLE_URL:-https://dash.cloudflare.com/profile/api-tokens
 HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
 PROFILE="$HOME_DIR/cloudflare-browser"
 VENV="$HOME_DIR/bootstrap-venv"
-CFG="$IDP/clusters/oke/estate-config.yaml"
+# The zone is declared once, in clusters/<cluster>/estate-config.yaml. Which cluster
+# tree holds it is a Flux decision (gotk-sync.yaml path), not this script's: read every
+# candidate and take the one that declares a zone.
+CFG=$(for f in "$IDP"/clusters/*/estate-config.yaml; do
+  [ -f "$f" ] || continue
+  grep -q "^[[:space:]]*ESTATE_ZONE:" "$f" && { echo "$f"; break; }
+done)
 MODE=${1:-mint}
 case "$MODE" in mint|--preflight|--rotate) ;; *) sed -n 2,5p "$0"; exit 2;; esac
 
@@ -39,7 +45,8 @@ say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
 fail() { say FAIL "$1" "$2"; exit 1; }
 bl()   { say BLIND "$1" "$2"; exit 2; }
 for t in python3 curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
-ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true); [ -n "$ZONE" ] || bl config "no ESTATE_ZONE in $CFG"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
+[ -n "$ZONE" ] || bl config "no ESTATE_ZONE in any clusters/*/estate-config.yaml"
 BUCKET=${R2_BUCKET:-$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1])).get('r2',{}).get('bucket',''))" "$IDP/estate-defaults.yaml" 2>/dev/null || true)}
 [ -n "$BUCKET" ] || BUCKET="prospector-${ZONE%%.*}"
 mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
