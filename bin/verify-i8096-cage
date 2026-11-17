@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Verify the hash pin of every file listed in cage/i8096/SHA256SUMS.
+#
+# This is a gate with a falsifier: tamper with any pinned file and this exits non-zero.
+# `--update` rewrites the pin file from the working tree, for the commit that
+# legitimately changes a pinned file.
+#
+# Exit codes: 0 all pins match, 1 a pin mismatched or a file is missing,
+# 2 the pin file itself is missing or malformed.
+
+set -euo pipefail
+
+cage_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/cage/i8096"
+sums="${cage_dir}/SHA256SUMS"
+
+if [ ! -f "${sums}" ]; then
+  echo "verify-i8096-cage: missing ${sums}" >&2
+  exit 2
+fi
+
+sha_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+mode="${1:-verify}"
+status=0
+count=0
+
+while read -r expected relpath; do
+  [ -z "${expected:-}" ] && continue
+  case "${expected}" in \#*) continue ;; esac
+  [ -z "${relpath:-}" ] && continue
+  target="${cage_dir}/${relpath}"
+  count=$((count + 1))
+  if [ ! -f "${target}" ]; then
+    echo "verify-i8096-cage: MISSING ${relpath}" >&2
+    status=1
+    continue
+  fi
+  actual="$(sha_of "${target}")"
+  if [ "${actual}" != "${expected}" ]; then
+    echo "verify-i8096-cage: MISMATCH ${relpath} expected=${expected} actual=${actual}" >&2
+    status=1
+  fi
+done <"${sums}"
+
+if [ "${mode}" = "--update" ]; then
+  python3 - "${cage_dir}" "${sums}" <<'PY'
+import hashlib, os, sys
+
+cage_dir, sums = sys.argv[1], sys.argv[2]
+
+def sha_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+pinned = {}
+order = []
+if os.path.exists(sums):
+    with open(sums) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                continue
+            pinned[parts[1].strip()] = parts[0]
+            order.append(parts[1].strip())
+
+for root, dirs, files in os.walk(cage_dir):
+    dirs[:] = [d for d in dirs if d not in (".git", "target")]
+    for name in files:
+        if name in ("SHA256SUMS", ".DS_Store"):
+            continue
+        rel = os.path.relpath(os.path.join(root, name), cage_dir)
+        if rel not in pinned:
+            pinned[rel] = sha_of(os.path.join(root, name))
+            order.append(rel)
+
+with open(sums, "w") as fh:
+    for rel in sorted(order):
+        path = os.path.join(cage_dir, rel)
+        if not os.path.isfile(path):
+            continue
+        fh.write(f"{sha_of(path)}  {rel}\n")
+print(f"verify-i8096-cage: updated {sums} ({len(order)} entries)")
+PY
+  exit 0
+fi
+
+if [ "${status}" -eq 0 ]; then
+  echo "verify-i8096-cage: OK ${count} pinned file(s) match"
+else
+  echo "verify-i8096-cage: FAILED" >&2
+fi
+exit "${status}"
