@@ -16,7 +16,7 @@ WHY (2026-10-21). The laptop ran out of memory (load 95, 4 GB in swap) and the r
 went on accepting connections without answering them, so the twin fallback never fired: it only
 caught a refused connect. Later that day the router's venv was missing and every slot refused,
 with no twin booted. Both times every agent on the laptop lost every model, while the OKE router
-(llm.mumchimp.com, which takes the same laptop key) was up. Founder: no laptop overload or OKE
+(the router host, which takes the same laptop key) was up. Founder: no laptop overload or OKE
 outage may take out every model. So the front now asks each slot /health/liveliness every
 PROBE_EVERY seconds; a slot that misses DOWN_AFTER probes in a row (refused, or slower than
 PROBE_TIMEOUT) is passed over for new connections until it answers UP_AFTER in a row. With no
@@ -107,8 +107,39 @@ ACTIVE = pathlib.Path(
     or pathlib.Path.home() / ".estate/router-state/active"
 )
 SLOTS = (4001, 4002)
+
+
+def _zone() -> str:
+    """The estate's zone: from the environment, else from the file that declares it.
+
+    The front runs as a staged copy under launchd, where no shell profile has run
+    and ESTATE_ZONE is absent, so os.environ["ESTATE_ZONE"] killed the front at
+    import. The zone is also read from an estate config -- the same single source
+    the zone gate enforces. This file never spells the zone.
+    """
+    z = os.environ.get("ESTATE_ZONE", "").strip()
+    if z:
+        return z
+    roots = (
+        pathlib.Path(__file__).resolve().parents[2] / "clusters",
+        pathlib.Path.home() / ".estate" / "runtime" / "idp" / "clusters",
+    )
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for cfg in sorted(root.glob("*/estate-config.yaml")):
+            m = re.search(
+                r"^\s*ESTATE_ZONE:\s*(\S+)", cfg.read_text(errors="replace"), re.M
+            )
+            if m:
+                return m.group(1)
+    return ""
+
+
 # Empty turns the cloud leg off.
-CLOUD = os.environ.get("ESTATE_ROUTER_CLOUD", "https://llm.mumchimp.com")
+CLOUD = os.environ.get("ESTATE_ROUTER_CLOUD") or (
+    "https://llm." + _zone() if _zone() else ""
+)
 # The User-Agent the front presents to the cloud route, in place of the caller's own.
 # The cloud route sits behind Cloudflare, whose browser-signature rules refuse some client
 # signatures with "403 error code: 1010" before the request reaches the router at all.
