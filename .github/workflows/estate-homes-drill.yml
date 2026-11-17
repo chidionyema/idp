@@ -37,7 +37,7 @@ jobs:
       # Without the session `vault_get` returns "" for every entry, so every lane that needs a
       # secret is UNKNOWN. UNKNOWN is not down, but the board cannot tell the two apart, and a
       # lane nobody can ask held llm-router open (#7844) while groq was answering all along.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -69,7 +69,7 @@ jobs:
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
       - name: keep the board
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: estate-lanes
           path: drill.txt
@@ -207,7 +207,7 @@ jobs:
 
       - name: keep the chronos board
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: chronos-clocks
           path: chronos.txt
