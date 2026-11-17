@@ -1,0 +1,22 @@
+# The DNA the intent compiler is given when it proves its own refusal.
+#
+# The bad intent next door (tests/fixtures/intent/bad/speaks-the-zone.json) speaks THIS zone, and
+# the compiler refuses any intent that speaks the DNA it was handed. The zone lives here, in a
+# fixture, and not in the estate's live ConfigMap, because a proof that pins a value the estate
+# migrates is a proof a migration can void: when the live zone moved to meridianlabs.cloud on
+# 2026-11-17, the fixture that named the old zone stopped speaking any DNA value, the compiler
+# stopped refusing it, and the bad-fixture run silently started exiting 0 -- the gate's own
+# "it refuses" proof became vacuous (measured: CI run 44169928383, FAIL intent intent-compile is
+# not discriminating or not deterministic).
+#
+# A fixture's own DNA is the estate's existing pattern (tests/fixtures/estate-zone/{good,bad}/
+# clusters/x/estate-config.yaml declare their own zone) and it cannot be voided by a migration.
+# The zone here is a reserved TLD (RFC 2606): it can never be the estate's real zone, so no
+# future migration can make it live.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: estate-config
+  namespace: flux-system
+data:
+  ESTATE_ZONE: estate.invalid

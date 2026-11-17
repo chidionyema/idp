@@ -19,6 +19,8 @@ on:
   merge_group:
   push:
     branches: [main, queue/**]
+env:
+  ESTATE_ZONE: ${{ vars.ESTATE_ZONE }}
 concurrency:
   # ci.yml's rule and reasons: superseded on a branch, never on main (every main sha keeps its run).
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
@@ -206,7 +208,7 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         env:
-          PLAYWRIGHT_URL: https://catalogue.mumchimp.com
+          PLAYWRIGHT_URL: https://catalogue.${{ env.ESTATE_ZONE }}
         run: node_modules/.bin/playwright test --config playwright.mobile.config.ts
       # A red phone run with no trace can only be guessed at: the runner's engine is not the one on a
       # laptop (2026-10-09: Pixel passed on macOS Chrome and failed on the runner's Linux Chromium).

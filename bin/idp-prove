@@ -13,6 +13,7 @@ Output, like every bin/idp-*: one grading line, `PASS|FAIL|BLOCKED|ERROR  prove 
 exit 0 on PASS, 1 on FAIL, 2 on BLOCKED or ERROR.
 """
 
+import glob
 import json
 import os
 import re
@@ -39,9 +40,17 @@ def run(cmd, env=None, timeout=600):
 
 
 def zone():
-    cfg = os.path.join(IDP, "clusters", "oke", "estate-config.yaml")
-    m = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", open(cfg).read(), re.M)
-    return m.group(1) if m else None
+    """The zone, from the one file that declares it.
+
+    Which cluster tree holds that file is a Flux decision (gotk-sync.yaml path), not
+    this reader's: every clusters/*/estate-config.yaml is a candidate and the first
+    one that declares a zone wins.
+    """
+    for cfg in sorted(glob.glob(os.path.join(IDP, "clusters", "*", "estate-config.yaml"))):
+        m = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", open(cfg).read(), re.M)
+        if m:
+            return m.group(1)
+    return None
 
 
 def vault(name):
