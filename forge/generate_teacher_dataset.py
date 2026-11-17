@@ -259,8 +259,7 @@ def main(argv=None) -> int:
         )
     client = anthropic.Anthropic(
         base_url=router_root(_proxy_url),
-        api_key=os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("PENNYD_API_KEY"),
+        api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("PENNYD_API_KEY"),
     )
     road = label_batch if args.batch else label_live
     kwargs = {} if args.batch else {"concurrency": args.concurrency}
