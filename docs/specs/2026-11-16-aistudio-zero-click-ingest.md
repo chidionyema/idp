@@ -6,7 +6,7 @@ Status: implemented and unit-proven; edge deployment is the only step that needs
 ## The problem this closes
 
 AI Studio keeps the work in the browser. Until this change the estate could only see a turn
-after a human exported it — "Save to GitHub", a zip download, or a Drive desktop mount — and
+after a human exported it  -  "Save to GitHub", a zip download, or a Drive desktop mount  -  and
 then triggered a lane by hand. The turn itself was never an event the fleet could observe.
 
 `CLASS-MANUAL-EXPORT-FRICTION` (catalog/issue-classes.json) is the class. It is closed here,
@@ -14,12 +14,12 @@ not worked around.
 
 ## Two capture channels, one commit
 
-1. **In-browser stream tee** — `ops/aistudio/genesis-mycelium.user.js`. Wraps `window.fetch`
+1. **In-browser stream tee**  -  `ops/aistudio/genesis-mycelium.user.js`. Wraps `window.fetch`
    on `aistudio.google.com`, tees the response stream, extracts fenced code blocks whose info
    string (or leading comment) names a file, hashes each block with SHA-256 in the page and
    POSTs `{source:"stream", files:[...]}` to `/api/ingest/stream`. A `MutationObserver` over
    chat turns is the fallback when the page does not use `fetch` for a turn.
-2. **Google Drive push** — the same edge route family accepts `changes.watch` pushes at
+2. **Google Drive push**  -  the same edge route family accepts `changes.watch` pushes at
    `/api/ingest/drive-webhook`. A `x-goog-resource-state: sync` handshake is acknowledged and
    never ingested.
 
@@ -30,7 +30,7 @@ Both channels call the same engine, `platform/lifeboat/src/aistudio.js`, which:
   before any Git write;
 - strips AI Studio mock fixtures (`generalPurposePersonaData.ts`, `physicalEstateData.ts`,
   `INITIAL_SPECIALIST_FLEET`) so Argon's fixture gate is never tripped;
-- dedupes within the payload and against the lane head by `(path, sha256)` — the two channels
+- dedupes within the payload and against the lane head by `(path, sha256)`  -  the two channels
   therefore produce one commit, not two;
 - writes blobs/tree/commit/ref to `chidionyema/idp` on `lane/aistudio-auto-intake` through the
   GitHub Git Data API (no Mac filesystem, DARWIN_THIN_CLIENT preserved);
@@ -41,19 +41,19 @@ Both channels call the same engine, `platform/lifeboat/src/aistudio.js`, which:
 
 ## Fail-closed doors
 
-- Missing `AI_STUDIO_INGEST_SECRET` → 503 (`INGEST_SECRET_ABSENT`).
-- Wrong token → 401. The userscript and Drive share this one secret; the Drive webhook also
+- Missing `AI_STUDIO_INGEST_SECRET` -> 503 (`INGEST_SECRET_ABSENT`).
+- Wrong token -> 401. The userscript and Drive share this one secret; the Drive webhook also
   presents `x-goog-channel-token`.
-- Non-POST → 405. Bad JSON → 400. GitHub failure → 502 with the failing path, never a
+- Non-POST -> 405. Bad JSON -> 400. GitHub failure -> 502 with the failing path, never a
   partial receipt.
 
 ## Falsifiers
 
-- `tests/test_aistudio_zero_click_ingest.py` — CA2: a simulated stream turn is committed
+- `tests/test_aistudio_zero_click_ingest.py`  -  CA2: a simulated stream turn is committed
   sanitized, assigned on #8133 and dispatched to Greenlane; a simulated Drive push dedupes into
   the same commit; a partial flush never reaches a commit.
-- `platform/lifeboat/test/aistudio.test.mjs` — engine gates and the Drive sync handshake.
-- `ops/aistudio/genesis-mycelium.test.mjs` — the userscript's extractor and SHA-256.
+- `platform/lifeboat/test/aistudio.test.mjs`  -  engine gates and the Drive sync handshake.
+- `ops/aistudio/genesis-mycelium.test.mjs`  -  the userscript's extractor and SHA-256.
 
 ## Broadcast boundaries (CA4), stated honestly
 
