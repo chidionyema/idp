@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# estate-git-isolated - run a command with the estate's git hooks out of the way.
+#
+# WHAT THIS IS. The estate installs its commit and push gates globally
+# (core.hooksPath in ~/.estate/hooks). That is right for the estate's own
+# repositories and wrong for two cases:
+#
+#   1. A TEST that drives git inside a throwaway repository (the 7760 receiver
+#      contract test commits fixtures and writes a 3 MB blob to exercise replay).
+#      Under the global hooks, that test's own commits are graded by the estate
+#      commit gate, which needs a fresh YIELD/1 proof - so the test fails for a
+#      reason that has nothing to do with the receiver.
+#   2. A TOOL that operates on somebody else's repository.
+#
+# The fix is to give those two cases one named, documented door instead of
+# every agent inventing `GIT_CONFIG_GLOBAL=/dev/null` and hoping. Real commits
+# in the estate's repositories are untouched: only the command you name here
+# runs with the hooks neutralised.
+#
+# Usage: estate-git-isolated -- cmd args...
+#        estate-git-isolated selftest
+set -euo pipefail
+
+isolate() {
+  export GIT_CONFIG_GLOBAL=/dev/null
+  export GIT_CONFIG_SYSTEM=/dev/null
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_INDEX_VERSION || true
+}
+
+selftest() {
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp:-/nonexistent}"' EXIT
+  (
+    cd "${tmp}"
+    git init -q .
+    git config user.email t@example.test
+    git config user.name tester
+    echo hello > a.txt
+    git add a.txt
+  )
+  local guarded isolated
+  # The guarded case names the estate hooks explicitly, so the assertion does not
+  # depend on whatever ambient git config the caller happens to have.
+  guarded="$(cd "${tmp}" && git -c core.hooksPath="${HOME}/.estate/hooks" commit -q -m "guarded" 2>&1 || true)"
+  isolated="$(cd "${tmp}" && isolate && git commit -q -m "isolated" 2>&1 || true)"
+  if [ -z "${guarded}" ]; then
+    echo "estate-git-isolated: FAIL the guard did not fire (nothing to isolate from)" >&2
+    return 1
+  fi
+  if [ -n "${isolated}" ] && printf '%s' "${isolated}" | grep -q "ESTATE GATE"; then
+    echo "estate-git-isolated: FAIL the estate gate still fired under isolation" >&2
+    return 1
+  fi
+  echo "estate-git-isolated: OK (guarded commit refused: $(printf '%s' "${guarded}" | tr '\n' ' ' | cut -c1-60); isolated commit clean)"
+}
+
+if [ "${1:-}" = "selftest" ]; then
+  selftest
+  exit $?
+fi
+
+if [ "${1:-}" = "--" ]; then
+  shift
+fi
+if [ $# -eq 0 ]; then
+  echo "usage: estate-git-isolated -- cmd args... | estate-git-isolated selftest" >&2
+  exit 2
+fi
+isolate
+exec "$@"
