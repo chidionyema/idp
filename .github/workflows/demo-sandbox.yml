@@ -29,8 +29,9 @@ on:
         type: choice
         options: [1h, 4h]
         default: 1h
-  schedule:
-    - cron: '*/15 * * * *'
+  # 2026-11-17 frozen with the OKE retirement (idp#0048); re-enable on the k3s cutover.
+  # schedule:
+  #   - cron: '*/15 * * * *'
 
 permissions:
   contents: write
