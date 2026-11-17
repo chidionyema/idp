@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LIMITS, validateContact, type ContactErrors } from "@/lib/contact";
 
 type ContactFields = { name: string; email: string; company: string; message: string; website: string };
@@ -11,6 +11,8 @@ export default function ContactPage() {
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const [availability, setAvailability] = useState<"checking" | "available" | "unavailable" | "unknown">("checking");
+  const readinessEpoch = useRef(0);
+  const submitting = useRef(false);
   const [interest, setInterest] = useState<"general" | "investor" | "chronos">("general");
   // Public audience context only. Never treats a query parameter as an investor credential.
   useEffect(() => {
@@ -20,12 +22,14 @@ export default function ContactPage() {
 
 
   // Read-only readiness probe; no customer details are sent. If it fails, we
-  // don't guess: keep the form available and let POST report delivery failure.
+  // fail closed: no personal details are collected until readiness is confirmed.
   const checkAvailability = useCallback(async () => {
+    const epoch = ++readinessEpoch.current;
     setAvailability("checking");
     try {
       const response = await fetch("/api/contact", { method: "GET", cache: "no-store" });
       const data: unknown = await response.json();
+      if (epoch !== readinessEpoch.current) return;
       if (!response.ok || !data || typeof data !== "object" ||
           !("acceptingEnquiries" in data) || typeof data.acceptingEnquiries !== "boolean") {
         setAvailability("unknown");
@@ -33,7 +37,7 @@ export default function ContactPage() {
       }
       setAvailability(data.acceptingEnquiries ? "available" : "unavailable");
     } catch {
-      setAvailability("unknown");
+      if (epoch === readinessEpoch.current) setAvailability("unknown");
     }
   }, []);
 
@@ -47,14 +51,20 @@ export default function ContactPage() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (status === "sending") return;
+    if (status === "sending" || submitting.current || availability !== "available") return;
     const validation = validateContact(form);
     if (!validation.ok) { setErrors(validation.errors); setStatus("idle"); return; }
 
     setErrors({});
     setFailure(null);
+    submitting.current = true;
     setStatus("sending");
     try {
+      const ready = await fetch("/api/contact", { method: "GET", cache: "no-store" });
+      const state: unknown = await ready.json().catch(() => null);
+      if (!ready.ok || !state || typeof state !== "object" || !("acceptingEnquiries" in state) || state.acceptingEnquiries !== true) {
+        setAvailability("unavailable"); setStatus("error"); return;
+      }
       const response = await fetch("/api/contact", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -76,7 +86,7 @@ export default function ContactPage() {
     } catch {
       setFailure("We couldn't connect to the enquiry service. Your message has not been sent. Please try again later.");
       setStatus("error");
-    }
+    } finally { submitting.current = false; }
   }
 
   return (
@@ -111,7 +121,7 @@ export default function ContactPage() {
                 <h2>Thank you for reaching out.</h2>
                 <p>Your message was accepted by our enquiry service. We&apos;ll review the details before taking the next step.</p>
               </div>
-            ) : availability === "unavailable" ? (
+            ) : (availability === "unavailable" || availability === "unknown") ? (
               <div className="mi-contact-success" role="status" aria-live="polite">
                 <span className="mi-eyebrow">ENQUIRY SERVICE / TEMPORARILY UNAVAILABLE</span>
                 <h2>Online enquiries are paused.</h2>
