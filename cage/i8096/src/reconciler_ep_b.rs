@@ -43,6 +43,21 @@ impl Subsystem {
             _ => Subsystem::Other,
         }
     }
+
+    /// The stable label for this subsystem, used by reports and lanes.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Subsystem::Backstage => "backstage",
+            Subsystem::Catalog => "catalog",
+            Subsystem::Infra => "infra",
+            Subsystem::Platform => "platform",
+            Subsystem::Sovereign => "sovereign",
+            Subsystem::Tests => "tests",
+            Subsystem::Docs => "docs",
+            Subsystem::Web => "web",
+            Subsystem::Other => "other",
+        }
+    }
 }
 
 /// One admissible unit of recovery.
