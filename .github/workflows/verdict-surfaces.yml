@@ -37,6 +37,8 @@ permissions:
   # was graded by nothing, hourly, since this workflow was written (git log -S id-token: empty).
   # Measured 2026-10-11: 21 workflows that trade an OIDC token all carry this line; oke-check.yml,
   # which runs the identical exchange, is green on main. This file was the only one without it.
+env:
+  ESTATE_ZONE: ${{ vars.ESTATE_ZONE }}
 concurrency:
   group: verdict-surfaces
   cancel-in-progress: false
@@ -81,8 +83,8 @@ jobs:
       - name: run the battery through the public gate
         id: verdict
         env:
-          APP_URL: https://catalogue.mumchimp.com
-          BACKEND_URL: https://catalogue.mumchimp.com/api/proxy/fleetview
+          APP_URL: https://catalogue.${ESTATE_ZONE}
+          BACKEND_URL: https://catalogue.${ESTATE_ZONE}/api/proxy/fleetview
           RUNNING_DIGEST: ${{ inputs.digest || github.event.client_payload.digest }}
           DISPATCHED: ${{ github.event_name == 'repository_dispatch' }}
           OCI_CLI_AUTH: security_token

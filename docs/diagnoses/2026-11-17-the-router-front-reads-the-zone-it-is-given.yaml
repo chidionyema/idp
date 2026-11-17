@@ -1,0 +1,96 @@
+description: >
+  platform/llm/front.py resolved its cloud leg from a literal zone name. The zone
+  cutover replaced the literal with os.environ["ESTATE_ZONE"], which raises
+  KeyError at import when the variable is absent. The front runs as a staged copy
+  under launchd, where no shell profile has run. Question: does that change kill
+  the router front at import on this machine, and what follows if it does?
+
+  Action taken in the same change: the zone is read from the environment when it
+  is present, and otherwise from an estate config (clusters/*/estate-config.yaml),
+  the same single source the zone gate enforces. The file still never spells the
+  zone, and an absent zone leaves the cloud leg off rather than raising.
+
+hypotheses:
+- name: H1
+  description: the front's launchd environment carries no ESTATE_ZONE, so a bare
+    os.environ["ESTATE_ZONE"] raises KeyError at import and the front cannot start
+  prior: 0.65
+- name: H2
+  description: the estate's session env writer (router-env-sync) exports ESTATE_ZONE
+    into the launchd session, so the front inherits the zone and starts
+  prior: 0.25
+- name: H3
+  description: the front is not installed on this machine, so no import can fail
+    and the change cannot break a running surface
+  prior: 0.10
+evidence:
+- name: the front's launchd agent plist on this machine
+  observed:
+    plist_absent: 1
+    plist_present: 0
+  likelihoods:
+    H1:
+      plist_absent: 0.9
+      plist_present: 0.1
+    H2:
+      plist_absent: 0.7
+      plist_present: 0.3
+    H3:
+      plist_absent: 0.95
+      plist_present: 0.05
+- name: the variables router-env-sync exports into the launchd session
+  observed:
+    zone_not_exported: 1
+    zone_exported: 0
+  likelihoods:
+    H1:
+      zone_not_exported: 0.97
+      zone_exported: 0.03
+    H2:
+      zone_not_exported: 0.05
+      zone_exported: 0.95
+    H3:
+      zone_not_exported: 0.85
+      zone_exported: 0.15
+- name: the staged front copy the launcher installs from
+  observed:
+    staged_copy_present: 1
+    staged_copy_absent: 0
+  likelihoods:
+    H1:
+      staged_copy_present: 0.85
+      staged_copy_absent: 0.15
+    H2:
+      staged_copy_present: 0.75
+      staged_copy_absent: 0.25
+    H3:
+      staged_copy_present: 0.25
+      staged_copy_absent: 0.75
+- name: ESTATE_ZONE in the shell that would launch the front
+  observed:
+    zone_absent_in_shell: 1
+    zone_in_shell: 0
+  likelihoods:
+    H1:
+      zone_absent_in_shell: 0.92
+      zone_in_shell: 0.08
+    H2:
+      zone_absent_in_shell: 0.15
+      zone_in_shell: 0.85
+    H3:
+      zone_absent_in_shell: 0.8
+      zone_in_shell: 0.2
+- name: the EnvironmentVariables the front's launchd plist template writes
+  observed:
+    zone_absent_from_template: 1
+    zone_in_template: 0
+  likelihoods:
+    H1:
+      zone_absent_from_template: 0.97
+      zone_in_template: 0.03
+    H2:
+      zone_absent_from_template: 0.85
+      zone_in_template: 0.15
+    H3:
+      zone_absent_from_template: 0.9
+      zone_in_template: 0.1

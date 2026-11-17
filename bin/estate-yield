@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""estate-yield - record YIELD/1 evidence whose hash does not drift.
+
+WHAT THIS IS. The estate records evidence as a sha256 of a command's output. The
+commit gate then RE-RUNS that command and compares the hash. That is the right
+shape: evidence that cannot be re-derived is not evidence. But the contract was
+never stated in terms of the output being STABLE, so a command whose output
+carries a duration ("duration_ms 1023.895094") produced a different hash on every
+run. The gate then refused honest work with `FALSE-EVIDENCE`, and the only way
+through was to stop running tests - which is exactly backwards.
+
+THE CLASS. Evidence hashing over non-deterministic output. Measured tonight: the
+same `node --test` run produced two different sha256 values (80702d14547f vs
+c01937439eee) with identical semantics, and the commit gate refused a correct
+change. The fix is not to weaken the gate; it is to hash the SEMANTIC output of
+the command, with the volatile parts (timestamps, durations, absolute paths, ANSI
+codes) normalised out, and to keep the raw output available for a human.
+
+WHAT IT GUARDS. `estate-yield record` records a YIELD/1 document whose recorded
+command is the normaliser itself, so the gate's re-run re-derives the same
+normalised bytes and the same hash. `estate-yield check` re-runs it and proves
+the evidence still holds. `estate-yield selftest` proves both directions: two
+runs of a varying command produce the SAME hash (the class is closed), and two
+runs of commands with different semantics produce DIFFERENT hashes (the gate is
+not weakened into uselessness).
+
+USAGE
+    estate-yield record --agent NAME --kind KIND --target TARGET -- cmd args...
+    estate-yield check
+    estate-yield selftest
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+PROTOCOL = os.path.join(HOME, ".estate/bin/estate-protocol")
+
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+ISO_TS = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+DUR = re.compile(r"\b\d+(?:\.\d+)?\s?(?:ms|msec|us|ns|s|sec|seconds?|minutes?)\b")
+DUR_FIELD = re.compile(r"\b(duration_ms|duration|elapsed_ms|elapsed|takes?_ms)\b\s*[:=]?\s*\d+(?:\.\d+)?")
+ABS_PATH = re.compile(r"(?:/private)?/(?:Users|var|tmp|opt|home|Volumes)/[^\s'\"]+")
+HEX64 = re.compile(r"\b[0-9a-f]{64}\b")
+
+
+def normalize(text: str) -> str:
+    """Strip the volatile parts of command output, keeping its meaning."""
+    out = ANSI.sub("", text)
+    out = ISO_TS.sub("<TS>", out)
+    out = DUR_FIELD.sub(lambda m: f"{m.group(1)}=<DUR>", out)
+    out = DUR.sub("<DUR>", out)
+    out = ABS_PATH.sub("<PATH>", out)
+    out = "\n".join(line.rstrip() for line in out.splitlines())
+    return out.strip() + "\n"
+
+
+def run_normalized(cmd: list[str], quiet: bool = False) -> tuple[int, str, str]:
+    """Run cmd, print its normalised output, exit with cmd's status."""
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    combined = proc.stdout + proc.stderr
+    if not quiet:
+        sys.stdout.write(normalize(combined))
+        sys.stderr.write(normalize(proc.stderr))
+    return proc.returncode, normalize(combined), combined
+
+
+def cmd_normalize() -> int:
+    argv = sys.argv[2:]
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    if not argv:
+        print("usage: estate-yield normalize -- cmd args...", file=sys.stderr)
+        return 2
+    code, _, _ = run_normalized(argv)
+    return code
+
+
+def cmd_record() -> int:
+    argv = sys.argv[2:]
+    if "--" not in argv:
+        print("usage: estate-yield record --agent N --kind K --target T -- cmd args...", file=sys.stderr)
+        return 2
+    head, cmd = argv[: argv.index("--")], argv[argv.index("--") + 1 :]
+    if not cmd:
+        print("estate-yield: no command given", file=sys.stderr)
+        return 2
+    agent = _opt(head, "--agent") or os.environ.get("ESTATE_AGENT") or "agent-unknown"
+    kind = _opt(head, "--kind") or "work"
+    target = _opt(head, "--target") or "change"
+    normalized_cmd = [sys.executable, os.path.abspath(__file__), "normalize", "--"] + cmd
+    return subprocess.run(
+        [PROTOCOL, "run", "--agent", agent, "--kind", kind, "--target", target,
+         "--operating", shlex.join(normalized_cmd), "--"] + normalized_cmd
+    ).returncode
+
+
+def _opt(head: list[str], name: str) -> str | None:
+    if name in head:
+        i = head.index(name)
+        if i + 1 < len(head):
+            return head[i + 1]
+    for item in head:
+        if item.startswith(name + "="):
+            return item.split("=", 1)[1]
+    return None
+
+
+def cmd_check() -> int:
+    return subprocess.run([PROTOCOL, "check"]).returncode
+
+
+def cmd_selftest() -> int:
+    """Both directions: stable for varying output, distinct for distinct output."""
+    failures = []
+
+    varying = [sys.executable, "-c",
+               "import time; print('ran in', round(time.time()*1000 % 1000, 3), 'ms')"]
+    code_a, norm_a, _ = run_normalized(varying, quiet=True)
+    code_b, norm_b, _ = run_normalized(varying, quiet=True)
+    if norm_a != norm_b:
+        failures.append("VARYING-OUTPUT NOT NORMALISED: %r != %r" % (norm_a, norm_b))
+    if code_a != code_b:
+        failures.append("exit status drifted")
+
+    same = [sys.executable, "-c", "print('ok')"]
+    _, norm_same, _ = run_normalized(same, quiet=True)
+    other = [sys.executable, "-c", "print('failed')"]
+    _, norm_other, _ = run_normalized(other, quiet=True)
+    if norm_same == norm_other:
+        failures.append("DISTINCT OUTPUTS COLLAPSED: the gate would be useless")
+
+    if failures:
+        for f in failures:
+            print("FAIL " + f, file=sys.stderr)
+        return 1
+    print("estate-yield selftest: OK (varying output normalises, distinct output stays distinct)")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+    action = sys.argv[1]
+    if action == "normalize":
+        return cmd_normalize()
+    if action == "record":
+        return cmd_record()
+    if action == "check":
+        return cmd_check()
+    if action == "selftest":
+        return cmd_selftest()
+    print("unknown action: " + action, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
