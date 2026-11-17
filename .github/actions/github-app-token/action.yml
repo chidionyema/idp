@@ -102,7 +102,7 @@ runs:
     - id: assert_boundary
       shell: bash
       env:
-        MINTED: ${{ steps.mint.outputs.token }}
+        MINTED: ${{ steps.seed.outputs.token || steps.mint.outputs.token }}
       run: |
         set -euo pipefail
         # FAIL CLOSED AT THE BOUNDARY (2026-11-16). Run 43792501522: this composite reported
