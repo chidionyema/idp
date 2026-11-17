@@ -189,7 +189,14 @@ def _status_code(kwargs: dict) -> int | None:
     return None
 
 
-class EstateAeiObserver:
+try:
+    from litellm.integrations.custom_logger import CustomLogger as _CustomLogger
+except Exception:  # pragma: no cover - only where litellm is absent
+    class _CustomLogger:  # type: ignore[no-redef]
+        """Stand-in so this module imports without the proxy dependency."""
+
+class EstateAeiObserver(_CustomLogger):
+
     """LiteLLM callback that turns each routed call into one AEI event."""
 
     def __init__(self) -> None:
