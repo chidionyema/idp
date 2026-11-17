@@ -44,7 +44,7 @@ class ClaudeNativeHarnessContract(unittest.TestCase):
 
     def test_epistemic_firewall_and_patch_submission_remain(self):
         s = WORKFLOW.read_text()
-        self.assertIn("needs: [agent, firewall]", s)
+        self.assertIn("needs: [admission, agent, firewall]", s)
         self.assertIn("bin/epistemic_firewall.py", s)
         self.assertIn("persist-credentials: false", s)
         self.assertIn("contents: read", s)

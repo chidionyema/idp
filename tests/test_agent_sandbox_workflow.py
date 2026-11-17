@@ -8,8 +8,11 @@ real git repository.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -118,6 +121,9 @@ def _repo(tmp_path: Path) -> Path:
     (r / ".github/workflows").mkdir(parents=True)
     (r / ".github/workflows/ci.yml").write_text("on: push\n")
     (r / "app.py").write_text("x = 1\n")
+    (r / "bin").mkdir()
+    for name in ("idp-agent-base-apply.py", "verify_three_proofs.py"):
+        (r / "bin" / name).write_bytes((ROOT / "bin" / name).read_bytes())
     git("add", "-A")
     git("commit", "-q", "-m", "base")
     return r
@@ -144,9 +150,16 @@ def _refusal_step(r: Path, patch: str, tmp_path: Path) -> subprocess.CompletedPr
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
     (work / "patch").write_text(patch)
+    base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=r, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", base], cwd=r, check=True)
+    (work / "base").write_text(base + "\n")
+    scope = subprocess.check_output([sys.executable, "-B", str(r / "bin/idp-agent-base-apply.py"), "--admit-paths-json", json.dumps(["app.py", "moved.yml"])], cwd=r, text=True)
+    digest = hashlib.sha256(scope.encode()).hexdigest()
+    import os
     return subprocess.run(
         ["bash", "-c", f'set -euo pipefail\nwork="{work}"\n{tail}'],
         cwd=r,
+        env={**os.environ, "ADMITTED_SCOPE": scope.rstrip("\n"), "ADMITTED_DIGEST": digest},
         capture_output=True,
         text=True,
         timeout=30,
@@ -214,6 +227,7 @@ def _agent_step(
         "RUNNER_TEMP": str(temp),
         "HARNESS": harness,
         "TASK": "append there",
+        "ADMITTED_SCOPE": '{"paths":["a.txt"]}',
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
         "MINIMAX_API_KEY": "x",
         "GEMINI_API_KEY": "x",
@@ -452,3 +466,24 @@ def test_legion_failover_disabled_for_manual_workflow_dispatch():
     assert "git reset --hard" in step["run"] and "git clean -fd" in step["run"]
     encrypted = _step("agent", "Encrypt what leaves")["run"]
     assert "google.failed.transcript.jsonl" in encrypted
+
+
+def test_pre_inference_admission_is_separate_and_bound_to_exact_base():
+    scope = JOBS["admission"]
+    assert scope["permissions"] == {"contents": "read"}
+    assert JOBS["agent"]["needs"] == "admission"
+    assert scope["outputs"]["digest"] == "${{ steps.scope.outputs.digest }}"
+    assert [s for s in _steps("agent") if s.get("uses", "").startswith("actions/checkout@")][0]["with"]["ref"] == "${{ needs.admission.outputs.base }}"
+    assert "admission" in JOBS["submit-lane"]["needs"]
+    submit = _step("submit-lane", "Apply the patch")
+    assert submit["env"]["ADMITTED_DIGEST"] == "${{ needs.admission.outputs.digest }}"
+    assert '--scope-file "$work/scope" --scope-sha256 "$ADMITTED_DIGEST"' in submit["run"]
+
+
+def test_readiness_is_exercised_before_model_and_before_apply():
+    for job in ("admission", "submit-lane"):
+        step = _step(job, "Provision and exercise canonical readiness")
+        assert "pytest==" in step["run"]
+        assert "bin/idp-production-readiness" in step["run"]
+    steps = _steps("submit-lane")
+    assert steps.index(_step("submit-lane", "Provision and exercise canonical readiness")) < steps.index(_step("submit-lane", "Apply the patch"))

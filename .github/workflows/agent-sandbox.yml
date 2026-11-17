@@ -59,6 +59,10 @@ on:
         required: false
         default: ""
         type: string
+      scope_paths:
+        description: "Exact JSON array of permitted repository-relative files"
+        required: true
+        type: string
       issue:
         description: "Issue number to claim the work on (empty: open one)"
         required: false
@@ -69,7 +73,7 @@ permissions:
   contents: read
 
 jobs:
-  agent:
+  admission:
     # Only the founder may label an issue they authored as a Legion mission.
     # claude-native selects genuine Claude Code with the same founder authorization,
     # sealed transcript firewall and patch-only submission boundaries.
@@ -81,13 +85,48 @@ jobs:
          (github.event.action == 'labeled' && (github.event.label.name == 'legion-run' || github.event.label.name == 'claude-native')))
       )
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      base: ${{ steps.scope.outputs.base }}
+      scope: ${{ steps.scope.outputs.scope }}
+      digest: ${{ steps.scope.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Admit exact scope before inference
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCOPE_PATHS: ${{ inputs.scope_paths }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          paths=$(python3 -c 'import os,sys; body=os.environ.get("ISSUE_BODY",""); marker="ADMISSION_PATHS_JSON:"; lines=[s[len(marker):].strip() for s in body.splitlines() if s.startswith(marker)]; event=os.environ["EVENT_NAME"]; sys.exit("BLIND: exactly one ADMISSION_PATHS_JSON line is required") if event=="issues" and len(lines)!=1 else None; print(lines[0] if event=="issues" else os.environ["SCOPE_PATHS"])')
+          manifest="$RUNNER_TEMP/admission.json"
+          python3 -B bin/idp-agent-base-apply.py --admit-paths-json "$paths" > "$manifest"
+          printf 'base=%s\nscope=%s\ndigest=%s\n' "$(git rev-parse HEAD)" "$(cat "$manifest")" "$(sha256sum "$manifest" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Provision and exercise canonical readiness before work
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 pytest==8.4.2 ruff==0.15.18 yamllint==1.37.1
+          command -v shellcheck >/dev/null || sudo apt-get install -y -qq shellcheck
+          bin/idp-production-readiness
+
+  agent:
+    needs: admission
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ needs.admission.outputs.base }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -112,6 +151,7 @@ jobs:
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
           HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          ADMITTED_SCOPE: ${{ needs.admission.outputs.scope }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
@@ -123,6 +163,116 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
           git rev-parse HEAD > "$out/base"
+          TASK="$TASK"
+          # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
+          # glob that matches nothing makes ls exit 2, pipefail carries it, and set -e ended the
+          # step before it could say why (run 36317202633). stdin is closed: a harness that sees
+          # an open pipe waits on it.
+          newest() { find "$1" -type f -name '*.jsonl' -exec ls -t {} + 2>/dev/null | head -1 || true; }
+          case "$HARNESS" in
+            claude-code)
+              [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
+              # No GitHub token in this job. Authenticate Claude first with a real
+              # Anthropic modelUsage receipt; reject GLM aliases before running tasks.
+              [ -x bin/claude-anthropic ] || { echo "::error::CLAUDE_NATIVE_LAUNCHER_NOT_ON_TRUSTED_MAIN"; exit 1; }
+              rc=0; bin/claude-anthropic --verify-live < /dev/null > "$out/claude-provider-receipt" 2> "$out/claude-provider-error" || rc=$?
+              if [ "$rc" -ne 0 ]; then echo "::error::CLAUDE_NATIVE_PROVIDER_NOT_VERIFIED exit=$rc"; exit "$rc"; fi
+              rc=0; bin/claude-anthropic -p "$TASK" --dangerously-skip-permissions < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$HOME/.claude/projects") ;;
+            pi)
+              [ -n "$MINIMAX_API_KEY" ] || { echo "::error::SEED_MINIMAX_API_KEY is not set"; exit 1; }
+              rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
+            gemini)
+              [ -n "$GEMINI_API_KEY" ] || { echo "::error::SEED_GEMINI_API_KEY is not set"; exit 1; }
+              rc=0; pi -p --provider google --model "${MODEL:-gemini-3.5-flash}" --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
+          esac
+          # An untrusted model can change the worktree before failing. A second
+          # provider must NEVER inherit its edits: firewall sees only the
+          # successful provider's transcript, so the patch must match it.
+          if [ "$HARNESS" = gemini ] && [ "${LEGION_FAILOVER:-0}" = 1 ] && [ "$rc" -ne 0 ]; then
+            class=provider-failure-unclassified
+            if grep -Eiq 'model.?not.?found|unknown model|unsupported model|model.*does not exist' "$out/stdout"; then
+              class=model-unavailable
+            elif grep -Eiq 'authentication_error|unauthori[sz]ed|invalid.?api.?key|permission.denied' "$out/stdout"; then
+              class=authentication
+            elif grep -Eiq '429|quota.exceeded|rate.?limit|resource.exhausted' "$out/stdout"; then
+              class=capacity-or-rate-limit
+            elif grep -Eiq 'timeout|timed out|ECONNRESET|ECONNREFUSED|network error' "$out/stdout"; then
+              class=transport
+            fi
+            if [ -n "${MINIMAX_API_KEY:-}" ]; then
+              # Preserve all failure details inside the age-encrypted artifact;
+              # the public log gets only a fixed, low-entropy category.
+              cp "$out/stdout" "$out/google.failed.stdout"
+              if [ -n "${transcript:-}" ] && [ -f "$transcript" ]; then
+                cp "$transcript" "$out/google.failed.transcript.jsonl"
+              fi
+              git reset --hard "$(cat "$out/base")" >/dev/null
+              git clean -fd >/dev/null
+              rm -rf "$RUNNER_TEMP/pi-sessions"
+              mkdir -p "$RUNNER_TEMP/pi-sessions" "$RUNNER_TEMP/legion-fallback-home"
+              rc=0
+              # The second provider also gets a clean HOME: no first-model
+              # edits to ~/.pi, shell profiles or agent tools may carry over.
+              HOME="$RUNNER_TEMP/legion-fallback-home" pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions")
+              echo "legion provider fallback: google_failure=$class fallback=minimax exit=$rc"
+              if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                printf 'Legion fallback: Gemini failed (%s); MiniMax exit %s; firewall still required.\n' "$class" "$rc" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              echo "legion provider failure: class=$class fallback=unavailable"
+            fi
+          fi
+          echo "harness exit $rc"
+          if [ -z "${transcript:-}" ]; then
+            # No transcript means the harness never got as far as working; its first line is the
+            # reason (a start-up error, not the agent's words).
+            echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
+            exit 1
+          fi
+          # Preserve failed runs too: their private transcript is the diagnostic evidence.
+          cp "$transcript" "$out/transcript.jsonl"
+          if [ "$rc" -ne 0 ]; then
+            # A harness that failed did no work worth grading: stop here with the reason. Only the
+            # provider's HTTP status and error type reach this public log, never the agent's words.
+            # A rejected key reads: 401 {"type":"error","error":{"type":"authentication_error",...
+            status=$(grep -oE '^[0-9]{3} ' "$out/stdout" | head -1 || true)
+            kind=$(grep -oE '"type":"[a-z_]+_error"' "$out/stdout" | head -1 | cut -d'"' -f4 || true)
+            echo "::error::the harness failed (exit $rc); provider said: ${status:-no status}${kind:-}"
+            exit "$rc"
+          fi
+          # The patch is everything the agent changed against the commit it started from,
+          # committed or not, tracked or new.
+          git add -A
+          git diff --cached --binary "$(cat "$out/base")" > "$out/patch"
+          echo "patch: $(git diff --cached --stat "$(cat "$out/base")" | tail -1)"
+
+      - name: Encrypt what leaves the job
+        if: always()
+        env:
+          RECIPIENT: ${{ vars.AGENT_TRANSCRIPT_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
+          out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
+          files=()
+          for name in base patch transcript.jsonl stdout claude-provider-receipt claude-provider-error google.failed.stdout google.failed.transcript.jsonl; do
+            if [ -f "$out/$name" ]; then files+=("$name"); fi
+          done
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
+          tar -C "$out" -cf - "${files[@]}" | age -r "$RECIPIENT" -o "$RUNNER_TEMP/sealed/work.tar.age"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: agent-work
+          path: ${{ runner.temp }}/sealed/work.tar.age
+          retention-days: 5
+          if-no-files-found: error
+\n\n'"Exact admitted paths and base: ${ADMITTED_SCOPE:?missing trusted scope}"
           # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
           # glob that matches nothing makes ls exit 2, pipefail carries it, and set -e ended the
           # step before it could say why (run 36317202633). stdin is closed: a harness that sees
@@ -267,7 +417,7 @@ jobs:
           exit "$rc"
 
   submit-lane:
-    needs: [agent, firewall]
+    needs: [admission, agent, firewall]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -298,6 +448,13 @@ jobs:
           # Sealed agent patch is relative to its original base, not HEAD at submission.
           fetch-depth: 0
 
+      - name: Provision and exercise canonical readiness before work
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 pytest==8.4.2 ruff==0.15.18 yamllint==1.37.1
+          command -v shellcheck >/dev/null || sudo apt-get install -y -qq shellcheck
+          bin/idp-production-readiness
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: agent-work
@@ -306,6 +463,8 @@ jobs:
       - name: Apply the patch to main, refusing what an agent may not change
         env:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
+          ADMITTED_SCOPE: ${{ needs.admission.outputs.scope }}
+          ADMITTED_DIGEST: ${{ needs.admission.outputs.digest }}
         run: |
           set -euo pipefail
           bash bin/agent-sandbox-age
@@ -318,19 +477,15 @@ jobs:
           # ancestry against current main. The agent's work must not disappear when
           # another lane advances main while the model is working.
           # The Greenlane, not this stage, rebases and independently proves promotion.
-          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
+          [ -n "${ADMITTED_SCOPE:-}" ] && [ -n "${ADMITTED_DIGEST:-}" ] || { echo "::error::trusted admission missing"; exit 2; }
+          printf '%s\n' "$ADMITTED_SCOPE" > "$work/scope"
+          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch" --scope-file "$work/scope" --scope-sha256 "$ADMITTED_DIGEST"
           # Read back what the index now holds, both sides of every rename included, rather than
           # parse the patch text.
           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
           if [ -n "$refused" ]; then
             echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
           fi
-
-      - name: Install what the estate's commit hooks run (the fast gate's own pins)
-        run: |
-          set -euo pipefail
-          pip install -q ruff==0.15.18 yamllint==1.37.1
-          sudo apt-get install -y -qq shellcheck
 
       - name: Claim the work on an issue
         id: claim
