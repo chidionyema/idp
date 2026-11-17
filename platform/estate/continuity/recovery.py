@@ -41,9 +41,6 @@ class RecoveryMixin:
         if m["state"] in (
             "ACCEPTED",
             "READY",
-            "VERIFYING",
-            "PROMOTING",
-            "DEPLOY_VERIFY",
         ):
             return {
                 "mission_id": mission_id,
@@ -51,15 +48,24 @@ class RecoveryMixin:
                 "reasons": [],
                 "state": m["state"],
             }
-        if attempt is not None:
+        # Active stages, including verification and promotion, require a live
+        # attempt. A recovery decision is a request to reconcile pending effects,
+        # not authorization to replay an external mutation.
+        if attempt is None:
+            reasons.append("active mission has no current attempt")
+        else:
+            if attempt["state"] != "RUNNING":
+                reasons.append("current attempt is not RUNNING")
             if attempt["lease_expires_at"] <= t:
                 reasons.append(
                     f"lease expired {t - attempt['lease_expires_at']:.0f}s ago"
                 )
-            anchor = attempt["last_progress_at"] or m["created_at"]
-            if t - anchor > bound_s:
+            anchor = attempt["last_progress_at"]
+            if anchor is None:
+                anchor = m["created_at"]
+            if t - anchor >= bound_s:
                 reasons.append(
-                    f"no progress for {t - anchor:.0f}s > bound {bound_s:.0f}s"
+                    f"no progress for {t - anchor:.0f}s >= bound {bound_s:.0f}s"
                 )
         return {
             "mission_id": mission_id,
