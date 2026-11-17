@@ -59186,7 +59186,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -59489,7 +59489,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-node@v7",
+          "actions/setup-node@v7.1.0",
           "softprops/action-gh-release@v3"
         ]
       },
@@ -59544,7 +59544,7 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
         ]
       },
       "owner": "@chidionyema",
@@ -59668,9 +59668,9 @@
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
           "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
           "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -59927,8 +59927,8 @@
           "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "actions/upload-artifact@v7",
-          "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"
+          "actions/upload-artifact@v7.0.2",
+          "azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e"
         ]
       },
       "owner": "@chidionyema",
@@ -60099,10 +60099,10 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -60322,7 +60322,7 @@
         "uses": [
           "./.github/actions/k3d-estate",
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -60451,7 +60451,7 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@v4",
+          "actions/checkout@v7",
           "dtolnay/rust-toolchain@stable"
         ]
       },
@@ -60827,8 +60827,8 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v6",
-          "actions/upload-artifact@v7",
+          "actions/setup-python@v7",
+          "actions/upload-artifact@v7.0.2",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
@@ -60906,12 +60906,12 @@
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
           "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -61159,11 +61159,11 @@
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -61365,7 +61365,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -62259,7 +62259,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -62726,9 +62726,9 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
-          "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -62840,7 +62840,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -62896,7 +62896,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -63798,7 +63798,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "actions/setup-python@v7.1.0",
+          "actions/setup-python@v7",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
@@ -64275,7 +64275,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370",
+          "github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066",
           "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e"
         ]
       },
@@ -64519,7 +64519,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
-          "actions/upload-artifact@v7"
+          "actions/upload-artifact@v7.0.2"
         ]
       },
       "owner": "@chidionyema",
@@ -65413,7 +65413,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-node@v7"
+          "actions/setup-node@v7.1.0"
         ]
       },
       "owner": "@chidionyema",
