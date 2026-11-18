@@ -89,3 +89,13 @@ zero-click path above is. The manual export step is what I-8096-REV2 removes.
   PR #8182 (SEED App key, no OCI).
 - A partial-flush rule, a dedup rule and a sanitizer that never ran in production are still
   `declared`; the falsifier proves the code, not the operation.
+
+## Operating status (measured 2026-11-18)
+
+- `https://genesis-founder-surface.pages.dev/` answers 200; `/api/ingest/bundle` answers 404,
+  so the Pages receiver in `gemini-sync` is not deployed.
+- `https://lifeboat-llm.mumchimp.com/` does not resolve, so the edge ingest routes above are
+  not serving. `bin/idp-otto-homes` already wires `AI_STUDIO_INGEST_SECRET`; the missing step is
+  the deploy, not the wiring.
+- The zero-click capability is therefore `declared`, not `operating`: an AI Studio turn has no
+  live door today, and a human export remains the only route.
