@@ -33,7 +33,7 @@ b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 # limit instead of outside it.
 github_now() {
   local hdr out=""
-  hdr=$(curl -sSI --max-time 8 https://api.github.com 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="date:"{print $2; exit}' || true)
+  hdr=$(curl -sSI --max-time 8 https://api.github.com 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="date:"{ $1=""; sub(/^[ \t]+/,""); print; exit }' || true)
   if [ -n "$hdr" ]; then
     out=$(date -u -d "$hdr" +%s 2>/dev/null || true)                                    # GNU (CI)
     if [ -z "$out" ]; then out=$(date -j -u -f "%a, %d %b %Y %H:%M:%S GMT" "$hdr" +%s 2>/dev/null || true); fi  # BSD (macOS)
