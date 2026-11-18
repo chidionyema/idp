@@ -23,10 +23,15 @@ class RecoveryMixin:
         bound_s: float = NO_PROGRESS_BOUND_S,
     ) -> dict:
         t = time.time() if now is None else now
-        m = self._require(mission_id)
+        return self._takeover_decision(mission_id, t, bound_s, self.db)
+
+    def _takeover_decision(self, mission_id: str, t: float, bound_s: float, cur) -> dict:
+        m = cur.execute("SELECT * FROM missions WHERE mission_id=?", (mission_id,)).fetchone()
+        if m is None:
+            raise RecordRejected(f"unknown mission {mission_id}")
         attempt = None
         if m["current_attempt_id"]:
-            attempt = self.db.execute(
+            attempt = cur.execute(
                 "SELECT * FROM mission_attempts WHERE attempt_id=?",
                 (m["current_attempt_id"],),
             ).fetchone()
@@ -81,10 +86,20 @@ class RecoveryMixin:
         fingerprint: str,
         actor: str = "recovery",
         now: float | None = None,
+        *,
+        recheck_stagnation: bool = False,
+        bound_s: float = NO_PROGRESS_BOUND_S,
     ) -> dict:
         t = time.time() if now is None else now
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
+            # Automatic recovery must make its decision in the same transaction
+            # as fencing. A delayed observation is not authority over a new lease.
+            if recheck_stagnation:
+                decision = self._takeover_decision(mission_id, t, bound_s, cur)
+                if not decision["takeover"]:
+                    return {"mission_id": mission_id, "state": decision["state"],
+                            "transitioned": False, "reasons": []}
             m = cur.execute(
                 "SELECT state, current_attempt_id, current_lease_epoch"
                 " FROM missions WHERE mission_id=?",
@@ -137,5 +152,17 @@ class RecoveryMixin:
                 "mission_id": mission_id,
                 "state": "RECOVERY_PENDING",
                 "fenced_attempt": m["current_attempt_id"],
+                "transitioned": True,
                 "failure_class": failure_class,
             }
+
+    def recover_stalled(self, mission_id: str, now: float | None = None) -> dict:
+        """One supervisor transition, idempotent under replay/concurrent wakeups.
+
+        The caller must be the existing authorized recovery coordinator. This
+        fences only genuinely due attempts; it grants no external-effect replay.
+        """
+        return self.begin_recovery(
+            mission_id, "NO_PROGRESS_OR_LEASE_EXPIRED", "continuity-stall-v1",
+            actor="recovery", now=now, recheck_stagnation=True,
+        )
