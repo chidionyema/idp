@@ -17,3 +17,73 @@ disabled:
     Switched off in settings on or about 2026-08-31. It is the founder's "Finish KINI" button
     and it fires only on his own `FINISH: KINI` comment, so an idle one costs nothing; every
     run in its history is `skipped`. Turned back on when KINI is next closed out.
+
+  # 2026-11-18 (idp#8202). The thirteen rows below are the switches GitHub's settings held and
+  # the tree did not name. bin/idp-mechanism-gate --live measured them on 2026-11-18 and refused:
+  # "13 mechanism(s) the tree depends on will not run" -- every one of them `disabled_manually`
+  # with no line here saying why. A switch nobody can read is the class the gate exists for
+  # (the same class that let deploy-when-green.yml stay off for eight days in 2026-08). Each
+  # reason below is the measured failure of that workflow's last run, read from the Actions
+  # API on 2026-11-18, not an inference. Two of them are the OKE retirement (idp#0048) and one
+  # is the zone class this lane is about; the rest are the same shape.
+  .github/workflows/otto-parity.yml: >-
+    Switched off in settings on 2026-11-14, with the OKE retirement (idp#0048). Its last run
+    (2026-11-14T07:00Z, run 43569008282) failed at the step "Mint kubeconfig": there is no OCI
+    cluster named estate to mint a kubeconfig from, and the k3s replacement is not an OCI CE
+    cluster. It graded the retired cluster every fifteen minutes and went red every time.
+  .github/workflows/flux-board-reconcile.yml: >-
+    Switched off in settings on 2026-11-14, with the OKE retirement (idp#0048). Its last run
+    (2026-11-14T02:37Z, run 43547324328) failed at the step "Mint kubeconfig" for the same
+    reason: the board is a function of a cluster the estate no longer has. Re-enable on the k3s
+    cutover, when there is a cluster to reconcile against.
+  .github/workflows/mac-salvage.yml: >-
+    Switched off in settings on 2026-11-13, with the OKE retirement (idp#0048). Its last run
+    (2026-11-13T00:02Z, run 43333792599) failed at the step "Mint kubeconfig for the estate
+    cluster". The salvage recovers a host from a cluster receipt; with no cluster there is no
+    receipt to recover from.
+  .github/workflows/op-verify.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048); its last run (2026-10-28,
+    run 40651499805) was cancelled while it minted a kubeconfig for the estate cluster. It
+    verifies the operator surface of a cluster that no longer exists, so there is nothing left
+    for it to verify.
+  .github/workflows/estate-secret-prune.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048). Its last run (2026-09-16, run
+    35142511601) was green, but it prunes vendor secrets by reading the cluster's own vault, and
+    there is no cluster to read; leaving it on would make it a daily red that grades nothing.
+  .github/workflows/otto-homes.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048); it has no runs at all. It
+    probes the estate's homes from inside the cluster's network, so with no OCI cluster there
+    is no vantage point to probe from and no run to grade.
+  .github/workflows/reconcile-backstage.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048). Its last run (2026-10-17, run
+    39024130575) was green, but it reconciles the Backstage rows against the cluster's state,
+    and there is no cluster left to reconcile against.
+  .github/workflows/webhook-diagnose.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048). Its last run (2026-09-17, run
+    35278289591) was green, but it diagnoses the estate's webhook by reading the cluster's
+    ingress, which the retirement removed. The v2 of the same diagnosis is named below.
+  .github/workflows/webhook-diagnose-v2.yml: >-
+    Switched off in settings with the OKE retirement (idp#0048); its last run (2026-10-28, run
+    40660557781) was cancelled while it minted a kubeconfig for the estate cluster. It is the
+    second generation of the same diagnosis and is off for the same measured reason.
+  .github/workflows/ping.yml: >-
+    Switched off in settings on 2026-11-17, and this one is the zone class. Its last run
+    (2026-11-17T01:53Z, run 43998942192) failed at the step "probe every founder surface from
+    outside the cluster": the founder's own surfaces answer 525 because llm.meridianlabs.cloud
+    and bus.meridianlabs.cloud are proxied A records on a dead origin instead of CNAMEs to the
+    estate tunnel. The dead-man's switch is red because the thing it watches is red. It stays
+    off until the names are bound to the tunnel (idp#8202).
+  .github/workflows/verdict-langfuse.yml: >-
+    Switched off in settings on 2026-11-17. Its last run (2026-11-17T04:44Z, run 44019297221)
+    failed at the step "oci cli and a headless browser": the prover mints an OCI session token
+    and drives a browser, and neither is available on the retired cluster. The verdict is not
+    produced, so the table row it signs never lands.
+  .github/workflows/verdict-signoz.yml: >-
+    Switched off in settings on 2026-11-17. Its last run (2026-11-17T04:47Z, run 44019562960)
+    failed at the same step, "oci cli and a headless browser", for the same measured reason:
+    the machine identity the prover signs with comes from a cluster that no longer exists.
+  .github/workflows/verdict-backstage.yml: >-
+    Switched off in settings on 2026-11-17. Its last run (2026-11-17T04:46Z, run 44019452313)
+    failed at the step that lands the signed verdict row in the table, so the catalogue's proof
+    is not produced and the hourly tick has nothing to refresh. It shares the machine identity
+    the other two provers lost.
