@@ -95,6 +95,41 @@ if [ "$MODE" = mint ]; then
   unset dns eng
 fi
 if [ "$MODE" = --preflight ]; then
+  # THE ROAD DECIDES WHAT IS MEASURED (idp#8202, measured 2026-11-17).
+  #
+  # Road a (R52): the standing root token is in the environment and the door never opens a
+  # console -- no browser, no dashboard. So the dashboard's reachability is NOT what this door
+  # measures, and a login-gated console answering 403 says nothing about the credential the
+  # live run will use. What the live run uses is the API, and the one question that matters
+  # there is the one the estate got wrong: does THIS account hold the zone the estate
+  # declares? Measured on 2026-11-17 with the standing root: the estate's account
+  # (4912457480997df81450b3ea614ccf3c) holds mumchimp.com only, and /zones?name=meridianlabs.cloud
+  # answered count 0 -- so the preflight said "console answers 403" and the operator could not
+  # tell a broken credential path from a wrong account. The live path already refuses for the
+  # right reason ("$ZONE is not a zone of this account"); the preflight now refuses for it too.
+  #
+  # Road b (laptop): the root is born in the dashboard behind the founder's login, so the
+  # console IS the road, and reaching it is the measurement.
+  if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+    ROOT=$CLOUDFLARE_ROOT_TOKEN
+    verify "$ROOT" || fail root "the standing root token does not verify at $API/user/tokens/verify"
+    say ok root "root token verifies (User API Tokens: Edit); no browser on this road"
+    zb=$(cf "$ROOT" GET "/zones?name=$ZONE" || true)
+    printf '%s' "$zb" | jq -e '.success == true' >/dev/null 2>&1 \
+      || bl zone "the Cloudflare API did not answer /zones?name=$ZONE; the zone was not measured"
+    zid=$(printf '%s' "$zb" | jq -r '.result[0].id // empty')
+    if [ -n "$zid" ]; then
+      say ok zone "zone $ZONE is a zone of this account ($zid)"
+    else
+      held=$(cf "$ROOT" GET "/zones?per_page=50" | jq -r '[.result[]?.name] | join(", ")' 2>/dev/null || true)
+      if [ -n "$held" ]; then say "" zone "this account holds: $held"; fi
+      say FAIL zone "$ZONE is not a zone of this account"
+      echo "        the token must be minted in the account that holds $ZONE, or $ZONE must be added to this one"
+      exit 1
+    fi
+    say ok preflight "vault, standing root and the declared zone are all reachable; nothing written"
+    exit 0
+  fi
   code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
   case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
