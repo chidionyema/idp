@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The estate context broker: the one public door to the estate's context.
 #
 # This image carries the broker and nothing else. The context engine is a separate image
@@ -22,14 +23,14 @@ ENV PYTHONPATH=/app \
 # The build fails if the package does not import, if its tools do not register, or if the policy
 # module is missing. A door that cannot start is a closed door, and it must not be closed by a
 # packaging mistake nobody saw until a client called it.
-RUN cd /tmp && python3 -c "
+RUN cd /tmp && python3 - <<'PY'
 from estate.context import server, broker, claims
 names = sorted(t['name'] for t in server.TOOLS)
 assert names == ['estate_context', 'estate_context_status'], names
 assert server.decide(broker.ContextRequest(tool='smart_context', paths=[], request_commit=None, mode='committed', token_budget=10),
                      broker.BrokerState(index_commit='a'*40, head_commit='a'*40, claim_paths=['x'], secrets={}, engine_reachable=True)).verdict == 'ALLOW'
 print('estate-context-broker tools register:', names)
-"
+PY
 USER broker
 EXPOSE 8002
 CMD ["python3", "-m", "estate.context.server"]
