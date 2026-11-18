@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+TOP = HOME / ".estate" / "topology"
+SERVICES = TOP / "services.json"
+ITEST = TOP / "itest.json"
+GRADE = TOP / "grade.json"
+STATE = TOP / "grade-state.json"
+METRICS = "http://127.0.0.1:18791/metrics"
+CHECKS = ("supervised", "endpoint", "row", "metrics", "surface", "log", "integration", "runbook")
+
+
+def http_code(url: str, timeout: int = 6) -> int:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.status
+    except Exception:
+        return 0
+
+
+def agents() -> set[str]:
+    try:
+        p = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10)
+    except (subprocess.SubprocessError, OSError):
+        return set()
+    out = set()
+    for line in p.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            out.add(parts[2].strip())
+    return out
+
+
+def read_json(path: Path, default: dict) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return default
+
+
+def heal(agent: str) -> bool:
+    try:
+        subprocess.run(["launchctl", "kickstart", "-k", "gui/%d/%s" % (os.getuid(), agent)],
+                       capture_output=True, timeout=15)
+    except (subprocess.SubprocessError, OSError):
+        return False
+    for _ in range(8):
+        time.sleep(1)
+        if agent in agents():
+            return True
+    return False
+
+
+def evaluate(svc: dict, ctx: dict) -> dict:
+    checks = {}
+    loaded = svc["agent"] in ctx["agents"]
+    endpoint = svc.get("endpoint") or ""
+    code = http_code(endpoint) if endpoint else 200
+    endpoints_ok = (code == svc.get("expect", 200)) if endpoint else True
+    checks["supervised"] = loaded and endpoints_ok
+    healed = False
+    if not checks["supervised"] and svc["agent"]:
+        healed = heal(svc["agent"])
+        if healed:
+            loaded = svc["agent"] in ctx["agents"]
+            code = http_code(endpoint) if endpoint else 200
+            endpoints_ok = (code == svc.get("expect", 200)) if endpoint else True
+            checks["supervised"] = loaded and endpoints_ok
+    checks["endpoint"] = endpoints_ok
+    checks["row"] = svc["row"] in ctx["rows"]
+    checks["metrics"] = svc["metrics_family"] in ctx["metrics"]
+    checks["surface"] = svc["row"] in ctx["surface"]
+    log = Path(os.path.expanduser(svc["log"]))
+    checks["log"] = log.exists() and log.stat().st_size > 0
+    suite = ctx["itest"].get(svc["suite"])
+    checks["integration"] = bool(suite) and suite.get("fail", 1) == 0 and suite.get("exit", 1) == 0 and (time.time() - suite.get("at", 0)) < 7 * 86400
+    checks["runbook"] = Path(os.path.expanduser(svc["runbook"])).exists()
+    score = sum(1 for c in CHECKS if checks.get(c))
+    return {"id": svc["id"], "name": svc["name"], "criticality": svc["criticality"],
+            "score": score, "max": len(CHECKS), "checks": checks,
+            "gaps": [c for c in CHECKS if not checks.get(c)], "healed": healed}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="estate-service-grade")
+    ap.add_argument("--services", default=str(SERVICES))
+    ap.add_argument("--itest", default=str(ITEST))
+    ap.add_argument("--root", default=str(TOP))
+    ap.add_argument("--metrics-url", default=METRICS)
+    ap.add_argument("--no-heal", action="store_true")
+    ap.add_argument("--pack", action="store_true")
+    a = ap.parse_args()
+    root = Path(a.root)
+    services = json.loads(Path(a.services).read_text())
+    itest_doc = read_json(Path(a.itest), {})
+    itest = {s["suite"]: s for s in itest_doc.get("suites", [])}
+    topo = read_json(root / "topology.json", {})
+    rows = {t["id"] for t in topo.get("targets", [])}
+    metrics = ""
+    try:
+        with urllib.request.urlopen(a.metrics_url, timeout=8) as r:
+            metrics = r.read().decode(errors="replace")
+    except Exception:
+        pass
+    surface = ""
+    try:
+        surface = (root / "surface.html").read_text()
+    except OSError:
+        pass
+    ctx = {"agents": agents(), "rows": rows, "metrics": metrics, "surface": surface, "itest": itest}
+    results = [evaluate(s, ctx) for s in services]
+    known = {s["agent"] for s in services}
+    uncatalogued = sorted(a for a in ctx["agents"] if a.startswith("ai.estate.") and a not in known)
+    critical_bad = [r for r in results if r["criticality"] == "critical" and r["score"] < r["max"]]
+    doc = {"at": int(time.time()), "services": results,
+           "gaps": [{"id": r["id"], "gaps": r["gaps"]} for r in results if r["gaps"]],
+           "critical_ok": not critical_bad, "uncatalogued_agents": uncatalogued}
+    (root / "grade.json").write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    (root / "grade-state.json").write_text(json.dumps(
+        {"at": doc["at"], "critical_ok": doc["critical_ok"],
+         "gaps": len(doc["gaps"]), "services": len(results),
+         "worst": min((r["score"] for r in results), default=0),
+         "max": len(CHECKS)}, indent=2, sort_keys=True) + "\n")
+    os.chmod(root / "grade-state.json", 0o644)
+    lines = ["# Service grade", "", "generated %s" % time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+             "", "| service | score | gaps | healed |", "|---|---|---|---|"]
+    for r in results:
+        lines.append("| %s | %d/%d | %s | %s |" % (r["id"], r["score"], r["max"],
+                     ", ".join(r["gaps"]) or "-", "yes" if r["healed"] else "-"))
+    (root / "GRADE.md").write_text("\n".join(lines) + "\n")
+    for r in results:
+        print("%-16s %d/%d %s%s" % (r["id"], r["score"], r["max"],
+              ("gaps=" + ",".join(r["gaps"])) if r["gaps"] else "ok",
+              " healed" if r["healed"] else ""))
+    print("uncatalogued agents=%d (informational; see grade.json)" % len(uncatalogued))
+    print("RESULT services=%d critical_ok=%s" % (len(results), doc["critical_ok"]))
+    if critical_bad and a.pack:
+        subprocess.run([str(HOME / ".estate/bin/estate-debug-pack"), "--label", "grade-fail"],
+                       capture_output=True, timeout=90)
+    return 0 if doc["critical_ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

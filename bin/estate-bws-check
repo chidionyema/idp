@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+VAULT = "/Users/roseonyema/Documents/code/idp/bin/idp-cloud"
+IDP = "/Users/roseonyema/Documents/code/idp"
+ORG = "a9f79fcf-7059-4bad-94ab-b4b900acc259"
+IDENTITY = ["identity.bitwarden.com", "identity.bitwarden.eu"]
+API = {"identity.bitwarden.com": "https://api.bitwarden.com",
+       "identity.bitwarden.eu": "https://api.bitwarden.eu"}
+PASS = 0
+FAIL = 0
+
+
+def check(ok: bool, text: str) -> None:
+    global PASS, FAIL
+    if ok:
+        PASS += 1
+        print("PASS  " + text)
+    else:
+        FAIL += 1
+        print("FAIL  " + text)
+
+
+def token() -> tuple[str, str]:
+    env = (os.environ.get("BWS_ACCESS_TOKEN") or "").strip()
+    if env:
+        return env, "env"
+    for _ in range(2):
+        try:
+            p = subprocess.run([VAULT, "secret", "get", "bitwarden-machine"],
+                               capture_output=True, text=True, timeout=15, cwd=IDP)
+        except subprocess.TimeoutExpired:
+            continue
+        except (subprocess.SubprocessError, OSError):
+            return "", "unreadable"
+        val = p.stdout.strip()
+        return (val, "estate-vault") if val else ("", "none")
+    return "", "unreadable"
+
+
+def auth(host: str, cid: str, secret: str) -> tuple[str, str]:
+    body = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": cid,
+                                   "client_secret": secret, "scope": "api.secrets"}).encode()
+    req = urllib.request.Request("https://%s/connect/token" % host, data=body,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode()).get("access_token") or "", "ok"
+    except urllib.error.HTTPError as exc:
+        return "", "rejected:%d" % exc.code
+    except OSError:
+        return "", "network"
+
+
+def keys(api: str, tok: str) -> list[str]:
+    out: list[str] = []
+    cont = None
+    for _ in range(10):
+        url = "%s/secrets?organizationId=%s" % (api, ORG)
+        if cont:
+            url += "&continuationToken=" + urllib.parse.quote(cont)
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok,
+                                                   "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode())
+        out += [s.get("key") or "" for s in d.get("data", [])]
+        cont = d.get("continuationToken")
+        if not cont:
+            break
+    return out
+
+
+def env_out(api: str, tok: str, names: list[str], path: str) -> int:
+    import os
+    from pathlib import Path
+    data = {}
+    cont = None
+    for _ in range(10):
+        url = "%s/secrets?organizationId=%s" % (api, ORG)
+        if cont:
+            url += "&continuationToken=" + urllib.parse.quote(cont)
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok,
+                                                   "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode())
+        for s in d.get("data", []):
+            if s.get("key") in names:
+                data[s["key"]] = s.get("value") or ""
+        cont = d.get("continuationToken")
+        if not cont:
+            break
+    missing = [n for n in names if n not in data]
+    if missing:
+        print("missing: " + ",".join(missing))
+        return 1
+    out = Path(path)
+    out.write_text("".join("%s=%s\n" % (k, data[k]) for k in names))
+    os.chmod(out, 0o600)
+    print("wrote %d keys to %s (mode 600)" % (len(names), out))
+    return 0
+
+
+def main() -> int:
+    import argparse
+    ap = argparse.ArgumentParser(prog="estate-bws-check")
+    ap.add_argument("--env-out", default="")
+    ap.add_argument("--keys", default="")
+    args = ap.parse_args()
+    tok, source = token()
+    check(bool(tok), "A1 a machine credential is present (source=%s)" % source if tok else "A1 the credential store is %s" % source)
+    check(bool(re.fullmatch(r"0\.[^.]+\.\S+", tok)), "A2 the credential has the 0.<id>.<key> access-token shape")
+    outcomes = {}
+    accepted = None
+    for host in IDENTITY:
+        for cid in ("user", "organization"):
+            at, state = auth(host, cid, tok)
+            outcomes["%s/%s" % (host, cid)] = state
+            print("      try %s client_id=%s -> %s" % (host, cid, state))
+            if at and accepted is None:
+                accepted = (host, at)
+    reachable = any(not v.startswith("network") for v in outcomes.values())
+    check(reachable, "A3 the Bitwarden identity service answered")
+    if accepted:
+        host, at = accepted
+        if args.env_out:
+            wanted = [k.strip() for k in args.keys.split(",") if k.strip()]
+            if not wanted:
+                print("--keys is required with --env-out")
+                return 2
+            return env_out(API[host], at, wanted, args.env_out)
+        names = keys(API[host], at)
+        print("      api=%s secrets=%d" % (API[host], len(names)))
+        for n in sorted(names):
+            tag = " <== grafana" if "grafana" in n.lower() else (" <== r2" if "r2" in n.lower() else "")
+            print("      key %s%s" % (n, tag))
+        check(True, "A4 the secret list is readable")
+    else:
+        rejected = sum(1 for v in outcomes.values() if v.startswith("rejected"))
+        check(rejected == len(outcomes), "A4 every identity attempt was rejected (credential stale or not a machine token)")
+    print("RESULT pass=%d fail=%d" % (PASS, FAIL))
+    return 0 if FAIL == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
