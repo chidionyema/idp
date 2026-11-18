@@ -1,0 +1,16 @@
+description: >
+  The litellm proxy refused to start (CrashLoopBackOff) because
+  aei_observer.proxy_handler_instance is a bare object, neither a CustomLogger
+  nor a callable. Question: does the callback base class alone keep the proxy up?
+hypotheses:
+- name: H1
+  description: the proxy exits at import of the callback module, so every
+    /key endpoint 500s and no lane can be assigned
+  prior: 0.9
+evidence:
+- name: shadow-run 44193872906 litellm startup
+  observed:
+    crashloop: 1
+  likelihoods:
+    H1:
+      crashloop: 0.95
