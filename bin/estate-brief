@@ -16,6 +16,7 @@ lockdowns, so every session starts from the same picture and nobody repeats a qu
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -33,6 +34,49 @@ import door  # noqa: E402
 import focus  # noqa: E402
 
 ITEM_CHARS = 400
+
+# Failure and decision nodes are the lessons a later session must not have to rediscover.
+GRAPH_TYPES = ("FAILURE", "DEFECT", "GOTCHA", "INCIDENT", "DECISION")
+
+
+def _graph_root() -> str:
+    for cand in (
+        os.environ.get("ESTATE_GRAPH_ROOT", ""),
+        os.path.expanduser("~/.estate/graph/estate-graph"),
+        os.path.expanduser("~/Documents/code/estate-graph"),
+    ):
+        if cand and os.path.isdir(os.path.join(cand, ".growmos")):
+            return cand
+    return ""
+
+
+def graph_lessons(limit: int) -> list[dict]:
+    """The newest failure/decision nodes, read straight from the graph.
+
+    The brief used to read only the memory door, so a lesson in the graph reached a session
+    only if the agent chose to run `growmos`. The nodes are already structured, so reading
+    them needs no model. Never blocks a session: a missing or unreadable graph returns [].
+    """
+    root = _graph_root()
+    if not root:
+        return []
+    path = os.path.join(root, ".growmos", "entities.jsonl")
+    rows: list[dict] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entity = json.loads(line)
+                except ValueError:
+                    continue
+                if entity.get("type") in GRAPH_TYPES:
+                    rows.append(entity)
+    except OSError:
+        return []
+    rows.sort(key=lambda e: e.get("created", ""), reverse=True)
+    return rows[:limit]
 
 
 def _governance_path() -> str:
@@ -96,9 +140,14 @@ def render(brief: dict) -> str:
         return [f"- {' '.join(i['text'].split())[:ITEM_CHARS]}" for i in items]
 
     recent, relevant = lines(brief.get("recent", [])), lines(brief.get("relevant", []))
+    lessons = [
+        f"- {e.get('type', '')}: {e.get('name', '')} — "
+        f"{' '.join((e.get('description') or '').split())[:ITEM_CHARS]}"
+        for e in brief.get("lessons", [])
+    ]
     register = focus.render_register(brief.get("active_focus"))
     page = state_section()
-    if not recent and not relevant and not register and not page:
+    if not recent and not relevant and not lessons and not register and not page:
         return ""
     out = [
         "<estate-memory>",
@@ -109,6 +158,8 @@ def render(brief: dict) -> str:
         out += ["Recent decisions and incidents:", *recent]
     if relevant:
         out += ["Nearest to this task:", *relevant]
+    if lessons:
+        out += ["Recent lessons (graph):", *lessons]
     if register:
         out.append(register)
     if page:
@@ -146,6 +197,7 @@ def main(argv: list[str]) -> int:
     brief["recent"], _ = drop_stale_focus(brief.get("recent", []))
     brief["relevant"], _ = drop_stale_focus(brief.get("relevant", []))
     brief["active_focus"] = focus.live_focus()
+    brief["lessons"] = graph_lessons(args.limit)
     text = render(brief)
     if text:
         print(text)

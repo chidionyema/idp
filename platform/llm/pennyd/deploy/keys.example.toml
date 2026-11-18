@@ -1,0 +1,4 @@
+[[keys]]
+key = "replace-with-a-long-random-edge-key"
+daily_budget_usd = 1.00
+allowed_models = ["glm"]

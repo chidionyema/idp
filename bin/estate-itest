@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Integration suites for the critical services. Writes one machine-readable result per suite;
+# estate-service-grade reads it, so "tested" is evidence, not a claim.
+set -u
+OUT="$HOME/.estate/topology/itest.json"
+TMP="$OUT.tmp"
+: > "$TMP"
+now() { date +%s; }
+
+run() {
+  local suite="$1"; shift
+  local t0 rc out line pass fail
+  t0=$(now)
+  out=$("$@" 2>&1); rc=$?
+  line=$(printf '%s\n' "$out" | awk '/^RESULT pass=/{print; exit}')
+  pass=$(printf '%s' "$line" | sed -n 's/.*pass=\([0-9]*\).*/\1/p')
+  fail=$(printf '%s' "$line" | sed -n 's/.*fail=\([0-9]*\).*/\1/p')
+  pass=${pass:-0}; fail=${fail:-$([ "$rc" -eq 0 ] && echo 0 || echo 1)}
+  printf '{"suite":"%s","pass":%d,"fail":%d,"exit":%d,"at":%d,"duration_ms":%d}\n' \
+    "$suite" "$pass" "$fail" "$rc" "$(now)" "$(( ($(now) - t0) * 1000 ))" >> "$TMP"
+  printf '%-18s pass=%-3s fail=%-3s exit=%s\n' "$suite" "$pass" "$fail" "$rc"
+}
+
+run bws-sync-suite  python3 "$HOME/.estate/topology/bench-bws-sync.py"
+run bws-adopt-suite python3 "$HOME/.estate/topology/bench-bws-adopt.py"
+run dispatch-suite  "$HOME/.estate/topology/verify-stack.sh"
+
+python3 - "$TMP" "$OUT" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+json.dump({"at": max((r["at"] for r in rows), default=0), "suites": rows}, open(sys.argv[2], "w"), indent=2)
+bad = sum(1 for r in rows if r["fail"] or r["exit"] != 0)
+print("itest suites=%d failing=%d" % (len(rows), bad))
+sys.exit(1 if bad else 0)
+PY
