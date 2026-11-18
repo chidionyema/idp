@@ -41302,6 +41302,7 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-escrow",
         "cap:tool/idp-estate-seed",
+        "cap:tool/idp-otto-homes",
         "cap:tool/idp-tailscale-policy",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-ticket-verification",
@@ -46171,6 +46172,10 @@
         },
         {
           "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-github-app",
           "edge": "invokes"
         },
         {
