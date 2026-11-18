@@ -27,6 +27,7 @@ pub fn acquire(path: impl AsRef<Path>) -> Result<InstanceLock, String> {
     }
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(path)
@@ -37,9 +38,7 @@ pub fn acquire(path: impl AsRef<Path>) -> Result<InstanceLock, String> {
             "another pennyd holds {}; refusing a second writer",
             path.display()
         )),
-        Err(std::fs::TryLockError::Error(e)) => {
-            Err(format!("lock {}: {e}", path.display()))
-        }
+        Err(std::fs::TryLockError::Error(e)) => Err(format!("lock {}: {e}", path.display())),
     }
 }
 
@@ -48,10 +47,7 @@ mod tests {
     use super::*;
 
     fn lock_path(tag: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "pennyd-instance-{}-{tag}.lock",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("pennyd-instance-{}-{tag}.lock", std::process::id()))
     }
 
     #[test]
