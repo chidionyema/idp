@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from typing import Any
 
 from temporalio import activity
@@ -69,15 +70,21 @@ async def budget_op(inp: dict[str, Any]) -> dict[str, Any]:
     the row is that two concurrent activities contend for it."""
     op = inp["op"]
     session_id = inp["session_id"]
-    tokens = int(inp.get("tokens", 0))
-    if op == "allocate":
-        result = await asyncio.to_thread(budget.allocate, session_id, tokens)
-    elif op == "refill":
-        result = await asyncio.to_thread(budget.refill, session_id, tokens)
-    elif op == "read":
-        result = await asyncio.to_thread(budget.read, session_id)
-    else:
-        result = await asyncio.to_thread(budget.spend, session_id, tokens)
+    if op == "read":
+        return budget.as_dict(await asyncio.to_thread(budget.read, session_id))
+    info = activity.info()
+    identity = (info.workflow_namespace, info.workflow_id, info.workflow_run_id, info.activity_id)
+    if not all(identity):
+        raise budget.BudgetOperationRejected("workflow activity identity required")
+    operation_id = json.dumps(identity, separators=(",", ":"))
+    result = await asyncio.to_thread(
+        budget.apply_operation,
+        operation_id,
+        session_id,
+        op,
+        inp.get("tokens", 0),
+        retry=info.attempt > 1,
+    )
     return budget.as_dict(result)
 
 

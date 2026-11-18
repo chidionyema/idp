@@ -32,6 +32,7 @@ violation.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,11 +82,11 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def allocate(session_id: str, total: int) -> Spend:
+def allocate(session_id: str, total: int, *, _conn: sqlite3.Connection | None = None) -> Spend:
     """Pre-allocate a session's budget. Idempotent: re-allocating the same
     session leaves the existing row alone, so a workflow replay or a
     retried activity cannot silently refill anyone."""
-    conn = _connect()
+    conn = _conn or _connect()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO budget (session_id, total, remaining, version) VALUES (?, ?, ?, 0)",
@@ -93,7 +94,8 @@ def allocate(session_id: str, total: int) -> Spend:
         )
         return read(session_id, _conn=conn)
     finally:
-        conn.close()
+        if _conn is None:
+            conn.close()
 
 
 def read(session_id: str, *, _conn: sqlite3.Connection | None = None) -> Spend:
@@ -112,7 +114,7 @@ def read(session_id: str, *, _conn: sqlite3.Connection | None = None) -> Spend:
             conn.close()
 
 
-def spend(session_id: str, tokens: int) -> Spend:
+def spend(session_id: str, tokens: int, *, _conn: sqlite3.Connection | None = None) -> Spend:
     """Take `tokens` from the row, never below zero, under compare-and-swap.
 
     The clamp is the hard halt: a spend larger than the balance takes the
@@ -121,7 +123,7 @@ def spend(session_id: str, tokens: int) -> Spend:
     start minus both spends, never negative" -- is the test, in
     test_budget.py, driven from real threads."""
     want = max(int(tokens), 0)
-    conn = _connect()
+    conn = _conn or _connect()
     try:
         for attempt in range(1, config.BUDGET_MAX_CAS_RETRIES + 1):
             row = conn.execute(
@@ -152,13 +154,14 @@ def spend(session_id: str, tokens: int) -> Spend:
             f"{config.BUDGET_MAX_CAS_RETRIES} compare-and-swap attempts lost for session {session_id!r}"
         )
     finally:
-        conn.close()
+        if _conn is None:
+            conn.close()
 
 
-def refill(session_id: str, tokens: int) -> Spend:
+def refill(session_id: str, tokens: int, *, _conn: sqlite3.Connection | None = None) -> Spend:
     """Add to both total and remaining under the same compare-and-swap."""
     add = max(int(tokens), 0)
-    conn = _connect()
+    conn = _conn or _connect()
     try:
         for attempt in range(1, config.BUDGET_MAX_CAS_RETRIES + 1):
             row = conn.execute(
@@ -185,7 +188,8 @@ def refill(session_id: str, tokens: int) -> Spend:
             f"{config.BUDGET_MAX_CAS_RETRIES} compare-and-swap attempts lost for session {session_id!r}"
         )
     finally:
-        conn.close()
+        if _conn is None:
+            conn.close()
 
 
 def as_dict(s: Spend) -> dict[str, Any]:
@@ -198,3 +202,68 @@ def as_dict(s: Spend) -> dict[str, Any]:
         "halted": s.halted,
         "attempts": s.attempts,
     }
+
+
+_OPERATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS budget_operations (
+    operation_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    op TEXT NOT NULL,
+    tokens INTEGER NOT NULL,
+    result_json TEXT NOT NULL
+)
+"""
+
+
+class BudgetOperationRejected(ValueError):
+    """An ambiguous or conflicting mutation must not be replayed."""
+
+
+def apply_operation(
+    operation_id: str,
+    session_id: str,
+    op: str,
+    tokens: int,
+    *,
+    retry: bool = False,
+) -> Spend:
+    """Commit a Temporal budget mutation and its retry receipt atomically.
+
+    The ID is derived from Temporal activity identity, never from an agent.
+    A retry without a receipt is ambiguous across upgrades or store loss:
+    refuse it rather than repeating a potentially committed movement.
+    Direct legacy callers retain their existing API; this is the activity door.
+    """
+    actions = {"allocate": allocate, "spend": spend, "refill": refill}
+    if not operation_id or not session_id or op not in actions:
+        raise BudgetOperationRejected("unknown budget operation or identity")
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
+        raise BudgetOperationRejected("tokens must be a nonnegative integer")
+    conn = _connect()
+    try:
+        conn.execute(_OPERATION_SCHEMA)
+        conn.execute("BEGIN IMMEDIATE")
+        prior = conn.execute(
+            "SELECT session_id, op, tokens, result_json FROM budget_operations "
+            "WHERE operation_id = ?",
+            (operation_id,),
+        ).fetchone()
+        if prior is not None:
+            if prior[:3] != (session_id, op, tokens):
+                raise BudgetOperationRejected("conflicting replay of budget operation")
+            result = Spend(**json.loads(prior[3]))
+        else:
+            if retry:
+                raise BudgetOperationRejected("retry has no durable budget receipt; reconcile")
+            result = actions[op](session_id, tokens, _conn=conn)
+            conn.execute(
+                "INSERT INTO budget_operations VALUES (?, ?, ?, ?, ?)",
+                (operation_id, session_id, op, tokens, json.dumps(as_dict(result), sort_keys=True)),
+            )
+        conn.commit()
+        return result
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
