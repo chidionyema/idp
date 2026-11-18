@@ -1,5 +1,5 @@
 {
- "revision": "2026-11-16",
+ "revision": "2026-11-18",
  "note": "One record per failure class. A class may occur once; a second instance of an open class is a governance failure, not a new incident.",
  "classes": [
   {
@@ -150,6 +150,32 @@
    ],
    "instruction": "I-8096-REV2",
    "closed_on": "2026-11-16"
+  },
+  {
+   "class": "reservation-without-a-record",
+   "first_seen": "2026-11-18",
+   "instances": [
+    "pennyd reserved budget money it never wrote down: a reservation that could not be written still let the dispatch go out (F-BU-6)",
+    "pennyd lost the reservation on restart, releasing money that was still at risk (F-BU-7)",
+    "pennyd let a stale writer clobber a newer ledger's financial records (F-BU-8)",
+    "pennyd read a corrupt ledger as an empty ledger, and an empty ledger is a full budget (F-BU-10)",
+    "pennyd charged a retried operation twice, because the reservation carried no operation id (F-BU-11)",
+    "pennyd's midnight rollover released funds that were still reserved (F-BU-9, F-BU-12)"
+   ],
+   "gap": "the budget ledger kept only per-key spend and had no record of the money encumbered for an in-flight operation, so nothing in the ledger could say whether money was already spoken for",
+   "compensating_action": "reserve and settle are keyed by the operation id (the client's x-idempotency-key) and the ledger persists the reservations; a reservation that cannot be written is refused and rolled back (503 ledger_unavailable); a ledger that cannot be parsed poisons the store instead of granting a fresh budget; the ledger carries a write counter and a stale writer refuses rather than clobbering newer records; an unsettled reservation survives a restart and the day boundary until it is reconciled (platform/llm/pennyd, idp#8236, landed as idp#8237)",
+   "falsifier": "crates/penny-core/src/budget.rs: a_reservation_that_cannot_be_written_is_refused, an_unsettled_reservation_survives_a_restart, a_stale_writer_refuses_to_clobber_a_newer_ledger, midnight_rollover_does_not_release_unsettled_funds, a_corrupt_ledger_never_grants_a_fresh_budget, a_duplicate_operation_moves_money_once, a_retried_settlement_does_not_charge_twice, a_settled_operation_stays_settled_across_a_restart",
+   "owner": "platform",
+   "surfaces": [
+    "pennyd",
+    "budget",
+    "ledger"
+   ],
+   "status": "closed",
+   "recurrence_checks": [
+    "2026-11-18"
+   ],
+   "closed_on": "2026-11-18"
   }
  ]
 }
