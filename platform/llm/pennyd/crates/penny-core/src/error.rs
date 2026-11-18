@@ -25,6 +25,12 @@ pub enum PennyError {
     },
     BadRequest(String),
     Config(String),
+    /// The financial ledger could not be read or written. Carries the path and
+    /// the reason so the refusal names the file, never "unknown".
+    Ledger {
+        path: String,
+        detail: String,
+    },
 }
 
 impl fmt::Display for PennyError {
@@ -48,6 +54,7 @@ impl fmt::Display for PennyError {
             }
             Self::BadRequest(m) => write!(f, "bad request: {m}"),
             Self::Config(m) => write!(f, "config: {m}"),
+            Self::Ledger { path, detail } => write!(f, "ledger {path}: {detail}"),
         }
     }
 }

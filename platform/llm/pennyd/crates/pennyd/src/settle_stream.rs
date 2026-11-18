@@ -16,7 +16,7 @@ use crate::trace::{TraceFinish, TraceStore};
 pub struct SettleStream {
     inner: ByteStream,
     budgets: Budgets,
-    key: String,
+    op_id: String,
     reserved_usd: f64,
     price_in: f64,
     price_out: f64,
@@ -36,7 +36,9 @@ pub struct SettleStream {
 
 pub struct SettleContext {
     pub budgets: Budgets,
-    pub key: String,
+    /// The operation id of the request this stream settles. The settlement is
+    /// keyed by it, so a retry of the same operation moves the money once.
+    pub op_id: String,
     pub reserved_usd: f64,
     pub price_in: f64,
     pub price_out: f64,
@@ -53,7 +55,7 @@ impl SettleStream {
         Self {
             inner,
             budgets: context.budgets,
-            key: context.key,
+            op_id: context.op_id,
             reserved_usd: context.reserved_usd,
             price_in: context.price_in,
             price_out: context.price_out,
@@ -146,9 +148,7 @@ impl SettleStream {
             } else {
                 self.reserved_usd
             };
-            let _ = self
-                .budgets
-                .settle(&self.key, self.reserved_usd, actual, now);
+            let _ = self.budgets.settle_op(&self.op_id, actual, now);
             self.ledger.charge(input, output, actual);
             self.traces.finish(
                 &self.trace_req,
@@ -236,7 +236,9 @@ mod tests {
     ) -> (SettleStream, Arc<Ledger>, Arc<TraceStore>) {
         let budgets = Budgets::new();
         budgets.ensure("edge-key", 5.0);
-        budgets.reserve("edge-key", 0.01, now()).unwrap();
+        // The reservation is keyed by the same operation id the stream
+        // settles with, so the money moves exactly once.
+        budgets.reserve_op("op-1", "edge-key", 0.01, now()).unwrap();
         let ledger = Arc::new(Ledger::default());
         let traces = Arc::new(TraceStore::default());
         traces.begin("req-1", now(), "test", "openai", "glm", true);
@@ -246,7 +248,7 @@ mod tests {
                 stream,
                 SettleContext {
                     budgets,
-                    key: "edge-key".into(),
+                    op_id: "op-1".into(),
                     reserved_usd: 0.01,
                     price_in: 1.0,
                     price_out: 2.0,

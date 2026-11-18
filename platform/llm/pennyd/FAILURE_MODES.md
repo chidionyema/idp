@@ -60,6 +60,13 @@ explicitly accepted with its bound. "Test" = automated test name.
 | F-BU-3 | Clock jumps backwards | monotonic day: no free reset | day_never_goes_backwards |
 | F-BU-4 | Negative prices in config | refused at registry load | negative_prices_rejected |
 | F-BU-5 | Estimate undershoot on streams | conservative input-only estimate, flagged (accepted bound) | stream_without_usage_is_marked_estimate |
+| F-BU-6 | Reservation cannot be written to the ledger | reserve refuses (503 ledger_unavailable) and the encumbrance is rolled back — no dispatch against an unrecorded budget | a_reservation_that_cannot_be_written_is_refused |
+| F-BU-7 | Restart with an unsettled reservation | the reservation and its money are still held after the restart; a retry moves no money | an_unsettled_reservation_survives_a_restart |
+| F-BU-8 | Two writers on one ledger | the writer with the older seq refuses to write instead of clobbering newer financial records | a_stale_writer_refuses_to_clobber_a_newer_ledger |
+| F-BU-9 | Midnight rollover with money still reserved | reserved funds are carried over, never released — a reservation cannot refund itself at the day boundary | midnight_rollover_does_not_release_unsettled_funds |
+| F-BU-10 | Corrupt/unreadable ledger file | the store is poisoned: every reserve and settle refuses; a fresh budget is never granted from an unreadable ledger | a_corrupt_ledger_never_grants_a_fresh_budget |
+| F-BU-11 | Client retries the same operation (idempotency key) | reserve and settle are keyed by the operation id: the money moves exactly once | a_duplicate_operation_moves_money_once, a_retried_settlement_does_not_charge_twice |
+| F-BU-12 | Retry of a settled operation after a restart | the settled reservation is kept in the ledger, so the retry charges nothing | a_settled_operation_stays_settled_across_a_restart |
 
 ## Registry / config
 | ID | Failure | Response | Test |
@@ -110,6 +117,9 @@ explicitly accepted with its bound. "Test" = automated test name.
 | FP-P0-3 | anthropic-ingress | streamed tool-call deltas | tool_use blocks + stop_reason=tool_use | unit probe | streamed_tool_calls_produce_tool_use_blocks | fall back to non-streaming |
 | FP-P0-4 | decision-log | any request | key_fp only, never raw key | log audit | bearer_key_never_reaches_the_decision_log | rotate key if seen |
 | FP-P0-5 | budget | restart mid-day / overrun | spend persists; reserve pre-dispatch; overrun exhausts | persisted file + 429 | spend_survives_restart, settle_records_overrun_and_exhausts | raise budget or next day |
+| FP-P0-7 | budget | client retry / duplicate operation | reserve+settle keyed by operation id: money moves once | persisted reservations ledger | a_duplicate_operation_moves_money_once, a_retried_settlement_does_not_charge_twice, a_settled_operation_stays_settled_across_a_restart | none needed; the ledger is the record |
+| FP-P0-8 | budget | ledger unreadable / unwritable / stale writer | refuse: no fresh budget, no dispatch, no clobber of newer records | 503 ledger_unavailable + ledger error line | a_corrupt_ledger_never_grants_a_fresh_budget, a_reservation_that_cannot_be_written_is_refused, a_stale_writer_refuses_to_clobber_a_newer_ledger | restore ledger file or its directory, then restart the daemon |
+| FP-P0-9 | budget | midnight rollover with unsettled reservations | reserved funds carried over, never released | ledger reserved_usd after rollover | midnight_rollover_does_not_release_unsettled_funds, an_unsettled_reservation_survives_a_restart | reconcile the reservation, then raise the budget |
 | FP-P0-6 | cache | same request via both edges | one canonical entry | hit-rate metric | messages_and_openai_share_cache_namespace | n/a |
 | FP-P1-5 | decision-log | tamper + restart | tampered_at visible, not erased | /health.tampered_at | tampering_is_visible_after_restart | investigate host |
 | FP-P1-7 | registry | provider file deleted | hot reload drops lane | reload error log | deletion_changes_fingerprint | restore file |
