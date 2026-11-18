@@ -7,12 +7,17 @@ as current: a page that still names a retired component, or whose mermaid fences
 close, looks exactly like a page that is current. GitHub renders a page whose fences do
 not close as ONE unterminated code block, so the diagrams do not render at all.
 
-WHAT IT CHECKS. Ten things, all decided from BYTES -- no docker, no network, and no
-rendering, so it runs in seconds on every push and on a laptop:
+WHAT IT CHECKS. Eleven groups, all decided from BYTES -- no docker, no network, and no
+rendering, so it runs in seconds on every push and on a laptop.  The numbers below are
+the groups' OWN numbers, in the order the code applies them (the code's markers are
+`# --- 1.` ... `# --- 11.`; 4 and 5 are one block, and 8b is a second block inside 8):
 
-  1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
-     (structurizr writes each .mmd with NO trailing newline, so a renderer that does
-     `cat "$f"; echo '```'` produces "  end```" -- and the page stops rendering.)
+  1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text
+     -- on EITHER side.  (structurizr writes each .mmd with NO trailing newline, so a
+     renderer that does `cat "$f"; echo '```'` produces "  end```" -- and the page stops
+     rendering.)  Fences are counted by their WIDTH, so a page may carry an ordinary
+     ```bash block, or a four-backtick block, without either being mistaken for a
+     mermaid block.
   2. VIEWS. The set of views on the page is exactly the set the model declares. A view
      added to the model and not regenerated is drift; a view deleted from the model and
      still on the page is drift.
@@ -38,33 +43,45 @@ rendering, so it runs in seconds on every push and on a laptop:
      the difference between "is this the model's claim about THIS box" and "is this
      sentence somewhere in the model" -- and only the first one catches a page that
      swaps two elements' bodies, or relabels a person as a container.
-  5. THE SYSTEM BOUNDARY. In a container view the renderer nests the software system's
-     own containers in a subgraph named after that system. A page that moves a software
-     system INSIDE that boundary -- or a container OUTSIDE it -- draws a C4 boundary
-     the model does not declare, and no per-box text check can see it.
-  6. THE VIEW'S OWN TITLE. Each view's mermaid block opens with a subgraph labelled
-     "<Kind> View: <the system the view is of>". A page that relabels that subgraph
-     claims the diagram is a view of something else.
-  7. EDGE LABELS AND TOPOLOGY. The renderer draws ONE edge per pair of elements, and
+  5. THE MARKER'S DESCRIPTION -- the other half of the same comparison, for the second
+     string.  Groups 4 and 5 are ONE code block: the node's text is read once and both
+     parts of it are judged against that one element's own declaration.
+  6. EDGE LABELS AND TOPOLOGY. The renderer draws ONE edge per pair of elements, and
      when several relationships project onto the same pair it draws that pair once,
      labelled with the FIRST of them the model declares. So the page must draw exactly
      one edge per projected pair, with that label: a label that is not the model's is
      drift, a declared relationship that is missing from the page is drift, a
      relationship the model does not declare is drift, an edge re-pointed at a
      different element is drift, and a second edge for one pair is drift.
-  8. NAMES. Every element name the model declares is drawn, and every name on the page
-     is declared -- so a renamed element cannot leave half the page talking about the
-     old name.
+  7. THE SYSTEM BOUNDARY. In a container view the renderer nests the software system's
+     own containers in a subgraph named after that system. A page that moves a software
+     system INSIDE that boundary -- or a container OUTSIDE it -- draws a C4 boundary
+     the model does not declare, and no per-box text check can see it.
+  8. THE VIEW'S OWN TITLE. Each view's mermaid block opens with a subgraph labelled
+     "<Kind> View: <the system the view is of>". A page that relabels that subgraph
+     claims the diagram is a view of something else.
+  8b. EVERY OTHER SUBGRAPH IN THE VIEW -- a second block inside group 8. The renderer
+     draws exactly two subgraphs in a container view (the title and the system
+     boundary) and one in a system context view, so any OTHER subgraph is a C4 boundary
+     the model does not declare, whatever it is labelled. A view kind with no title
+     rule (component, dynamic) is LEFT UNDECIDED rather than judged against a title
+     this file cannot derive.
   9. THE HEADER. The page's header is exactly what architecture/render writes, read
      FROM the render, so there is one source of truth and the render cannot change it
      silently.
-  10. NO SILENCE. A line inside a mermaid block that this file has no rule for is
-     reported as UNCHECKED and the run FAILS. So is a view kind with no rule here, a
-     node this file cannot read, and a page whose header this file cannot derive from
-     architecture/render. A check that says "ok" about something it did not look at is
-     not a check: a parser that DROPS what it does not understand turns "the page says
-     something I cannot read" into "the page says nothing", and that is how a box for
-     an element that does not exist sails through.
+  10. ELEMENT NAMES, GLOBALLY. Every element name the model declares is drawn, and
+     every name on the page is declared -- so a renamed element cannot leave half the
+     page talking about the old name.
+  11. NOTHING LEFT UNDECIDED. A line inside a mermaid block that this file has no rule
+     for is reported as UNCHECKED and the run FAILS. So is a view kind with no rule
+     here, a node this file cannot read, a page whose header this file cannot derive
+     from architecture/render, a relationship the model declares in a form this file
+     cannot read, a declaration it cannot read, and a deployment environment that
+     declares a deployment node with a keyword this file has no rule for. A check that
+     says "ok" about something it did not look at is not a check: a parser that DROPS
+     what it does not understand turns "the page says something I cannot read" into
+     "the page says nothing", and that is how a box for an element that does not exist
+     sails through.
 
 WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
   - The SECOND string of a person or of a software system. The renderer DROPS it (the
@@ -79,6 +96,17 @@ WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
     `architecture/render --check` is for, and it needs the structurizr image.
   - The page's PROSE after the header (the renderer's own trailing line). Only the
     header is compared; the trailer is not.
+  - A relationship's TECHNOLOGY -- the second quoted string on a relationship line. It
+    is READ, so the relationship is not invisible (an invisible relationship let a page
+    MISSING that edge pass as correct), but it is not COMPARED: the renderer draws it
+    in a second, smaller div, exactly like an element's second string, and this file
+    does not compare those either.
+  - The RENDERED FORM of a software system instance. A deployment environment may
+    instantiate a software system (`softwareSystemInstance`), and the renderer draws
+    something for it -- but WHAT it draws was never measured against the real renderer,
+    so such an instance is compared BY NAME ONLY. If the page draws no node with that
+    name, or draws one with different text, the verdict is UNCHECKED (exit 2): this
+    check cannot say the page is wrong, and it says so rather than guessing.
 
 `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
 needs the structurizr image. This one needs nothing, so it can run everywhere.
@@ -110,7 +138,13 @@ VIEW_RE = re.compile(
 INCLUDE_RE = re.compile(r'^\s*include\s+(\S+)\s*$')
 RELATIONSHIP_RE = re.compile(
     r'^\s*([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s*->\s*'
-    r'([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s+"([^"]*)"\s*$'
+    r'([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s+"([^"]*)"'
+    # The TECHNOLOGY is a second quoted string, and the renderer draws it in the edge
+    # label's second div.  A relationship written with one was invisible to this file:
+    # it did not match, it was not recorded, and it produced no UNCHECKED -- so a page
+    # MISSING that edge passed as correct.  Structurizr's own examples use it.
+    r'(?:\s+"([^"]*)")?'
+    r'(?:\s*\{)?\s*$'
 )
 # A deployment environment and the instances it declares. A deployment view draws the
 # INSTANCES an environment declares, so the elements a deployment view draws are the
@@ -121,12 +155,32 @@ DEPLOYMENT_ENV_RE = re.compile(r'^\s*deploymentEnvironment\s+"([^"]*)"\s*\{')
 # -- so the shape alone cannot be an error. But a line that assigns something is a
 # declaration, and a declaration this file cannot read is an element it will silently
 # leave out of every comparison.
-DECLARATION_RE = re.compile(r'^\s*[^\s=]+\s*=\s*\S+')
+# `x == y` and `x != y` are the SAME shape to this file, so they must get the same
+# verdict: both are lines this parser cannot read, and both are REPORTED.  A regex
+# that matched one of them and not the other silently dropped half of a class.
+DECLARATION_RE = re.compile(r'^\s*[^\s=!]+\s*!?=\s*\S+')
 # The alias charset above is deliberately wider than the one ELEMENT_RE accepts:
 # a declaration this file cannot read must still be REPORTED, not dropped.  Structurizr
 # accepts identifiers that start with a digit, so `1ghost = container "X"` is a real
 # model, and dropping it silently left the element out of every comparison.
-INSTANCE_RE = re.compile(r'^\s*(containerInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$')
+# The three ways a model says "this environment instantiates that element".
+# `softwareSystemInstance` was NOT in this list, and the omission was invisible: a
+# deployment environment that instantiates a SOFTWARE SYSTEM was read as instantiating
+# nothing at all, so the page could OMIT that instance and the check said "ok" -- a
+# silent pass on real drift -- while a page that DID draw it was reported as drawing an
+# element the model does not declare -- a false failure on a correct page.
+# What the renderer actually DRAWS for a software system instance was never measured
+# against the real renderer (the fixtures are hand-made), so this file knows the
+# instance EXISTS but cannot assert what the page should look like for it.  That
+# difference is carried through to the verdict: a soft instance is compared by name
+# only, and a mismatch is UNCHECKED rather than a claim of drift.
+INSTANCE_RE = re.compile(
+    r'^\s*(containerInstance|softwareSystemInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$'
+)
+# A deployment node written with a keyword this file cannot read.  Dropping it would
+# hide the whole subtree inside it -- the instances, and the boundary the renderer
+# draws for it -- so it is REPORTED instead of dropped.
+UNREADABLE_NODE_RE = re.compile(r'^\s*infrastructureNode\b')
 # A deployment node is a NESTED box in a deployment view: the model declares it, and the
 # renderer draws it as a subgraph named after it. A check that says "every subgraph must
 # be the view title or the system boundary" would reject a correct deployment view.
@@ -207,7 +261,10 @@ class Model:
         self.unparsed_relationships: list[str] = []
         self.duplicate_names: list[str] = []
         self.unreadable_declarations: list[str] = []
+        self.unreadable_relationships: list[str] = []
         self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
+        self.soft_instances: dict[str, list[str]] = {}  # env title -> aliases whose RENDERED FORM is unverified
+        self.unreadable_node_envs: set[str] = set()   # environments with a node this file cannot read
         self.deployment_nodes: dict[str, list[str]] = {}  # environment title -> node names
         self.deployment_opaque: list[str] = []        # environments this file cannot read
         self._parse()
@@ -216,10 +273,23 @@ class Model:
         lines = self.text.split("\n")
         stack: list[str] = []          # what each open block is (an alias, or a marker)
         in_views = False
+        in_block_comment = False       # inside a /* ... */ comment
         for raw in lines:
             line = raw.rstrip()
             stripped = line.strip()
 
+            if in_block_comment:
+                # A BLOCK comment: its content is prose, not DSL.  Reading it as code
+                # made a commented-out declaration look like a live one.  This check
+                # comes FIRST, because the closing line of a block comment often
+                # starts with "*" and would otherwise be eaten by the Javadoc branch
+                # below, leaving the comment open for the rest of the file.
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if stripped.startswith("/*"):
+                in_block_comment = "*/" not in stripped
+                continue
             if not stripped or stripped.startswith("//") or stripped.startswith("*"):
                 continue
             if stripped == "}":
@@ -255,12 +325,34 @@ class Model:
                     if inst:
                         # The instance may sit inside nested deploymentNode blocks, so
                         # the environment it belongs to is the nearest one on the stack.
+                        keyword, alias = inst.groups()
                         env = next(
                             (s for s in reversed(stack) if s.startswith("#deployment:")), None
                         )
                         if env is not None:
-                            self.deployments[env[len("#deployment:"):]].append(inst.group(2))
+                            title = env[len("#deployment:"):]
+                            if keyword == "softwareSystemInstance":
+                                # The renderer draws it, but WHAT it draws was never
+                                # measured: it is tracked separately so the verdict can
+                                # say "this check could not tell" instead of guessing.
+                                self.soft_instances.setdefault(title, []).append(alias)
+                            else:
+                                self.deployments.setdefault(title, []).append(alias)
                         continue
+                    unode = UNREADABLE_NODE_RE.match(line)
+                    if unode:
+                        # A deployment node this file cannot read.  The instances inside
+                        # it are still read (they are on the stack), but the BOUNDARY the
+                        # renderer draws for it is not derivable, so the comparison of
+                        # that view's subgraphs is left undecided rather than guessed.
+                        env = next(
+                            (s for s in reversed(stack) if s.startswith("#deployment:")), None
+                        )
+                        if env is not None:
+                            self.unreadable_node_envs.add(env[len("#deployment:"):])
+                        self.unreadable_declarations.append(line.strip())
+                        # NOT a `continue`: the line ends with `{`, and the generic push
+                        # below must open the node's block.
                     m = ELEMENT_RE.match(line)
                     if m:
                         alias, kind, name, first, second = m.groups()
@@ -280,13 +372,26 @@ class Model:
                     else:
                         rm = RELATIONSHIP_RE.match(line)
                         if rm:
-                            source, target, label = rm.groups()
+                            source, target, label, technology = rm.groups()
                             from_name = self.resolve(source)
                             to_name = self.resolve(target)
                             if from_name is None or to_name is None:
                                 self.unparsed_relationships.append(line.strip())
                             else:
+                                # The TECHNOLOGY is a second quoted string on the same
+                                # relationship.  It is READ so the relationship is not
+                                # invisible -- that invisibility is what let a page
+                                # MISSING this edge pass as correct -- but it is not
+                                # COMPARED: the renderer draws it in a second, smaller
+                                # div, exactly like an element's second string, and this
+                                # file does not compare those either.
                                 self.relationships.append((from_name, to_name, _collapse(label)))
+                        elif "->" in line:
+                            # A line that SHAPES like a relationship but that this file
+                            # cannot read.  It must be REPORTED, not dropped: dropping
+                            # it left the relationship out of every comparison, which is
+                            # how a page missing a declared edge passed as correct.
+                            self.unreadable_relationships.append(line.strip())
                         elif DECLARATION_RE.match(line):
                             self.unreadable_declarations.append(line.strip())
             else:
@@ -407,11 +512,12 @@ class Model:
             # A deployment view draws the INSTANCES its environment declares, so the
             # elements it draws are the ones the model instantiates in that environment.
             title = view.get("title") or ""
-            aliases = self.deployments.get(title)
-            if aliases is None:
+            if title not in self.deployments and title not in self.soft_instances:
                 return None, "the model declares no deployment environment titled %r" % title
             names = set()
-            for alias in aliases:
+            for alias in list(self.deployments.get(title, [])) + list(
+                self.soft_instances.get(title, [])
+            ):
                 element = self.elements.get(alias.split(".")[-1])
                 if element is None:
                     return None, (
@@ -421,6 +527,27 @@ class Model:
                 names.add(element.name)
             return names, ""
         return None, "a %s view with include * is not a rule this check knows" % view["kind"]
+
+    def soft_instance_names(self, view: dict) -> set[str]:
+        """The names this check cannot verify the RENDERED FORM of, in this view.
+
+        A software system instance in a deployment environment is an element the
+        renderer draws, but what it draws was never measured against the real renderer:
+        the only fixtures are hand-made.  So this file knows the instance is declared,
+        and it can see whether a node with that name is on the page -- but it cannot
+        assert that the node IS that instance, nor that its text is what the renderer
+        would put there.  A difference here is therefore UNCHECKED, never a claim that
+        the page is wrong.
+        """
+        if view["kind"] != "deployment":
+            return set()
+        title = view.get("title") or ""
+        names = set()
+        for alias in self.soft_instances.get(title, []):
+            element = self.elements.get(alias.split(".")[-1])
+            if element is not None:
+                names.add(element.name)
+        return names
 
     def view_label(self, view: dict) -> str | None:
         """The label the renderer puts on the subgraph that opens this view."""
@@ -578,7 +705,17 @@ class Page:
                 continue
             em = EDGE_RE.match(line)
             if em:
-                label = _collapse(_plain(em.group(2)))
+                raw_label = em.group(2)
+                first_div = DIV_RE.search(raw_label)
+                if first_div:
+                    # The renderer writes a relationship's DESCRIPTION in the first div
+                    # and, when the relationship declares a TECHNOLOGY, the technology
+                    # in a second smaller div.  Only the description is compared -- the
+                    # same convention this file already uses for an element's second
+                    # string.  Comparing the whole label called the renderer's own
+                    # output drift.
+                    raw_label = first_div.group(1)
+                label = _collapse(_plain(raw_label))
                 self.edges[current].append((em.group(1), em.group(3), label))
                 continue
             sm = SUBGRAPH_RE.match(line)
@@ -672,6 +809,11 @@ def main() -> int:
     page = Page(open(page_path, encoding="utf-8").read())
     problems: list[str] = []
     undecided: list[str] = []
+    # The names whose RENDERED FORM this check cannot verify, per view.  They are
+    # compared by name only; any difference about them is UNCHECKED, never drift.
+    soft_by_view = {
+        view["name"]: model.soft_instance_names(view) for view in model.views
+    }
 
     # --- 1. fences ---------------------------------------------------------
     raw_page = open(page_path, encoding="utf-8").read()
@@ -700,6 +842,11 @@ def main() -> int:
             info = after.rstrip()
             if len(info.split()) > 1:
                 # The renderer never writes an info string with a space in it.
+                glued.append(line)
+            if before:
+                # A fence glued to text -- "  start```" -- is not a fence this check can
+                # trust to open a block.  Recording it and then never comparing the
+                # text it swallowed is how a stray "before" survived every rule.
                 glued.append(line)
             open_block = {"width": len(run), "mermaid": info.strip() == "mermaid"}
             if open_block["mermaid"]:
@@ -753,14 +900,30 @@ def main() -> int:
         for name in drawn:
             drawn_counts[name] = drawn_counts.get(name, 0) + 1
         expected_set = set(expected)
-        if set(drawn_counts) != expected_set:
+        soft = soft_by_view.get(view["name"], set())
+        missing = expected_set - set(drawn_counts)
+        extra = set(drawn_counts) - expected_set
+        # A software system instance the page does not draw is NOT drift this check can
+        # assert: what the renderer draws for one was never measured, so the page might
+        # legitimately not draw a node with that name.  So it is UNCHECKED -- a failure
+        # to decide (exit 2) -- and never a claim that the page is wrong.
+        soft_missing = missing & soft
+        hard_missing = missing - soft
+        if hard_missing or extra:
             problems.append(
                 "the elements drawn in %s are not the model's: only in the model: %s | only on the page: %s"
                 % (
                     view["name"],
-                    " ".join(sorted(expected_set - set(drawn_counts))),
-                    " ".join(sorted(set(drawn_counts) - expected_set)),
+                    " ".join(sorted(hard_missing)),
+                    " ".join(sorted(extra)),
                 )
+            )
+        if soft_missing:
+            undecided.append(
+                "%s draws no node for the software system instance %s the model declares "
+                "in that deployment environment; this check cannot verify the rendered "
+                "form of a software system instance"
+                % (view["name"], " ".join(sorted(soft_missing)))
             )
         for name, count in sorted(drawn_counts.items()):
             if count > 1:
@@ -780,13 +943,18 @@ def main() -> int:
                     "the page draws %r, which the model does not declare" % node.name
                 )
                 continue
+            # The differences about this node are collected first, because a node
+            # whose RENDERED FORM this check cannot verify must report them as
+            # UNCHECKED rather than as drift: "the renderer would draw it differently"
+            # is not a claim this file can make.
+            node_problems: list[str] = []
             if node.marker_label != element.label:
-                problems.append(
+                node_problems.append(
                     "%s is drawn as [%s] but the model declares it a %s"
                     % (node.name, node.marker_label, element.label)
                 )
             if node.body != element.first:
-                problems.append(
+                node_problems.append(
                     "%s shows %r but the model says %r"
                     % (node.name, node.body, element.first)
                 )
@@ -797,25 +965,33 @@ def main() -> int:
                 # a check that can never be satisfied is not a check.
                 if element.second:
                     if not node.marker_description:
-                        problems.append(
+                        node_problems.append(
                             "%s is drawn with no description but the model declares one"
                             % node.name
                         )
                     elif node.marker_description != element.second:
-                        problems.append(
+                        node_problems.append(
                             "%s shows the description %r but the model says %r"
                             % (node.name, node.marker_description, element.second)
                         )
                 elif node.marker_description:
-                    problems.append(
+                    node_problems.append(
                         "%s is drawn with the description %r, but the model declares none"
                         % (node.name, node.marker_description)
                     )
             elif node.marker_description:
-                problems.append(
+                node_problems.append(
                     "%s is drawn with the description %r, which the model does not put on a %s"
                     % (node.name, node.marker_description, element.label)
                 )
+            if node.name in soft_by_view.get(view_name, set()):
+                for text in node_problems:
+                    undecided.append(
+                        "%s in %s -- %s; this check cannot verify the rendered form of a "
+                        "software system instance" % (node.name, view_name, text)
+                    )
+            else:
+                problems.extend(node_problems)
 
     # --- 6. edges: one per projected pair, with the label the renderer picks ---
     for view in model.views:
@@ -882,6 +1058,10 @@ def main() -> int:
         )
     for line in model.unparsed_relationships:
         undecided.append("a relationship the model declares that this check cannot resolve: %s" % line)
+    for line in model.unreadable_relationships:
+        undecided.append(
+            "a relationship the model declares that this check cannot read: %s" % line
+        )
 
     # --- 7. the system boundary, per container view -------------------------
     for view in model.views:
@@ -964,8 +1144,24 @@ def main() -> int:
         owner = model.elements.get(owner_alias)
         declared = set()
         title = model.view_label(view)
-        if title is not None:
-            declared.add(title)
+        if title is None:
+            # A view kind this file has no title rule for (component, dynamic).  The
+            # renderer still draws its own title subgraph, and comparing it against a
+            # title this file cannot derive produced a WRONG FAIL that masked the
+            # honest UNCHECKED verdict.
+            continue
+        if view["kind"] == "deployment" and (view.get("title") or "") in model.unreadable_node_envs:
+            # This environment declares a deployment node with a keyword this file has
+            # no rule for, so the boundary the renderer draws for it is NOT derivable.
+            # Comparing the page's subgraphs against a set that cannot be complete would
+            # report a correct page as drifted, so the comparison is left undecided.
+            undecided.append(
+                "%s draws a deployment environment that declares a deployment node this "
+                "check cannot read, so this check cannot say which boundaries the page "
+                "should draw" % view_name
+            )
+            continue
+        declared.add(title)
         if owner is not None and view["kind"] == "container":
             declared.add(owner.name)
         if view["kind"] == "deployment":
@@ -994,13 +1190,31 @@ def main() -> int:
     model_names = set(model.by_name)
     drawn_names = {name for view in page.nodes for name in page.names_in(view)}
     if model_names != drawn_names:
-        problems.append(
-            "the page's elements and the model's elements differ. only in the model: %s | only on the page: %s"
-            % (
-                " ".join(sorted(model_names - drawn_names)),
-                " ".join(sorted(drawn_names - model_names)),
+        # A name that is only ever a software system instance is the same case as the
+        # per-view comparison above: this check cannot verify the rendered form of one,
+        # so it cannot claim the page omits it.
+        all_soft: set[str] = set()
+        for names in soft_by_view.values():
+            all_soft |= names
+        missing_names = model_names - drawn_names
+        extra_names = drawn_names - model_names
+        soft_missing = missing_names & all_soft
+        hard_missing = missing_names - soft_missing
+        if hard_missing or extra_names:
+            problems.append(
+                "the page's elements and the model's elements differ. only in the model: %s | only on the page: %s"
+                % (
+                    " ".join(sorted(hard_missing)),
+                    " ".join(sorted(extra_names)),
+                )
             )
-        )
+        if soft_missing:
+            undecided.append(
+                "the page draws nothing for %s, which the model declares as a software "
+                "system instance; this check cannot verify the rendered form of a "
+                "software system instance"
+                % " ".join(sorted(soft_missing))
+            )
 
     # --- 11. nothing left undecided -----------------------------------------
     for note in page.duplicates:
