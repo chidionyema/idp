@@ -39,8 +39,14 @@ github_now() {
     out=$(date -u -d "$hdr" +%s 2>/dev/null || true)                                    # GNU (CI)
     if [ -z "$out" ]; then out=$(date -j -u -f "%a, %d %b %Y %H:%M:%S GMT" "$hdr" +%s 2>/dev/null || true); fi  # BSD (macOS)
   fi
-  [ -n "$out" ] || out=$(date -u +%s)
-  printf '%s' "$out"
+  # A cached answer can carry a stale Date: run 44258847297 signed iat 23:59Z
+  # (skew 26824s) and GitHub refused it like a future-dated claim.
+  _l=$(date -u +%s)
+  if [ -n "$out" ] && [ $((_l - out)) -lt 300 ] && [ $((out - _l)) -lt 300 ]; then
+    printf "%s" "$out"
+  else
+    printf "%s" "$_l"
+  fi
 }
 # app_jwt <app_id> <pem_base64>: an 8-minute RS256 JWT for the App, signed with openssl so it works on any
 # runner (crew#503: the Link-/gh-token extension minted it before, and CI has no extensions).
