@@ -1,0 +1,21 @@
+[package]
+name = "penny-core"
+version = "0.2.0"
+edition = "2021"
+description = "Token-efficiency engine: exact cache, budgets, cheap-first routing, hash-chained decision log"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+moka = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+futures-core = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+futures-util = { workspace = true }
