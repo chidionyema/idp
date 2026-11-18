@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 279,
-    "service": 121,
-    "tool": 502,
+    "layer": 303,
+    "service": 122,
+    "tool": 513,
     "workflow": 106
   },
   "records": [
@@ -6819,7 +6819,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6873,7 +6878,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7114,6 +7124,10 @@
           },
           {
             "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
             "edge": "imports"
           },
           {
@@ -8412,7 +8426,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8537,6 +8556,10 @@
           {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
+            "edge": "imports"
           }
         ]
       },
@@ -8594,6 +8617,10 @@
           {
             "id": "cap:layer/platform-estate-memory-door",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
+            "edge": "imports"
           }
         ]
       },
@@ -8648,6 +8675,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
             "edge": "imports"
           }
         ]
@@ -8871,6 +8902,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
             "edge": "imports"
           }
         ]
@@ -9219,6 +9254,10 @@
           {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
+            "edge": "imports"
           }
         ]
       },
@@ -9278,6 +9317,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
             "edge": "imports"
           }
         ]
@@ -10036,7 +10079,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10091,6 +10139,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
             "edge": "imports"
           }
         ]
@@ -10149,6 +10201,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
             "edge": "imports"
           }
         ]
@@ -10426,7 +10482,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10836,6 +10897,10 @@
           {
             "id": "cap:layer/platform-estate-continuity-util",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
           }
         ]
       },
@@ -11167,7 +11232,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11597,7 +11667,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11746,7 +11821,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14094,6 +14174,10 @@
           {
             "id": "cap:layer/platform-estate-continuity-util",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
           }
         ]
       },
@@ -14489,7 +14573,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-pennyd-src-catalog"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -14662,6 +14748,10 @@
           {
             "id": "cap:layer/platform-estate-continuity-util",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
           }
         ]
       },
@@ -14781,7 +14871,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14919,6 +15014,10 @@
           },
           {
             "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
             "edge": "imports"
           }
         ]
@@ -15582,6 +15681,10 @@
           {
             "id": "cap:layer/platform-estate-continuity-util",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
           }
         ]
       },
@@ -15858,6 +15961,1282 @@
       "mirrors": []
     },
     {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-anthropic",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Anthropic-protocol ingress: Claude Code speaks Messages API; pennyd's",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-router",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/anthropic.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-budget",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Per-key daily budgets: HARD, PERSISTED, and enforced BEFORE dispatch.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-keys",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/budget.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-cache",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Exact-match cache with adaptive TTL.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/cache.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-config",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Daemon config. Provider/model definitions live in `providers_dir`",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-router"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/config.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-decision_log",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Hash-chained decision log \u2014 the same construction as the Tempo estate",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/decision_log.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-dialect",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Wire dialects: canonical OpenAI-shaped I/O in, provider-native format out.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-providers",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/dialect.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use std::fmt;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-context-broker",
+        "cap:layer/platform-estate-context-broker_client",
+        "cap:layer/platform-estate-context-server",
+        "cap:layer/platform-estate-gates-protocol_gate",
+        "cap:layer/platform-estate-libexec-consult_gemini",
+        "cap:layer/platform-estate-libexec-critical-probe",
+        "cap:layer/platform-estate-libexec-critical-watch",
+        "cap:layer/platform-estate-libexec-estate-truth",
+        "cap:layer/platform-estate-libexec-incident-loop",
+        "cap:layer/platform-estate-libexec-router-doctor",
+        "cap:layer/platform-estate-libexec-telegram-agent-doctor",
+        "cap:layer/platform-estate-libexec-voice-doctor",
+        "cap:layer/platform-executor-fleetview_register",
+        "cap:layer/platform-intent-observer",
+        "cap:layer/platform-jit-broker-collector",
+        "cap:layer/platform-jit-broker-telegram",
+        "cap:layer/platform-llm-efficiency_gateway",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-anthropic",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-budget",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-config",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-dialect",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-providers",
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-router",
+        "cap:layer/platform-llm-router_catalog",
+        "cap:layer/platform-llm-zeroedge_gateway",
+        "cap:layer/platform-research-engine-objective-adapter",
+        "cap:layer/platform-unified-memory-server-main"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/error.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-keys",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Canonical cache keys: identical requests must hash identically regardless",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-budget"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/keys.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Founder-visible spend ledger. All counters are atomic; integer nano-USD",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-governance-executor_permission",
+        "cap:layer/platform-estate-governance-founder_intake",
+        "cap:layer/platform-estate-governance-freeze",
+        "cap:layer/platform-estate-governance-provider_renewal",
+        "cap:layer/platform-estate-governance-state_page",
+        "cap:layer/platform-estate-governance-supervisor",
+        "cap:layer/platform-observability-recorder-recorder"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/ledger.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-lib",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! penny-core: the token-efficiency engine behind pennyd.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/lib.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-providers",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Provider registry \u2014 model-agnostic by construction.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-dialect"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/providers.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-router",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Cheap-first is a property of the REGISTRY (sorted by class+price), but",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-config",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-penny-core-src-anthropic"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/router.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-shaping",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Request shaping \u2014 the zero-quality-loss tier of savings:",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/penny-core/src/shaping.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-build",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "fn main() {",
+      "contract": {
+        "inputs": [
+          "--short"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/build.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-catalog",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Model-catalogue edits: explicit provider files, validated before they become live.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-idp_agent-gateway",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-gateway",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-lanes",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/catalog.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-gateway",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Pipeline: auth (strict) -> resolve model -> ACL -> shape -> canonical",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-settle_stream",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-pennyd-src-catalog"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/gateway.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-instance",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! One daemon per host.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/instance.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-lanes",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use async_trait::async_trait;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-pennyd-src-catalog"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/lanes.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-lib",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "pub mod catalog;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/lib.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-main",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use penny_core::{",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/main.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-metrics",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use penny_core::ledger::Ledger;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/metrics.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-settle_stream",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! SettleStream: wraps an upstream SSE stream and reconciles the budget",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-trace",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-pennyd-src-gateway"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/settle_stream.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-trace",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "//! Bounded, per-request accounting shared by the dashboard and JSON API.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-llm-pennyd-crates-pennyd-src-settle_stream",
+        "cap:layer/platform-unified-memory-server-harness"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/crates/pennyd/src/trace.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-llm-pennyd-deploy-local-configure_clients",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Point local model clients at pennyd without changing their stored credentials.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/pennyd/deploy/local/configure_clients.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:layer/platform-llm-request_ceiling",
       "schema_version": 1,
       "kind": "layer",
@@ -15983,6 +17362,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-llm-request_ceiling",
             "edge": "imports"
@@ -16141,7 +17524,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -17753,6 +19141,10 @@
           {
             "id": "cap:layer/platform-estate-governance-ledger",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
+            "edge": "imports"
           }
         ]
       },
@@ -18047,7 +19439,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -18666,7 +20063,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-pennyd-src-trace",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -18770,6 +20172,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-unified-memory-server-harness",
             "edge": "imports"
@@ -21232,7 +22638,8 @@
       "known_issues": [],
       "mirrors": [
         "platform/hermes-agent/gateway.yaml",
-        "platform/idp_agent/gateway.py"
+        "platform/idp_agent/gateway.py",
+        "platform/llm/pennyd/crates/pennyd/src/gateway.rs"
       ]
     },
     {
@@ -22153,6 +23560,62 @@
       ],
       "known_issues": [],
       "mirrors": []
+    },
+    {
+      "id": "cap:service/default/pennyd",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment pennyd in namespace default",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/llm/pennyd/deploy/deployment.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "also_declared_in": [
+        "platform/llm/pennyd/deploy/deployment.yaml",
+        "platform/llm/pennyd/deploy/service.yaml"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        "platform/llm/pennyd/deploy/recovery/pennyd.toml",
+        "platform/llm/pennyd/deploy/systemd/pennyd.service"
+      ]
     },
     {
       "id": "cap:service/default/science-facts",
@@ -24819,7 +26282,9 @@
         "platform/llm/ollama.yaml"
       ],
       "known_issues": [],
-      "mirrors": []
+      "mirrors": [
+        "platform/llm/pennyd/providers/ollama.toml"
+      ]
     },
     {
       "id": "cap:service/llm/router-backup",
@@ -29326,7 +30791,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-debug-pack"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -29787,6 +31254,58 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-assurance-selftest",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--resolve"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-topology"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-assurance-selftest",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-brief",
       "schema_version": 1,
       "kind": "tool",
@@ -29848,6 +31367,188 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-bws-adopt",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--age",
+          "--input-type",
+          "--output-type"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-bws-adopt",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-bws-check",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--env-out",
+          "--keys"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-bws-check",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-bws-sync",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--age",
+          "--api",
+          "--extract",
+          "--identity",
+          "--input-type",
+          "--interval",
+          "--once",
+          "--org",
+          "--output-type",
+          "--root",
+          "--token-file",
+          "--token-sops"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-topology"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-bws-sync",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-cache-trim",
       "schema_version": 1,
       "kind": "tool",
@@ -29885,6 +31586,100 @@
       "writer": "repo",
       "path": "bin/estate-cache-trim",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-certify",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--abbrev-ref",
+          "--is-ancestor",
+          "--issue",
+          "--output-type",
+          "--verify"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-certify",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-assurance-selftest",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-bws-adopt",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-bws-check",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-bws-sync",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-debug-pack",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-dispatch-action",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-itest",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-metrics-push",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-service-grade",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-topology",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -30379,6 +32174,71 @@
       ]
     },
     {
+      "id": "cap:tool/estate-debug-pack",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "# Estate debug pack",
+      "contract": {
+        "inputs": [
+          "--label",
+          "--out",
+          "--verify",
+          "--version"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-service-grade",
+        "cap:tool/estate-topology"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-debug-pack",
+      "depends_on": [
+        {
+          "id": "cap:tool/debug-packs",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-topology",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-deploy-narrator",
       "schema_version": 1,
       "kind": "tool",
@@ -30691,6 +32551,75 @@
       "writer": "repo",
       "path": "bin/estate-digest-worker",
       "depends_on": [
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-dispatch-action",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--extract",
+          "--session"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-dispatch-action",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-plan",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-topology",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/start",
           "edge": "invokes"
@@ -31042,14 +32971,9 @@
       "id": "cap:tool/estate-fleet",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "idp#7481: real-time fleet messaging with a durable, acknowledged inbox.",
+      "summary": "<!doctype html><meta charset=utf-8>",
       "contract": {
-        "inputs": [
-          "--ack",
-          "--desc",
-          "--pipe",
-          "--type"
-        ],
+        "inputs": [],
         "outputs": [
           "stdout",
           "exit code"
@@ -31073,8 +32997,10 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-dispatch-action",
         "cap:tool/estate-fleet-telegram",
         "cap:tool/estate-fleet-voice",
+        "cap:tool/estate-topology",
         "cap:tool/estate-wait",
         "cap:tool/idp-session-bootstrap",
         "cap:tool/uncalled-gate"
@@ -31556,6 +33482,60 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-itest",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-itest",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-service-grade",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-law-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -31882,6 +33862,66 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-metrics-push",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--dry-run",
+          "--endpoint",
+          "--output-type",
+          "--strict"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-topology"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-metrics-push",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-topology",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-next",
       "schema_version": 1,
       "kind": "tool",
@@ -32034,6 +34074,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-dispatch-action",
         "cap:tool/estate-memory-install"
       ],
       "cost": {
@@ -32747,6 +34788,70 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-service-grade",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env python3",
+      "contract": {
+        "inputs": [
+          "--itest",
+          "--label",
+          "--metrics-url",
+          "--no-heal",
+          "--pack",
+          "--root",
+          "--services"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-itest",
+        "cap:tool/estate-topology"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-service-grade",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-debug-pack",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-session-audit",
       "schema_version": 1,
       "kind": "tool",
@@ -33444,6 +35549,85 @@
       "depends_on": [
         {
           "id": "cap:tool/estate-efficiency-report",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-topology",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "<!doctype html><meta charset=utf-8>",
+      "contract": {
+        "inputs": [
+          "--resolve"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-certify",
+        "cap:tool/estate-debug-pack",
+        "cap:tool/estate-dispatch-action",
+        "cap:tool/estate-metrics-push"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-topology",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-assurance-selftest",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-bws-sync",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-debug-pack",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-metrics-push",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-service-grade",
           "edge": "invokes"
         }
       ],
@@ -37907,6 +40091,8 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-bws-check",
+        "cap:tool/estate-bws-sync",
         "cap:tool/estate-twin-runtime",
         "cap:tool/idp-agent-key",
         "cap:tool/idp-bootstrap-cloudflare",
@@ -56257,8 +58443,10 @@
         "cap:tool/diff-workspace",
         "cap:tool/dof-gate",
         "cap:tool/epistemic_firewall.py",
+        "cap:tool/estate-bws-sync",
         "cap:tool/estate-context-gate",
         "cap:tool/estate-digest-worker",
+        "cap:tool/estate-dispatch-action",
         "cap:tool/estate-face-avatar",
         "cap:tool/estate-graph-drain",
         "cap:tool/estate-memory-enforce",

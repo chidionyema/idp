@@ -1,192 +1,152 @@
 #!/usr/bin/env python3
-"""idp#7481: real-time fleet messaging with a durable, acknowledged inbox.
+from __future__ import annotations
 
-Root cause being fixed: a founder directive had no durable home. It lived in chat or an issue
-comment and an agent saw it only if it happened to poll, so the founder had to repeat it.
-Here a message is stored in JetStream (stream ESTATE_FLEET, file storage) and each agent has a
-durable consumer: a message stays pending, and is redelivered, until that agent acks it.
-
-    estate-fleet send <agent> <text>     one agent          subject estate.fleet.to.<agent>
-    estate-fleet broadcast <text>        every agent        subject estate.fleet.broadcast
-    estate-fleet directive <text>        every agent + growmos DECISION (survives the bus)
-    estate-fleet inbox [--ack]           print my pending messages; --ack acknowledges them
-    estate-fleet inbox --pipe CMD...     feed messages to CMD on stdin; ack ONLY if CMD exits 0
-    estate-fleet watch                   live push of new messages
-    estate-fleet refuse <seq> <reason>   record that I will not apply message <seq>
-    estate-fleet status <seq>            who has acked (applied) or refused message <seq>
-Envelope: {id, from, kind, text, at, channel, reply_to}. $ESTATE_FLEET_CHANNEL names the door
-(console, voice, telegram, face, mcp; default console); $ESTATE_FLEET_REPLY_TO threads a reply.
-Acks are records on estate.fleet.ack.<seq>.<agent>, so "who applied this" survives restarts.
-Identity: $ESTATE_AGENT. Bus: $ESTATE_NATS_URL (default nats://127.0.0.1:4222).
-Exit 0 ok, 1 FAIL, 2 BLIND (bus unreachable: never reported as an empty inbox).
-"""
-import asyncio
+import html
 import json
 import os
-import subprocess
-import sys
 import time
-import uuid
+import urllib.request
+from pathlib import Path
 
-STREAM = "ESTATE_FLEET"
-URL = os.environ.get("ESTATE_NATS_URL", "nats://127.0.0.1:4222")
-ACK_WAIT = float(os.environ.get("ESTATE_FLEET_ACK_WAIT", "60"))
+HOME = Path.home()
+TOP = HOME / ".estate" / "topology"
+FLEETVIEW = "http://127.0.0.1:18790/sessions"
+OUT_JSON = TOP / "fleet.json"
+OUT_HTML = TOP / "fleet.html"
+PROC = {
+    "claude-code": "/claude",
+    "pi": "/pi",
+    "opencode": "/opencode",
+}
+
+PROC_MAP = {}
 
 
-def me():
-    a = os.environ.get("ESTATE_AGENT", "")
-    if not a:
-        sys.exit("FAIL    estate-fleet  no agent identity: set ESTATE_AGENT")
-    return a
-
-
-async def connect():
-    import nats
-    from nats.js.api import RetentionPolicy, StorageType
-
+def processes() -> dict[str, int]:
+    out: dict[str, int] = {}
     try:
-        nc = await nats.connect(URL, connect_timeout=3, max_reconnect_attempts=1)
-    except Exception as e:  # unreachable bus is BLIND, never an empty inbox
-        print(f"BLIND   estate-fleet  cannot reach {URL}: {type(e).__name__}")
-        sys.exit(2)
-    js = nc.jetstream()
-    try:
-        await js.add_stream(name=STREAM, subjects=["estate.fleet.>"], storage=StorageType.FILE,
-                            retention=RetentionPolicy.LIMITS)
+        import subprocess
+        p = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True, timeout=10)
     except Exception:
-        await js.stream_info(STREAM)  # already exists: fine
-    return nc, js
+        return out
+    for line in p.stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        pid, comm = parts
+        out[comm.strip()] = len(out) and out.get(comm.strip(), 0) + 1 or 1
+    return out
 
 
-async def publish(subject, text, kind):
-    nc, js = await connect()
-    body = json.dumps({
-        "id": uuid.uuid4().hex, "from": me(), "kind": kind, "text": text,
-        "channel": os.environ.get("ESTATE_FLEET_CHANNEL", "console"),
-        "reply_to": os.environ.get("ESTATE_FLEET_REPLY_TO") or None,
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    })
-    ack = await js.publish(subject, body.encode())
-    await nc.close()
-    print(f"ok      estate-fleet  {kind} stored seq={ack.seq} on {subject}")
-
-
-def subjects(agent):
-    return {"broadcast": "estate.fleet.broadcast", "directive": "estate.fleet.directive",
-            "to": f"estate.fleet.to.{agent}"}
-
-
-async def record_ack(js, seq, agent, outcome, note):
-    body = json.dumps({"seq": seq, "by": agent, "outcome": outcome, "note": note,
-                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-    await js.publish(f"estate.fleet.ack.{seq}.{agent}", body.encode())
-
-
-async def refuse(seq, reason):
-    nc, js = await connect()
-    await record_ack(js, int(seq), me(), "refused", reason)
-    await nc.close()
-    print(f"ok      estate-fleet  refusal of seq={seq} recorded for {me()}")
-
-
-async def status(seq):
-    nc, js = await connect()
-    rows = {}
+def fetch() -> dict:
     try:
-        sub = await js.pull_subscribe(f"estate.fleet.ack.{int(seq)}.*", stream=STREAM)
-        while True:
-            try:
-                msgs = await sub.fetch(100, timeout=1)
-            except Exception:
-                break
-            for m in msgs:
-                d = json.loads(m.data)
-                rows[d["by"]] = d  # latest record per agent wins
-                await m.ack()
-    finally:
-        await nc.close()
-    for by, d in sorted(rows.items()):
-        print(f"{d['outcome']:<8} seq={seq} by={by} at={d['at']} {d['note']}".rstrip())
-    print(f"ok      estate-fleet  seq={seq}: {len(rows)} agent(s) on record")
+        with urllib.request.urlopen(FLEETVIEW, timeout=12) as r:
+            return json.loads(r.read().decode())
+    except Exception as exc:
+        return {"available": False, "error": repr(exc)[:200], "sessions": []}
 
 
-async def inbox(ack, pipe=None):
-    from nats.js.api import ConsumerConfig
-
-    agent = me()
-    nc, js = await connect()
-    n = 0
-    held = []
-    for kind, subj in subjects(agent).items():
-        sub = await js.pull_subscribe(subj, durable=f"{agent}-{kind}", stream=STREAM,
-                                      config=ConsumerConfig(ack_wait=ACK_WAIT))
-        try:
-            msgs = await sub.fetch(100, timeout=1)
-        except Exception:
-            msgs = []
-        for m in msgs:
-            d = json.loads(m.data)
-            print(f"{d['kind']:<9} seq={m.metadata.sequence.stream} from={d['from']} {d['text']}")
-            n += 1
-            if pipe:
-                held.append((m, d))
-            elif ack:
-                await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
-                await m.ack()
-    if pipe and held:
-        # A fetched message is invisible to a second inbox call until ack_wait expires, so a
-        # separate "read, then ack" can ack nothing and redeliver forever. Ack only on success.
-        text = "".join(f"{d['kind']} from={d['from']} {d['text']}\n" for _, d in held)
-        rc = subprocess.run(pipe, input=text, text=True).returncode
-        if rc:
-            await nc.close()
-            sys.exit(f"FAIL    estate-fleet  {pipe[0]} exited {rc}: {n} message(s) left un-acked")
-        for m, _ in held:
-            await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
-            await m.ack()
-    await nc.close()
-    print(f"ok      estate-fleet  {n} pending message(s) for {agent}" + ("" if ack else " (not acked: will be redelivered)"))
-
-
-async def watch():
-    agent = me()
-    nc, js = await connect()
-    for subj in subjects(agent).values():
-        async def cb(m):
-            d = json.loads(m.data)
-            print(f"{d['kind']} from={d['from']} {d['text']}", flush=True)
-        await nc.subscribe(subj, cb=cb)
-    await asyncio.sleep(10**9)
+def normalize(doc: dict, pids: dict) -> dict:
+    rows = []
+    runtimes = {}
+    states = {}
+    unknown = []
+    for s in doc.get("sessions") or []:
+        runtime = s.get("runtime") or "unknown"
+        runtimes[runtime] = runtimes.get(runtime, 0) + 1
+        state = s.get("state") or "unknown"
+        states[state] = states.get(state, 0) + 1
+        needle = PROC.get(runtime, "")
+        observed = bool(needle) and any(needle in comm for comm in pids)
+        if not needle:
+            unknown.append("runtime %s has no process mapping" % runtime)
+        rows.append({
+            "session_id": s.get("session_id"),
+            "runtime": runtime,
+            "model": s.get("model"),
+            "state": state,
+            "step": s.get("step"),
+            "age_seconds": s.get("age_seconds"),
+            "event_count": s.get("event_count"),
+            "repo": s.get("repo"),
+            "ticket": s.get("ticket"),
+            "task": (s.get("task") or "")[:120],
+            "updated_at": s.get("updated_at"),
+            "trace_url": s.get("trace_url"),
+            "worker_observed": observed,
+        })
+    return {
+        "at": int(time.time()),
+        "source": FLEETVIEW,
+        "source_generated_at": doc.get("generated_at"),
+        "available": bool(doc.get("available")),
+        "error": doc.get("error"),
+        "unreachable": doc.get("unreachable") or [],
+        "fresh_window_minutes": doc.get("fresh_window_minutes"),
+        "sessions": len(rows),
+        "runtimes": runtimes,
+        "states": states,
+        "unknown": sorted(set(unknown)),
+        "rows": rows,
+    }
 
 
-def main(argv):
-    if not argv:
-        sys.exit(__doc__)
-    c, rest = argv[0], argv[1:]
-    if c == "send" and rest and rest[0].startswith("-"):
-        sys.exit(f"estate-fleet: send takes '<agent> <text>', not a flag ({rest[0]!r}); nothing was sent")
-    if c == "send" and len(rest) >= 2:
-        asyncio.run(publish(f"estate.fleet.to.{rest[0]}", " ".join(rest[1:]), "to"))
-    elif c == "broadcast" and rest:
-        asyncio.run(publish("estate.fleet.broadcast", " ".join(rest), "broadcast"))
-    elif c == "directive" and rest:
-        text = " ".join(rest)
-        asyncio.run(publish("estate.fleet.directive", text, "directive"))
-        if not os.environ.get("ESTATE_FLEET_NO_MEMORY"):
-            subprocess.run(["growmos", "remember", f"directive-{int(time.time())}", "--type", "DECISION", "--desc", f"Founder directive via estate-fleet: {text}"], check=False)
-    elif c == "inbox" and "--pipe" in rest:
-        asyncio.run(inbox(False, rest[rest.index("--pipe") + 1 :] or sys.exit("FAIL    estate-fleet  --pipe needs a command")))
-    elif c == "inbox":
-        asyncio.run(inbox("--ack" in rest))
-    elif c == "refuse" and len(rest) >= 2 and rest[0].isdigit():
-        asyncio.run(refuse(rest[0], " ".join(rest[1:])))
-    elif c == "status" and len(rest) == 1 and rest[0].isdigit():
-        asyncio.run(status(rest[0]))
-    elif c == "watch":
-        asyncio.run(watch())
-    else:
-        sys.exit(__doc__)
+def page(doc: dict) -> str:
+    rows = sorted(doc["rows"], key=lambda r: r.get("age_seconds") or 10**9)[:80]
+    trs = []
+    for r in rows:
+        colour = {"working": "#17b26a", "paused": "#f5a524", "failed": "#e5484d"}.get(r["state"], "#8b93a7")
+        obs = "yes" if r["worker_observed"] else "not observed"
+        trs.append(
+            "<tr><td><span class=dot style=\"background:%s\"></span></td>"
+            "<td><b>%s</b><div class=id>%s</div></td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%ss</td><td>%s</td><td>%s</td></tr>" % (
+                colour, html.escape(r["runtime"]), html.escape((r["session_id"] or "")[:48]),
+                html.escape(r["state"]), html.escape((r["model"] or "")[:32]),
+                r["event_count"] if r["event_count"] is not None else "-",
+                r["age_seconds"] if r["age_seconds"] is not None else "?",
+                html.escape(r["repo"] or "-"), obs))
+    counters = "".join("<div class=card><b>%s</b>%s</div>" % (n, html.escape(k))
+                       for k, n in sorted(doc["runtimes"].items()))
+    return """<!doctype html><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta http-equiv=refresh content=30>
+<title>Estate fleet</title>
+<style>
+body{font:14px/1.45 -apple-system,system-ui,sans-serif;margin:0;background:#0b0d10;color:#e7e9ee}
+main{max-width:1100px;margin:0 auto;padding:20px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:#8b93a7;margin-bottom:14px}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.card{background:#141821;border:1px solid #232936;border-radius:10px;padding:10px 14px;min-width:90px}
+.card b{font-size:20px;display:block}
+table{width:100%%;border-collapse:collapse;background:#141821;border:1px solid #232936;border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #1d2330;vertical-align:top}
+th{color:#8b93a7;font-size:12px}.id,.grey{color:#8b93a7;font-size:12px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%%}
+</style>
+<main>
+<h1>Estate fleet</h1>
+<div class=sub>source %s &middot; %d sessions &middot; source time %s &middot; refresh 30s</div>
+<div class=cards>%s</div>
+<div class=cards>%s</div>
+<table><thead><tr><th></th><th>runtime / session</th><th>state</th><th>model</th><th>events</th><th>age</th><th>repo</th><th>worker observed</th></tr></thead>
+<tbody>%s</tbody></table>
+<div class=sub style="margin-top:10px">"worker observed" is a process match, not a heartbeat: when it says
+not observed, the worker is unproven, not necessarily dead. Unknowns: %s</div>
+</main>""" % (html.escape(doc["source"]), doc["sessions"], html.escape(str(doc["source_generated_at"])),
+              counters, "".join("<div class=card><b>%s</b>%s</div>" % (n, html.escape(k))
+                                for k, n in sorted(doc["states"].items())),
+              "".join(trs), html.escape(", ".join(doc["unknown"]) or "none"))
+
+
+def main() -> int:
+    doc = normalize(fetch(), processes())
+    OUT_JSON.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    OUT_HTML.write_text(page(doc))
+    print("fleet available=%s sessions=%d runtimes=%s states=%s unknown=%d"
+          % (doc["available"], doc["sessions"], doc["runtimes"], doc["states"], len(doc["unknown"])))
+    return 0 if doc["available"] else 1
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    raise SystemExit(main())

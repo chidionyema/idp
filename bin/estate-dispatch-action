@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import socketserver
+import subprocess
+import threading
+import time
+import uuid
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+HOME = Path.home()
+BASE = HOME / ".estate" / "dispatch"
+RUNS = BASE / "runs"
+ALLOW_FILE = BASE / "allow.txt"
+KEY_FILE = BASE / "action.key"
+DOOR_URL = "http://127.0.0.1:18790/intent/execute"
+TOPO = HOME / ".estate" / "topology"
+FLEET = TOPO / "fleet.json"
+FLEET_HTML = TOPO / "fleet.html"
+SECRET = HOME / ".estate" / "secrets" / "dev" / "fleetview-intent.yaml"
+AGE_KEY = HOME / ".config" / "prospector" / "age-key.txt"
+SOPS = "/usr/local/bin/sops"
+BIND = ("127.0.0.1", int(os.environ.get("ESTATE_DISPATCH_PORT", "18791")))
+MAX_BODY = 1_048_576
+RUN_TIMEOUT = 600
+PLAN_BIN = HOME / ".estate" / "memory" / "bin" / "estate-plan"
+
+_lock = threading.Lock()
+START = time.time()
+_TOKEN = {"value": "", "at": 0.0}
+COUNTERS = {"runs": {}, "requests": {}}
+
+
+def _bump(path: str, code: int) -> None:
+    key = (path.split("?")[0], str(code))
+    with _lock:
+        COUNTERS["requests"][key] = COUNTERS["requests"].get(key, 0) + 1
+
+
+def _count_run(intent: str, state: str, ms: int) -> None:
+    with _lock:
+        cell = COUNTERS["runs"].setdefault(intent, {}).setdefault(state, [0, 0])
+        cell[0] += 1
+        cell[1] = int(ms)
+
+
+def _action_key() -> str:
+    try:
+        return KEY_FILE.read_text().strip()
+    except OSError:
+        return ""
+
+
+_REFRESH = {"busy": False}
+
+
+def _refresh_token() -> None:
+    if _REFRESH["busy"]:
+        return
+    _REFRESH["busy"] = True
+    try:
+        tok = _resolve_door_token()
+        if tok:
+            _TOKEN["value"] = tok
+            _TOKEN["at"] = time.time()
+    finally:
+        _REFRESH["busy"] = False
+
+
+def _door_token(block: bool = True) -> str:
+    if _TOKEN["value"] and time.time() - _TOKEN["at"] < 300:
+        return _TOKEN["value"]
+    if not block:
+        threading.Thread(target=_refresh_token, daemon=True).start()
+        return ""
+    _refresh_token()
+    return _TOKEN["value"]
+
+
+def _resolve_door_token() -> str:
+    env = (os.environ.get("FLEETVIEW_INTENT_TOKEN") or "").strip()
+    if env:
+        return env
+    envfile = (os.environ.get("FLEETVIEW_INTENT_TOKEN_FILE") or "").strip()
+    if envfile:
+        try:
+            tok = Path(envfile).read_text().strip()
+            if tok:
+                return tok
+        except OSError:
+            pass
+    try:
+        out = subprocess.run(
+            [SOPS, "-d", "--extract", '["token"]', str(SECRET)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "SOPS_AGE_KEY_FILE": str(AGE_KEY)},
+            check=True,
+        )
+        return out.stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def _allow() -> set[str]:
+    try:
+        lines = ALLOW_FILE.read_text().splitlines()
+    except OSError:
+        return set()
+    return {ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")}
+
+
+def _record_path(run_id: str) -> Path:
+    return RUNS / (run_id + ".json")
+
+
+def _write(record: dict) -> None:
+    path = _record_path(record["run_id"])
+    tmp = path.with_suffix(".tmp")
+    body = json.dumps(record, sort_keys=True, indent=2)
+    tmp.write_text(body + "\n")
+    os.replace(tmp, path)
+
+
+def _declare(session: str, intent: str, plan: dict) -> tuple[bool, str]:
+    goal = str(plan.get("goal") or "").strip()
+    bdd = {k: str(plan.get(k) or "").strip() for k in ("given", "when", "then")}
+    if not goal or not all(bdd.values()):
+        return False, "goal, given, when and then are required before an intent runs"
+    decl = {"goal": goal, "subgoals": [{"id": "goal_1", "text": "Run " + intent + " as specified"}]}
+    steps = [
+        ["declare_plan", json.dumps(decl)],
+        ["add_bdd", json.dumps({"goal_id": "goal_1", **bdd})],
+    ]
+    for cmd, payload in steps:
+        try:
+            p = subprocess.run([str(PLAN_BIN), "--session", session, cmd, payload],
+                               capture_output=True, text=True, timeout=30)
+        except (subprocess.SubprocessError, OSError) as exc:
+            return False, "plan ledger unreachable: %r" % (exc,)
+        if p.returncode != 0:
+            return False, "plan refused: " + (p.stdout + p.stderr).strip()[:500]
+    return True, ""
+
+
+def _run(run_id: str, intent: str, args: dict, session: str, token: str, plan: dict) -> None:
+    started = time.time()
+    with _lock:
+        rec = json.loads(_record_path(run_id).read_text())
+        rec["state"] = "running"
+        rec["started_at"] = started
+        _write(rec)
+    declared, why = _declare(session, intent, plan)
+    if not declared:
+        with _lock:
+            rec = json.loads(_record_path(run_id).read_text())
+            rec["state"] = "refused"
+            rec["finished_at"] = time.time()
+            rec["duration_ms"] = int((rec["finished_at"] - started) * 1000)
+            rec["result"] = {"ok": False, "stdout": "", "stderr": why, "exit_code": 400}
+            body = json.dumps(rec, sort_keys=True).encode()
+            rec["evidence_sha256"] = hashlib.sha256(body).hexdigest()
+            _write(rec)
+        _count_run(intent, "refused", rec["duration_ms"])
+        return
+    payload = json.dumps({"intent": intent, "args": args, "session_id": session}).encode()
+    result: dict
+    conn = http.client.HTTPConnection("127.0.0.1", 18790, timeout=RUN_TIMEOUT)
+    try:
+        conn.request("POST", "/intent/execute", body=payload,
+                     headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+        if resp.status == 200:
+            result = json.loads(raw)
+        else:
+            result = {"ok": False, "stdout": "", "stderr": "door HTTP %d: %s" % (resp.status, raw[:2000]),
+                      "exit_code": resp.status}
+    except (OSError, ValueError) as exc:
+        result = {"ok": False, "stdout": "", "stderr": "door unreachable: %r" % (exc,), "exit_code": 111}
+    finally:
+        conn.close()
+    with _lock:
+        rec = json.loads(_record_path(run_id).read_text())
+        rec["state"] = "done" if result.get("ok") else "refused"
+        rec["finished_at"] = time.time()
+        rec["duration_ms"] = int((rec["finished_at"] - rec.get("started_at", started)) * 1000)
+        rec["result"] = result
+        body = json.dumps(rec, sort_keys=True).encode()
+        rec["evidence_sha256"] = hashlib.sha256(body).hexdigest()
+        _write(rec)
+    _count_run(intent, rec["state"], rec["duration_ms"])
+
+
+def _metrics_text() -> str:
+    lines = [
+        "# HELP dispatch_uptime_seconds Seconds since the shim started.",
+        "# TYPE dispatch_uptime_seconds gauge",
+        "dispatch_uptime_seconds %d" % int(time.time() - START),
+        "# HELP dispatch_allowlist_size Intents this door will run.",
+        "# TYPE dispatch_allowlist_size gauge",
+        "dispatch_allowlist_size %d" % len(_allow()),
+        "# HELP dispatch_runs_total Runs by intent and terminal state.",
+        "# TYPE dispatch_runs_total counter",
+    ]
+    with _lock:
+        for intent, states in sorted(COUNTERS["runs"].items()):
+            for state, (count, _ms) in sorted(states.items()):
+                lines.append('dispatch_runs_total{intent="%s",state="%s"} %d' % (intent, state, count))
+        lines += ["# HELP dispatch_run_duration_ms Duration of the last run per intent.",
+                  "# TYPE dispatch_run_duration_ms gauge"]
+        for intent, states in sorted(COUNTERS["runs"].items()):
+            ms = max(v[1] for v in states.values())
+            lines.append('dispatch_run_duration_ms{intent="%s"} %d' % (intent, ms))
+        lines += ["# HELP dispatch_requests_total HTTP requests by path and code.",
+                  "# TYPE dispatch_requests_total counter"]
+        for (path, code), n in sorted(COUNTERS["requests"].items()):
+            lines.append('dispatch_requests_total{path="%s",code="%s"} %d' % (path, code, n))
+    for extra in (TOPO / "metrics.prom", HOME / ".estate" / "secrets" / "bws" / "metrics.prom"):
+        try:
+            lines.append(extra.read_text().rstrip())
+        except OSError:
+            pass
+    return "\n".join(lines) + "\n"
+
+
+def _openapi(host: str, scheme: str) -> dict:
+    server = "%s://%s" % (scheme, host)
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Estate dispatch", "version": "1.0.0",
+                 "description": "Run one allowlisted estate intent through the laptop's governed executor."},
+        "servers": [{"url": server}],
+        "paths": {
+            "/dispatch": {
+                "post": {
+                    "operationId": "dispatchIntent",
+                    "summary": "Queue one allowlisted estate intent",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                        "type": "object",
+                        "required": ["intent", "goal", "given", "when", "then"],
+                        "properties": {
+                            "intent": {"type": "string", "description": "One of GET /intents"},
+                            "args": {"type": "object", "additionalProperties": True},
+                            "session_id": {"type": "string", "description": "Caller-chosen mission id, echoed in the receipt"},
+                            "goal": {"type": "string", "description": "What done looks like, one sentence"},
+                            "given": {"type": "string", "description": "Starting state"},
+                            "when": {"type": "string", "description": "The action"},
+                            "then": {"type": "string", "description": "Observable result that proves it"},
+                        },
+                    }}}},
+                    "responses": {
+                        "202": {"description": "queued", "content": {"application/json": {"schema": {
+                            "type": "object", "properties": {"run_id": {"type": "string"}, "poll": {"type": "string"}}}}}},
+                        "403": {"description": "intent not allowlisted"},
+                        "401": {"description": "bad or missing key"},
+                    },
+                },
+                "get": {"operationId": "listRuns", "summary": "Recent runs",
+                        "responses": {"200": {"description": "runs"}}},
+            },
+            "/dispatch/{run_id}": {
+                "get": {
+                    "operationId": "getRun",
+                    "summary": "Poll one run to a terminal state",
+                    "parameters": [{"name": "run_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "run record"}},
+                }
+            },
+            "/intents": {"get": {"operationId": "listIntents", "summary": "Allowlisted intent names",
+                                 "responses": {"200": {"description": "names"}}}},
+            "/health": {"get": {"operationId": "health", "summary": "Door health",
+                                "responses": {"200": {"description": "status"}}}},
+        },
+        "components": {"securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}}},
+        "security": [{"bearer": []}],
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "estate-dispatch/1.0"
+    protocol_version = "HTTP/1.1"
+    timeout = 30
+
+    def log_message(self, fmt, *a):
+        pass
+
+    def _send(self, code: int, body: dict) -> None:
+        raw = json.dumps(body, sort_keys=True).encode()
+        _bump(self.path, code)
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _authed(self) -> bool:
+        expected = _action_key()
+        header = self.headers.get("Authorization", "")
+        presented = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        return bool(expected) and hmac.compare_digest(expected.encode(), presented.encode())
+
+    def _send_raw(self, code: int, raw: bytes, ctype: str) -> None:
+        _bump(self.path, code)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _auth_fail(self) -> None:
+        self._send(401, {"detail": "bad or missing dispatch key"})
+
+    def do_GET(self) -> None:
+        path = self.path.split("?")[0]
+        if path == "/health":
+            allow = _allow()
+            self._send(200, {"ok": bool(allow) and bool(_door_token(block=False)),
+                             "door": DOOR_URL, "allow": len(allow), "runs": len(list(RUNS.glob("*.json")))})
+            return
+        if path == "/openapi.json":
+            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "dispatch.mumchimp.com"
+            self._send(200, _openapi(host, "https"))
+            return
+        if path in ("/status", "/surface", "/kb", "/metrics"):
+            files = {"/status": (TOPO / "topology.json", "application/json"),
+                     "/surface": (TOPO / "surface.html", "text/html; charset=utf-8"),
+                     "/kb": (TOPO / "KB.md", "text/markdown; charset=utf-8")}
+            if path == "/metrics":
+                self._send_raw(200, _metrics_text().encode(), "text/plain; version=0.0.4")
+                return
+            f, ctype = files[path]
+            try:
+                raw = f.read_bytes()
+            except OSError:
+                self._send(503, {"detail": "topology not collected yet", "run": "estate-topology"})
+                return
+            self._send_raw(200, raw, ctype)
+            return
+        if not self._authed():
+            self._auth_fail()
+            return
+        if path in ("/fleet", "/fleet.json"):
+            f = FLEET_HTML if path == "/fleet" else FLEET
+            ctype = "text/html; charset=utf-8" if path == "/fleet" else "application/json"
+            try:
+                raw = f.read_bytes()
+            except OSError:
+                self._send(503, {"detail": "fleet not collected yet", "run": "estate-fleet"})
+                return
+            self._send_raw(200, raw, ctype)
+            return
+        if path == "/intents":
+            self._send(200, {"intents": sorted(_allow())})
+            return
+        if path == "/agent":
+            last = {}
+            try:
+                last = json.loads((HOME / ".estate" / "protocol" / "last.json").read_text())
+            except (OSError, ValueError):
+                pass
+            ledger = []
+            try:
+                for line in (HOME / ".estate" / "protocol" / "ledger.jsonl").read_text().splitlines()[-5:]:
+                    ledger.append(line[:300])
+            except OSError:
+                pass
+            probe = {}
+            try:
+                for t in json.loads((TOPO / "topology.json").read_text())["targets"]:
+                    if t["id"] in ("door-intent", "dispatch-public"):
+                        probe[t["id"]] = {k: t[k] for k in ("state", "http_code", "latency_ms", "checked_at")}
+            except (OSError, ValueError, KeyError):
+                pass
+            recent = []
+            for f in sorted(RUNS.glob("*.json"), reverse=True)[:5]:
+                try:
+                    r = json.loads(f.read_text())
+                except (OSError, ValueError):
+                    continue
+                recent.append({k: r.get(k) for k in ("run_id", "intent", "state", "session_id", "duration_ms")})
+            with _lock:
+                runs = {i: {st: v[0] for st, v in states.items()} for i, states in COUNTERS["runs"].items()}
+            self._send(200, {"executor": {"door": DOOR_URL, "token_cached": bool(_TOKEN["value"]),
+                                          "probes": probe},
+                             "plan_gate": {k: last.get(k) for k in ("action", "numbers", "verdict", "claim")},
+                             "ledger_tail": ledger,
+                             "allowlist": sorted(_allow()),
+                             "runs": runs, "recent": recent,
+                             "uptime_seconds": int(time.time() - START)})
+            return
+        if path == "/dispatch":
+            items = []
+            for p in sorted(RUNS.glob("*.json"), reverse=True)[:20]:
+                try:
+                    r = json.loads(p.read_text())
+                except (OSError, ValueError):
+                    continue
+                items.append({"run_id": r.get("run_id"), "intent": r.get("intent"),
+                              "state": r.get("state"), "session_id": r.get("session_id"),
+                              "duration_ms": r.get("duration_ms")})
+            self._send(200, {"runs": items})
+            return
+        if path.startswith("/dispatch/"):
+            run_id = path.rsplit("/", 1)[-1]
+            try:
+                uuid.UUID(run_id)
+            except ValueError:
+                self._send(400, {"detail": "bad run id"})
+                return
+            p = _record_path(run_id)
+            if not p.exists():
+                self._send(404, {"detail": "no such run"})
+                return
+            self._send(200, json.loads(p.read_text()))
+            return
+        self._send(404, {"detail": "not found"})
+
+    def do_POST(self) -> None:
+        path = self.path.split("?")[0]
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._send(400, {"detail": "body required"})
+            return
+        raw = self.rfile.read(length)
+        if path != "/dispatch":
+            self._send(404, {"detail": "not found"})
+            return
+        if not self._authed():
+            self.close_connection = True
+            self._auth_fail()
+            return
+        try:
+            body = json.loads(raw.decode())
+        except ValueError:
+            self._send(400, {"detail": "body must be json"})
+            return
+        if not isinstance(body, dict):
+            self._send(400, {"detail": "body must be an object"})
+            return
+        intent = str(body.get("intent") or "").strip()
+        if not intent:
+            self._send(400, {"detail": "intent required"})
+            return
+        if intent not in _allow():
+            self._send(403, {"detail": "intent not allowlisted", "intent": intent})
+            return
+        args = body.get("args") or {}
+        if not isinstance(args, dict):
+            self._send(400, {"detail": "args must be an object"})
+            return
+        token = _door_token()
+        if not token:
+            self._send(503, {"detail": "door credential unavailable"})
+            return
+        run_id = str(uuid.uuid4())
+        session = str(body.get("session_id") or "").strip() or "chatgpt-" + run_id
+        plan = {k: body.get(k) for k in ("goal", "given", "when", "then")}
+        if not str(plan.get("goal") or "").strip() or not all(str(plan.get(k) or "").strip() for k in ("given", "when", "then")):
+            self._send(400, {"detail": "goal, given, when and then are required"})
+            return
+        RUNS.mkdir(parents=True, exist_ok=True)
+        _write({"run_id": run_id, "intent": intent, "args": args, "session_id": session,
+                "goal": plan["goal"], "state": "queued", "created_at": time.time()})
+        threading.Thread(target=_run, args=(run_id, intent, args, session, token, plan), daemon=True).start()
+        self._send(202, {"run_id": run_id, "poll": "/dispatch/" + run_id})
+
+
+class Server(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
+def _beat() -> None:
+    while True:
+        time.sleep(15)
+
+
+def main() -> None:
+    RUNS.mkdir(parents=True, exist_ok=True)
+    threading.Thread(target=_beat, daemon=True).start()
+    httpd = Server(BIND, Handler)
+    httpd.daemon_threads = True
+    httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

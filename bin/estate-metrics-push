@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+TOP = HOME / ".estate" / "topology"
+STATE = TOP / "push-state.json"
+SECRET = HOME / ".estate" / "secrets" / "dev" / "grafana-cloud.yaml"
+SOPS = "/usr/local/bin/sops"
+AGE_KEY = HOME / ".config" / "prospector" / "age-key.txt"
+LOCAL_METRICS = "http://127.0.0.1:18791/metrics"
+
+
+def secret() -> dict:
+    try:
+        out = subprocess.run([SOPS, "-d", "--output-type", "json", str(SECRET)],
+                             capture_output=True, text=True, timeout=10,
+                             env={**os.environ, "SOPS_AGE_KEY_FILE": str(AGE_KEY)})
+        if out.returncode == 0 and out.stdout.strip():
+            return json.loads(out.stdout)
+    except (subprocess.SubprocessError, OSError, ValueError):
+        pass
+    return {}
+
+
+def settings() -> dict:
+    s = secret()
+    return {
+        "url": os.environ.get("GRAFANA_OTLP_URL") or str(s.get("url") or ""),
+        "user": os.environ.get("GRAFANA_OTLP_USER") or str(s.get("user") or s.get("instance") or ""),
+        "token": os.environ.get("GRAFANA_OTLP_TOKEN") or str(s.get("token") or ""),
+    }
+
+
+def scrape() -> str:
+    try:
+        with urllib.request.urlopen(LOCAL_METRICS, timeout=8) as r:
+            return r.read().decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def parse_labels(raw: str) -> list[dict]:
+    out = []
+    if not raw:
+        return out
+    i = 0
+    while i < len(raw):
+        eq = raw.find("=", i)
+        if eq < 0:
+            break
+        key = raw[i:eq].strip()
+        if eq + 1 < len(raw) and raw[eq + 1] == '"':
+            end = raw.find('"', eq + 2)
+            val = raw[eq + 2:end]
+            i = end + 1
+            if i < len(raw) and raw[i] == ",":
+                i += 1
+        else:
+            comma = raw.find(",", eq)
+            end = comma if comma >= 0 else len(raw)
+            val = raw[eq + 1:end].strip()
+            i = end + 1
+        if key:
+            out.append({"key": key, "value": {"stringValue": val}})
+    return out
+
+
+def to_otlp(text: str, ts_ns: int) -> dict:
+    metrics = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            if "{" in line:
+                name, rest = line.split("{", 1)
+                labels, value = rest.rsplit("}", 1)
+                val = float(value.strip().split()[0])
+            else:
+                name, value = line.split(None, 1)
+                labels, val = "", float(value.strip().split()[0])
+        except ValueError:
+            continue
+        name = name.strip()
+        m = metrics.setdefault(name, {"name": name, "gauge": {"dataPoints": []}})
+        m["gauge"]["dataPoints"].append({
+            "asDouble": val,
+            "timeUnixNano": str(ts_ns),
+            "attributes": parse_labels(labels),
+        })
+    return {
+        "resourceMetrics": [{
+            "resource": {"attributes": [
+                {"key": "service.name", "value": {"stringValue": "estate-topology"}},
+                {"key": "host.name", "value": {"stringValue": os.uname().nodename}},
+            ]},
+            "scopeMetrics": [{"scope": {"name": "estate.metrics"}, "metrics": list(metrics.values())}],
+        }]
+    }
+
+
+def write_state(**kw: object) -> None:
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"at": int(time.time())}
+    doc.update(kw)
+    tmp = STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, indent=2) + "\n")
+    os.replace(tmp, STATE)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="estate-metrics-push")
+    ap.add_argument("--endpoint", default="")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--strict", action="store_true", help="exit non-zero when unconfigured")
+    a = ap.parse_args()
+
+    cfg = settings()
+    endpoint = a.endpoint or cfg["url"]
+    text = scrape()
+    if not text:
+        write_state(ok=False, reason="no metrics from 127.0.0.1:18791")
+        print("push skipped: metrics endpoint empty")
+        return 2 if a.strict else 0
+
+    ts_ns = int(time.time() * 1_000_000_000)
+    doc = to_otlp(text, ts_ns)
+    payload = json.dumps(doc).encode()
+    points = sum(len(m["gauge"]["dataPoints"]) for m in doc["resourceMetrics"][0]["scopeMetrics"][0]["metrics"])
+
+    if a.dry_run:
+        out = TOP / "otlp-payload.json"
+        out.write_bytes(payload)
+        print("dry-run points=%d bytes=%d file=%s" % (points, len(payload), out))
+        return 0
+
+    if not endpoint:
+        write_state(ok=False, reason="unconfigured: no GRAFANA_OTLP_URL and no vault entry grafana-cloud")
+        print("push skipped: unconfigured (no Grafana Cloud credential)")
+        return 2 if a.strict else 0
+
+    headers = {"Content-Type": "application/json"}
+    if cfg["user"] and cfg["token"]:
+        headers["Authorization"] = "Basic " + base64.b64encode(
+            ("%s:%s" % (cfg["user"], cfg["token"])).encode()).decode()
+    req = urllib.request.Request(endpoint.rstrip("/"), data=payload, headers=headers, method="POST")
+    host = endpoint.split("//", 1)[-1].split("/", 1)[0]
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            status = r.status
+        write_state(ok=200 <= status < 300, status=status, endpoint=host, points=points)
+        print("push status=%d points=%d endpoint=%s" % (status, points, host))
+        return 0 if 200 <= status < 300 else 1
+    except urllib.error.HTTPError as exc:
+        write_state(ok=False, status=exc.code, endpoint=host, points=points)
+        print("push status=%d endpoint=%s" % (exc.code, host))
+        return 1
+    except OSError as exc:
+        write_state(ok=False, reason="unreachable", endpoint=host, points=points)
+        print("push unreachable: %r" % (exc,))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

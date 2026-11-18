@@ -1,0 +1,39 @@
+id = "minimax"
+dialect = "openai"
+base_url = "https://api.minimax.io/v1"
+request_path = "/chat/completions"
+api_key_file = "/run/secrets/pennyd/minimax/MINIMAX_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "MINIMAX_API_KEY"
+
+[[models]]
+id = "MiniMax-M3.1-Flash"
+class = "paid"
+price_in_per_mtok = 0.15
+price_out_per_mtok = 0.60
+context_window = 1000000
+min_output_tokens = 256
+aliases = ["reliable-chat", "minimax_m31f", "claude-haiku-tertiary"]
+fallbacks = ["deepseek/deepseek-flash"]
+
+[[models]]
+id = "MiniMax-M3"
+class = "paid"
+price_in_per_mtok = 0.30
+price_out_per_mtok = 1.20
+context_window = 1000000
+min_output_tokens = 256
+aliases = ["default", "minimax", "minimax_m3", "claude-sonnet-quaternary"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]
+
+[[models]]
+id = "MiniMax-M2.7"
+class = "paid"
+price_in_per_mtok = 0.15
+price_out_per_mtok = 0.60
+context_window = 1000000
+min_output_tokens = 256
+aliases = ["minimax_m27", "claude-haiku-legacy"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]

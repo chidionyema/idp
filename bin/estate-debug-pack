@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+
+HOME = Path.home()
+TOP = HOME / ".estate" / "topology"
+DISPATCH = HOME / ".estate" / "dispatch"
+OUT_DEFAULT = HOME / ".estate" / "debug-packs"
+KEY = DISPATCH / "action.key"
+
+
+def run(cmd: list[str], timeout: int = 20) -> str:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return (p.stdout or "") + (p.stderr or "")
+    except (subprocess.SubprocessError, OSError) as exc:
+        return "unavailable: %r" % (exc,)
+
+
+def tail(path: Path, lines: int = 300) -> str:
+    try:
+        return "\n".join(path.read_text(errors="replace").splitlines()[-lines:]) + "\n"
+    except OSError:
+        return "missing: %s\n" % path
+
+
+def collect(root: Path) -> None:
+    (root / "topology").mkdir(parents=True)
+    (root / "dispatch" / "runs").mkdir(parents=True)
+    (root / "logs").mkdir(parents=True)
+    (root / "protocol").mkdir(parents=True)
+
+    for name in ("topology.json", "metrics.prom", "KB.md", "surface.html", "targets.json"):
+        src = TOP / name
+        if src.exists():
+            shutil.copy2(src, root / "topology" / name)
+
+    key = KEY.read_text().strip() if KEY.exists() else ""
+    auth = ["-H", "Authorization: Bearer " + key] if key else []
+    (root / "dispatch" / "health.json").write_text(run(["curl", "-sS", "-m", "8", "http://127.0.0.1:18791/health"]))
+    (root / "dispatch" / "metrics.txt").write_text(run(["curl", "-sS", "-m", "8", "http://127.0.0.1:18791/metrics"]))
+    (root / "dispatch" / "agent.json").write_text(run(["curl", "-sS", "-m", "8"] + auth + ["http://127.0.0.1:18791/agent"]))
+    (root / "dispatch" / "intents.json").write_text(run(["curl", "-sS", "-m", "8"] + auth + ["http://127.0.0.1:18791/intents"]))
+    (root / "dispatch" / "openapi.json").write_text(run(["curl", "-sS", "-m", "8", "http://127.0.0.1:18791/openapi.json"]))
+    for f in sorted((DISPATCH / "runs").glob("*.json"), reverse=True)[:10]:
+        shutil.copy2(f, root / "dispatch" / "runs" / f.name)
+
+    (root / "launchd.txt").write_text(run(["launchctl", "list"]))
+    (root / "listeners.txt").write_text(run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"]))
+    (root / "logs" / "shim.err.log").write_text(tail(DISPATCH / "shim.err.log"))
+    (root / "logs" / "tunnel.err.log").write_text(tail(DISPATCH / "tunnel.err.log"))
+    (root / "protocol" / "last.json").write_text(
+        run(["python3", "-c", "import pathlib;print(pathlib.Path.home().joinpath('.estate/protocol/last.json').read_text())"]))
+    led = HOME / ".estate" / "protocol" / "ledger.jsonl"
+    (root / "protocol" / "ledger.tail.jsonl").write_text(tail(led, 20))
+
+    host = {
+        "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hostname": os.uname().nodename,
+        "uname": run(["uname", "-a"]).strip(),
+        "sw_vers": run(["sw_vers"]).strip(),
+        "disk": run(["df", "-m", "/"]),
+        "python": run(["python3", "-V"]).strip(),
+        "cloudflared": run(["/Users/roseonyema/.local/bin/cloudflared", "--version"]).strip(),
+        "sops": run(["/usr/local/bin/sops", "--version"]).strip().splitlines()[0] if Path("/usr/local/bin/sops").exists() else "missing",
+    }
+    (root / "host.json").write_text(json.dumps(host, indent=2) + "\n")
+
+    readme = """# Estate debug pack
+
+This bundle is a point-in-time, hash-verified slice of the estate's infra and dispatch plane.
+
+Contents
+- topology/   generated truth: topology.json, targets.json, KB.md, surface.html, metrics.prom
+- dispatch/   live answers from the dispatch service: health, metrics, agent, intents, openapi, last 10 runs
+- protocol/   the last YIELD record and the ledger tail
+- logs/       shim and tunnel tails
+- launchd.txt, listeners.txt, host.json
+
+Reproduce
+    estate-topology
+    ~/.estate/topology/verify-stack.sh
+    curl -sS http://127.0.0.1:18791/metrics
+
+Verify integrity
+    estate-debug-pack --verify <this-file>.tar.gz
+
+No secret is included. The dispatch action key and the intent token are not written here; only
+whether they resolve is recorded (`token_cached` in dispatch/agent.json).
+"""
+    (root / "README.md").write_text(readme)
+
+    manifest = []
+    for f in sorted(root.rglob("*")):
+        if f.is_file() and f.name != "manifest.sha256":
+            manifest.append("%s  %s" % (hashlib.sha256(f.read_bytes()).hexdigest(), f.relative_to(root)))
+    (root / "manifest.sha256").write_text("\n".join(manifest) + "\n")
+
+
+def make_pack(out: Path, label: str) -> Path:
+    out.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    work = Path(tempfile.mkdtemp(prefix="estate-debug-"))
+    root = work / ("%s-%s" % (label, stamp))
+    root.mkdir()
+    collect(root)
+    archive = out / ("%s-%s.tar.gz" % (label, stamp))
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(root, arcname=root.name)
+    shutil.rmtree(work, ignore_errors=True)
+    return archive
+
+
+def verify(archive: Path) -> int:
+    tmp = Path(tempfile.mkdtemp(prefix="estate-verify-"))
+    try:
+        with tarfile.open(archive, "r:gz") as tar:
+            tar.extractall(tmp)
+        root = next(p for p in tmp.iterdir() if p.is_dir())
+        manifest = (root / "manifest.sha256").read_text().splitlines()
+        bad = 0
+        for line in manifest:
+            if not line.strip():
+                continue
+            digest, rel = line.split("  ", 1)
+            actual = hashlib.sha256((root / rel).read_bytes()).hexdigest()
+            if actual != digest:
+                bad += 1
+                print("MISMATCH %s" % rel)
+        print("verify files=%d mismatches=%d" % (len(manifest), bad))
+        return 0 if bad == 0 else 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="estate-debug-pack")
+    ap.add_argument("--out", default=str(OUT_DEFAULT))
+    ap.add_argument("--label", default="estate")
+    ap.add_argument("--verify", default="")
+    a = ap.parse_args()
+    if a.verify:
+        return verify(Path(a.verify))
+    archive = make_pack(Path(a.out), a.label)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    size = archive.stat().st_size
+    print("pack %s bytes=%d sha256=%s" % (archive, size, digest))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
