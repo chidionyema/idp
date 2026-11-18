@@ -1,0 +1,65 @@
+description: >
+  pennyd existed twice: router/pennyd (v0.1.0, in git) and platform/llm/pennyd
+  (v0.2.0, untracked). The live daemon was built from the untracked tree, so every
+  fix landed in dead code, and a restart appended over the existing decision ledger
+  from seq 1 instead of the tail. The audit ledger reached 15,780 rows with 4,961
+  duplicate sequences starting at seq 25. One layer, two implementations, the live
+  one unversioned.
+
+  Question: was the live daemon built from a tree that git did not have, so the
+  fixes never reached it and restarts reused sequence numbers?
+
+hypotheses:
+  - name: H1
+    description: >
+      The live binary came from the untracked platform/llm/pennyd tree, and restarts
+      reused sequence numbers because the writer started at 1 instead of the tail.
+    prior: 0.5
+  - name: H2
+    description: >
+      The tracked router/pennyd tree was the live source and the ledger was sound;
+      the reported duplicates and rebuild hang came from something else.
+    prior: 0.5
+n_eff_divisor: 1
+evidence:
+  - name: >
+      rebuilding from the tracked tree produced a different program that hung on
+      /v1/chat/completions, while the recovered untracked tree (dc7922f54) matches the
+      running daemon; that is what "the live binary was not in git" predicts.
+    observed:
+      rebuild_from_git_hung: 1
+      rebuild_from_git_matched: 0
+    likelihoods:
+      H1:
+        rebuild_from_git_hung: 0.98
+        rebuild_from_git_matched: 0.02
+      H2:
+        rebuild_from_git_hung: 0.05
+        rebuild_from_git_matched: 0.95
+  - name: >
+      the incident ledger has 4,961 duplicate sequence numbers starting at seq 25:
+      exactly the signature of a restart that begins at 1 over an existing file.
+    observed:
+      duplicate_sequences_present: 1
+      duplicate_sequences_absent: 0
+    likelihoods:
+      H1:
+        duplicate_sequences_present: 0.99
+        duplicate_sequences_absent: 0.01
+      H2:
+        duplicate_sequences_present: 0.02
+        duplicate_sequences_absent: 0.98
+  - name: >
+      the launchd job ran a writer-guard wrapper whose own comment says it rotates the
+      ledger on every start because the binary "appends over an existing ledger without
+      resuming its tail sequence" -- a second, independent witness of the same defect.
+    observed:
+      rotation_wrapper_present: 1
+      rotation_wrapper_absent: 0
+    likelihoods:
+      H1:
+        rotation_wrapper_present: 0.97
+        rotation_wrapper_absent: 0.03
+      H2:
+        rotation_wrapper_present: 0.05
+        rotation_wrapper_absent: 0.95

@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+IDP = HOME / "Documents" / "code" / "idp"
+TOP = HOME / ".estate" / "topology"
+CERT = TOP / "certificate.json"
+SOPS = "/usr/local/bin/sops"
+AGE_KEY = HOME / ".config" / "prospector" / "age-key.txt"
+RECEIPT = HOME / ".estate" / "secrets" / "dev" / "ESTATE_RECEIPT_KEY.yaml"
+CODE = [
+    "bin/estate-dispatch-action",
+    "bin/estate-bws-sync",
+    "bin/estate-bws-check",
+    "bin/estate-bws-adopt",
+    "bin/estate-topology",
+    "bin/estate-debug-pack",
+    "bin/estate-service-grade",
+    "bin/estate-itest",
+    "bin/estate-metrics-push",
+    "bin/estate-assurance-selftest",
+]
+
+
+def key() -> str:
+    try:
+        out = subprocess.run([SOPS, "-d", "--output-type", "json", str(RECEIPT)],
+                             capture_output=True, text=True, timeout=15,
+                             env={**os.environ, "SOPS_AGE_KEY_FILE": str(AGE_KEY)})
+        if out.returncode == 0 and out.stdout.strip():
+            d = json.loads(out.stdout)
+            for k in ("key", "value", "token", "secret"):
+                if isinstance(d.get(k), str) and d[k]:
+                    return d[k]
+            for v in d.values():
+                if isinstance(v, str) and v:
+                    return v
+    except (subprocess.SubprocessError, OSError, ValueError):
+        pass
+    return os.environ.get("ESTATE_RECEIPT_KEY", "")
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def blob_digest(blob: str) -> str:
+    if not blob:
+        return ""
+    p = subprocess.run(["git", "-C", str(IDP), "cat-file", "blob", blob],
+                       capture_output=True, timeout=20)
+    return hashlib.sha256(p.stdout).hexdigest() if p.returncode == 0 else ""
+
+
+def git(*args: str) -> str:
+    p = subprocess.run(["git", "-C", str(IDP)] + list(args), capture_output=True, text=True, timeout=20)
+    return p.stdout.strip() if p.returncode == 0 else ""
+
+
+def body(doc: dict) -> bytes:
+    return json.dumps({k: v for k, v in doc.items() if k != "signature"},
+                      sort_keys=True, separators=(",", ":")).encode()
+
+
+def sign(doc: dict, secret: str) -> str:
+    return hmac.new(secret.encode(), body(doc), hashlib.sha256).hexdigest()
+
+
+def evidence() -> dict:
+    out = {}
+    for name in ("itest.json", "grade.json", "assurance.json"):
+        p = TOP / name
+        out[name] = sha(p) if p.exists() else ""
+    try:
+        a = json.loads((TOP / "assurance.json").read_text())
+        out["trace_run"] = a.get("run_id", "")
+        out["trace_exit"] = (a.get("trace") or {}).get("exit_code")
+        out["assurance_pass"] = a.get("pass", 0)
+        out["assurance_fail"] = a.get("fail", 0)
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def issue() -> int:
+    secret = key()
+    if not secret:
+        print("REFUSED: receipt key unavailable")
+        return 2
+    commit = git("rev-parse", "HEAD")
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    on_main = git("merge-base", "--is-ancestor", commit, "origin/main") == "" and \
+        subprocess.run(["git", "-C", str(IDP), "merge-base", "--is-ancestor", commit, "origin/main"],
+                       capture_output=True).returncode == 0
+    code = []
+    for rel in CODE:
+        local = HOME / ".estate" / rel
+        blob = git("rev-parse", "%s:%s" % (commit, rel)) if commit else ""
+        if not blob:
+            print("REFUSED: %s is not in commit %s" % (rel, commit[:12]))
+            return 3
+        code.append({"path": rel,
+                     "installed_sha256": sha(local) if local.exists() else "",
+                     "repo_sha256": blob_digest(blob),
+                     "blob": blob})
+    drift = [c["path"] for c in code if c["installed_sha256"] and c["installed_sha256"] != c["repo_sha256"]]
+    doc = {
+        "version": 1,
+        "service": "estate-assurance-plane",
+        "issued_at": int(time.time()),
+        "expires_at": int(time.time()) + 86400,
+        "state": "certified" if (on_main and not drift) else "provisional",
+        "provenance": {"repo": "chidionyema/idp", "commit": commit, "branch": branch, "on_main": on_main},
+        "code": code,
+        "drift": drift,
+        "evidence": evidence(),
+    }
+    doc["signature"] = sign(doc, secret)
+    CERT.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    print("certificate state=%s commit=%s on_main=%s drift=%d -> %s"
+          % (doc["state"], commit[:12], on_main, len(drift), CERT))
+    return 0
+
+
+def verify(path: str) -> int:
+    secret = key()
+    try:
+        doc = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        print("REJECT no certificate")
+        return 1
+    if not secret:
+        print("REJECT receipt key unavailable")
+        return 1
+    problems = []
+    if not hmac.compare_digest(doc.get("signature", ""), sign(doc, secret)):
+        problems.append("signature")
+    commit = (doc.get("provenance") or {}).get("commit", "")
+    for c in doc.get("code", []):
+        local = HOME / ".estate" / c["path"]
+        if not local.exists():
+            problems.append("missing:" + c["path"])
+        elif sha(local) != c.get("installed_sha256"):
+            problems.append("drift:" + c["path"])
+        if commit:
+            want = git("rev-parse", "%s:%s" % (commit, c["path"]))
+            if want != c.get("blob"):
+                problems.append("blob:" + c["path"])
+            elif blob_digest(want) != c.get("repo_sha256"):
+                problems.append("blob-sha:" + c["path"])
+    ev = doc.get("evidence") or {}
+    for name in ("itest.json", "grade.json", "assurance.json"):
+        p = TOP / name
+        if ev.get(name) and (not p.exists() or sha(p) != ev[name]):
+            problems.append("evidence:" + name)
+    if doc.get("state") == "certified":
+        commit = (doc.get("provenance") or {}).get("commit", "")
+        rc = subprocess.run(["git", "-C", str(IDP), "merge-base", "--is-ancestor", commit, "origin/main"],
+                            capture_output=True).returncode
+        if rc != 0:
+            problems.append("not-on-main")
+    if problems:
+        print("REJECT " + ",".join(problems))
+        return 1
+    print("ACCEPT state=%s commit=%s code=%d expires=%s"
+          % (doc.get("state"), (doc.get("provenance") or {}).get("commit", "")[:12],
+             len(doc.get("code", [])), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(doc["expires_at"]))))
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="estate-certify")
+    ap.add_argument("--verify", default="")
+    ap.add_argument("--issue", action="store_true")
+    a = ap.parse_args()
+    if a.verify:
+        return verify(a.verify if a.verify != "-" else str(CERT))
+    return issue()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

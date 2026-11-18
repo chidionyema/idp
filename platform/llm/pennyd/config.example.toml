@@ -1,0 +1,39 @@
+# pennyd — token-efficiency daemon
+# Providers/models live in providers_dir as TOML files. Edit a file, and the
+# daemon hot-reloads within reload_interval_s. No restart, no code.
+bind = "127.0.0.1:4000"
+log_path = "/var/lib/pennyd/decisions.jsonl"
+providers_dir = "providers"
+reload_interval_s = 5
+
+[cache]
+capacity = 10000
+ttl_min_s = 300        # 5-min writes are ~60% cheaper than 1h writes; TTL adapts up from measured gaps
+ttl_max_s = 3600
+hit_rate_floor = 0.5
+
+[budgets]
+default_daily_usd = 0.25
+budgets_path = "/var/lib/pennyd/budgets.json"
+
+[shaping]
+cache_control = true
+max_tokens_cap = 1024
+tool_result_max_chars = 2000
+
+[router]
+breaker_threshold = 3
+breaker_cooldown_s = 120
+
+# per-agent keys: watchers get hard daily ceilings
+# Edge keys: production secrets belong in a secret-mounted file. Uncomment
+# this there; the example stays runnable without writing outside the repo.
+# keys_file = "/etc/pennyd/keys.toml"
+
+[[keys]]
+key = "sk-watch-1"
+daily_budget_usd = 0.05
+
+[[keys]]
+key = "sk-default"
+daily_budget_usd = 0.25

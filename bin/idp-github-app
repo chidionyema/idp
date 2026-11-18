@@ -21,13 +21,36 @@ cmd=${1:-}; shift || true
 
 repo_url() { gh repo view --json url -q .url; }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-# app_jwt <app_id> <pem_base64>: a 9-minute RS256 JWT for the App, signed with openssl so it works on any
+# github_now: GitHub's own clock, in epoch seconds.
+#
+# Measured 2026-11-18: this host's clock ran 93 seconds ahead of api.github.com, and GitHub
+# refuses a JWT whose exp is more than 10 minutes ahead of ITS clock -- so a locally-timed
+# 10-minute window was answered with "'Expiration time' claim ('exp') is too far in the future"
+# (401) and the App looked dead: "DIAG github-app JWT refused: bearer_probe_http=401". The key
+# was fine; the clock was not. The Date header of any api.github.com answer IS the server's
+# clock, so the claim is timed against that. The local clock is only the fallback when the probe
+# cannot run, and the window is then short enough that a 120-second skew still lands inside the
+# limit instead of outside it.
+github_now() {
+  local hdr out=""
+  hdr=$(curl -sSI --max-time 8 https://api.github.com 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="date:"{ sub(/^[^:]*:[ \t]*/,""); print; exit }' || true)
+  if [ -n "$hdr" ]; then
+    case "$hdr" in *GMT*|*" +0000") ;; *) hdr="" ;; esac   # a header with no clock is not a clock
+    out=$(date -u -d "$hdr" +%s 2>/dev/null || true)                                    # GNU (CI)
+    if [ -z "$out" ]; then out=$(date -j -u -f "%a, %d %b %Y %H:%M:%S GMT" "$hdr" +%s 2>/dev/null || true); fi  # BSD (macOS)
+  fi
+  [ -n "$out" ] || out=$(date -u +%s)
+  printf '%s' "$out"
+}
+# app_jwt <app_id> <pem_base64>: an 8-minute RS256 JWT for the App, signed with openssl so it works on any
 # runner (crew#503: the Link-/gh-token extension minted it before, and CI has no extensions).
+# The window is timed against GitHub's clock (github_now), never the local one: a 93-second skew
+# used to push exp past GitHub's 10-minute limit and every App call died as 401.
 app_jwt() {
   local now key hp
-  now=$(date -u +%s)
+  now=$(github_now)
   key=$(mktemp); chmod 600 "$key"; printf %s "$2" | base64 -d > "$key"
-  hp="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now-60))" "$((now+540))" "$1" | b64url)"
+  hp="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now-60))" "$((now+420))" "$1" | b64url)"
   printf '%s.%s' "$hp" "$(printf %s "$hp" | openssl dgst -sha256 -sign "$key" | b64url)"
   rm -f "$key"
 }
@@ -49,8 +72,10 @@ app_jwt_diag() {
   claims=$(printf %s "$3" | cut -d. -f2 | tr '_-' '/+' | awk '{printf "%s", $0; n=length($0)%4; if(n) for(i=n;i<4;i++) printf "="}' | base64 -d 2>/dev/null)
   rm -f "$key"
   # gh sends `Authorization: token`; GitHub documents `Bearer` for an App JWT. The probe says whether the scheme is the fault.
-  local bearer; bearer=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $3" -H "Accept: application/vnd.github+json" https://api.github.com/app 2>/dev/null || echo curl-failed)
-  echo "DIAG    github-app JWT refused: bearer_probe_http=$bearer iss=$1 slug=$(jq -r '.slug // "?"' <<<"${4:-{\}}") pem_b64_len=${#2} key_header_ok=$([ "${hdr:-}" = "-----BEGIN RSA PRIVATE KEY-----" ] && echo yes || echo no) pubkey_sha256=${fp:-unreadable} claims=$claims" >&2
+  local bearer skew; bearer=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $3" -H "Accept: application/vnd.github+json" https://api.github.com/app 2>/dev/null || echo curl-failed)
+  # The clock, named: a JWT refused with "exp is too far in the future" is a clock fault, not a key fault.
+  skew=$(github_now); skew=$(( $(date -u +%s) - skew ))
+  echo "DIAG    github-app JWT refused: bearer_probe_http=$bearer iss=$1 slug=$(jq -r '.slug // "?"' <<<"${4:-{\}}") pem_b64_len=${#2} key_header_ok=$([ "${hdr:-}" = "-----BEGIN RSA PRIVATE KEY-----" ] && echo yes || echo no) pubkey_sha256=${fp:-unreadable} clock_skew_s=${skew} claims=$claims" >&2
 }
 case "$cmd" in
 manifest)

@@ -1,0 +1,29 @@
+id = "zai"
+dialect = "openai"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+request_path = "/chat/completions"
+api_key_file = "/run/secrets/pennyd/zai/ZAI_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "ZAI_API_KEY"
+
+[[models]]
+id = "glm-5.3"
+class = "paid"
+price_in_per_mtok = 1.4
+price_out_per_mtok = 4.4
+context_window = 1000000
+min_output_tokens = 256
+aliases = ["glm", "glm-5.3", "zai/glm-5.3", "claude-sonnet-primary"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]
+
+[[models]]
+id = "glm-5.3-flash"
+class = "paid"
+price_in_per_mtok = 0.15
+price_out_per_mtok = 0.5
+context_window = 1048576
+min_output_tokens = 256
+aliases = ["glm-flash", "zai/glm-5.3-flash", "claude-haiku-primary"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]
