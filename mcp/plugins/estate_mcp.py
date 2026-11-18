@@ -58,6 +58,7 @@ log = logging.getLogger(__name__)
 # authenticated, intent-scoped route. A pod WITH a local executor keeps using it: that is the
 # laptop's own path and it must not change.
 LAPTOP_INTENT_URL_ENV = "ESTATE_LAPTOP_INTENT_URL"
+CLOUD_INTENT_URL_ENV = "ESTATE_CLOUD_INTENT_URL"
 LAPTOP_INTENT_TOKEN_FILE_ENV = "ESTATE_LAPTOP_INTENT_TOKEN_FILE"  # noqa: S105 -- a path
 LAPTOP_INTENT_TOKEN_ENV = "ESTATE_LAPTOP_INTENT_TOKEN"  # noqa: S105 -- an env var NAME
 
@@ -82,6 +83,13 @@ def _remote_intent_token() -> str:
         if token:
             return token
     return (os.environ.get(LAPTOP_INTENT_TOKEN_ENV) or "").strip()
+
+
+def _invoke_cloud(name, arg_items, session, timeout):
+    """idp#8061: thin client. Never a laptop, never a silent local run."""
+    if not (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip():
+        return "BLIND: no governed intent door configured on this host."
+    return _invoke_remote(name, arg_items, session, timeout)
 
 
 def _invoke_remote(name, arg_items, session, timeout):
@@ -526,7 +534,7 @@ def _estate_invoke(args):
         # No executor on this host (the estate-mcp pod): the door is on the laptop, and the
         # session travels there UNCHANGED -- a programmatic session is not a voice session and
         # is never namespaced as one (idp#7579 R2).
-        return _invoke_remote(name, arg_items, session, timeout)
+        return _invoke_cloud(name, arg_items, session, timeout)
     cmd = [sys.executable, str(exe), name]
     if session:
         cmd.extend(["--session", session])
