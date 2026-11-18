@@ -16,6 +16,16 @@
 #      view in the model now appears on the page without anyone editing this script, and
 #      a renamed view can never be silently dropped from the page.
 #
+# RENDER_CMD may be overridden to render with a local structurizr CLI instead of the
+# docker image. The default is the docker image: the founder never installs anything.
+#
+# The render is SINGLE-WRITER. Two renders of the same tree at once are serialised by a
+# lock, because the failing one used to restore the previous diagrams OVER the
+# successful one's: the committed page then held the NEW diagrams while
+# architecture/out/ held the OLD ones, and nothing said so. A second render WAITS for
+# the first (bounded by RENDER_LOCK_TIMEOUT, default 120s) rather than failing -- but it
+# does not run at the same time.
+#
 # Usage:
 #   architecture/render            render and write the page
 #   architecture/render --check    exit 1 when the committed page is not what the model says
@@ -24,6 +34,10 @@ here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/out"
 page="$here/../docs/explanation/architecture/index.md"
 mode="${1:-write}"
+
+render_cmd="${RENDER_CMD:-docker run --rm -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$here":/work -w /work structurizr/structurizr export -workspace workspace.dsl -format mermaid -output /work/out}"
+
+cd "$here"
 
 # Clear the previous render first. The view list below is read from this directory, so a
 # .mmd left behind by a view that no longer exists would otherwise be embedded on the page
@@ -37,20 +51,18 @@ mode="${1:-write}"
 # is restored if the render fails.
 backup="$here/out.previous.$$"
 rm -rf "$backup"
-if [ -d "$out" ]; then
-  mv "$out" "$backup"
-fi
-mkdir -p "$out"
-# ONE exit trap, installed once, that does EVERYTHING: it removes the temp files, it
-# restores the previous .mmd output when the render did not finish, and it leaves no
-# out.previous.* behind. A later `trap ... EXIT` would REPLACE this one and lose the
-# restore -- that is how a failing `--check` used to strand a backup in the tree.
-# The signal traps turn a TERM/INT/HUP into an exit with a NON-ZERO status: bash runs
-# the EXIT trap with $? = 0 when it dies from a signal while a foreground child is
-# still running, and $? = 0 reads as "the render succeeded", which deleted the
-# previous output instead of restoring it.
+
+# ONE WRITER AT A TIME. Two renders used to interleave: the failing one restored the
+# previous .mmd output OVER the successful one's, so the committed page held the NEW
+# diagrams while architecture/out/ held the OLD ones -- the page and the tree disagreed
+# and nothing said so. The lock makes the render single-writer. The lock lives outside
+# the tree (in TMPDIR, keyed by this tree's path) so a killed render cannot leave an
+# untracked directory in the repository.
+lock="${TMPDIR:-/tmp}/architecture-render-$(printf '%s' "$here" | cksum | cut -d' ' -f1).lock"
 tmp=""
 diff_file=""
+owns_lock=0
+
 restore_output() {
   status=$?
   [ -n "$tmp" ] && rm -f "$tmp"
@@ -60,12 +72,99 @@ restore_output() {
     mv "$backup" "$out"
   fi
   rm -rf "$backup"
+  if [ "$owns_lock" = "1" ]; then
+    rm -rf "$lock"
+  fi
   exit "$status"
 }
+# ONE exit trap, installed once, that does EVERYTHING: it removes the temp files, it
+# restores the previous .mmd output when the render did not finish, it releases the
+# lock, and on every exit the shell CAN trap it leaves no out.previous.* behind. A later
+# `trap ... EXIT` would REPLACE this one and lose the restore -- that is how a failing
+# `--check` used to strand a backup in the tree.
+# SIGKILL is the one exit a shell cannot trap: it leaves the backup and the lock
+# behind, and this file cannot prevent that. What it CAN do is make the NEXT render
+# clean up after it -- see the recovery below -- so the honest claim is "the next
+# render recovers it", not "nothing is ever left behind".
+# The signal traps turn a TERM/INT/HUP into an exit with a NON-ZERO status: bash runs
+# the EXIT trap with $? = 0 when it dies from a signal while a foreground child is
+# still running, and $? = 0 reads as "the render succeeded", which deleted the
+# previous output instead of restoring it.
+# ONE LIMIT, STATED PLAINLY: a signal that was ALREADY IGNORED when the shell started
+# cannot be trapped -- bash does not reset an inherited SIG_IGN -- and a background job
+# in a non-interactive shell inherits SIGINT and SIGQUIT ignored. So a TERM (and a
+# HUP) is always caught; an INT is caught only when the shell was not started with it
+# ignored.
 trap restore_output EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap 'exit 129' HUP
+
+acquire_lock() {
+  waited=0
+  limit="${RENDER_LOCK_TIMEOUT:-120}"
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      echo $$ > "$lock/pid"
+      owns_lock=1
+      return 0
+    fi
+    # The lock exists. If the process that owns it is ALIVE, this render waits for it
+    # rather than failing: two renders of the same tree are a mistake, but refusing the
+    # second one outright would throw away a render that could have succeeded. The wait
+    # is BOUNDED, so a hung render cannot block every later render forever.
+    owner=""
+    if [ -f "$lock/pid" ]; then owner="$(cat "$lock/pid" 2>/dev/null || true)"; fi
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+      if [ "$waited" -ge "$limit" ]; then
+        echo "FAIL architecture/render: another render has held $lock for ${waited}s (pid $owner); giving up" >&2
+        exit 1
+      fi
+      sleep 2
+      waited=$((waited + 2))
+      continue
+    fi
+    # A lock left behind by a KILLED render is stale -- its owner is gone -- so it is
+    # taken over rather than blocking every later render forever.
+    rm -rf "$lock"
+    if mkdir "$lock" 2>/dev/null; then
+      echo $$ > "$lock/pid"
+      owns_lock=1
+      return 0
+    fi
+  done
+}
+
+acquire_lock
+
+# RECOVER FROM A KILLED RENDER. A SIGKILL cannot be trapped, so the render it killed
+# left its backup behind, and the architecture/out/ it left behind may be PARTIAL: the
+# killed render was writing those files when it died. The backup is therefore the last
+# output that was KNOWN to be complete, so it is what is restored -- out/ is not
+# trusted. The invariant this file exists to keep -- a failed render never destroys
+# the previous output -- therefore holds across a SIGKILL too, one render later.
+stale_newest=""
+for stale in "$here"/out.previous.*; do
+  [ -d "$stale" ] || continue
+  # `-nt` is "newer than": the backup written last is the last output known to be
+  # complete. No external command is used here on purpose: under `set -e`, an
+  # `ls` with no match exits non-zero and would take the whole render down.
+  if [ -z "$stale_newest" ] || [ "$stale" -nt "$stale_newest" ]; then
+    stale_newest="$stale"
+  fi
+done
+if [ -n "$stale_newest" ]; then
+  rm -rf "$out"
+  mv "$stale_newest" "$out"
+  for stale in "$here"/out.previous.*; do
+    [ -d "$stale" ] && rm -rf "$stale"
+  done
+fi
+
+if [ -d "$out" ]; then
+  mv "$out" "$backup"
+fi
+mkdir -p "$out"
 
 # The model contains non-ASCII characters (em dashes). Structurizr parses the workspace with
 # the JVM's default charset, so a host whose locale is not UTF-8 fails with
@@ -74,8 +173,7 @@ trap 'exit 129' HUP
 # the same way on a laptop, in CI and in the cloud.
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-docker run --rm -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$here":/work -w /work structurizr/structurizr \
-  export -workspace workspace.dsl -format mermaid -output /work/out >/dev/null
+bash -c "$render_cmd" >/dev/null
 
 test -n "$(ls -A "$out"/*.mmd 2>/dev/null)" || { echo "render produced no diagrams"; exit 1; }
 
@@ -128,21 +226,49 @@ if [ "$mode" = "--check" ]; then
   if [ ! -f "$page" ]; then
     echo "FAIL architecture/render: $page is missing; run architecture/render"; exit 1
   fi
-  if render_page | diff -u "$page" - > /tmp/architecture-render.diff 2>&1; then
+  # The diff goes to a file of its own: a fixed path in /tmp is shared between two runs
+  # on the same machine, and the second one reads the first one's diff.
+  diff_file="$(mktemp "${TMPDIR:-/tmp}/architecture-render.diff.XXXXXX")"
+  if render_page | diff -u "$page" - > "$diff_file" 2>&1; then
     echo "ok    architecture/render: $page matches the model"
     exit 0
   fi
   echo "FAIL architecture/render: $page is not what architecture/workspace.dsl says; run architecture/render"
-  sed -n '1,40p' /tmp/architecture-render.diff
+  sed -n '1,40p' "$diff_file"
   exit 1
 fi
 
-render_page > "$page"
+# The page is assembled into a TEMP file and MOVED into place.
+#
+# Why not `{ ... } > "$page"`: bash truncates the target the moment the compound command
+# STARTS, so every guard inside the block runs against a page that has already been
+# emptied. A render that failed its second guard left the committed page holding the
+# error string instead of the diagrams, and the failed render was reported as if nothing
+# had been lost. The page is now built in a temp file and moved with `mv`, so the
+# committed page is either the old one or the new one, never a corpse.
+tmp="$page.tmp.$$"
+
+# The page is written by MOVING a temp file over it, which is atomic inside one
+# filesystem. But `mv tmp <dir>` moves the file INTO the directory and SUCCEEDS, so a
+# page path that happens to be a directory left the page unwritten while the render
+# exited 0 claiming success. That is checked BEFORE anything is written.
+if [ -d "$page" ]; then
+  echo "FAIL architecture/render: $page is a directory, so the page cannot be written" >&2
+  exit 1
+fi
+
+render_page > "$tmp"
+mv "$tmp" "$page"
+
 # The previous .mmd output is dropped ONLY now: until the whole render has succeeded --
 # the view set matches the model, and the page has been written -- the backup is what a
 # partial render falls back to.
 rm -rf "$backup"
 backup=""
+# The lock is released explicitly, and BEFORE the trap is removed, so a successful
+# render never leaves the lock behind and the trap never releases it twice.
+rm -rf "$lock"
+owns_lock=0
 trap - EXIT
 
 echo "rendered $(echo "$model_views" | wc -w | tr -d ' ') views -> $page"

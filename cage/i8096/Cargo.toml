@@ -1,0 +1,21 @@
+[package]
+name = "i8096-certifier"
+version = "0.1.0"
+edition = "2021"
+description = "I-8096 Genesis split-authority certifier and the EP-B dependency-closed reconciler"
+license = "UNLICENSED"
+publish = false
+
+[lib]
+name = "i8096_certifier"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"
+thiserror = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

@@ -87,6 +87,8 @@ SECRETS = [
                         ("litellm-upstream", "GEMINI_API_KEY")]),
     ("OPENROUTER_API_KEY", [("human-openrouter", "OPENROUTER_API_KEY"),
                             ("litellm-upstream", "OPENROUTER_API_KEY")]),
+    ("AI_STUDIO_INGEST_SECRET", [("otto-lifeboat", "AI_STUDIO_INGEST_SECRET")]),
+    ("OMNIFLOW_GH_TOKEN", [("otto-lifeboat", "OMNIFLOW_GH_TOKEN")]),
 ]
 
 
@@ -202,6 +204,37 @@ def vault_first(candidates: list[tuple[str, str]]) -> str:
     return ""
 
 
+def vault_merge(entry: str, fields: dict[str, str]) -> None:
+    """Write named fields into a vault entry without losing the fields it already holds.
+
+    bin/idp-cloud secret put REPLACES an entry, so a second secret minted for the same entry
+    (the ingest bearer beside the lifeboat key) would otherwise erase the first one. The entry
+    is read, merged and written back in one process; no value is ever an argument, an
+    environment variable or a line in this session's scrollback (LAW 21).
+    """
+    current = vault_get(entry)
+    data: dict[str, object] = {}
+    if current:
+        try:
+            loaded = json.loads(current)
+            if isinstance(loaded, dict):
+                data = loaded
+        except json.JSONDecodeError:
+            data = {}
+    data.update(fields)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        os.chmod(fh.name, 0o600)
+        json.dump(data, fh)
+        path = fh.name
+    try:
+        out = subprocess.run([str(IDP / "bin/idp-cloud"), "secret", "put", entry,
+                              "--file", path], capture_output=True, text=True, timeout=300)
+    finally:
+        os.unlink(path)
+    if out.returncode != 0:
+        sys.exit(f"could not write {entry} in the estate vault: {out.stderr.strip()[-400:]}")
+
+
 def lifeboat_key() -> str:
     """Home 2's own door key, read from the vault or MINTED HERE on the first deploy.
 
@@ -232,6 +265,51 @@ def lifeboat_key() -> str:
         sys.exit(f"could not mint otto-lifeboat in the vault: {out.stderr.strip()[-400:]}")
     print("  minted otto-lifeboat/LIFEBOAT_KEY in the estate vault (64 hex characters)")
     return key
+
+
+def ingest_secret() -> str:
+    """The ingest door's bearer, read from the vault or MINTED HERE on the first deploy.
+
+    Same reasoning as lifeboat_key, and the same shape: 64 hex characters from the operating
+    system's cryptographic source, written into the vault entry `otto-lifeboat` beside the
+    lifeboat key, never printed, never an argument (LAW 21). The userscript that tees AI Studio
+    and the Drive webhook that pushes a bundle both present this value to /api/ingest/*; the
+    worker refuses both without it (platform/lifeboat/src/aistudio.js returns 401 when
+    env.AI_STUDIO_INGEST_SECRET is empty), so a door deployed without it is a door that answers
+    401 to everything, including the founder's own turn.
+    """
+    secret = vault_get("otto-lifeboat", "AI_STUDIO_INGEST_SECRET")
+    if secret:
+        return secret
+    secret = secrets.token_hex(32)
+    vault_merge("otto-lifeboat", {"AI_STUDIO_INGEST_SECRET": secret})
+    print("  minted otto-lifeboat/AI_STUDIO_INGEST_SECRET in the estate vault (64 hex characters)")
+    return secret
+
+
+def omniflow_token() -> str:
+    """The GitHub credential the ingest engine writes the lane with, minted FRESH on every deploy.
+
+    Never a person's token: it is an installation token of the estate's one GitHub App, narrowed
+    to the application-engineer lane (platform/github-app/lanes.json) by bin/idp-github-app. The
+    App's tokens live one hour, so the value is minted here rather than read from the vault: a
+    cached one would be dead by the next deploy, and a dead token in the vault is worse than no
+    token because it looks live. The current value is written back so the vault never holds a
+    credential that has expired.
+    """
+    out = subprocess.run([str(IDP / "bin/idp-github-app"), "token", "application-engineer"],
+                         capture_output=True, text=True, timeout=180)
+    token = ""
+    if out.returncode == 0:
+        lines = [ln.strip() for ln in out.stdout.strip().splitlines() if ln.strip()]
+        token = lines[-1] if lines else ""
+    if not token:
+        print("  BLIND   omniflow  no GitHub App installation token (the App may not be installed "
+              "or the vault may hold no pem); the door will answer but cannot write the lane")
+        return ""
+    vault_merge("otto-lifeboat", {"OMNIFLOW_GH_TOKEN": token})
+    print("  minted otto-lifeboat/OMNIFLOW_GH_TOKEN (GitHub App installation token, 1h life)")
+    return token
 
 
 def wrangler(args: list[str], stdin: str | None = None) -> None:
@@ -281,7 +359,17 @@ def deploy() -> int:
     # Home 2's secrets, piped on stdin so no value is ever an argument, an environment
     # variable or a line in this session's scrollback (LAW 21).
     for name, candidates in SECRETS:
-        value = lifeboat_key() if name == "LIFEBOAT_KEY" else vault_first(candidates)
+        # Three of home 2's secrets are minted by the estate itself, not read: the door key
+        # (lifeboat_key), the ingest bearer (ingest_secret) and the lane writer (omniflow_token).
+        # A vault that lost one of them must not produce a door that answers 401 to everything.
+        if name == "LIFEBOAT_KEY":
+            value = lifeboat_key()
+        elif name == "AI_STUDIO_INGEST_SECRET":
+            value = ingest_secret()
+        elif name == "OMNIFLOW_GH_TOKEN":
+            value = omniflow_token()
+        else:
+            value = vault_first(candidates)
         if value:
             wrangler(["secret", "put", name], stdin=value)
             print(f"  set {name}")

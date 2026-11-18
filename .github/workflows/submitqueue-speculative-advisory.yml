@@ -74,7 +74,7 @@ jobs:
             tests/test_submitqueue_jev_plan.py
       - name: Publish evidence for independent downstream review
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: submitqueue-speculative-${{ github.run_id }}
           path: |

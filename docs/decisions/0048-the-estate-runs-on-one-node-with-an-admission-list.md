@@ -166,3 +166,36 @@ nobody can say the estate fits.
 - The chart reserves are envelopes, not measurements. A HelmRelease declares no pod template
   in git, so each reserve states its basis and its uncertainty, and a missing reserve is a
   finding  --  unknown capacity is not zero capacity.
+
+## Amendment, 2026-11-17: the zone moves to meridianlabs.cloud (one name, one place)
+
+The same reasoning that moved the workloads applies to the name they are published under. The
+estate's zone was `mumchimp.com`, declared in one file: `clusters/oke/estate-config.yaml`. OKE is
+retired by this ADR, and the name was still living in the retired cluster's tree, with 64 literal
+copies of it scattered across code, workflows and intent YAML.
+
+Measured, 2026-11-17, on the laptop:
+
+```
+bin/estate-zone-gate --zone   ->  mumchimp.com
+bin/estate-zone-gate          ->  FAIL  64 literal zone name(s) in idp outside clusters/*/estate-config.yaml
+dig +short NS meridianlabs.cloud -> danica.ns.cloudflare.com. tony.ns.cloudflare.com.
+curl https://bus.meridianlabs.cloud/ -> 525 (the origin behind the name is gone)
+```
+
+The zone is now `meridianlabs.cloud`, declared in `clusters/oke/estate-config.yaml` -- the tree
+Flux actually applies (`clusters/oke/flux-system/gotk-sync.yaml` path `./clusters/oke`). That is
+where the value has to live: the k3s replacement tree is in no Flux path yet, so a value declared
+only there would never reach the live `estate-config` ConfigMap, and the 127 `${ESTATE_ZONE}`
+substitutions in `platform/` would have no source. The gate and every reader glob
+`clusters/*/estate-config.yaml`, so when the tree is renamed for the k3s cutover the declaration
+moves with the tree and no reader has to know the new name. `mumchimp.com` survives as a Ring 2
+brand (Mumchimp is a group company with a storefront), so its two links in `web/app/` are kept
+and are not zone drift.
+
+The cutover is one value plus a reconcile, and it is reversible: the old hostnames keep their
+tunnel rules until the new ones answer.
+
+What is not decided here: which Cloudflare records carry the traffic. That needs a Cloudflare
+API token or a dashboard action, and until it happens every `*.meridianlabs.cloud` name answers
+`525` (Cloudflare cannot complete a handshake with an origin that is gone).

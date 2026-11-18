@@ -7,7 +7,7 @@
     "layer": 279,
     "service": 121,
     "tool": 513,
-    "workflow": 105
+    "workflow": 106
   },
   "records": [
     {
@@ -2918,7 +2918,7 @@
       "id": "cap:intent/k8s-delete",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Deletes exactly ONE named cluster object. Dry run by default: the default call runs `kubectl delete --dry-run=server`, which proves the object exists and that the kubeconfig is allowed to delete it, and deletes nothing. A real delete needs both dry_run=false and confirm=<the object's own name>, so a stray flag cannot remove something you did not name. There is no selector, no --all and no list form, on purpose: this door exists for a single transient object a *controller* will re-create on its next reconcile (a stale CertificateRequest/Order, a wedged Job). It is not a way to change the estate: anything Flux reconciles is changed in git and converged (AGENTS.md 2), and kube-system is refused outright. It exists because before it, a cluster object that had gone stale could not be cleared at all -- the kubectl door was get-only and k8s-apply was apply-only, so a stuck CertificateRequest held meridian.mumchimp.com's HTTPS down with no governed way to remove it (2026-10-18). args: resource:   {type: string, description: \"kind, e.g. certificaterequest (no 'kind/name' form)\"} name:       {type: string, description: \"the object's name\"} namespace:  {type: string, default: \"\", description: \"namespace; empty for cluster-scoped\"} dry_run:    {type: bool, default: true} confirm:    {type: string, default: \"\", description: \"must equal name when dry_run=false\"} kubeconfig: {type: string, default: \"\"} steps: - name: delete # Plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} and already shlex-quotes # it -- so never wrap {{var}} in quotes here (an empty default would become the literal ''). # Every optional flag is expanded through ${x:+...} so an empty value adds no argument at all. cmd: > res={{resource}}; nm={{name}}; ns={{namespace}}; dr={{dry_run}}; cf={{confirm}}; kc={{kubeconfig}}; [ -n \"$res\" ] || { echo \"REFUSED: resource is required (e.g. certificaterequest)\"; exit 2; }; [ -n \"$nm\" ] || { echo \"REFUSED: name is required -- this door deletes one named object, never a selector\"; exit 2; }; [ \"$ns\" != kube-system ] || { echo \"REFUSED: kube-system is out of bounds for this door\"; exit 2; }; case \"$res$nm\" in *[!A-Za-z0-9._/-]*) echo \"REFUSED: resource and name are kinds and names, not arguments\"; exit 2;; esac; case \"$dr\" in True|true) mode=plan;; *) mode=delete;; esac; if [ \"$mode\" = delete ] && [ \"$cf\" != \"$nm\" ]; then echo \"REFUSED: a real delete needs confirm=$nm (got '${cf}')\"; exit 2; fi; if [ \"$mode\" = plan ]; then set -- --dry-run=server; else set -- ; fi; echo \"mode=$mode ${ns:+ns=$ns }${res}/$nm\"; ${kc:+env KUBECONFIG=\"$kc\"} kubectl --request-timeout=30s ${ns:+-n \"$ns\"} delete \"$res\" \"$nm\" \"$@\" --wait=false 2>&1",
+      "summary": "Deletes exactly ONE named cluster object. Dry run by default: the default call runs `kubectl delete --dry-run=server`, which proves the object exists and that the kubeconfig is allowed to delete it, and deletes nothing. A real delete needs both dry_run=false and confirm=<the object's own name>, so a stray flag cannot remove something you did not name. There is no selector, no --all and no list form, on purpose: this door exists for a single transient object a *controller* will re-create on its next reconcile (a stale CertificateRequest/Order, a wedged Job). It is not a way to change the estate: anything Flux reconciles is changed in git and converged (AGENTS.md 2), and kube-system is refused outright. It exists because before it, a cluster object that had gone stale could not be cleared at all -- the kubectl door was get-only and k8s-apply was apply-only, so a stuck CertificateRequest held meridian.${ESTATE_ZONE}'s HTTPS down with no governed way to remove it (2026-10-18). args: resource:   {type: string, description: \"kind, e.g. certificaterequest (no 'kind/name' form)\"} name:       {type: string, description: \"the object's name\"} namespace:  {type: string, default: \"\", description: \"namespace; empty for cluster-scoped\"} dry_run:    {type: bool, default: true} confirm:    {type: string, default: \"\", description: \"must equal name when dry_run=false\"} kubeconfig: {type: string, default: \"\"} steps: - name: delete # Plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} and already shlex-quotes # it -- so never wrap {{var}} in quotes here (an empty default would become the literal ''). # Every optional flag is expanded through ${x:+...} so an empty value adds no argument at all. cmd: > res={{resource}}; nm={{name}}; ns={{namespace}}; dr={{dry_run}}; cf={{confirm}}; kc={{kubeconfig}}; [ -n \"$res\" ] || { echo \"REFUSED: resource is required (e.g. certificaterequest)\"; exit 2; }; [ -n \"$nm\" ] || { echo \"REFUSED: name is required -- this door deletes one named object, never a selector\"; exit 2; }; [ \"$ns\" != kube-system ] || { echo \"REFUSED: kube-system is out of bounds for this door\"; exit 2; }; case \"$res$nm\" in *[!A-Za-z0-9._/-]*) echo \"REFUSED: resource and name are kinds and names, not arguments\"; exit 2;; esac; case \"$dr\" in True|true) mode=plan;; *) mode=delete;; esac; if [ \"$mode\" = delete ] && [ \"$cf\" != \"$nm\" ]; then echo \"REFUSED: a real delete needs confirm=$nm (got '${cf}')\"; exit 2; fi; if [ \"$mode\" = plan ]; then set -- --dry-run=server; else set -- ; fi; echo \"mode=$mode ${ns:+ns=$ns }${res}/$nm\"; ${kc:+env KUBECONFIG=\"$kc\"} kubectl --request-timeout=30s ${ns:+-n \"$ns\"} delete \"$res\" \"$nm\" \"$@\" --wait=false 2>&1",
       "contract": {
         "inputs": [
           "confirm",
@@ -42023,6 +42023,7 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-escrow",
         "cap:tool/idp-estate-seed",
+        "cap:tool/idp-otto-homes",
         "cap:tool/idp-tailscale-policy",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-ticket-verification",
@@ -46892,6 +46893,10 @@
         },
         {
           "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-github-app",
           "edge": "invokes"
         },
         {
@@ -58444,7 +58449,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -58747,7 +58752,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-node@v7",
+          "actions/setup-node@v7.1.0",
           "softprops/action-gh-release@v3"
         ]
       },
@@ -58802,7 +58807,7 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
         ]
       },
       "owner": "@chidionyema",
@@ -58926,9 +58931,9 @@
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
           "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
           "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -59185,8 +59190,8 @@
           "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "actions/upload-artifact@v7",
-          "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"
+          "actions/upload-artifact@v7.0.2",
+          "azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e"
         ]
       },
       "owner": "@chidionyema",
@@ -59357,10 +59362,10 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -59457,8 +59462,7 @@
       "summary": "demo-sandbox -- the GitHub Actions workflow demo-sandbox.yml.",
       "contract": {
         "inputs": [
-          "workflow_dispatch",
-          "schedule"
+          "workflow_dispatch"
         ],
         "outputs": [
           "job verdicts",
@@ -59580,7 +59584,7 @@
         "uses": [
           "./.github/actions/k3d-estate",
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -59709,7 +59713,7 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@v4",
+          "actions/checkout@v7",
           "dtolnay/rust-toolchain@stable"
         ]
       },
@@ -60085,8 +60089,8 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v6",
-          "actions/upload-artifact@v7",
+          "actions/setup-python@v7",
+          "actions/upload-artifact@v7.0.2",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
@@ -60164,12 +60168,12 @@
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
           "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -60397,7 +60401,6 @@
       "summary": "estate-state -- the GitHub Actions workflow estate-state.yml.",
       "contract": {
         "inputs": [
-          "schedule",
           "workflow_dispatch",
           "pull_request"
         ],
@@ -60417,11 +60420,11 @@
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550",
           "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
           "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
-          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+          "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
         ]
       },
       "owner": "@chidionyema",
@@ -60623,7 +60626,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -61517,7 +61520,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -61984,9 +61987,9 @@
         "cost_class": "free",
         "latency_class": "batch",
         "uses": [
-          "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
-          "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
-          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
       "owner": "@chidionyema",
@@ -62098,7 +62101,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -62154,7 +62157,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-python@v7.1.0"
+          "actions/setup-python@v7"
         ]
       },
       "owner": "@chidionyema",
@@ -62792,7 +62795,6 @@
       "summary": "ping -- the GitHub Actions workflow ping.yml.",
       "contract": {
         "inputs": [
-          "schedule",
           "workflow_dispatch"
         ],
         "outputs": [
@@ -63056,7 +63058,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          "actions/setup-python@v7.1.0",
+          "actions/setup-python@v7",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
@@ -63533,7 +63535,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-          "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370",
+          "github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066",
           "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e"
         ]
       },
@@ -63777,7 +63779,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
-          "actions/upload-artifact@v7"
+          "actions/upload-artifact@v7.0.2"
         ]
       },
       "owner": "@chidionyema",
@@ -64671,7 +64673,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/setup-node@v7"
+          "actions/setup-node@v7.1.0"
         ]
       },
       "owner": "@chidionyema",
@@ -64823,6 +64825,60 @@
         "health",
         "proof",
         "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-zone-bind",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "zone-bind -- the GitHub Actions workflow zone-bind.yml.",
+      "contract": {
+        "inputs": [
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/zone-bind.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
       ],
       "known_issues": [],
       "mirrors": []

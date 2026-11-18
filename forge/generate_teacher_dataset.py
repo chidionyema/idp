@@ -13,7 +13,7 @@ Input: one JSON object per line with "input" (or "text"). Output: {"input", "out
 the first N rows to check the schema before the full run and skips the 500-row floor.
 --batch sends everything through the Message Batches API at half price and polls until done.
 
-The door to the model is the estate's router (LAW 34): LITELLM_BASE_URL and LITELLM_API_KEY,
+The door to the model is the estate's router (LAW 34): LITELLM_BASE_URL and PENNYD_API_KEY,
 which the proxy answers on its Anthropic-compatible /v1/messages route, so --model is a router
 alias (default: the router's `default` lane). ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY, when set,
 win, for a client who brings a direct Anthropic key. Nothing here names a host.
@@ -259,8 +259,7 @@ def main(argv=None) -> int:
         )
     client = anthropic.Anthropic(
         base_url=router_root(_proxy_url),
-        api_key=os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("LITELLM_API_KEY"),
+        api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("PENNYD_API_KEY"),
     )
     road = label_batch if args.batch else label_live
     kwargs = {} if args.batch else {"concurrency": args.concurrency}

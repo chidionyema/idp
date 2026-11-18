@@ -76,7 +76,18 @@ SUFFIXES = {
     ".rs",
 }
 BARE_NAMES = {"Caddyfile", "Dockerfile", "Makefile", "Procfile"}
-EXEMPT_PREFIX = ("clusters/", "platform/oci/", "platform/ai/", "tests/", "docs/")
+EXEMPT_PREFIX = (
+    "clusters/",
+    "platform/oci/",
+    "platform/ai/",
+    "tests/",
+    "docs/",
+    # Records, not configuration. A record names the host it measured; rewriting it to the
+    # current zone falsifies the measurement (crew#796 asked for drift to be impossible, not
+    # for history to be edited). The zone is configuration; these files are evidence.
+    "eval/founder-agent/reports/",
+    "packages/estate-ui-kit/",
+)
 EXEMPT_PART = ("/tests/", "/.git/", "/node_modules/", "/.claude/worktrees/", "/docs/")
 EXEMPT_SUFFIX = (
     ".md",
@@ -84,6 +95,17 @@ EXEMPT_SUFFIX = (
     "science/verdicts.json",
     ".dependencies.json",
     "_receipts.json",
+    # The estate's own measurements of the old zone, kept as measurements.
+    "catalog/estate-capability-registry.json",
+    "catalog/incident-policy.json",
+    "catalog/truth-contract.json",
+    "catalog/truth-verdicts.json",
+    "platform/estate/memory/runtimes.json",
+    "platform/ladder/critical-lanes.json",
+    # Ring 2 brand links: Mumchimp is a group company with its own storefront, so its name is
+    # a brand, not the estate's zone. Founder, 2026-11-17: "mumchimp is one of our brands".
+    "web/app/page.tsx",
+    "web/app/products/page.tsx",
 )
 COMMENT = re.compile(r"^\s*(#|//|;|--|<!--|\*)")
 DECLARATION = re.compile(r"^\s*(export\s+)?ESTATE_ZONE\s*[:=]")

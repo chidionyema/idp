@@ -31,7 +31,13 @@ CONSOLE=${CLOUDFLARE_CONSOLE_URL:-https://dash.cloudflare.com/profile/api-tokens
 HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
 PROFILE="$HOME_DIR/cloudflare-browser"
 VENV="$HOME_DIR/bootstrap-venv"
-CFG="$IDP/clusters/oke/estate-config.yaml"
+# The zone is declared once, in clusters/<cluster>/estate-config.yaml. Which cluster
+# tree holds it is a Flux decision (gotk-sync.yaml path), not this script's: read every
+# candidate and take the one that declares a zone.
+CFG=$(for f in "$IDP"/clusters/*/estate-config.yaml; do
+  [ -f "$f" ] || continue
+  grep -q "^[[:space:]]*ESTATE_ZONE:" "$f" && { echo "$f"; break; }
+done)
 MODE=${1:-mint}
 case "$MODE" in mint|--preflight|--rotate) ;; *) sed -n 2,5p "$0"; exit 2;; esac
 
@@ -39,7 +45,8 @@ say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
 fail() { say FAIL "$1" "$2"; exit 1; }
 bl()   { say BLIND "$1" "$2"; exit 2; }
 for t in python3 curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
-ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true); [ -n "$ZONE" ] || bl config "no ESTATE_ZONE in $CFG"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
+[ -n "$ZONE" ] || bl config "no ESTATE_ZONE in any clusters/*/estate-config.yaml"
 BUCKET=${R2_BUCKET:-$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1])).get('r2',{}).get('bucket',''))" "$IDP/estate-defaults.yaml" 2>/dev/null || true)}
 [ -n "$BUCKET" ] || BUCKET="prospector-${ZONE%%.*}"
 mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
@@ -161,11 +168,36 @@ R2_GID=$(gid "Workers R2 Storage Write" com.cloudflare.api.account); [ -n "$R2_G
 WS_GID=$(gid "Workers Scripts Write" com.cloudflare.api.account); [ -n "$WS_GID" ] || fail perms "no permission group 'Workers Scripts Write' (account)"
 WR_GID=$(gid "Workers Routes Write" com.cloudflare.api.account.zone); [ -n "$WR_GID" ] || fail perms "no permission group 'Workers Routes Write' (zone)"
 WAI_GID=$(gid "Workers AI Write" com.cloudflare.api.account)   # newer than the others; optional
-zone=$(cf "$ROOT" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty'); [ -n "$zone" ] || fail zone "$ZONE is not a zone of this account"
-ZONE_ID=$(jq -r .id <<<"$zone"); ACCOUNT_ID=$(jq -r .account.id <<<"$zone")
+# The zone, resolved by a ladder instead of one lookup.
+#
+# Measured 2026-11-18 (run 44183564083): the root verifies ("ok root root token verifies") and
+# GET /zones?name=mumchimp.com answers, but GET /zones?name=meridianlabs.cloud was EMPTY, so the
+# deploy died with "FAIL zone meridianlabs.cloud is not a zone of this account" -- while the zone
+# was live in the SAME account (meridianlabs.cloud and mumchimp.com both answer NS
+# danica/tony.ns.cloudflare.com, and lifeboat-llm.meridianlabs.cloud answers on Cloudflare's edge).
+# The root is pinned to a zone set that predates the zone cutover (PR #8204). A pinned root is a
+# scope fact, not a zone fact, so the zone is resolved by a child instead: the root holds "User
+# API Tokens: Edit", so it can mint a reader that sees every zone in the account. That reader
+# finds the zone, the children that outlive are narrowed to the zone id, and the reader is
+# deleted in the same run. A zone that no child can see is a genuinely different account, and
+# that is refused by name.
 mint() { # <name> <policies-json> -> token JSON {id,value}
   cf "$ROOT" POST /user/tokens "$(jq -nc --arg n "$1" --argjson p "$2" '{name:$n, policies:$p}')" | jq -e 'select(.success) | .result | {id, value}'
 }
+zone=$(cf "$ROOT" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty')
+probe_id=""
+if [ -z "$zone" ]; then
+  ZR_GID=$(gid "Zone Read" com.cloudflare.api.account.zone.read)
+  [ -n "$ZR_GID" ] || ZR_GID=$(jq -r '.result[] | select((.scopes|index("com.cloudflare.api.account.zone.read")) or (.name|test("Zone Read";"i"))) | .id' <<<"$groups" | head -1)
+  [ -n "$ZR_GID" ] || fail zone "$ZONE is not a zone of this account, and no Zone Read permission group is available to widen the root"
+  probe=$(mint "estate-zone-read $ZONE" "$(jq -nc --arg g "$ZR_GID" '[{effect:"allow",resources:{"com.cloudflare.api.account.zone.*":"*"},permission_groups:[{id:$g}]}]')") \
+    || fail mint "the zone-read child was not created, so $ZONE cannot be resolved"
+  probe_id=$(jq -r .id <<<"$probe"); probe_value=$(jq -r .value <<<"$probe")
+  zone=$(cf "$probe_value" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty')
+  [ -n "$zone" ] || fail zone "$ZONE is not a zone of the account this root can reach; the root is scoped to a different account"
+  say ok zone "the root is scoped to a zone set that predates $ZONE; a zone-read child resolved it"
+fi
+ZONE_ID=$(jq -r .id <<<"$zone"); ACCOUNT_ID=$(jq -r .account.id <<<"$zone")
 dnspol=$(jq -nc --arg g "$DNS_GID" --arg z "$ZONE_ID" '[{effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$g}]}]')
 r2pol=$(jq -nc --arg g "$R2_GID" --arg a "$ACCOUNT_ID" '[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:[{id:$g}]}]')
 wrkpol=$(jq -nc --arg s "$WS_GID" --arg r "$WR_GID" --arg ai "$WAI_GID" --arg a "$ACCOUNT_ID" --arg z "$ZONE_ID" \
@@ -179,6 +211,13 @@ WRK=$(jq -r .value <<<"$wrktok"); unset wrktok
 DNS=$(jq -r .value <<<"$dnstok"); R2_ID=$(jq -r .id <<<"$r2tok"); R2_VAL=$(jq -r .value <<<"$r2tok"); unset dnstok r2tok
 R2_SECRET=$(printf '%s' "$R2_VAL" | python3 -c 'import sys,hashlib; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())'); unset R2_VAL
 say ok mint "DNS (zone $ZONE), R2 (account) and Workers (account+zone) tokens minted by the API"
+
+# The zone-read child has done its work and is not a credential the estate keeps: it is deleted
+# in the same run, so the only tokens that outlive are the narrow ones (zone id, account id).
+if [ -n "$probe_id" ]; then
+  cf "$ROOT" DELETE "/user/tokens/$probe_id" >/dev/null 2>&1 && say ok mint "the zone-read child was deleted; only the narrow tokens remain" || true
+  unset probe probe_value
+fi
 
 # 5. prove both before the vault (LAW 15): DNS token verifies and lists the zone; R2 token can see or create the bucket
 verify "$DNS" || fail verify "DNS token does not verify"

@@ -1,5 +1,5 @@
 {
- "revision": "2026-11-14",
+ "revision": "2026-11-16",
  "note": "One record per failure class. A class may occur once; a second instance of an open class is a governance failure, not a new incident.",
  "classes": [
   {
@@ -127,6 +127,29 @@
    ],
    "status": "open",
    "recurrence_checks": []
+  },
+  {
+   "class": "manual-export-friction",
+   "first_seen": "2026-11-16",
+   "instances": [
+    "an AI Studio turn reached the fleet only after Save to GitHub or a zip download and a manual lane trigger"
+   ],
+   "gap": "capture depended on a human export step, so a finished turn was never an event the estate could observe",
+   "compensating_action": "channel 1 tees the AI Studio stream in the browser and channel 2 accepts Google Drive changes.watch pushes at the edge; both resolve to one (path, sha256) commit on lane/aistudio-auto-intake, post OMNIFLOW-EVENT/v1 to idp#8133, broadcast chronicle.aistudio_ready and dispatch greenlane.yml",
+   "falsifier": "tests/test_aistudio_zero_click_ingest.py",
+   "owner": "platform",
+   "surfaces": [
+    "aistudio",
+    "edge",
+    "git",
+    "omniflow"
+   ],
+   "status": "closed",
+   "recurrence_checks": [
+    "2026-11-16"
+   ],
+   "instruction": "I-8096-REV2",
+   "closed_on": "2026-11-16"
   }
  ]
 }
