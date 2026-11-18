@@ -61,8 +61,7 @@ impl Ledger {
         self.requests.fetch_add(1, Ordering::Relaxed);
         self.input_tokens.fetch_add(in_tok, Ordering::Relaxed);
         self.output_tokens.fetch_add(out_tok, Ordering::Relaxed);
-        self.spend_nusd
-            .fetch_add(nusd(usd), Ordering::Relaxed);
+        self.spend_nusd.fetch_add(nusd(usd), Ordering::Relaxed);
     }
 
     pub fn record_hit(&self, saved_in_tok: u64, saved_usd: f64) {
@@ -132,7 +131,7 @@ mod tests {
 
     #[test]
     fn the_conversion_rounds_once_and_not_toward_zero() {
-        assert_eq!(nusd(0.000_000_0015), 2, "half a nano rounds up");
+        assert_eq!(nusd(0.000_000_001_5), 2, "half a nano rounds up");
         assert_eq!(nusd(-1.0), 0, "a negative rate card cannot become spend");
     }
 }

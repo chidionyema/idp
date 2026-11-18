@@ -303,6 +303,9 @@ fn error_fields(e: &PennyError) -> Value {
             json!({"kind": "bad_request", "detail": message})
         }
         PennyError::Config(message) => json!({"kind": "config", "detail": message}),
+        PennyError::Ledger { path, detail } => {
+            json!({"kind": "ledger", "path": path, "detail": detail})
+        }
     }
 }
 
@@ -316,6 +319,7 @@ fn error_kind(e: &PennyError) -> &'static str {
         PennyError::Upstream { .. } => "upstream",
         PennyError::BadRequest(_) => "bad_request",
         PennyError::Config(_) => "config",
+        PennyError::Ledger { .. } => "ledger",
     }
 }
 
@@ -427,6 +431,14 @@ async fn handle_chat_inner(
     let started = ctx.started;
     let now = ctx.now;
     let req = ctx.req.clone();
+    // The operation id is the client's idempotency key when it sends one, so
+    // a retried request reserves and settles the money exactly once.
+    let op_id = headers
+        .get("x-idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| req.clone());
 
     let key = auth_key(app, headers)?;
     let kfp = fingerprint(&key);
@@ -534,7 +546,7 @@ async fn handle_chat_inner(
     };
     let est_usd = est_cost_usd(est_tokens, entry, &app.cfg);
     // P0-5: reserve BEFORE dispatch; refusal happens pre-spend
-    app.budgets.reserve(&key, est_usd, now)?;
+    app.budgets.reserve_op(&op_id, &key, est_usd, now)?;
 
     let router = router_snapshot(app);
 
@@ -558,7 +570,7 @@ async fn handle_chat_inner(
                     stream,
                     SettleContext {
                         budgets: app.budgets.clone(),
-                        key: key.clone(),
+                        op_id: op_id.clone(),
                         reserved_usd: est_usd,
                         price_in: lane.price_in_per_mtok(),
                         price_out: lane.price_out_per_mtok(),
@@ -582,7 +594,7 @@ async fn handle_chat_inner(
                     .map_err(|e| PennyError::BadRequest(e.to_string()));
             }
             Err(e) => {
-                let _ = app.budgets.settle(&key, est_usd, 0.0, now);
+                let _ = app.budgets.settle_op(&op_id, 0.0, now);
                 return Err(e);
             }
         }
@@ -603,7 +615,7 @@ async fn handle_chat_inner(
             let actual_usd = in_tok as f64 * lane.price_in_per_mtok() / 1e6
                 + out_tok as f64 * lane.price_out_per_mtok() / 1e6;
             let (cache_read, cache_write) = cache_usage(&usage);
-            app.budgets.settle(&key, est_usd, actual_usd, now)?;
+            app.budgets.settle_op(&op_id, actual_usd, now)?;
             app.ledger.charge(in_tok, out_tok, actual_usd);
             app.traces.finish(
                 &req,
@@ -653,7 +665,7 @@ async fn handle_chat_inner(
             Ok((StatusCode::OK, Json(resp)).into_response())
         }
         Err(e) => {
-            let _ = app.budgets.settle(&key, est_usd, 0.0, now);
+            let _ = app.budgets.settle_op(&op_id, 0.0, now);
             Err(e)
         }
     }
@@ -691,6 +703,12 @@ pub async fn chat(
         Err(PennyError::BadRequest(m)) => {
             (StatusCode::BAD_REQUEST, Json(json!({"error": m}))).into_response()
         }
+        // The financial ledger could not be read or written: fail closed.
+        Err(PennyError::Ledger { path, detail }) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": {"type": "ledger_unavailable", "path": path, "detail": detail}})),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({"error": {"type": "upstream", "detail": e.to_string()}})),
@@ -736,6 +754,12 @@ pub async fn messages(
         Err(PennyError::BadRequest(m)) => {
             anthropic_err("invalid_request_error", StatusCode::BAD_REQUEST, &m)
         }
+        // The financial ledger could not be read or written: fail closed.
+        Err(PennyError::Ledger { path, detail }) => anthropic_err(
+            "api_error",
+            StatusCode::SERVICE_UNAVAILABLE,
+            &format!("budget ledger {path} unavailable: {detail}"),
+        ),
         Err(PennyError::RateLimited {
             lane,
             retry_after_s,

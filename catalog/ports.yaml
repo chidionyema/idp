@@ -93,6 +93,15 @@ ports:
   # Fleet Reactor page that reads it (bin/reactor-standalone:118). Both bind loopback; the one
   # non-loopback surface that launcher opens is the register companion on its own port, not this.
   - {port: 18790, service: fleetview-backend,   compose: none, bind: 127.0.0.1}
+  # The dispatch plane's own door: bin/estate-dispatch-action binds it (ESTATE_DISPATCH_PORT,
+  # default 18791) and answers /health, /metrics, /agent and /intents. It landed with #8216
+  # on 2026-11-18 without a row here, so bin/port-gate called the real ledger undeclared and
+  # the offline-gate's portprobe rung failed every candidate on main. Declared, not exempt.
+  - {port: 18791, service: estate-dispatch,      compose: none, bind: 127.0.0.1}
+  # The local OTLP bench receiver. bin/estate-topology:320 reads the push state's endpoint and
+  # treats 4319 as a bench (not the estate's cloud) endpoint, so the port is probed here and
+  # the gate counts a probe as a claim: declared, compose none, loopback only.
+  - {port: 4319, service: otel-collector,        compose: none, bind: 127.0.0.1}
   - {port: 18900, service: reactor-standalone,  compose: none, bind: 127.0.0.1}
   # One-Brain: the Argon surface that carries the estate's measured, signed evidence on
   # /api/brain/stream and shows it in the One-Brain panel. It binds loopback on the Mac.
