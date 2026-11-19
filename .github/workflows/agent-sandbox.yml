@@ -160,6 +160,7 @@ jobs:
             pi|gemini)   npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
             *)           echo "::error::unknown harness"; exit 1 ;;
           esac
+          python3 -m pip install -q ruff==0.15.18
           bash bin/agent-sandbox-age
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -276,6 +277,20 @@ jobs:
           # The patch is everything the agent changed against the commit it started from,
           # committed or not, tracked or new.
           git add -A
+          # Deterministic normalization stays in the untrusted producer, before sealing.
+          # The independent submit scope and required checks still grade the final delta.
+          git diff --cached --name-only --no-renames --diff-filter=ACMT -z "$(cat "$out/base")" > "$out/changed-paths"
+          pyfiles=()
+          while IFS= read -r -d '' p; do
+            case "$p" in
+              *.py) [ -f "$p" ] && [ ! -L "$p" ] && pyfiles+=("$p") ;;
+            esac
+          done < "$out/changed-paths"
+          if [ "${#pyfiles[@]}" -gt 0 ]; then
+            ruff format --quiet -- "${pyfiles[@]}" > "$out/format.stdout" 2>&1
+            ruff format --quiet --check -- "${pyfiles[@]}" >> "$out/format.stdout" 2>&1
+            git add -- "${pyfiles[@]}"
+          fi
           git diff --cached --binary "$(cat "$out/base")" > "$out/patch"
           echo "patch: $(git diff --cached --stat "$(cat "$out/base")" | tail -1)"
 
@@ -288,7 +303,7 @@ jobs:
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
           files=()
-          for name in base patch transcript.jsonl stdout claude-provider-receipt claude-provider-error google.failed.stdout google.failed.transcript.jsonl; do
+          for name in base patch transcript.jsonl stdout format.stdout claude-provider-receipt claude-provider-error google.failed.stdout google.failed.transcript.jsonl; do
             if [ -f "$out/$name" ]; then files+=("$name"); fi
           done
           [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
