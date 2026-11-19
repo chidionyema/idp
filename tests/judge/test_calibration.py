@@ -110,6 +110,11 @@ def test_kappa_above_threshold(db_path):
     when the gold set shows strong agreement between judge and human.
     """
     _seed_gold_set(db_path, agreeing=50, disagreeing=0)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE judge_verdicts_gold_set SET judge_score=0, human_label=0 "
+            "WHERE id <= 25"
+        )
 
     calibrator = GoldSetCalibrator(db_path=db_path, gold_set_size=50)
     result = calibrator.calibrate()
@@ -179,3 +184,11 @@ def test_judge_exposes_verdict_details(db_path):
     assert hasattr(verdict, "arg_validity")
     assert hasattr(verdict, "result_utilization")
     assert hasattr(verdict, "error_recovery")
+
+
+def test_single_class_cannot_calibrate(db_path):
+    _seed_gold_set(db_path, agreeing=50, disagreeing=0)
+    calibrator = GoldSetCalibrator(db_path=db_path, gold_set_size=50)
+    result = calibrator.calibrate()
+    assert result["status"] == "inconclusive"
+    assert not calibrator.is_calibrated()

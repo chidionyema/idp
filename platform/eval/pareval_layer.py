@@ -11,6 +11,46 @@ from enum import Enum
 import numpy as np
 
 
+# Insert into platform/eval/pareval_layer.py. Independent bounded paired trials;
+# fixed-horizon Hoeffding interval supports arbitrary bounded within-pair scores.
+def fixed_horizon_decision(observations, *, planned_ids, strata, margin, alpha=0.05):
+    """No optional stopping or post-hoc strata; no pseudo-probability.
+
+    The unit must be an independently sampled task/cluster (one row per ID).
+    The preregistered ID->stratum mapping defines the target sample composition.
+    This conservative fixed-horizon method assumes independent bounded paired
+    differences; clustered tasks must first be aggregated to independent units.
+    """
+    from math import isfinite, log, sqrt
+
+    if not isinstance(planned_ids, dict) or not planned_ids or set(planned_ids.values()) != set(strata):
+        raise ValueError("invalid preregistered inventory")
+    if not 0 < alpha < 1 or not 0 < margin < 1:
+        raise ValueError("invalid fixed-horizon policy")
+    observed = {}
+    for task_id, stratum, a, b in observations:
+        if task_id not in planned_ids or task_id in observed or planned_ids[task_id] != stratum:
+            return {"decision": "INCONCLUSIVE", "reason": "invalid or duplicate sample"}
+        if any(type(v) not in (int, float) or not isfinite(v) or not 0 <= v <= 1 for v in (a, b)):
+            return {"decision": "INCONCLUSIVE", "reason": "invalid or missing score"}
+        observed[task_id] = a - b
+    if len(observed) != len(planned_ids):
+        return {"decision": "NEED_MORE_EVIDENCE", "n": len(observed), "planned_n": len(planned_ids)}
+    n = len(observed)
+    mean = sum(observed.values()) / n
+    radius = sqrt(2 * log(2 / alpha) / n)
+    lower, upper = max(-1., mean - radius), min(1., mean + radius)
+    if lower > margin:
+        decision = "A_BETTER"
+    elif upper < -margin:
+        decision = "B_BETTER"
+    elif -margin < lower and upper < margin:
+        decision = "EQUIVALENT"
+    else:
+        decision = "INCONCLUSIVE"
+    return {"decision": decision, "n": n, "mean": mean, "lower": lower, "upper": upper, "alpha": alpha, "margin": margin, "method": "fixed_horizon_hoeffding"}
+
+
 class Decision(Enum):
     """Terminal decision outcomes from partial evaluation."""
 

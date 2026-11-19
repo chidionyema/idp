@@ -1581,6 +1581,14 @@ class GitHubBackend:
             if (existing[0].get("body") or "") != body:
                 self.gh(f"pulls/{number}", "PATCH", {"body": body})
             return number
+        # A successful batch is not proof of every final lane head. Before the
+        # PR creation effect, wait for the existing exact-head check inventory.
+        # This is the existing CI precondition, not the independent NSVEE receipt.
+        base = self.main()
+        self._await_green(rebased, time.time() + self.LAND_WAIT_S)
+        if self._ref(lane) != rebased or self.main() != base:
+            raise RuntimeError("PR admission: candidate head or main changed under proof")
+        body = self._proof_body(lane, head, rebased, tip)
         subject = self.git("log", "-1", "--format=%s", rebased)
         created = self.gh(
             "pulls",

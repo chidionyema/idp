@@ -220,6 +220,93 @@ def check_receipt_against_tree(receipt: Any, tree: Path) -> str:
     return actual
 
 
+# Insert in platform/estate/nsvee_enforcement.py before check_surfaces.
+# This is a pure predicate; caller MUST use trusted, independently supplied context
+# and QUAD authentication. It does not acquire leases, consume nonces or open PRs.
+def validate_admission_receipt(receipt, expected, *, now, authenticate):
+    """Return authenticated evidence only; never authorize effect by itself.
+
+    authenticate(signer, key_id, canonical_bytes, signature) must use the
+    existing trusted identity registry, reject revoked keys, and return True
+    only on cryptographic success. The effect gateway must atomically consume
+    the nonce and CAS both refs under the existing fenced lease.
+    """
+    binding = (
+        "repository", "base", "head", "tree", "contract", "policy",
+        "environment", "instruction", "fence", "nonce", "scope",
+    )
+    fields = set(binding) | {
+        "schema", "issued_at", "expires_at", "signer", "key_id", "signature",
+        "verdict", "checks", "evidence_digest",
+    }
+    if not isinstance(receipt, dict) or set(receipt) != fields:
+        raise ReceiptError("malformed admission receipt")
+    if receipt["schema"] != "estate.nsvee.admission/2":
+        raise ReceiptError("wrong admission schema")
+    for name in binding:
+        if name not in expected or receipt[name] != expected[name]:
+            raise ReceiptError(f"binding mismatch: {name}")
+    for name in ("base", "head", "tree"):
+        if not isinstance(receipt[name], str) or not _HEX40.fullmatch(receipt[name]):
+            raise ReceiptError(f"invalid git binding: {name}")
+    for name in ("contract", "policy", "environment", "evidence_digest"):
+        if not isinstance(receipt[name], str) or not _HEX64.fullmatch(receipt[name]):
+            raise ReceiptError(f"invalid digest: {name}")
+    for name in ("instruction", "nonce", "repository", "signer", "key_id", "signature"):
+        if not isinstance(receipt[name], str) or not receipt[name].strip():
+            raise ReceiptError(f"missing identity: {name}")
+    if type(receipt["fence"]) is not int or receipt["fence"] < 1:
+        raise ReceiptError("invalid fence")
+    scope = receipt["scope"]
+    if not isinstance(scope, list) or not scope or not all(
+        isinstance(p, str) and p and not p.startswith("/")
+        and ".." not in p.split("/") and "\\" not in p for p in scope
+    ) or len(set(scope)) != len(scope) or scope != sorted(scope):
+        raise ReceiptError("invalid trusted scope")
+    times = (now, receipt["issued_at"], receipt["expires_at"], expected.get("max_ttl"))
+    if any(type(v) is not int for v in times):
+        raise ReceiptError("invalid receipt time")
+    if not 0 <= times[1] <= now < times[2] or not 0 < times[2] - times[1] <= times[3]:
+        raise ReceiptError("receipt stale or outside allowed TTL")
+    if receipt["signer"] == expected.get("builder") or receipt["signer"] not in expected.get("verifiers", ()):
+        raise ReceiptError("signer is not an independent permitted verifier")
+    if expected.get("nonce_unused") is not True:
+        raise ReceiptError("nonce not available")
+    if receipt["verdict"] != "PASS":
+        raise ReceiptError("not a passing verdict")
+    required = expected.get("required_checks")
+    checks = receipt["checks"]
+    if not isinstance(required, dict) or not required or not isinstance(checks, dict) or set(checks) != set(required):
+        raise ReceiptError("missing or unexpected check inventory")
+    for name, rule in required.items():
+        check = checks[name]
+        if not isinstance(rule, dict) or not isinstance(check, dict) or set(check) != {"status", "executed", "evidence", "control"}:
+            raise ReceiptError(f"malformed check: {name}")
+        if not isinstance(check["evidence"], str) or not _HEX64.fullmatch(check["evidence"]):
+            raise ReceiptError(f"missing check evidence: {name}")
+        if rule.get("mode") == "NOT_APPLICABLE":
+            # Independently resolved applicability must be bound by policy and
+            # contract digest; never accept candidate self-declared skips.
+            if check["status"] != "NOT_APPLICABLE" or check["executed"] != 0 or check["control"] != "NOT_APPLICABLE":
+                raise ReceiptError(f"wrong applicability: {name}")
+        elif rule.get("mode") == "REQUIRED":
+            if check["status"] != "PASS" or type(check["executed"]) is not int or check["executed"] < 1 or check["control"] != "PASS":
+                raise ReceiptError(f"unproved mandatory check: {name}")
+        else:
+            raise ReceiptError(f"unknown trusted check policy: {name}")
+    if not any(rule.get("mode") == "REQUIRED" for rule in required.values()):
+        raise ReceiptError("no executed mandatory checks")
+    payload = {k: v for k, v in receipt.items() if k != "signature"}
+    try:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
+        valid = authenticate(receipt["signer"], receipt["key_id"], encoded, receipt["signature"])
+    except Exception as exc:
+        raise ReceiptError("receipt authentication unavailable") from exc
+    if valid is not True:
+        raise ReceiptError("receipt authentication failed")
+    return receipt
+
+
 def check_surfaces(repo_root: Path) -> list[dict]:
     """Report, per surface, whether the estate enforces the receipt there."""
     repo_root = Path(repo_root)

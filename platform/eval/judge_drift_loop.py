@@ -41,7 +41,10 @@ class JudgeDriftLoop(ControlLoop):
 
         try:
             # Extract judge score if available
-            judge_score = verdict.get("judge_score", 0.5)
+            judge_score = verdict.get("judge_score")
+            if judge_score is None:
+                self.last_error = "UNKNOWN: missing judge score"
+                return
 
             # Record verdict and check for drift
             alert = self.sentinel.record_verdict(judge_score)
@@ -64,6 +67,9 @@ class JudgeDriftLoop(ControlLoop):
         try:
             calibration_result = self.calibrator.calibrate()
 
+            if calibration_result["status"] != "calibrated":
+                self.last_error = "UNKNOWN: " + calibration_result["status"]
+                return
             if calibration_result["status"] == "calibrated":
                 kappa = calibration_result["kappa"]
                 if kappa < self.calibrator.KAPPA_THRESHOLDS["substantial"]:

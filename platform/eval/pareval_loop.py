@@ -49,8 +49,8 @@ class ParEvalLoop(ControlLoop):
         if turn_count >= self.policy.max_tasks:
             return GateDecision(
                 action="halt",
-                evidence=f"Reached max_tasks ({self.policy.max_tasks})",
-                confidence=0.95,
+                evidence=f"Reached max_tasks ({self.policy.max_tasks}); budget stop, not statistical acceptance",
+                confidence=0.0,
             )
 
         return GateDecision(action="allow")

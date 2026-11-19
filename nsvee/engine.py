@@ -628,6 +628,10 @@ class NSVEE:
     # ------------------------------------------------------------- Tier 3
     def _verify(self, out: VerifiedTaskOutput, timeout_s: int) -> List[SandboxResult]:
         """Run twice on PASS to defeat nondeterministic flakes."""
+        if not any(test.strip() for test in out.unit_tests):
+            return [
+                SandboxResult(Verdict.FAIL, notes=["no executable tests supplied"])
+            ]
         script = build_script(out.code_implementation, out.unit_tests)
         results = [self.runner.run(script, timeout_s)]
         if results[0].verdict == Verdict.PASS:
@@ -813,6 +817,10 @@ def verify(
     """
     runner = runner or default_runner()
     cases = list(tests or [])
+    if not cases or any(not isinstance(case, str) or not case.strip() for case in cases):
+        return VerificationReport(
+            status="EXHAUSTED", error="no executable tests supplied"
+        )
     script = build_script(artifact, cases)
     results = [runner.run(script, timeout_s)]
     if results[0].verdict == Verdict.PASS:
