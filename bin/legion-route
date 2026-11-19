@@ -62,6 +62,10 @@ def select(routes, offers, failures, *, mission_id, capabilities, tokens, budget
         raise ValueError("invalid mission envelope")
     if not finite(now) or not finite(max_age) or max_age <= 0:
         raise ValueError("invalid policy clock")
+    # Materialize the authenticated failure snapshot once. A generator must not
+    # lose account failures when evaluating the first offer.
+    failures = tuple(failures)
+    offers = tuple(offers)
     eligible = []
     seen = set()
     # Failure evidence is account-scoped for capacity and authentication; model-level
@@ -94,7 +98,7 @@ def select(routes, offers, failures, *, mission_id, capabilities, tokens, budget
         for failure in failures:
             if failure.get("provider") != provider or failure.get("account_id") != account:
                 continue
-            if failure.get("class") not in ("CAPACITY", "AUTHENTICATION", "MODEL_UNAVAILABLE", "TRANSPORT"):
+            if failure.get("class") not in ("CAPACITY", "FUNDING", "AUTHENTICATION", "MODEL_UNAVAILABLE", "TRANSPORT", "RATE_LIMITED"):
                 continue
             if failure["class"] == "MODEL_UNAVAILABLE" and failure.get("model") != model:
                 continue
@@ -102,7 +106,7 @@ def select(routes, offers, failures, *, mission_id, capabilities, tokens, budget
             failed_at = failure.get("observed_at")
             # Missing expiry requires positive newer evidence; a pre-failure offer
             # is never evidence of recovery even after the cooldown elapses.
-            if not finite(failed_at) or not finite(retry) or now < retry or observed <= failed_at:
+            if not finite(failed_at) or not finite(retry) or retry < failed_at or now < retry or observed <= failed_at:
                 blocked = True
                 break
         if blocked:

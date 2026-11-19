@@ -51,3 +51,31 @@ def test_duplicate_offer_refused(tmp_path):
 def test_quality_then_cost_deterministic(tmp_path):
     assert choose(routes(tmp_path),[offer(),offer('other',reserved_cost_usd=0.1)])['provider']=='other'
     assert choose(routes(tmp_path),[offer(),offer('other',success_rate=0.8,reserved_cost_usd=0)])['provider']=='newvendor'
+
+
+@pytest.mark.parametrize("failure_class", ["FUNDING", "RATE_LIMITED"])
+def test_exhausted_funding_or_rate_limit_is_account_scoped(tmp_path, failure_class):
+    failure = dict(
+        provider="newvendor", account_id="newvendor-account",
+        **{"class": failure_class}, observed_at=98, retry_not_before=130,
+    )
+    assert choose(routes(tmp_path), [offer(), offer("other")], [failure])["provider"] == "other"
+
+
+def test_iterator_failure_snapshot_applies_to_every_offer(tmp_path):
+    failure = dict(
+        provider="newvendor", account_id="newvendor-account",
+        **{"class": "CAPACITY"}, observed_at=98, retry_not_before=130,
+    )
+    assert choose(
+        routes(tmp_path), [offer("other", success_rate=0.1), offer()], iter([failure]),
+    )["provider"] == "other"
+
+
+def test_invalid_cooldown_cannot_restore_capacity(tmp_path):
+    failure = dict(
+        provider="newvendor", account_id="newvendor-account",
+        **{"class": "CAPACITY"}, observed_at=98, retry_not_before=97,
+    )
+    with pytest.raises(mod.NoRoute):
+        choose(routes(tmp_path), [offer()], [failure])
