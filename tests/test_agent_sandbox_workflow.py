@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -254,13 +255,16 @@ def _agent_step(
         f = bin_ / name
         f.write_text("#!/bin/bash\n" + (fake if fake is not None else body))
         f.chmod(0o755)
+    ruff = shutil.which("ruff")
+    if ruff:
+        (bin_ / "ruff").symlink_to(ruff)
     temp, home = tmp_path / "runner", tmp_path / "home"
     temp.mkdir()
     home.mkdir()
     # What the admission step leaves for the run step (idp#8283).
     (temp / "admission").mkdir()
     (temp / "admission" / "contract.txt").write_text(
-        "\n\nLEGION ADMISSION: a.txt only\n"
+        "\n\nLEGION ADMISSION: a.txt, app.py only\n"
     )
     # The claude-native launcher is main's bin/claude-anthropic; stand it in, never call Anthropic.
     (r / "bin").unlink()
@@ -585,8 +589,22 @@ def test_refused_fallback_does_not_run_second_model(tmp_path):
 
 
 def test_unadmitted_provider_never_invokes_worker(tmp_path):
-    p, out = _agent_step(
-        tmp_path, "gemini", FAKE["pi"], {"ADMITTED_PROVIDER": ""}
-    )
+    overrides = {"ADMITTED_PROVIDER": ""}
+    p, out = _agent_step(tmp_path, "gemini", FAKE["pi"], overrides)
     assert p.returncode == 2 and "provider not admitted" in p.stdout
     assert not (out / "transcript.jsonl").exists()
+
+
+def test_worker_normalizes_python_before_sealing(tmp_path):
+    body = FAKE["pi"] + 'printf "x=  2\\n" > app.py\n'
+    p, out = _agent_step(tmp_path, "pi", body)
+    assert p.returncode == 0, p.stdout + p.stderr
+    patch = (out / "patch").read_text()
+    assert "+x = 2\n" in patch
+    assert "+x=  2\n" not in patch
+
+
+def test_worker_installs_the_pinned_formatter():
+    step = _step("agent", "Install the harness")
+    assert "ruff==0.15.18" in step["run"]
+    assert "format.stdout" in _step("agent", "Encrypt what leaves")["run"]
