@@ -31,7 +31,9 @@ EXEMPT = {
 def _read_env_names() -> set[str]:
     names: set[str] = set()
     for path in (ROOT / "platform/lifeboat/src").glob("*.js"):
-        names.update(re.findall(r"env\.([A-Z][A-Z0-9_]+)", path.read_text(encoding="utf-8")))
+        names.update(
+            re.findall(r"env\.([A-Z][A-Z0-9_]+)", path.read_text(encoding="utf-8"))
+        )
     return names
 
 
@@ -47,4 +49,7 @@ def test_every_secret_the_lifeboat_reads_is_wired() -> None:
         f"needs them cannot work: {missing}"
     )
 
-ALIASES = {"GITHUB_TOKEN": "OMNIFLOW_GH_TOKEN"}  # alternate name for the same credential
+
+ALIASES = {
+    "GITHUB_TOKEN": "OMNIFLOW_GH_TOKEN"
+}  # alternate name for the same credential
