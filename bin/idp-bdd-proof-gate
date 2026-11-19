@@ -645,6 +645,20 @@ def _self_test() -> int:
 
 
 MAX_ADMISSION_PATHS = 5
+PRODUCT_TREES = {"platform"}
+
+
+def subsystem_of(path: str) -> str:
+    """The tree a path belongs to.
+
+    Two components only where the second names a product (platform/<product>); one
+    everywhere else. Taking two components unconditionally made `bin/idp-shadow` its
+    own subsystem, so no two files under bin/ could ever share a scope.
+    """
+    parts = path.split("/")
+    if len(parts) > 2 and parts[0] in PRODUCT_TREES:
+        return "/".join(parts[:2])
+    return parts[0]
 
 
 def verify_admission_block(body: str) -> tuple[bool, str]:
@@ -680,11 +694,12 @@ def verify_admission_block(body: str) -> tuple[bool, str]:
         return False, "ADMISSION_REFUSED: duplicate scope paths"
     if len(scope) > MAX_ADMISSION_PATHS:
         return False, f"ADMISSION_REFUSED: {len(scope)} paths exceeds {MAX_ADMISSION_PATHS}"
-    subsystems = {
-        "/".join(x.split("/")[:2]) if len(x.split("/")) > 1 else x.split("/")[0]
-        for x in scope
-    }
-    if len(subsystems) > 1:
+    subsystems = {subsystem_of(x) for x in scope}
+    # A change and its test are one unit. tests/ is the estate's single test root,
+    # never deployed, so admitting it beside one code subsystem adds no blast radius.
+    # Anything else stays one subsystem, and the count of paths is still capped.
+    code = subsystems - {"tests"}
+    if len(code) > 1 or len(subsystems) > 2:
         return False, f"ADMISSION_REFUSED: cross-subsystem scope {sorted(subsystems)}"
     expected = hashlib.sha256(
         json.dumps({"base": base, "scope": sorted(scope)}, sort_keys=True).encode()
