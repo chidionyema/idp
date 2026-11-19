@@ -1,0 +1,100 @@
+# button: Re-run the submit door on this branch
+# idp#8304. The pre-push check ran on the agent's own machine. A web sandbox with no package
+# network cannot install the pinned ruff/yamllint, so its only ways forward were to stop or to
+# push with --no-verify, and nothing recorded which. 25 of the last 73 red Greenlane batches were
+# red on fast-gate itself.
+#
+# The door: an agent pushes `submit/<name>`. This runs the reusable fast-gate.yml -- the identical
+# pinned check ci.yml runs first -- on that exact commit, in the cloud. Green: the App pushes the
+# same commit to `lane/<name>`, which wakes the Greenlane. Red: the failing run is posted to the
+# claim issue the commit's `Claim:` trailer names, owner named. No agent needs local tools, and a
+# local skip buys nothing, because the check is this job.
+name: submit-gate
+on:
+  push:
+    branches: ["submit/**"]
+permissions:
+  contents: read
+  pull-requests: read   # fast-gate.yml's own job asks for it; a callee cannot exceed its caller
+concurrency:
+  group: submit-gate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    uses: ./.github/workflows/fast-gate.yml
+
+  promote:
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   submit-gate  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          permission-contents: write
+      - name: Promote the checked commit to its lane
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          name="${REF#submit/}"
+          case "$name" in ""|*..*|-*) echo "BLIND   submit-gate  refusing lane name '$name'"; exit 2 ;; esac
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git fetch -q --depth=1 origin "$SHA"
+          git -c "http.extraHeader=Authorization: Basic $auth" push -q origin "+$SHA:refs/heads/lane/$name"
+          echo "promoted $SHA -> lane/$name after fast-gate passed on this exact commit" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  tell-the-owner:
+    needs: gate
+    if: failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Post the failing run to the claim issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          msg=$(git log -1 --format=%B "$SHA")
+          claim=$(printf '%s\n' "$msg" | sed -n 's/^Claim:[[:space:]]*\(chidionyema\/idp\)\{0,1\}#\([0-9][0-9]*\)[[:space:]]*$/\2/p' | tail -1)
+          agent=$(printf '%s\n' "$msg" | sed -n 's/^Agent:[[:space:]]*\([^[:space:]]*\).*$/\1/p' | tail -1)
+          if [ -z "$claim" ]; then
+            echo "BLIND   submit-gate  $REF ($SHA) failed and names no Claim: trailer; no owner to tell"
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${claim}/comments" -X POST -f body="<!-- submit-gate head=${SHA} -->
+          **submit door: \`${REF}\` failed the fast gate** -- owner \`${agent:-unknown}\`.
+
+          - head: \`${SHA}\`
+          - failing run: ${RUN}
+          - next: fix on \`${REF}\` and push again; only a green commit is promoted to \`lane/${REF#submit/}\`." >/dev/null
+          echo "told claim #${claim} (${agent:-unknown})"
