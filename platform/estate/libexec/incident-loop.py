@@ -475,10 +475,8 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
                         f"gh api {conclusion} page {page} returned invalid run"
                     )
                 original = by_id.get(run["id"])
-                if (
-                    original is None
-                    or int(run.get("run_attempt") or 1)
-                    > int(original.get("run_attempt") or 1)
+                if original is None or int(run.get("run_attempt") or 1) > int(
+                    original.get("run_attempt") or 1
                 ):
                     by_id[run["id"]] = run
             if len(batch) < 100:
@@ -547,9 +545,7 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
     # starve an older main-branch P0 indefinitely.
     incidents.sort(
         key=lambda incident: (
-            -score_incident(
-                policy, incident["severity"], incident["blast"]
-            )[0],
+            -score_incident(policy, incident["severity"], incident["blast"])[0],
             incident["detail"].get("created_at", ""),
             incident["id"],
         )
@@ -884,7 +880,6 @@ def push_worker_task(policy: dict, goal: str) -> tuple[str, str]:
     return "worker", ""
 
 
-
 def worker_queue_witness(policy: dict, dispatch_ref: str) -> tuple[str, str]:
     """Read the existing queue's durable task record; queued is not running.
 
@@ -943,7 +938,9 @@ def audit_p0_worker_liveness(
         elapsed = float("inf")
     else:
         try:
-            elapsed = max(0.0, (wall_now() - parse_iso(row["dispatched_at"])).total_seconds())
+            elapsed = max(
+                0.0, (wall_now() - parse_iso(row["dispatched_at"])).total_seconds()
+            )
         except (TypeError, ValueError):
             elapsed = float("inf")
     sla = max(60, int(row["sla_minutes"] or 15) * 60)
@@ -1153,7 +1150,8 @@ def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
     if not isinstance(runs, list):
         return False, ""
     matching = [
-        item for item in runs
+        item
+        for item in runs
         if isinstance(item, dict)
         and item.get("name") == workflow
         and item.get("head_branch") == branch
@@ -1161,7 +1159,13 @@ def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
     ]
     if not matching:
         return False, ""
-    latest = max(matching, key=lambda item: (item["id"], item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0))
+    latest = max(
+        matching,
+        key=lambda item: (
+            item["id"],
+            item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0,
+        ),
+    )
     try:
         original_id = int(run_id)
         original_attempt = int(detail.get("run_attempt") or 1)
@@ -1246,7 +1250,10 @@ def finalize_verified_incident(
     if not confirmed:
         code, _, _ = run_gh(
             [
-                "issue", "close", str(row["ticket"]), "--comment",
+                "issue",
+                "close",
+                str(row["ticket"]),
+                "--comment",
                 f"The incident loop verified the source: {row['lesson']}. "
                 f"MTTR {row['mttr_seconds']}s.",
             ],
@@ -1258,7 +1265,10 @@ def finalize_verified_incident(
         if not confirmed:
             return False
     set_field(
-        conn, row["id"], state="closed", closed_at=now_iso(),
+        conn,
+        row["id"],
+        state="closed",
+        closed_at=now_iso(),
         event=f"remote closure attested: {witness}",
     )
     return True
@@ -1285,11 +1295,17 @@ def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) ->
         f"Raised {row['first_seen']}, verified {verified_at}, MTTR {mttr}s."
     )
     set_field(
-        conn, row["id"], state="verified", verified_at=verified_at,
-        mttr_seconds=mttr, lesson=lesson, event=f"verified: {evidence}",
+        conn,
+        row["id"],
+        state="verified",
+        verified_at=verified_at,
+        mttr_seconds=mttr,
+        lesson=lesson,
+        event=f"verified: {evidence}",
     )
     write_lesson(policy, lesson)
     return finalize_verified_incident(conn, policy, get_incident(conn, row["id"]))
+
 
 # --------------------------------------------------------------------------------------
 # the lesson: the estate's own knowledge graph
@@ -1326,7 +1342,14 @@ def write_lesson(policy: dict, lesson: str) -> str:
 def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
     """One pass of the whole loop."""
     conn = open_ledger()
-    summary = {"sensed": 0, "opened": 0, "dispatched": 0, "verified": 0, "closure_pending": 0, "notes": []}
+    summary = {
+        "sensed": 0,
+        "opened": 0,
+        "dispatched": 0,
+        "verified": 0,
+        "closure_pending": 0,
+        "notes": [],
+    }
     sensed: list[dict] = []
     # The clock is judged first: a tick that runs while the wall clock lies writes wrong
     # timestamps into every incident it senses. The verdict is stored, so the next tick can
