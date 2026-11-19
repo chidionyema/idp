@@ -51310,6 +51310,7 @@
       "contract": {
         "inputs": [
           "--agents",
+          "--all-containers",
           "--base-record",
           "--components",
           "--directory",

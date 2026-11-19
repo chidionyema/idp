@@ -1534,6 +1534,101 @@ def write_record(record, head, rc, fails):
         json.dump(doc, f, indent=2)
 
 
+def dump_why(pods_limit=10, log_lines=400):
+    """Print why the environment refused, from the pod that refused.
+
+    MEASURED 2026-11-18: a base shadow run refused with "container litellm is
+    CrashLoopBackOff (restarts 3)" and the only dump kept 50 log lines, none of which carried
+    the crash. Three root causes were then argued from that gap -- a missing database stand-in
+    (it exists, is waited on and seeded), the CustomLogger callback (main's class already
+    inherits it), a stale base -- and all three were wrong. The gap is what made them plausible.
+    A refusal that cannot name its cause is a gate that cannot fail usefully, so the harness
+    itself now records the previous container's log (the crash, not the restart), its
+    termination reason and exit code, and the pod's own events. This lives in bin/ and not in
+    .github/workflows/shadow-verify.yml: that path is guarded, and a diagnostic must never need
+    a founder seal to be added.
+    """
+
+    def shl(argv):
+        try:
+            return subprocess.run(
+                argv, capture_output=True, text=True, timeout=120
+            ).stdout
+        except Exception as exc:  # noqa: BLE001 - a dump must never raise
+            return f"(dump failed: {exc})\n"
+
+    listing = shl(["kubectl", "get", "pods", "-A", "-o", "wide"])
+    print("--- pods")
+    print(listing)
+    jsonpath = (
+        '{range .items[?(@.status.phase!="Running")]}'
+        '{.metadata.namespace}/{.metadata.name}{"\\n"}{end}'
+    )
+    notrunning = [
+        line.strip()
+        for line in shl(
+            ["kubectl", "get", "pods", "-A", "-o", f"jsonpath={jsonpath}"]
+        ).splitlines()
+        if line.strip()
+    ][:pods_limit]
+    for ref in notrunning:
+        if "/" not in ref:
+            continue
+        ns, pod = ref.split("/", 1)
+        print(f"--- describe {ns}/{pod}")
+        desc = shl(["kubectl", "-n", ns, "describe", "pod", pod])
+        inside = False
+        for line in desc.splitlines():
+            if line.startswith("Containers:"):
+                inside = True
+            if inside:
+                print(line)
+        print(f"--- termination {ns}/{pod}")
+        print(
+            shl(
+                [
+                    "kubectl",
+                    "-n",
+                    ns,
+                    "get",
+                    "pod",
+                    pod,
+                    "-o",
+                    "jsonpath="
+                    '{range .status.containerStatuses[*]}{.name}{" restarts="}{.restartCount}'
+                    '{" state="}{.state}{" lastState="}{.lastState}{"\\n"}{end}',
+                ]
+            )
+        )
+        print(f"--- logs (current) {ns}/{pod}")
+        cur = shl(
+            [
+                "kubectl",
+                "-n",
+                ns,
+                "logs",
+                pod,
+                "--all-containers",
+                f"--tail={log_lines}",
+            ]
+        )
+        print("\n".join(cur.splitlines()[-log_lines:]))
+        print(f"--- logs (previous, the crash) {ns}/{pod}")
+        prev = shl(
+            [
+                "kubectl",
+                "-n",
+                ns,
+                "logs",
+                pod,
+                "--all-containers",
+                "--previous",
+                f"--tail={log_lines}",
+            ]
+        )
+        print("\n".join(prev.splitlines()[-log_lines:]))
+
+
 def verify(head, paths, record=None):
     """Run the shadow on `head`; with `record`, also write the run's failures as JSON."""
     fails = []
@@ -1708,6 +1803,7 @@ def _verify(head, paths):
                     (path, f"{path}: the environment refused to converge it -- {msg}")
                 )
                 print(f"FAIL    shadow  flux could not reconcile {path}: {msg}")
+                dump_why()
                 continue
             print(
                 f"ok      shadow  flux reconciled {path} ({len(inv)} objects applied by the environment)"
@@ -1733,6 +1829,7 @@ def _verify(head, paths):
             ]
         failed = grade_all(observations)
         if failed:
+            dump_why()
             return 1, [(w, f"{w}: {'; '.join(rs)}") for w, rs in failed]
         print(
             f"ok      shadow-verify  {len(observations)} workload(s) converged on head {head} "
