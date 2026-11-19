@@ -1,0 +1,25 @@
+#!/bin/sh
+# Live estate gates must equal the committed source, byte for byte.
+# Exit 1 and name every file that drifted: a gate nobody can diff is not governed.
+set -eu
+SRC="$(cd "$(dirname "$0")" && pwd)"
+LIVE="${HOME}/.estate"
+rc=0
+check() {
+  live="$LIVE/$2"
+  want="$SRC/$1"
+  if [ ! -f "$live" ]; then
+    echo "DRIFT missing-live $1 -> $live"; rc=1; return
+  fi
+  a=$(shasum -a 256 "$want" | cut -d" " -f1)
+  b=$(shasum -a 256 "$live" | cut -d" " -f1)
+  if [ "$a" != "$b" ]; then
+    echo "DRIFT differs $1 live=${b%%??????????????} src=${a%%??????????????}"; rc=1
+  fi
+}
+check estate-commit-gate bin/estate-commit-gate
+check estate-protocol     bin/estate-protocol
+check estate-proof        bin/estate-proof
+check protocol-falsifier.py libexec/protocol-falsifier.py
+[ "$rc" -eq 0 ] && echo "GATES IN SYNC (4 files)" || echo "GATES DRIFTED" >&2
+exit "$rc"
