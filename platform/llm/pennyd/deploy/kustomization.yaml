@@ -12,3 +12,10 @@ labels:
 
 # pennyd-edge-keys comes from the estate vault through External Secrets. Its
 # single `keys.toml` entry contains edge-client entries, never provider keys.
+
+images:
+  # image-automation-controller rewrites this newTag from ImagePolicy flux-system/pennyd
+  # (platform/image-automation/pennyd.yaml); the marker is how it finds the line. Until the first
+  # build lands, this tag is the version string the deployment already asked for.
+  - name: ghcr.io/chidionyema/pennyd
+    newTag: v0.2.0 # {"$imagepolicy": "flux-system:pennyd:tag"}
