@@ -56,6 +56,7 @@ base, me = sys.argv[1], sys.argv[2]
 files = subprocess.check_output(
     ["git", "diff", "--name-only", f"{base}...HEAD"], text=True
 ).splitlines()
+files += subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines()
 files += subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
 files += subprocess.check_output(
     ["git", "ls-files", "--others", "--exclude-standard"], text=True
@@ -122,6 +123,7 @@ python3 - "$BASE_SHA" "$DRY" <<'PY'
 import pathlib, subprocess, sys
 base, dry = sys.argv[1], sys.argv[2] == "1"
 files = subprocess.check_output(["git", "diff", "--name-only", f"{base}...HEAD"], text=True).splitlines()
+files += subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines()
 files += subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
 files += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).splitlines()
 REPL = {"\u2014": "--", "\u2013": "-", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
@@ -152,15 +154,68 @@ if [ "$DRY" = "1" ]; then
   exit 0
 fi
 
-# ---- 2. Formatter before linter (this ordering is the noqa-stranding fix) ---
-PY_FILES=$(git diff --name-only "$BASE_SHA"...HEAD -- '*.py'; git ls-files --others --exclude-standard -- '*.py')
-if [ -n "${PY_FILES//[[:space:]]/}" ] && command -v ruff >/dev/null 2>&1; then
-  # shellcheck disable=SC2086
-  ruff format $PY_FILES >/dev/null 2>&1 || true
-  # shellcheck disable=SC2086
-  ruff check --fix $PY_FILES >/dev/null 2>&1 || true
-fi
+# ---- 2. Deterministic preparation before any commit or publication ---------
+# Read the exact union of committed, staged, unstaged and untracked changes.
+# Never turn a missing tool or failed normalizer into a successful receipt.
+python3 - "$BASE_SHA" <<'PY'
+import os
+import pathlib
+import subprocess
+import sys
 
-git add -A
-say "healed: ascii normalized, ruff format then check, staged"
-say "next:   git commit -m ...  &&  bin/lane-submit   (the gate still decides)"
+base = sys.argv[1]
+root = pathlib.Path.cwd()
+
+
+def git_paths(*args):
+    raw = subprocess.check_output(["git", *args])
+    return {os.fsdecode(p) for p in raw.split(b"\0") if p}
+
+
+def changed():
+    return (
+        git_paths("diff", "--name-only", "-z", "--no-renames", base, "HEAD")
+        | git_paths("diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD")
+        | git_paths("diff", "--name-only", "-z", "--no-renames")
+        | git_paths("ls-files", "--others", "--exclude-standard", "-z")
+    )
+
+
+def run(*args):
+    subprocess.run(args, check=True)
+
+
+try:
+    paths = changed()
+    registry = "catalog/estate-capability-registry.json"
+    for path in paths:
+        p = root / path
+        if any(q.is_symlink() for q in (p, *p.parents) if q != root and root in q.parents) or (p.exists() and not p.is_file()):
+            raise ValueError(f"unsafe preparation path: {path}")
+    py = sorted(p for p in paths if p.endswith(".py") and (root / p).is_file())
+    if py:
+        version = subprocess.check_output(["ruff", "--version"], text=True).strip()
+        if version != "ruff 0.15.18":
+            raise ValueError(f"incorrect Ruff version: {version}")
+        # No unchecked auto-fix of semantics; normalize formatting only.
+        run("ruff", "format", "--", *py)
+        run("ruff", "check", "--select", "E9,F,B,S", "--", *py)
+        run("ruff", "format", "--check", "--", *py)
+    if any(p.startswith(("catalog/", "bin/", "platform/estate/", "mcp/", "capabilities")) for p in paths):
+        run(sys.executable, "bin/capability-index", "emit", "--write")
+        run(sys.executable, "bin/registry-gate")
+        paths.add(registry)
+    final_paths = changed()
+    unexpected = final_paths - paths
+    if unexpected:
+        raise ValueError(f"preparation introduced out-of-scope paths: {sorted(unexpected)}")
+    # Only stage files from the measured change set; never stage the whole repository.
+    stage = sorted(p for p in final_paths if (root / p).exists() or p in git_paths("ls-files", "-z"))
+    if stage:
+        run("git", "add", "-A", "--", *stage)
+    print("PREPARED: formatting and registry checks passed; no publication performed")
+except (OSError, subprocess.SubprocessError, ValueError) as exc:
+    print(f"REFUSED preparation: {exc}", file=sys.stderr)
+    raise SystemExit(1) from exc
+PY
+say "next: commit using the authenticated hooks, then estate-execute lane-submit; this preparation is not release admission"
