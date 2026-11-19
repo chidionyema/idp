@@ -1,0 +1,36 @@
+[package]
+name = "genesis-ground-truth"
+version = "0.9.1"
+edition = "2021"
+description = "Real-time event-driven ground-truth projection, monotonic fencing gate, and universal agent prerequisite engine for Meridian / Genesis"
+
+[lib]
+name = "genesis_ground_truth"
+path = "src/lib.rs"
+
+[[bin]]
+name = "genesis-ground-truth-d"
+path = "src/bin/genesis-ground-truth-d.rs"
+
+[[bin]]
+name = "genesis-truth-boot"
+path = "src/bin/genesis-truth-boot.rs"
+
+[dependencies]
+anyhow = "1.0"
+axum = { version = "0.7", features = ["ws", "macros"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core", "pkcs8"] }
+hex = "0.4"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+sha2 = "0.10"
+thiserror = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+tower = { version = "0.4", features = ["util"] }
