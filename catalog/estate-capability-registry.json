@@ -38133,10 +38133,13 @@
       "summary": "No pull request without BDD proof, across all agent sessions.",
       "contract": {
         "inputs": [
+          "--count",
           "--help",
           "--is-ancestor",
           "--jq",
           "--live",
+          "--no-merges",
+          "--not",
           "--self-test"
         ],
         "outputs": [
