@@ -1,0 +1,22 @@
+--- a/.github/workflows/agent-sandbox.yml
++++ b/.github/workflows/agent-sandbox.yml
+@@ -318,7 +318,18 @@
+           # ancestry against current main. The agent's work must not disappear when
+           # another lane advances main while the model is working.
+           # The Greenlane, not this stage, rebases and independently proves promotion.
+-          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
++          # State the bound before staging, from the sealed patch itself (idp#8265): the paths
++          # are read, never typed, and the envelope binds base + paths + policy digest so a
++          # candidate cannot drift between admission and staging.
++          git apply --numstat -- "$work/patch" | awk '{print $3}' | sort -u > "$work/paths"
++          [ -s "$work/paths" ] || { echo "::error::the sealed patch names no path"; exit 1; }
++          digest="$(python3 bin/idp-agent-base-apply.py --print-policy-digest)"
++          jq -Rs --arg base "$(cat "$work/base")" --arg d "$digest" \
++            '{base:$base, paths:(split("\n")|map(select(length>0))), policy_sha256:$d}' \
++            < "$work/paths" > "$work/scope.json"
++          sha="$(sha256sum "$work/scope.json" | cut -d' ' -f1)"
++          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch" \
++            --scope-file "$work/scope.json" --scope-sha256 "$sha"
+           # Read back what the index now holds, both sides of every rename included, rather than
+           # parse the patch text.
+           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
