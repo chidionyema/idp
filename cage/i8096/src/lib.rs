@@ -4,6 +4,7 @@
 //! artefact instead of an orphaned source file, and so the EP-B reconciler ships as
 //! source on canonical main rather than as a couriered attachment.
 
+pub mod accountability;
 pub mod certifier;
 pub mod reconciler_ep_b;
 
