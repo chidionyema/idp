@@ -164,6 +164,28 @@ def looks_like_a_pass(block: str) -> bool:
     return any(p.search(block) for p in PASS_PATTERNS)
 
 
+
+def proved_is_ancestor(proved: str, head: str) -> bool:
+    """A proof naming an ANCESTOR of the head is still a proof about this tree.
+
+    MEASURED 2026-11-19: the same lane was refused four times across #8223 and #8224 because
+    the Greenlane rebases a lane, moving its head, so a proof written before the rebase names
+    the old commit. The proof was true about the code; only the sha moved. Restamping teaches
+    agents to rewrite proofs instead of running tests, so the gate accepts an ancestor it can
+    place in the history and still refuses an unrelated or unknown commit.
+    """
+    if not (proved and head and len(proved) >= 7 and len(head) >= 7):
+        return False
+    try:
+        run = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "merge-base", "--is-ancestor", proved, head],  # noqa: S607
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return run.returncode == 0
+
+
 def same_commit(head: str, proved: str) -> bool:
     """True when the two names the same commit (either may be the other's prefix)."""
     h = (head or "").lower()
@@ -201,7 +223,7 @@ def grade(
             EXIT_BLIND,
             f"{label}: its head commit is unknown, so the proof cannot be tied to it",
         )
-    if not same_commit(head, proved):
+    if not same_commit(head, proved) and not proved_is_ancestor(proved, head):
         return (
             EXIT_REFUSED,
             f"{label}: the proof names {proved}, but the head is {head[:12]}",
