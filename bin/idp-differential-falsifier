@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""idp-differential-falsifier -- I-8107: proof must be able to fail.
+
+The old proof gate accepted any line matching "N passed in Xs", from any suite, bound to no
+path. That is how a TOML change was "proved" by clock tests. This gate replaces the regex with
+three questions that a passing suite alone cannot answer:
+
+  1. PATH BINDING   every changed non-doc subsystem has a test bound to it
+  2. DIFFERENTIAL   each test exits non-zero on the base tree and zero on HEAD
+  3. MUTATION       at least one invariant mutation was killed (the test can fail)
+
+Receipt: .ci/proof-receipt.json
+  {"tested_subsystems": ["platform/llm"], "falsifiers": [{"test_name": "...",
+   "base_exit_code": 1, "head_exit_code": 0}], "mutations_killed": [{"guard": "...", "killed": true}]}
+
+Usage: bin/idp-differential-falsifier [base_ref] [receipt_path]
+Exit 0 only when all three hold; every refusal names its class.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import subprocess  # noqa: S404 - constant argv
+import sys
+
+
+def changed(base: str, repo: pathlib.Path) -> list[str]:
+    out = subprocess.check_output(  # noqa: S603 - constant argv, no shell
+        ["/usr/bin/git", "diff", "--name-only", f"{base}...HEAD"],
+        cwd=repo,
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def subsystem_of(path: str) -> str:
+    parts = pathlib.Path(path).parts
+    if not parts:
+        return "root"
+    if parts[0] in {"docs", "catalog"}:
+        return "docs"
+    return "/".join(parts[:2]) if len(parts) > 1 else parts[0]
+
+
+def main() -> int:
+    repo = pathlib.Path.cwd()
+    base = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
+    receipt_path = pathlib.Path(
+        sys.argv[2] if len(sys.argv) > 2 else ".ci/proof-receipt.json"
+    )
+    if not receipt_path.exists():
+        print(f"FAIL [MISSING_PROOF_RECEIPT]: {receipt_path}", file=sys.stderr)
+        return 1
+    try:
+        data = json.loads(receipt_path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"FAIL [INVALID_JSON]: {exc}", file=sys.stderr)
+        return 1
+
+    required = {subsystem_of(p) for p in changed(base, repo)} - {"docs"}
+    tested = set(data.get("tested_subsystems") or [])
+    uncovered = required - tested
+    if uncovered:
+        print(
+            f"FAIL [PATH_UNBOUND]: {sorted(uncovered)} have no bound test",
+            file=sys.stderr,
+        )
+        return 1
+
+    falsifiers = data.get("falsifiers") or []
+    if not falsifiers:
+        print("FAIL [NO_FALSIFIERS]: receipt has none", file=sys.stderr)
+        return 1
+    for entry in falsifiers:
+        name = entry.get("test_name", "<unnamed>")
+        if entry.get("base_exit_code", 0) == 0:
+            print(
+                f"FAIL [NON_FALSIFYING_TEST]: {name} exits 0 on the base tree",
+                file=sys.stderr,
+            )
+            return 1
+        if entry.get("head_exit_code", 1) != 0:
+            print(f"FAIL [HEAD_RED]: {name} does not exit 0 on HEAD", file=sys.stderr)
+            return 1
+
+    mutations = data.get("mutations_killed") or []
+    if not mutations:
+        print("FAIL [NO_MUTATION_PROOF]: zero mutation kills", file=sys.stderr)
+        return 1
+    if not all(m.get("killed") is True and m.get("guard") for m in mutations):
+        print(
+            "FAIL [SURVIVING_MUTANT]: every recorded mutation must be killed",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"OK: {len(falsifiers)} differential falsifiers, {len(mutations)} mutations killed, "
+        f"paths {sorted(tested)}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
