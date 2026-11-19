@@ -159,7 +159,11 @@ def main() -> int:
     ap.add_argument("--admit-paths-json")
     ap.add_argument("--scope-file", type=Path)
     ap.add_argument("--scope-sha256")
+    ap.add_argument("--print-policy-digest", action="store_true")
     args = ap.parse_args()
+    if args.print_policy_digest:
+        print(policy_digest())
+        return
     try:
         if args.admit_paths_json is not None:
             if any(
