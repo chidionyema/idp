@@ -210,7 +210,6 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.scope.outputs.dirs != ''
-        continue-on-error: true   # a missing record is graded by judge, fail-closed
         with:
           pattern: shadow-record-*
           path: ${{ runner.temp }}/record

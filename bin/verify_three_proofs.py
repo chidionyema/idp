@@ -50,6 +50,19 @@ MAX_FILES_PER_CHANGE = 5
 MAX_CLOCK_DRIFT_SECONDS = 300
 
 
+
+def _ghost_count_at_head(repo_root: str, rel_path: str, ghost: str) -> int:
+    """How many times the ghost already exists in this file at HEAD (the pre-change tree)."""
+    try:
+        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "show", f"HEAD:{rel_path}"],  # noqa: S607
+            cwd=repo_root, capture_output=True, text=True, check=False,
+        ).stdout
+    except OSError:
+        return 0
+    return out.count(ghost)
+
+
 def _introduced_lines(repo_root: str, rel_path: str) -> str:
     """The '+' lines of the staged change for rel_path; whole file when nothing is staged."""
     try:
@@ -99,7 +112,14 @@ def verify_proof_1_physical_reality(
         if rel_path not in GHOST_SCAN_EXEMPT:
             text_sample = _introduced_lines(repo_root, rel_path)
             for ghost in STALE_OKE_GHOSTS:
-                if ghost in text_sample:
+                # "Introduced" means the count went UP, not that the string is present.
+                # MEASURED 2026-11-19: at commit-msg time the index matches HEAD, so the
+                # staged diff is empty, _introduced_lines falls back to the whole file, and a
+                # ghost that already exists on the base reads as "introduced" -- refusing
+                # every legitimate edit to ci.yml. Compare against the commit's parent.
+                if ghost in text_sample and text_sample.count(ghost) > _ghost_count_at_head(
+                    repo_root, rel_path, ghost
+                ):
                     return False, {
                         "error": f"PROOF_1_FAILED: Stale OKE ghost '{ghost}' introduced in '{rel_path}'"
                     }

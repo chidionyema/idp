@@ -106,7 +106,6 @@ jobs:
       # in a filed issue instead.
       - name: chronos -- measure delivered cadence, not declared cadence
         id: chronos
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
