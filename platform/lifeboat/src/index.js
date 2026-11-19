@@ -37,6 +37,7 @@
 // global network, the runtime, the secret store, the TLS, the routing, the inference
 // silicon, is all Cloudflare's.
 
+import { handleSeal, SEAL_OPTIONS } from "./seal.js";
 import { HOMES, ORIGIN_TIMEOUT_MS, keyMatches, think } from "./homes.js";
 import { DRIVE_PATH, INTAKE_PATH, handleIngest } from "./aistudio.js";
 
@@ -187,6 +188,14 @@ export default {
         door: Boolean(env.TELEGRAM_WEBHOOK_SECRET && env.TELEGRAM_BOT_TOKEN),
         ingest: Boolean(env.AI_STUDIO_INGEST_SECRET),
       });
+    }
+
+    // I-8107 off-host founder seal. The signing key is a Cloudflare secret, never a file on a
+    // workstation, so a guarded path can be sealed from anywhere the estate already runs.
+    if (url.pathname === "/seal") {
+      if (request.method === "OPTIONS") return SEAL_OPTIONS();
+      if (request.method === "POST") return handleSeal(request, env);
+      return new Response("method not allowed", { status: 405 });
     }
 
     if (url.pathname === "/webhook/telegram" && request.method === "POST") {
