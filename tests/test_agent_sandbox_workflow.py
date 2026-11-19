@@ -529,41 +529,64 @@ def test_admission_is_an_independent_trusted_job_and_binds_the_patch():
     assert JOBS["agent"]["needs"] == "admit"
     assert JOBS["admit"]["permissions"] == {"contents": "read"}
     assert "bin/legion-admit" in _step("admit", "Admit exact scope")["run"]
-    checkout = next(s for s in _steps("agent") if s.get("uses", "").startswith("actions/checkout@"))
+    checkout = next(
+        s for s in _steps("agent") if s.get("uses", "").startswith("actions/checkout@")
+    )
     assert checkout["with"]["ref"] == "${{ needs.admit.outputs.base }}"
     submit = _step("submit-lane", "Apply the patch")
     assert "admit" in JOBS["submit-lane"]["needs"]
     assert submit["env"]["SCOPE_JSON"] == "${{ needs.admit.outputs.scope_json }}"
     assert submit["env"]["SCOPE_SHA256"] == "${{ needs.admit.outputs.scope_sha256 }}"
-    assert '--scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"' in submit["run"]
+    assert (
+        '--scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"' in submit["run"]
+    )
 
 
 def test_outside_admitted_scope_is_refused_even_if_otherwise_legal(tmp_path):
     r = _repo(tmp_path)
-    p = _refusal_step(r, _patch(r, lambda repo: (repo / "other.txt").write_text("no")), tmp_path)
+    p = _refusal_step(
+        r, _patch(r, lambda repo: (repo / "other.txt").write_text("no")), tmp_path
+    )
     assert p.returncode != 0 and "exceeds admitted scope" in p.stderr
 
 
 def test_missing_trusted_scope_is_refused(tmp_path):
     r = _repo(tmp_path)
-    p = _refusal_step(r, _patch(r, lambda repo: (repo / "app.py").write_text("x = 2\n")), tmp_path, {"SCOPE_JSON": "", "SCOPE_SHA256": ""})
+    p = _refusal_step(
+        r,
+        _patch(r, lambda repo: (repo / "app.py").write_text("x = 2\n")),
+        tmp_path,
+        {"SCOPE_JSON": "", "SCOPE_SHA256": ""},
+    )
     assert p.returncode != 0 and "trusted scope required" in p.stderr
 
 
 def test_admitted_minimax_runs_without_trying_google(tmp_path):
-    p, out = _agent_step(tmp_path, "gemini", 'echo "$@" > "$HOME/args"\n' + FAKE["pi"], {"ADMITTED_PROVIDER": "minimax", "GEMINI_API_KEY": ""})
+    p, out = _agent_step(
+        tmp_path,
+        "gemini",
+        'echo "$@" > "$HOME/args"\n' + FAKE["pi"],
+        {"ADMITTED_PROVIDER": "minimax", "GEMINI_API_KEY": ""},
+    )
     assert p.returncode == 0, p.stdout + p.stderr
     assert "--provider minimax" in (tmp_path / "home" / "args").read_text()
     assert (out / "patch").exists()
 
 
 def test_refused_fallback_does_not_run_second_model(tmp_path):
-    p, out = _agent_step(tmp_path, "gemini", FAKE["pi"] + "exit 1\n", {"LEGION_FAILOVER": "1", "ADMITTED_FALLBACK": "0"})
+    p, out = _agent_step(
+        tmp_path,
+        "gemini",
+        FAKE["pi"] + "exit 1\n",
+        {"LEGION_FAILOVER": "1", "ADMITTED_FALLBACK": "0"},
+    )
     assert p.returncode != 0 and "fallback=unavailable" in p.stdout
     assert not (out / "google.failed.stdout").exists()
 
 
 def test_unadmitted_provider_never_invokes_worker(tmp_path):
-    p, out = _agent_step(tmp_path, "gemini", FAKE["pi"], {"ADMITTED_PROVIDER": ""})
+    p, out = _agent_step(
+        tmp_path, "gemini", FAKE["pi"], {"ADMITTED_PROVIDER": ""}
+    )
     assert p.returncode == 2 and "provider not admitted" in p.stdout
     assert not (out / "transcript.jsonl").exists()
