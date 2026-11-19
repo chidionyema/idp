@@ -230,3 +230,129 @@ def test_new_pr_is_refused_before_post_on_remote_base_change():
 
     with pytest.raises(RuntimeError, match="changed under proof"):
         GitHubBackend._ensure_pr(Backend(), "lane/a", "x", "b" * 40, "b" * 40)
+
+@pytest.mark.parametrize("roster", [None, "qa", [], ["builder", "qa"], ["qa", "qa"], [True]])
+def test_invalid_verifier_roster(case, roster):
+    e, r, _, auth = case
+    e["verifiers"] = roster
+    with pytest.raises(ReceiptError):
+        validate_admission_receipt(r, e, now=20, authenticate=auth)
+
+
+@pytest.mark.parametrize("scope", [["./nsvee/engine.py"], ["nsvee//engine.py"], ["nsvee/../engine.py"], ["nsvee/engine.py\x00"], ["nsvee/engine.py/"]])
+def test_noncanonical_scope(case, scope):
+    e, r, sign, auth = case
+    e["scope"] = r["scope"] = scope
+    with pytest.raises(ReceiptError):
+        validate_admission_receipt(sign(r), e, now=20, authenticate=auth)
+
+
+def test_returned_receipt_is_authenticated_snapshot(case):
+    e, r, _, auth = case
+
+    def mutate(signer, key, payload, sig):
+        ok = auth(signer, key, payload, sig)
+        r["verdict"] = "FAIL"
+        return ok
+
+    verified = validate_admission_receipt(r, e, now=20, authenticate=mutate)
+    assert r["verdict"] == "FAIL"
+    assert verified["verdict"] == "PASS"
+    assert verified is not r
+
+
+def test_na_boolean_count_is_not_zero(case):
+    e, r, sign, auth = case
+    e["required_checks"]["docs"] = {"mode": "NOT_APPLICABLE"}
+    r["checks"]["docs"] = dict(
+        status="NOT_APPLICABLE", executed=False, control="NOT_APPLICABLE",
+        evidence="2" * 64,
+    )
+    with pytest.raises(ReceiptError):
+        validate_admission_receipt(sign(r), e, now=20, authenticate=auth)
+
+
+@pytest.mark.parametrize("order", [["timeout", "survivor"], ["survivor", "timeout"]])
+def test_mutation_survival_is_order_independent(order):
+    results = {"timeout": {"status": "TIMEOUT"}, "survivor": {"status": "SURVIVED"}}
+    assert mutation_verdict(expected=order, results=results) == "FAIL"
+
+
+def test_mutation_malformed_inventory():
+    assert mutation_verdict(expected=[{"id": "a"}], results={}) == "INCONCLUSIVE"
+
+
+class LocalFixtureRunner:
+    """Actual subprocess for harmless fixed fixtures only; not production isolation."""
+
+    def __init__(self):
+        self.scripts = []
+
+    def run(self, script, timeout_s):
+        import subprocess
+
+        from nsvee.engine import SandboxResult, Verdict
+
+        self.scripts.append(script)
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", script],
+            capture_output=True, text=True, timeout=timeout_s, check=False,
+        )
+        return SandboxResult(
+            Verdict.PASS if result.returncode == 0 else Verdict.FAIL,
+            stdout=result.stdout, stderr=result.stderr,
+        )
+
+
+@pytest.mark.parametrize(
+    "artifact,status",
+    [
+        ("def solve(x): return x * 2", "VERIFIED"),
+        ("def solve(x): return x + 2", "EXHAUSTED"),
+        ("raise SystemExit(0)", "EXHAUSTED"),
+        ("def solve(x): return True", "EXHAUSTED"),
+        ("def solve(x): print('noise'); return x * 2", "EXHAUSTED"),
+    ],
+)
+def test_independent_observable_case(artifact, status):
+    from nsvee import verify_json_cases
+
+    runner = LocalFixtureRunner()
+    cases = [{"args": [137], "kwargs": {}, "expected": 274}]
+    result = verify_json_cases(artifact, "solve", cases, runner=runner)
+    assert result.status == status
+    assert len(runner.scripts) == 1
+    assert "274" not in runner.scripts[0], "expected answer leaked to candidate"
+
+
+def test_independent_case_refuses_weak_runner():
+    from nsvee import verify_json_cases
+    from nsvee.engine import RlimitsRunner
+
+    result = verify_json_cases(
+        "def solve(x): return x", "solve",
+        [{"args": [1], "kwargs": {}, "expected": 1}], runner=RlimitsRunner(),
+    )
+    assert result.status == "SANDBOX_DEGRADED"
+
+
+def test_independent_case_invalid_contract_never_runs():
+    from nsvee import verify_json_cases
+
+    runner = LocalFixtureRunner()
+    result = verify_json_cases("raise SystemExit(0)", "solve", [], runner=runner)
+    assert result.status == "EXHAUSTED"
+    assert not runner.scripts
+
+
+def test_invalid_sqlite_baseline_is_not_a_distribution(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "judge.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE judge_verdicts (judge_score REAL, created_at TEXT)")
+        conn.execute("INSERT INTO judge_verdicts VALUES (2, '2026-01-01')")
+    mod = load("frontier_drift_baseline", "platform/eval/judge_drift.py")
+    with pytest.raises(ValueError, match="invalid baseline"):
+        mod.JudgeDriftSentinel(str(db))
+

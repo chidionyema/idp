@@ -12,3 +12,7 @@ Run canonical ruff and bin/idp-ci as applicable before a lane submission. No tes
 ## Greenlane prefix scheduling
 
 Candidate queue refs now schedule missing exact-prefix checks before the batch is admitted; repeated ticks reuse the immutable SHA ref, and a remote base change refuses admission. The new PR path rereads the remote ref before POST. The adapter still uses existing check semantics and needs canonical CI, trusted signed receipt binding and a fenced promotion boundary. A remote read is not an atomic GitHub PR-create lease.
+
+## Adversarial falsifiers
+
+The source suite now checks malformed verifier rosters and path scope, mutable callback evidence, order-independent survivor handling, weak runner refusal and independent JSON observations (expected values never sent to the candidate). `verify_json_cases` is a bounded pure-function oracle adapter, not an attestation authority. It defaults to the isolated Docker runner and refuses direct rlimits fallback. Local subprocess fixtures are not evidence of prod sandbox isolation. The existing synthetic Greenlane test backend now represents remote refs where the admission path reads them.

@@ -815,12 +815,12 @@ def verify(
     The report's status is the receipt status, so a caller that binds the verdict to a commit
     does not have to translate it.
     """
-    runner = runner or default_runner()
     cases = list(tests or [])
     if not cases or any(not isinstance(case, str) or not case.strip() for case in cases):
         return VerificationReport(
             status="EXHAUSTED", error="no executable tests supplied"
         )
+    runner = runner or default_runner()
     script = build_script(artifact, cases)
     results = [runner.run(script, timeout_s)]
     if results[0].verdict == Verdict.PASS:
@@ -873,3 +873,102 @@ def verify(
 # ---------------------------------------------------------------------------
 # Built-in test suite (runs with: python3 nsvee_all_in_one.py)
 # ---------------------------------------------------------------------------
+
+
+def verify_json_cases(
+    artifact: str,
+    entrypoint: str,
+    cases: list[dict],
+    *,
+    runner=None,
+    timeout_s: int = 10,
+) -> VerificationReport:
+    """Independently compare observable JSON function results outside the runner.
+
+    The trusted caller owns the cases and expected values; only inputs are
+    provided to the candidate. No candidate stdout is treated as an assertion
+    verdict. Each case runs separately. This proves the specified observations,
+    not arbitrary program correctness, sandbox integrity, or release authority.
+    Use the existing isolated runner in production; never fall back to rlimits.
+    """
+    import keyword
+
+    def canonical(value):
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+
+    if (
+        not isinstance(artifact, str)
+        or not isinstance(entrypoint, str)
+        or not entrypoint.isidentifier()
+        or keyword.iskeyword(entrypoint)
+        or not isinstance(cases, list)
+        or not 1 <= len(cases) <= 100
+        or type(timeout_s) is not int
+        or not 1 <= timeout_s <= 120
+    ):
+        return VerificationReport(status="EXHAUSTED", error="invalid case contract")
+    prepared = []
+    try:
+        for case in cases:
+            if (
+                not isinstance(case, dict)
+                or set(case) != {"args", "kwargs", "expected"}
+                or not isinstance(case["args"], list)
+                or not isinstance(case["kwargs"], dict)
+                or any(not isinstance(k, str) for k in case["kwargs"])
+            ):
+                raise ValueError("invalid case")
+            payload = canonical([case["args"], case["kwargs"]])
+            prepared.append((payload, canonical(case["expected"])))
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return VerificationReport(status="EXHAUSTED", error="invalid JSON case")
+    if runner is None:
+        runner = DockerRunner()
+        if not runner.available():
+            return VerificationReport(
+                status="SANDBOX_DEGRADED", error="isolated runner unavailable"
+            )
+    if isinstance(runner, RlimitsRunner):
+        return VerificationReport(
+            status="SANDBOX_DEGRADED", error="weak runner is not independent isolation"
+        )
+    verdicts = []
+    for index, (payload, expected) in enumerate(prepared):
+        # The expected answer is deliberately absent from the runner request.
+        script = (
+            "import json as _wire_json\n"
+            "_candidate = {'__name__': '__candidate__'}\n"
+            f"exec(compile({artifact!r}, '<candidate>', 'exec'), _candidate)\n"
+            f"_args, _kwargs = _wire_json.loads({payload!r})\n"
+            f"_answer = _candidate[{entrypoint!r}](*_args, **_kwargs)\n"
+            "print(_wire_json.dumps(_answer, allow_nan=False))\n"
+        )
+        try:
+            result = runner.run(script, timeout_s)
+        except Exception as exc:
+            return VerificationReport(
+                status="SANDBOX_DEGRADED",
+                verdicts=verdicts,
+                runs=len(verdicts),
+                error=f"runner unavailable: {type(exc).__name__}",
+            )
+        verdicts.append(result.verdict.value)
+        if result.verdict == Verdict.SANDBOX_ERROR:
+            return VerificationReport(
+                status="SANDBOX_DEGRADED", verdicts=verdicts, runs=len(verdicts),
+                error=f"case {index}: runner error",
+            )
+        try:
+            actual = canonical(json.loads(result.stdout))
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            actual = None
+        if result.verdict != Verdict.PASS or actual != expected:
+            return VerificationReport(
+                status="EXHAUSTED", verdicts=verdicts, runs=len(verdicts),
+                error=f"case {index}: missing or unequal observable result",
+            )
+    return VerificationReport(
+        status="VERIFIED", verdicts=verdicts, runs=len(verdicts)
+    )

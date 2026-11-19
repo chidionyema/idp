@@ -42,20 +42,30 @@ def run_cmd(cmd, timeout=60, cwd="."):
 # Insert into bin/mutation-orchestrator before PARSER. Structured adapters must
 # distinguish tool failure from mutation outcomes; unknown never means killed.
 def mutation_verdict(*, expected, results):
-    """Validate explicit, complete mutant inventory and observed controls."""
-    if not expected or len(set(expected)) != len(expected) or set(expected) != set(results):
+    """Grade complete inventory; a known survivor dominates unknown results."""
+    if (
+        not isinstance(expected, (list, tuple))
+        or not expected
+        or any(not isinstance(m, str) or not m for m in expected)
+        or len(set(expected)) != len(expected)
+        or not isinstance(results, dict)
+        or set(expected) != set(results)
+    ):
         return "INCONCLUSIVE"
+    if any(
+        isinstance(result, dict) and result.get("status") == "SURVIVED"
+        for result in results.values()
+    ):
+        return "FAIL"
     for mutant in expected:
         result = results[mutant]
-        if not isinstance(result, dict) or result.get("status") not in {"KILLED", "SURVIVED", "TIMEOUT", "ERROR", "EQUIVALENT"}:
+        if not isinstance(result, dict) or result.get("status") != "KILLED":
             return "INCONCLUSIVE"
-        if result["status"] == "SURVIVED":
-            return "FAIL"
-        if result["status"] != "KILLED":
-            # Equivalence is a separate independently reviewed decision, not
-            # an escape hatch in the mandatory known-bad control population.
-            return "INCONCLUSIVE"
-        if result.get("baseline_passed") is not True or result.get("test_executed") is not True or result.get("failure_kind") != "ASSERTION":
+        if (
+            result.get("baseline_passed") is not True
+            or result.get("test_executed") is not True
+            or result.get("failure_kind") != "ASSERTION"
+        ):
             return "INCONCLUSIVE"
     return "PASS"
 
@@ -181,7 +191,7 @@ def main():
                 data = {
                     "killed": 0, "survived": 0, "timeout": 0, "score": None,
                     "elapsed": syntax_ok.get("elapsed", 0),
-                    "rc": 0 if syntax_ok.get("rc") == 0 else 1,
+                    "rc": 0 if syntax_ok.get("rc") == 0 and import_ok.get("rc") == 0 else 1,
                     "stdout_tail": "", "error": "",
                     "note": "diff tier: syntax+import only, no mutation testing",
                 }

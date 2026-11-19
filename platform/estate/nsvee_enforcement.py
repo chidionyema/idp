@@ -239,8 +239,29 @@ def validate_admission_receipt(receipt, expected, *, now, authenticate):
         "schema", "issued_at", "expires_at", "signer", "key_id", "signature",
         "verdict", "checks", "evidence_digest",
     }
+    if not isinstance(expected, dict):
+        raise ReceiptError("trusted context unavailable")
     if not isinstance(receipt, dict) or set(receipt) != fields:
         raise ReceiptError("malformed admission receipt")
+    # Freeze the exact JSON object authenticated below. Return that snapshot,
+    # never a caller-owned mutable object after an external callback.
+    try:
+        receipt = json.loads(json.dumps(receipt, allow_nan=False))
+        expected = json.loads(json.dumps(expected, allow_nan=False))
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise ReceiptError("non-JSON admission evidence or context") from exc
+    builder = expected.get("builder")
+    verifiers = expected.get("verifiers")
+    if (
+        not isinstance(builder, str)
+        or not builder.strip()
+        or not isinstance(verifiers, list)
+        or not verifiers
+        or any(not isinstance(v, str) or not v.strip() for v in verifiers)
+        or len(set(verifiers)) != len(verifiers)
+        or builder in verifiers
+    ):
+        raise ReceiptError("invalid independent verifier roster")
     if receipt["schema"] != "estate.nsvee.admission/2":
         raise ReceiptError("wrong admission schema")
     for name in binding:
@@ -260,7 +281,9 @@ def validate_admission_receipt(receipt, expected, *, now, authenticate):
     scope = receipt["scope"]
     if not isinstance(scope, list) or not scope or not all(
         isinstance(p, str) and p and not p.startswith("/")
-        and ".." not in p.split("/") and "\\" not in p for p in scope
+        and all(part not in ("", ".", "..") for part in p.split("/"))
+        and "\\" not in p and not any(ord(ch) < 32 or ord(ch) == 127 for ch in p)
+        for p in scope
     ) or len(set(scope)) != len(scope) or scope != sorted(scope):
         raise ReceiptError("invalid trusted scope")
     times = (now, receipt["issued_at"], receipt["expires_at"], expected.get("max_ttl"))
@@ -268,7 +291,7 @@ def validate_admission_receipt(receipt, expected, *, now, authenticate):
         raise ReceiptError("invalid receipt time")
     if not 0 <= times[1] <= now < times[2] or not 0 < times[2] - times[1] <= times[3]:
         raise ReceiptError("receipt stale or outside allowed TTL")
-    if receipt["signer"] == expected.get("builder") or receipt["signer"] not in expected.get("verifiers", ()):
+    if receipt["signer"] == builder or receipt["signer"] not in verifiers:
         raise ReceiptError("signer is not an independent permitted verifier")
     if expected.get("nonce_unused") is not True:
         raise ReceiptError("nonce not available")
@@ -287,7 +310,12 @@ def validate_admission_receipt(receipt, expected, *, now, authenticate):
         if rule.get("mode") == "NOT_APPLICABLE":
             # Independently resolved applicability must be bound by policy and
             # contract digest; never accept candidate self-declared skips.
-            if check["status"] != "NOT_APPLICABLE" or check["executed"] != 0 or check["control"] != "NOT_APPLICABLE":
+            if (
+                check["status"] != "NOT_APPLICABLE"
+                or type(check["executed"]) is not int
+                or check["executed"] != 0
+                or check["control"] != "NOT_APPLICABLE"
+            ):
                 raise ReceiptError(f"wrong applicability: {name}")
         elif rule.get("mode") == "REQUIRED":
             if check["status"] != "PASS" or type(check["executed"]) is not int or check["executed"] < 1 or check["control"] != "PASS":

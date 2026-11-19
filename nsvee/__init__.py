@@ -11,6 +11,6 @@ Two entry points, one engine:
 `verify` is exported here so the door never has to know where in the package it lives.
 """
 
-from .engine import NSVEE, VerificationReport, Verdict, verify
+from .engine import NSVEE, VerificationReport, Verdict, verify, verify_json_cases
 
-__all__ = ["NSVEE", "VerificationReport", "Verdict", "verify"]
+__all__ = ["NSVEE", "VerificationReport", "Verdict", "verify", "verify_json_cases"]

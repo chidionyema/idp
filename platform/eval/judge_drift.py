@@ -118,6 +118,13 @@ class JudgeDriftSentinel:
         """Convert scores to probability distribution."""
         if not scores:
             return np.array([])
+        if any(
+            type(score) not in (int, float)
+            or not np.isfinite(score)
+            or not 0 <= score <= 1
+            for score in scores
+        ):
+            raise ValueError("unknown or invalid baseline score")
         hist, _ = np.histogram(scores, bins=10, range=(0.0, 1.0))
         return hist / hist.sum()
 
@@ -177,6 +184,8 @@ class GoldSetCalibrator:
         Run calibration against gold set.
         Returns dict with kappa, interpretation, action.
         """
+        # A failed re-calibration must not leave a previously trusted value.
+        self.current_kappa = None
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 """

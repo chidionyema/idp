@@ -272,6 +272,26 @@ def _fast(b):
     return b
 
 
+def _recorded_remote(b, git, refs):
+    """Represent remote refs in write-order tests that do not create a real Git repo."""
+    def run(*args, check=True):
+        if args == ("rev-parse", "origin/main"):
+            return refs["main"]
+        if args[:1] == ("ls-remote",):
+            name = args[-1].removeprefix("refs/heads/")
+            sha = refs.get(name, "")
+            if sha:
+                return f"{sha}\trefs/heads/{name}"
+        if args[:1] == ("push",) and args[-1].count(":") == 1:
+            sha, name = args[-1].split(":", 1)
+            if name.startswith("refs/heads/lane/"):
+                refs[name.removeprefix("refs/heads/")] = sha
+        return git(*args, check=check)
+
+    b.git = run
+    return b
+
+
 def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
     b = _fast(
         Recorded(
@@ -299,7 +319,7 @@ def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
         pushed.append(a)
         return ""
 
-    b.git = git
+    _recorded_remote(b, git, {"main": "base"})
     b.land([("lane/feat/a", "a1", "r1"), ("lane/feat/b", "b1", "r2")], "tip")
     refs = [a[-1] for a in pushed if a[0] == "push"]
     # adopted lane: lane ref AND the PR's own branch take the landed sha
@@ -329,7 +349,7 @@ def test_land_vouches_for_the_exact_sha_before_it_merges_it():
     engine proved can carry it. Written on the merged sha, before the merge, or the merge is
     refused."""
     b = _fast(Recorded(_green("r1"), run_url="https://run"))
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
     b.land([("lane/feat/a", "a1", "r1")], "tipsha0123456789")
     kinds = [(w[0], w[1]) for w in b.writes]
     vouch = kinds.index(("POST", "statuses/r1"))
@@ -344,7 +364,7 @@ def test_land_merges_nothing_when_the_vouch_is_refused():
     """Unlike report(), a refused vouch is not swallowed: the merge would be refused anyway, and
     the lane must go back on its own head (I4) rather than sit half-landed."""
     b = _fast(Recorded(_green("r1")))
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
     real_gh = b.gh
 
     def gh(path, method="GET", fields=None):
@@ -388,7 +408,7 @@ def test_land_waits_for_the_reruns_its_own_push_starts_before_merging():
     # 2026-10-07, #5461: the lane-head push re-queues every required check on the same sha, and
     # a merge issued before they finish is a 405. Five batches in a row died that way.
     b = _fast(Recorded({}))
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
     reads = []
     seq = [
         {"check_runs": [_run(n, None, status="in_progress") for n in REQUIRED]},
@@ -411,7 +431,7 @@ def test_land_waits_for_the_reruns_its_own_push_starts_before_merging():
 
 def test_land_retries_the_405_github_returns_while_it_recomputes_mergeability():
     b = _fast(Recorded(_green("r1")))
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
     tries = []
     real_gh = b.gh
 
@@ -431,7 +451,7 @@ def test_land_retries_the_405_github_returns_while_it_recomputes_mergeability():
 
 def test_land_does_not_retry_a_merge_refused_for_any_other_reason():
     b = _fast(Recorded(_green("r1")))
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
 
     def gh(path, method="GET", fields=None):
         if method == "PUT" and path.endswith("/merge"):
@@ -449,7 +469,7 @@ def test_land_refuses_a_lane_whose_reruns_go_red():
     b = _fast(
         Recorded({"commits/r1/check-runs": {"check_runs": [_run("bdd", "failure")]}})
     )
-    b.git = lambda *a, check=True: ""
+    _recorded_remote(b, lambda *a, check=True: "", {"main": "base"})
     with pytest.raises(RuntimeError, match="went red"):
         b.land([("lane/feat/a", "a1", "r1")], "tip")
     assert not [w for w in b.writes if w[0] == "PUT"]
@@ -1315,7 +1335,7 @@ def test_landing_an_adopted_pr_whose_branch_refuses_pushes_lands_via_the_lane_pr
             )
         return ""
 
-    b.git = git
+    _recorded_remote(b, git, {"main": "base"})
     b.land([("lane/feat/a", "a1", "r1")], "tip")
     created = [w for w in b.writes if w[0] == "POST" and w[1] == "pulls"]
     assert created and created[0][2]["head"] == "lane/feat/a", (
