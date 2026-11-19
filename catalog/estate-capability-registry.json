@@ -23613,6 +23613,7 @@
       ],
       "known_issues": [],
       "mirrors": [
+        "platform/image-automation/pennyd.yaml",
         "platform/llm/pennyd/deploy/recovery/pennyd.toml",
         "platform/llm/pennyd/deploy/systemd/pennyd.service"
       ]
