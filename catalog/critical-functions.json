@@ -51,7 +51,8 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's single memory plane is not serving brief, recall and remember. The evidence is in ~/.estate/heartbeats/memory-plane.json (the door that was called, the error it gave, the tools it did and did not serve). Work the ONE door: platform/estate/memory/door.py -- find why it is unreachable, or why it answers without the three tools. Do NOT build a second memory door and do NOT point the fleet at a different URL: the local tier is a cache behind the same door, and the bridge (bin/estate-memory-mcp) and its local tier are owned by focus #7518, so coordinate through that issue instead of editing its paths. No fact may be stranded: if a local fallback is serving the fleet, the pending facts must replay when the door returns. Report the measurement, not the intention."
-      }
+      },
+      "home": "cluster"
     },
     {
       "id": "router-lanes",
@@ -84,7 +85,8 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The running router does not serve every lane the estate declares. The evidence is in ~/.estate/heartbeats/router-lanes.json: the dropped lane names, the live door that was called, and the declared source they came from. Find why those lanes are absent at render time (a lane whose vendor key is missing is dropped at load, not at render) and restore them from the SOURCE blocks -- platform/vendors/consoles.yaml and llm/config.base.yaml -- then re-render with bin/idp-vendor-render. llm/config.yaml is GENERATED: never edit it directly. The missing lanes are the free-tier ones, so the fix must not cost money. Report the served set you measured, not the set you intended."
-      }
+      },
+      "home": "cloud"
     },
     {
       "id": "spend-bound",
@@ -117,7 +119,8 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's declared cost bound is broken. The evidence is in ~/.estate/heartbeats/spend-bound.json: which chain, in which router config, ends in a paid lane, which lane has no zero-cost floor, and whether the laptop and the cluster declare the same chains. Fix it in the SOURCE (platform/llm/config.base.yaml, platform/vendors/consoles.yaml) and re-render; llm/config.yaml and platform/llm/config.yaml are GENERATED -- never edit them directly. The fix must not make a chain more expensive: the floor stays free. Report the chains you measured, not the chains you intended."
-      }
+      },
+      "home": "cloud"
     },
     {
       "id": "estate-substrate",
@@ -150,7 +153,8 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's cluster substrate is not proven healthy. The evidence is in ~/.estate/heartbeats/substrate.json -- the exact line bin/idp-cluster-state printed and its exit status. Refresh the receipt and fix what it names (nodes not Ready, pods not Ready, Flux not converged). Never hand-apply anything to the cluster: Flux converges on what lands on main. Report the receipt line you measured, not the state you intended."
-      }
+      },
+      "home": "cluster"
     },
     {
       "id": "disk-guardian",
@@ -173,7 +177,9 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's disk reclaim guardian (ai.estate.disk-watch) is not healthy. The evidence is in ~/.estate/incidents/latest.json: read it, then make the volume healthy again WITHOUT deleting another agent's work, another agent's dirty or claimed worktree, the founder's running Chrome, or any live tooling. The cleaner is ~/.estate/libexec/disk-cleanup.sh: run it in incremental mode with DISK_CLEANUP_TARGET_MB=2500, one bounded step at a time. If the guardian process is not loaded, load it: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.estate.disk-watch.plist. Report what you measured, not what you intended."
-      }
+      },
+      "home": "laptop",
+      "replacement": "nothing to replace while the Mac is a developer machine"
     },
     {
       "id": "executor",
@@ -195,7 +201,9 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's executor daemon is not answering on ~/.estate/executor.sock. The evidence is in ~/.estate/incidents/latest.json. Find why (launchctl print gui/$(id -u)/ai.estate.executor, the daemon log, the disk floor in mcp/plugins/estate_executor.py) and bring it back without losing anyone else's queued work."
-      }
+      },
+      "home": "laptop",
+      "replacement": "lane-submit through Actions and the Greenlane"
     },
     {
       "id": "estate-bus",
@@ -213,7 +221,9 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's event bus (NATS) is not accepting connections on 127.0.0.1:4222. The evidence is in ~/.estate/incidents/latest.json. Check launchctl print gui/$(id -u)/ai.estate.nats and the bus logs, and bring it back."
-      }
+      },
+      "home": "laptop",
+      "replacement": "the estate-fleet bus on the cluster"
     }
   ],
   "assumptions": [
@@ -245,7 +255,9 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 10,
         "task": "The estate's runtime tree is not on main, so the code the estate runs is not the code anyone landed. The evidence is in ~/.estate/incidents/latest.json (the two commits it compared). The runtime sync owns this: find why it did not converge and let it converge. Do NOT force-checkout over a dirty tree, and do not re-land anything by hand."
-      }
+      },
+      "home": "laptop",
+      "replacement": "the SHA each agent already loads is pinned by the lane it pushed, so a stopped runtime tree cannot make a proof about the wrong binary"
     }
   ]
 }
