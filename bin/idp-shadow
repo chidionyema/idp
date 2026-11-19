@@ -1788,6 +1788,17 @@ def _verify(head, paths):
         image_failed = stand_in_private_images(paths)
         if image_failed:
             return 1, [("image", image_failed)]
+        # MEASURED 2026-11-19 (shadow run 44467379136, base and head alike):
+        #   psql: error: could not translate host name "estate-rw.estate-db.svc.cluster.local"
+        #   Error: P1001: Can't reach database server at `estate-rw...`
+        # stand_in_database() existed but was NEVER CALLED -- one definition and zero call
+        # sites -- so the Service every workload resolves was absent, and platform/llm failed
+        # on a dependency the harness thought it had laid. Lay it before the rows reconcile,
+        # and fail the run if it cannot be laid: a shadow that cannot stand up its own
+        # dependencies proves nothing about the change.
+        db_failed = stand_in_database() if db_needs_standin(paths) else None
+        if db_failed:
+            return 1, [("database", db_failed)]
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
