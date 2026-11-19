@@ -1,0 +1,14 @@
+{
+ "instruction_id": "I-8107",
+ "owner": "dsh-i8107-20261119",
+ "target_subsystems": ["bin", "platform/llm", "tests", "catalog"],
+ "failure_modes_mapped": [
+  "FC_PROOF_FORMAT_WITHOUT_FALSIFICATION",
+  "FC_ZONE_A_DARWIN_REGRESSION",
+  "FC_UNGROUNDED_CLAIM_WITHOUT_3_PROOFS",
+  "FC_DUPLICATE_COMPONENT_PROPOSAL",
+  "FC_GOVERNANCE_WITHOUT_EXECUTION_YIELD"
+ ],
+ "existing_assets_checked": true,
+ "schema_strict": true
+}

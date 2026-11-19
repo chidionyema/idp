@@ -1,0 +1,12 @@
+{"advisory": false, "detail": "ADVISORY_GATE_FORBIDDEN: .github/workflows/ci.yml:726, .github/workflows/estate-homes-drill.yml:109, .github/workflows/shadow-verify.yml:213", "duration_ms": 115, "exit_code": 1, "gate_id": "zero-advisory-ci", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:47Z"}
+{"advisory": false, "detail": "0 Zone A / launchd regressions", "duration_ms": 217, "exit_code": 0, "gate_id": "darwin-thin-client", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:48Z"}
+{"advisory": false, "detail": "intent=I-8107 modes=5", "duration_ms": 0, "exit_code": 0, "gate_id": "strict-intent-schema", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:48Z"}
+{"advisory": false, "detail": "OK: 1 differential falsifiers, 1 mutations killed, paths ['bin', 'platform/llm']", "duration_ms": 189, "exit_code": 0, "gate_id": "differential-falsifier", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:48Z"}
+{"advisory": false, "detail": "shadow scope has a merge-base fallback", "duration_ms": 0, "exit_code": 0, "gate_id": "shadow-scope-integrity", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:48Z"}
+{"advisory": false, "detail": "moratorium clear", "duration_ms": 0, "exit_code": 0, "gate_id": "yield-first-moratorium", "stage": "pre-push", "ts_utc": "2026-11-19T06:16:48Z"}
+{"advisory": false, "detail": "ADVISORY_GATE_FORBIDDEN: .github/workflows/ci.yml:726, .github/workflows/estate-homes-drill.yml:109, .github/workflows/shadow-verify.yml:213", "duration_ms": 76, "exit_code": 1, "gate_id": "zero-advisory-ci", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:13Z"}
+{"advisory": false, "detail": "0 Zone A / launchd regressions", "duration_ms": 567, "exit_code": 0, "gate_id": "darwin-thin-client", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:13Z"}
+{"advisory": false, "detail": "intent=I-8107 modes=5", "duration_ms": 1, "exit_code": 0, "gate_id": "strict-intent-schema", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:13Z"}
+{"advisory": false, "detail": "OK: 1 differential falsifiers, 1 mutations killed, paths ['bin', 'platform/llm']", "duration_ms": 463, "exit_code": 0, "gate_id": "differential-falsifier", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:14Z"}
+{"advisory": false, "detail": "shadow scope has a merge-base fallback", "duration_ms": 0, "exit_code": 0, "gate_id": "shadow-scope-integrity", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:14Z"}
+{"advisory": false, "detail": "moratorium clear", "duration_ms": 0, "exit_code": 0, "gate_id": "yield-first-moratorium", "stage": "pre-push", "ts_utc": "2026-11-19T06:17:14Z"}

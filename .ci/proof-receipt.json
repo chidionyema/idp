@@ -1,0 +1,9 @@
+{
+ "tested_subsystems": ["bin", "platform/llm"],
+ "falsifiers": [
+  {"test_name": "tests/test_i8107_zero_divergence_certification.py", "base_exit_code": 1, "head_exit_code": 0}
+ ],
+ "mutations_killed": [
+  {"guard": "darwin_thin_client", "killed": true}
+ ]
+}
