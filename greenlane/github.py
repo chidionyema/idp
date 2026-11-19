@@ -956,6 +956,40 @@ class GitHubBackend:
             chunk = stale[i : i + self.QUEUE_DELETE_CHUNK]
             self.git("push", "-q", "origin", *[f":{ref}" for ref in chunk], check=False)
 
+    def admission_checks(
+        self, batch_id: str, base: str, tip: str, members: list[tuple[str, str, str]]
+    ) -> tuple[str, str]:
+        """Publish and grade exact prefix heads before any PR creation.
+
+        Queue refs, unlike lane refs, trigger the required push checks.
+        A green aggregate cannot replace a green prefix; retries reuse refs.
+        """
+        if self._ref("main") != base:
+            return "red", "admission base changed"
+        pending = []
+        for sha in dict.fromkeys([tip, *(m[2] for m in members)]):
+            if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                return "red", "invalid candidate SHA"
+            verdict, why = self.checks(sha)
+            if verdict == "red":
+                return "red", f"admission {sha[:12]}: {why}"
+            if verdict == "green":
+                continue
+            name = f"queue/{batch_id}-admit-{sha}"
+            at = self._ref(name)
+            if at and at != sha:
+                return "red", f"admission ref collision: {name}"
+            if not at and self._ref(f"queue/{batch_id}") != sha:
+                try:
+                    self.git(
+                        "push", "-q", f"--force-with-lease=refs/heads/{name}:",
+                        "origin", f"{sha}:refs/heads/{name}",
+                    )
+                except RuntimeError as exc:
+                    return "pending", f"admission publish refused: {exc}"
+            pending.append(f"{sha[:12]}: {why}")
+        return ("pending", "; ".join(pending)) if pending else ("green", "")
+
     def checks(self, tip: str) -> tuple[str, str]:
         # filter=latest: one run per check name, the newest, so a re-run supersedes its predecessor
         # 210 check-runs on main; paginate until all pages are read (pages 1-3 at 100/page).
@@ -1586,7 +1620,7 @@ class GitHubBackend:
         # This is the existing CI precondition, not the independent NSVEE receipt.
         base = self.main()
         self._await_green(rebased, time.time() + self.LAND_WAIT_S)
-        if self._ref(lane) != rebased or self.main() != base:
+        if not base or self._ref(lane) != rebased or self._ref("main") != base:
             raise RuntimeError("PR admission: candidate head or main changed under proof")
         body = self._proof_body(lane, head, rebased, tip)
         subject = self.git("log", "-1", "--format=%s", rebased)

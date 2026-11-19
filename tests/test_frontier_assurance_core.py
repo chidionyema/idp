@@ -168,3 +168,65 @@ def test_nsvee_refuses_empty_tests():
 
     assert verify("pass", [], runner=NeverRun()).status == "EXHAUSTED"
 
+
+
+def test_admission_prefix_pending_then_red_blocks_green_tip():
+    from greenlane.github import GitHubBackend
+
+    base, prefix, tip = "a" * 40, "b" * 40, "c" * 40
+    refs = {"main": base, "queue/b1": tip}
+    grades = {tip: ("green", ""), prefix: ("pending", "waiting")}
+    pushes = []
+
+    class Backend:
+        def _ref(self, name):
+            return refs.get(name, "")
+
+        def checks(self, sha):
+            return grades[sha]
+
+        def git(self, *args):
+            pushes.append(args)
+            sha, ref = args[-1].split(":")
+            refs[ref.removeprefix("refs/heads/")] = sha
+
+    backend = Backend()
+    members = [("lane/a", "x", prefix), ("lane/b", "y", tip)]
+    grade = GitHubBackend.admission_checks
+    assert grade(backend, "b1", base, tip, members)[0] == "pending"
+    assert len(pushes) == 1
+    assert grade(backend, "b1", base, tip, members)[0] == "pending"
+    assert len(pushes) == 1
+    grades[prefix] = ("red", "test failure")
+    assert grade(backend, "b1", base, tip, members)[0] == "red"
+    grades[prefix] = ("green", "")
+    assert grade(backend, "b1", base, tip, members)[0] == "green"
+    refs["main"] = "d" * 40
+    assert grade(backend, "b1", base, tip, members)[0] == "red"
+
+
+def test_new_pr_is_refused_before_post_on_remote_base_change():
+    from greenlane.github import GitHubBackend
+
+    class Backend:
+        owner = "owner"
+        LAND_WAIT_S = 1
+
+        def gh(self, path, *args):
+            assert not args, "must not write to GitHub on stale base"
+            return []
+
+        def _proof_body(self, *args):
+            return "proof"
+
+        def main(self):
+            return "a" * 40
+
+        def _ref(self, name):
+            return "b" * 40 if name == "lane/a" else "c" * 40
+
+        def _await_green(self, *args):
+            pass
+
+    with pytest.raises(RuntimeError, match="changed under proof"):
+        GitHubBackend._ensure_pr(Backend(), "lane/a", "x", "b" * 40, "b" * 40)

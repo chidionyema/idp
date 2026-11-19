@@ -8,3 +8,7 @@ The fleet must review/format, execute source tests and full CI, bind the remaini
 
 Run: python -m pytest -q tests/test_frontier_assurance_core.py tests/test_nsvee_verify_door.py tests/judge/test_calibration.py tests/judge/test_drift.py tests/test_greenlane_github.py
 Run canonical ruff and bin/idp-ci as applicable before a lane submission. No test result for the assembled source is asserted yet.
+
+## Greenlane prefix scheduling
+
+Candidate queue refs now schedule missing exact-prefix checks before the batch is admitted; repeated ticks reuse the immutable SHA ref, and a remote base change refuses admission. The new PR path rereads the remote ref before POST. The adapter still uses existing check semantics and needs canonical CI, trusted signed receipt binding and a fenced promotion boundary. A remote read is not an atomic GitHub PR-create lease.

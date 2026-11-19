@@ -565,7 +565,11 @@ class Engine:
             self._requeue([m[0] for m in live])
             self.s.batch = None
             return
-        verdict, reason = self.b.checks(b.tip)
+        admission_checks = getattr(self.b, "admission_checks", None)
+        if admission_checks is not None:
+            verdict, reason = admission_checks(b.id, b.base, b.tip, b.members)
+        else:
+            verdict, reason = self.b.checks(b.tip)
         outcome = "red"
         if verdict == "pending":
             if self.b.now() - b.started > self.timeout:
