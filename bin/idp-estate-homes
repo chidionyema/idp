@@ -187,6 +187,28 @@ def probe(
     return FAIL, f"HTTP {code} (expected {', '.join(str(c) for c in expect)})"
 
 
+def _reject_founder_host_routes(config: dict) -> None:
+    """Reject explicitly local estate homes/selectors, including DR exceptions.
+
+    This is a declared-topology check, not host attestation. Runtime admission
+    must independently verify the identity of every deployed selector.
+    """
+    for service in config["services"]:
+        for item in (service.get("selectors") or []) + (service.get("legs") or []):
+            fate = {str(x).casefold() for x in item.get("fate") or []}
+            provider = str(item.get("provider") or "").casefold()
+            host = (urlsplit(str(item.get("url") or "")).hostname or "").casefold()
+            if (
+                provider in {"laptop", "mac", "macbook", "local"}
+                or bool(fate & {"host:laptop", "host:mac", "host:macbook", "host:local"})
+                or _is_loopback(str(item.get("url") or ""))
+                or host.endswith(".local")
+            ):
+                raise ValueError(
+                    f"{service.get('service')}: prohibited founder-host route {item.get('name')}"
+                )
+
+
 def load_config(path: Path) -> dict:
     """Read the ladder. A ladder that cannot be read is a blind drill, and a blind drill
     is refused out loud rather than reported as 'all clear'."""
@@ -194,6 +216,8 @@ def load_config(path: Path) -> dict:
         config = json.load(handle)
     if not isinstance(config.get("services"), list) or not config["services"]:
         raise ValueError(f"{path}: no services in the ladder")
+    if path.resolve() == DEFAULT_CONFIG.resolve():
+        _reject_founder_host_routes(config)
     return config
 
 
