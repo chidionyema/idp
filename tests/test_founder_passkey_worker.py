@@ -100,3 +100,22 @@ def test_approvals_are_kept_capped_and_validated(results: dict) -> None:
     assert results["apFull"]["status"] == 429
     assert len(json.loads(results["apRead"]["text"])) == 5
     assert results["apJunk"]["status"] == 400
+
+
+def test_face_id_is_asked_first_inside_the_tap() -> None:
+    """idp#8025: Safari refused the approval (NotAllowedError, "not allowed ... in the current
+    context") because the tap handler awaited crypto.subtle.digest before credentials.get.
+    WebKit honours WebAuthn in a tap only when no other async work runs first, so the first
+    await inside the Approve handler must be the WebAuthn call itself."""
+    src = (
+        Path(__file__).resolve().parents[1] / "platform/founder-passkey/worker.js"
+    ).read_text()
+    handler = src.split("btn('Approve with Face ID',async()=>{", 1)[1].split("});", 1)[
+        0
+    ]
+    awaits = [line.strip() for line in handler.splitlines() if "await " in line]
+    first_real = next(a for a in awaits if not a.startswith("if(!ch)"))
+    assert "navigator.credentials.get" in first_real, awaits
+    assert "crypto.subtle.digest" not in handler, (
+        "the digest belongs at page load, not in the tap"
+    )
