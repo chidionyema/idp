@@ -30,6 +30,9 @@ as a FILE -- Kyverno's secrets-not-from-env-vars forbids a secret in an env var)
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+
 import json
 import os
 import queue
@@ -260,3 +263,53 @@ class EstateAeiObserver(_CustomLogger):
 
 
 proxy_handler_instance = EstateAeiObserver()
+
+
+# --- I-8107 epistemic gate ---------------------------------------------------------------
+# An operational claim needs three INDEPENDENT converging proofs: three different authority
+# domains, each time-stamped in UTC with a digest or run id. Two proofs from one domain are one
+# proof repeated, which is what "measured on GitHub" plus "seen in the CI log" actually is.
+_STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_DIGEST = re.compile(r"^[0-9a-f]{7,64}$")
+
+EXISTING_ESTATE_ASSETS = frozenset({
+    "platform/brain-hub",
+    "platform/lifeboat",
+    "cage/i8096",
+    "platform/estate/governance",
+    "platform/llm/callbacks/aei_observer.py",
+})
+
+
+@dataclass(frozen=True)
+class EpistemicProof:
+    authority_domain: str
+    utc_timestamp: str
+    digest_or_run_id: str
+
+
+@dataclass(frozen=True)
+class OperationalClaim:
+    claim_id: str
+    proposed_paths: tuple[str, ...]
+    existing_assets_checked: bool
+    proofs: tuple[EpistemicProof, ...]
+
+
+def verify_operational_claim(claim: OperationalClaim) -> tuple[bool, str]:
+    if not claim.existing_assets_checked:
+        return False, "FC_DUPLICATE_COMPONENT_PROPOSAL: existing_assets_checked is false"
+    if len(claim.proofs) < 3:
+        return False, f"FC_UNGROUNDED_CLAIM_WITHOUT_3_PROOFS: got {len(claim.proofs)}, need >= 3"
+    domains = set()
+    for proof in claim.proofs:
+        if not proof.authority_domain.strip():
+            return False, "INVALID_PROOF: empty authority_domain"
+        if not _STAMP.match(proof.utc_timestamp):
+            return False, f"INVALID_PROOF_TIMESTAMP: {proof.utc_timestamp}"
+        if not (_DIGEST.match(proof.digest_or_run_id) or proof.digest_or_run_id.isdigit()):
+            return False, f"INVALID_PROOF_DIGEST: {proof.digest_or_run_id}"
+        domains.add(proof.authority_domain.strip().lower())
+    if len(domains) < 3:
+        return False, f"NON_INDEPENDENT_PROOFS: {len(domains)} distinct domains, need >= 3"
+    return True, f"VERIFIED_3_CONVERGING_PROOFS:{claim.claim_id}"

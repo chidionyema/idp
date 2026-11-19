@@ -1,0 +1,49 @@
+description: >
+  An operational claim reached the founder with no independent evidence behind it: the same
+  producer's status line was offered as structure, execution and operation at once. The router's
+  callback module carried no predicate that could tell one proof from three, so any caller could
+  claim completion and nothing refused it.
+
+  Question: was the defect that claims were graded by a single producer's word, and does a
+  three-domain predicate close it?
+
+hypotheses:
+  - name: H1
+    description: >
+      Claims were accepted without independent evidence, because no code path required three
+      proofs from distinct authority domains; adding verify_operational_claim closes it.
+    prior: 0.6
+  - name: H2
+    description: >
+      Claims were already independently checked somewhere else, and the missing predicate is
+      cosmetic.
+    prior: 0.4
+n_eff_divisor: 1
+evidence:
+  - name: >
+      the module had no function that could reject a single-producer claim before this change;
+      a repository-wide search for verify_operational_claim returned nothing on main.
+    observed:
+      predicate_present_before: 0
+      predicate_absent_before: 1
+    likelihoods:
+      H1:
+        predicate_present_before: 0.02
+        predicate_absent_before: 0.98
+      H2:
+        predicate_present_before: 0.95
+        predicate_absent_before: 0.05
+  - name: >
+      the founder's own session produced operational claims whose only support was the same
+      producer's narration, and the router answered 200 while the content was truncated -- a
+      status code offered as proof of an outcome.
+    observed:
+      single_source_claim_observed: 1
+      independent_source_observed: 0
+    likelihoods:
+      H1:
+        single_source_claim_observed: 0.97
+        independent_source_observed: 0.03
+      H2:
+        single_source_claim_observed: 0.08
+        independent_source_observed: 0.92
