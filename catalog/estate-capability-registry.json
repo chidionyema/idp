@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 312,
+    "layer": 314,
     "service": 122,
     "tool": 519,
     "workflow": 106
@@ -6447,6 +6447,7 @@
       "consumers": [
         "cap:layer/platform-estate-context-server",
         "cap:layer/platform-estate-memory-local_store",
+        "cap:layer/platform-estate-web-door",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -7154,6 +7155,7 @@
       },
       "consumers": [
         "cap:layer/platform-estate-memory-local_store",
+        "cap:layer/platform-estate-web-door",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -8626,6 +8628,10 @@
             "edge": "imports"
           },
           {
+            "id": "cap:layer/platform-estate-web-door",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-ledger",
             "edge": "imports"
           }
@@ -9260,6 +9266,10 @@
           },
           {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-web-door",
             "edge": "imports"
           },
           {
@@ -10146,6 +10156,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-web-door",
             "edge": "imports"
           },
           {
@@ -12765,6 +12779,137 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/protocolkit/test_protocolkit.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-web-door",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "door -- the network boundary a web agent reaches the console through.",
+      "contract": {
+        "inputs": [
+          "--listen",
+          "--upstream"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-web-net_bind",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-spire-key-broker-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-server",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-governance-founder_intake",
+        "cap:layer/platform-estate-governance-state_page",
+        "cap:layer/platform-estate-libexec-critical-probe",
+        "cap:layer/platform-llm-active_memory"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/web/door.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-web-net_bind",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "net_bind -- bind a web agent to a live protocol session at the network boundary.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-web-door"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/web/net_bind.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -15699,6 +15844,10 @@
           {
             "id": "cap:layer/platform-estate-memory-focus",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-web-door",
+            "edge": "imports"
           }
         ]
       },
@@ -16850,6 +16999,7 @@
         "cap:layer/platform-estate-libexec-router-doctor",
         "cap:layer/platform-estate-libexec-telegram-agent-doctor",
         "cap:layer/platform-estate-libexec-voice-doctor",
+        "cap:layer/platform-estate-web-door",
         "cap:layer/platform-executor-fleetview_register",
         "cap:layer/platform-intent-observer",
         "cap:layer/platform-jit-broker-collector",
@@ -17965,6 +18115,7 @@
       "consumers": [
         "cap:layer/platform-estate-context-server",
         "cap:layer/platform-estate-memory-local_store",
+        "cap:layer/platform-estate-web-door",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -21246,6 +21397,7 @@
       "consumers": [
         "cap:layer/platform-estate-context-server",
         "cap:layer/platform-estate-memory-local_store",
+        "cap:layer/platform-estate-web-door",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
