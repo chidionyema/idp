@@ -50,6 +50,17 @@ MAX_FILES_PER_CHANGE = 5
 MAX_CLOCK_DRIFT_SECONDS = 300
 
 
+def lane_contract() -> str:
+    """The bounds this enforcer applies, printed for the worker before it works."""
+    return "\n".join(
+        [
+            "LANE CONTRACT: one subsystem (one top-level directory), "
+            f"at most {MAX_FILES_PER_CHANGE} files in one change, no .github/ or .githooks/ edits,",
+            "and no guarded path without a Founder seal.",
+        ]
+    )
+
+
 def _introduced_lines(repo_root: str, rel_path: str) -> str:
     """The '+' lines of the staged change for rel_path; whole file when nothing is staged."""
     try:
@@ -201,11 +212,17 @@ if __name__ == "__main__":
     )
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--commit-sha", default="HEAD")
-    parser.add_argument("--files", nargs="+", required=True)
+    parser.add_argument("--files", nargs="+")
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
     parser.add_argument("--founder-seal", action="store_true")
+    parser.add_argument("--contract", action="store_true")
     args = parser.parse_args()
 
+    if args.contract:
+        print(lane_contract())
+        sys.exit(0)
+    if not args.files:
+        parser.error("--files is required unless --contract is given")
     passed, report = evaluate_three_independent_proofs(
         repo_root=args.repo_root,
         commit_sha=args.commit_sha,

@@ -59498,11 +59498,12 @@
       "id": "cap:tool/verify_three_proofs.py",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "The '+' lines of the staged change for rel_path; whole file when nothing is staged.",
+      "summary": "The bounds this enforcer applies, printed for the worker before it works.",
       "contract": {
         "inputs": [
           "--cached",
           "--commit-sha",
+          "--contract",
           "--files",
           "--founder-seal",
           "--no-color",
