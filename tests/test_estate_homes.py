@@ -511,4 +511,28 @@ def test_the_estate_router_topology_is_declared_so_it_can_be_proved():
     router = next(s for s in config["services"] if s["service"] == "llm-router")
     got = door.prove(router)
     assert got["verdict"] in ("PROVEN", "FAILS"), got
-    assert "host:laptop" in got["domains"]
+    assert "host:laptop" not in got["domains"]
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"name": "old DR", "provider": "laptop", "role": "dr"},
+        {"name": "renamed", "fate": ["host:laptop"]},
+        {"name": "renamed", "url": "http://127.0.0.1:4000/health"},
+        {"name": "renamed", "url": "http://[::1]:4000/health"},
+        {"name": "renamed", "url": "https://workstation.local/health"},
+    ],
+)
+def test_founder_host_routes_are_refused_even_as_dr(item):
+    config = {"services": [{"service": "llm-router", "legs": [item]}]}
+    with pytest.raises(ValueError, match="prohibited founder-host route"):
+        door._reject_founder_host_routes(config)
+
+
+def test_cloud_only_topology_does_not_invent_a_selector():
+    config = door.load_config(IDP / "platform/ladder/critical-lanes.json")
+    router = next(s for s in config["services"] if s["service"] == "llm-router")
+    if not router.get("selectors"):
+        assert door.prove(router)["verdict"] == "UNDECLARED"
+    door._reject_founder_host_routes(config)
