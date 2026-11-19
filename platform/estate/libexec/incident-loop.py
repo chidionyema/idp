@@ -244,6 +244,16 @@ def fingerprint(source: str, repo: str, key: str) -> str:
     return hashlib.sha256(raw).hexdigest()[:16]
 
 
+def _recurred(row: sqlite3.Row, detail: dict) -> bool:
+    """A newer run id than the one the closed incident was judged on is a recurrence."""
+    try:
+        previous = int(json.loads(row["detail"] or "{}").get("run_id") or 0)
+        current = int(detail.get("run_id") or 0)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return current > previous > 0
+
+
 def record_incident(
     conn: sqlite3.Connection,
     incident: dict,
@@ -268,6 +278,20 @@ def record_incident(
         capacity_minutes,
     )
     detail = incident.get("detail", {})
+    if row and row["state"] == "closed" and _recurred(row, detail):
+        # A CLASS MAY OCCUR ONCE (AGENTS.md, the class ledger). A newer failing run of a
+        # closed class is a recurrence: it reopens with a fresh ticket, never stays silent.
+        history = json.loads(row["history"] or "[]")
+        history.append({"at": now, "event": f"recurred: run {detail.get('run_id')}"})
+        conn.execute(
+            """UPDATE incidents SET state = 'open', ticket = NULL, dispatch_leg = '',
+               dispatch_ref = '', dispatched_at = NULL, verified_at = NULL, closed_at = NULL,
+               history = ? WHERE id = ?""",
+            (json.dumps(history[-50:]), incident["id"]),
+        )
+        row = conn.execute(
+            "SELECT * FROM incidents WHERE id = ?", (incident["id"],)
+        ).fetchone()
     if row:
         history = json.loads(row["history"] or "[]")
         history.append({"at": now, "event": "seen"})
@@ -451,10 +475,8 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
                         f"gh api {conclusion} page {page} returned invalid run"
                     )
                 original = by_id.get(run["id"])
-                if (
-                    original is None
-                    or int(run.get("run_attempt") or 1)
-                    > int(original.get("run_attempt") or 1)
+                if original is None or int(run.get("run_attempt") or 1) > int(
+                    original.get("run_attempt") or 1
                 ):
                     by_id[run["id"]] = run
             if len(batch) < 100:
@@ -468,6 +490,11 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
             )
     runs = sorted(by_id.values(), key=lambda x: x["id"], reverse=True)
     incidents = []
+    # ONE FAILING WORKFLOW IS ONE INCIDENT (idp#8301). The key was the run id, so a red
+    # workflow on a 15-minute cron opened a P0 per run (measured: argon-sync's drive bridge,
+    # three P0s in one dry tick). The class is (repo, workflow, branch); runs are newest
+    # first, so the first run of a class carries the detail and the rest are the same error.
+    seen_classes: set[str] = set()
     for run in runs:
         if run.get("conclusion") not in failures:
             continue
@@ -476,6 +503,10 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
         if run.get("name") in ignored:
             continue
         branch = run.get("head_branch") or ""
+        failure_class = f"{run.get('name', 'workflow')}@{branch}"
+        if failure_class in seen_classes:
+            continue
+        seen_classes.add(failure_class)
         if branch == "main":
             severity, blast = "critical", "main"
         elif branch.startswith("queue/"):
@@ -488,12 +519,15 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
             severity, blast = "minor", "lane"
         incidents.append(
             {
-                "id": fingerprint("ci", repo, str(run["id"])),
+                "id": fingerprint("ci", repo, failure_class),
                 "source": "ci",
                 "repo": repo,
                 "severity": severity,
                 "blast": blast,
-                "title": f"{run.get('name', 'workflow')} failed on {branch or 'a run'}",
+                "title": (
+                    ("" if repo == "chidionyema/idp" else f"{repo.split('/')[-1]}: ")
+                    + f"{run.get('name', 'workflow')} failed on {branch or 'a run'}"
+                ),
                 "url": run.get("html_url", ""),
                 "detail": {
                     "run_id": run["id"],
@@ -511,9 +545,7 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
     # starve an older main-branch P0 indefinitely.
     incidents.sort(
         key=lambda incident: (
-            -score_incident(
-                policy, incident["severity"], incident["blast"]
-            )[0],
+            -score_incident(policy, incident["severity"], incident["blast"])[0],
             incident["detail"].get("created_at", ""),
             incident["id"],
         )
@@ -848,7 +880,6 @@ def push_worker_task(policy: dict, goal: str) -> tuple[str, str]:
     return "worker", ""
 
 
-
 def worker_queue_witness(policy: dict, dispatch_ref: str) -> tuple[str, str]:
     """Read the existing queue's durable task record; queued is not running.
 
@@ -907,7 +938,9 @@ def audit_p0_worker_liveness(
         elapsed = float("inf")
     else:
         try:
-            elapsed = max(0.0, (wall_now() - parse_iso(row["dispatched_at"])).total_seconds())
+            elapsed = max(
+                0.0, (wall_now() - parse_iso(row["dispatched_at"])).total_seconds()
+            )
         except (TypeError, ValueError):
             elapsed = float("inf")
     sla = max(60, int(row["sla_minutes"] or 15) * 60)
@@ -939,6 +972,11 @@ def dispatch_incident(
     conn: sqlite3.Connection, policy: dict, row: sqlite3.Row
 ) -> tuple[str, str]:
     """Take one incident and put it in front of something that can fix it."""
+    if os.environ.get("ESTATE_INCIDENT_DISPATCH", "1") == "0":
+        # The cloud sensor (.github/workflows/incident-loop.yml, idp#8301) has no session bus
+        # and no worker queue: writing dispatch_leg=worker into a runner's throwaway queue
+        # would mark the incident handled while nothing holds it. The ticket is the owner.
+        return "", ""
     repo = row["repo"] or policy["dispatch"].get("repo", "chidionyema/idp")
     ticket = row["ticket"]
     code, sessions = _sb_list(repo)
@@ -1112,7 +1150,8 @@ def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
     if not isinstance(runs, list):
         return False, ""
     matching = [
-        item for item in runs
+        item
+        for item in runs
         if isinstance(item, dict)
         and item.get("name") == workflow
         and item.get("head_branch") == branch
@@ -1120,7 +1159,13 @@ def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
     ]
     if not matching:
         return False, ""
-    latest = max(matching, key=lambda item: (item["id"], item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0))
+    latest = max(
+        matching,
+        key=lambda item: (
+            item["id"],
+            item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0,
+        ),
+    )
     try:
         original_id = int(run_id)
         original_attempt = int(detail.get("run_attempt") or 1)
@@ -1205,7 +1250,10 @@ def finalize_verified_incident(
     if not confirmed:
         code, _, _ = run_gh(
             [
-                "issue", "close", str(row["ticket"]), "--comment",
+                "issue",
+                "close",
+                str(row["ticket"]),
+                "--comment",
                 f"The incident loop verified the source: {row['lesson']}. "
                 f"MTTR {row['mttr_seconds']}s.",
             ],
@@ -1217,7 +1265,10 @@ def finalize_verified_incident(
         if not confirmed:
             return False
     set_field(
-        conn, row["id"], state="closed", closed_at=now_iso(),
+        conn,
+        row["id"],
+        state="closed",
+        closed_at=now_iso(),
         event=f"remote closure attested: {witness}",
     )
     return True
@@ -1244,11 +1295,17 @@ def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) ->
         f"Raised {row['first_seen']}, verified {verified_at}, MTTR {mttr}s."
     )
     set_field(
-        conn, row["id"], state="verified", verified_at=verified_at,
-        mttr_seconds=mttr, lesson=lesson, event=f"verified: {evidence}",
+        conn,
+        row["id"],
+        state="verified",
+        verified_at=verified_at,
+        mttr_seconds=mttr,
+        lesson=lesson,
+        event=f"verified: {evidence}",
     )
     write_lesson(policy, lesson)
     return finalize_verified_incident(conn, policy, get_incident(conn, row["id"]))
+
 
 # --------------------------------------------------------------------------------------
 # the lesson: the estate's own knowledge graph
@@ -1285,7 +1342,14 @@ def write_lesson(policy: dict, lesson: str) -> str:
 def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
     """One pass of the whole loop."""
     conn = open_ledger()
-    summary = {"sensed": 0, "opened": 0, "dispatched": 0, "verified": 0, "closure_pending": 0, "notes": []}
+    summary = {
+        "sensed": 0,
+        "opened": 0,
+        "dispatched": 0,
+        "verified": 0,
+        "closure_pending": 0,
+        "notes": [],
+    }
     sensed: list[dict] = []
     # The clock is judged first: a tick that runs while the wall clock lies writes wrong
     # timestamps into every incident it senses. The verdict is stored, so the next tick can
@@ -1358,8 +1422,9 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
             row = get_incident(conn, row["id"])
         if row["state"] == "open" and not row["dispatch_leg"]:
             leg, ref = dispatch_incident(conn, policy, row)
-            summary["dispatched"] += 1
-            summary["notes"].append(f"{row['id']} -> {leg} {ref}")
+            if leg:
+                summary["dispatched"] += 1
+                summary["notes"].append(f"{row['id']} -> {leg} {ref}")
     # A cap on NEW incidents must never freeze an existing P0. Retry unfinished rows
     # on every tick, highest score first, with a bounded recovery budget.
     recovery_budget = max(1, int(policy["sense"].get("recover_per_tick", 1)))
@@ -1386,8 +1451,9 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
                 row = get_incident(conn, row["id"])
             if not row["dispatch_leg"]:
                 leg, ref = dispatch_incident(conn, policy, row)
-                summary["dispatched"] += 1
-                summary["notes"].append(f"recovered {row['id']} -> {leg} {ref}")
+                if leg:
+                    summary["dispatched"] += 1
+                    summary["notes"].append(f"recovered {row['id']} -> {leg} {ref}")
             recovered += 1
         except LoopError as exc:
             summary["notes"].append(f"recovery blocked for {row['id']}: {exc}")
