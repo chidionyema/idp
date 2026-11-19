@@ -5,7 +5,7 @@ Date: 2026-11-16. Instruction: I-8096-REV2. Closes `CLASS-MANUAL-EXPORT-FRICTION
 ## Decision
 
 The edge worker (`platform/lifeboat`) accepts AI Studio work through two zero-click channels
-— a browser stream tee and a Google Drive `changes.watch` push — and resolves both to one
+ -  a browser stream tee and a Google Drive `changes.watch` push  -  and resolves both to one
 commit on `lane/aistudio-auto-intake` keyed by `(path, sha256)`. The commit, the
 `OMNIFLOW-EVENT/v1` assignment on idp#8133, the realtime `chronicle.aistudio_ready` frame and
 the Greenlane dispatch happen without a human action.
