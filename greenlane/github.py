@@ -1502,6 +1502,44 @@ class GitHubBackend:
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
 
+    def _lane_pr(self, lane: str) -> Optional[dict]:
+        """The open pull request that carries `lane`: the engine's own, else the adopted one.
+
+        2026-11-19, the dominant land refusal: 85 of the last 200 batch verdicts carried one
+        fingerprint, `fast-gate / fast-gate failure`, and the run behind it read
+        `bddproof pull request #8221: the proof names 3f3515e10b56, but the head is
+        69e2bd2f4e8c`. An adopted pull request's branch is the author's (`fix/zip-cve`), not the
+        lane (`lane/fix/zip-cve`), so a lookup by `head=<lane>` found nothing, the proof was
+        never rewritten, and `_land`'s push onto the author's branch started a fast-gate run
+        that read the author's day-old block. Every retry repeated it: #8221, #8224 and #8230
+        were each refused at land time again and again with the work proven green.
+        """
+        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        if found:
+            return found[0]
+        for pr in self.adopted_prs():
+            if pr["lane"] == lane:
+                return self.gh(f"pulls/{pr['number']}") or None
+        return None
+
+    @staticmethod
+    def _adopted_proof_body(body: str, landing: str) -> str:
+        """The author's body with the lander's proof block first and every stale block gone.
+
+        bin/idp-bdd-proof-gate grades the FIRST `BDD-PROOF ... END-BDD-PROOF` in the body, so
+        the lander's block goes directly under the adoption line, ahead of any prose that might
+        mention the words. Stale blocks the author pasted are removed, not left beside a fresh
+        one: two proofs naming two heads is exactly the ambiguity the gate refuses.
+        """
+        block = landing[landing.index("BDD-PROOF\n") :]
+        rest = re.sub(
+            r"^BDD-PROOF[ \t]*\n.*?^END-BDD-PROOF[ \t]*\n?", "", body, flags=re.M | re.S
+        )
+        first, sep, tail = rest.partition("\n")
+        if not first.startswith(ADOPTED):
+            return f"{block}\n{rest}"
+        return f"{first}\n\n{block}{sep}{tail.lstrip(chr(10))}"
+
     def _write_proof_body(self, lane: str, head: str, rebased: str, tip: str) -> None:
         """Rewrite the open PR's proof to name `rebased` BEFORE the push that grades it.
 
@@ -1514,12 +1552,15 @@ class GitHubBackend:
         this body, but it runs AFTER the push, so it repaired the next attempt and never the one
         being graded. Write it first; `_ensure_pr` then has nothing left to change.
         """
-        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
-        if not found:
+        pr = self._lane_pr(lane)
+        if not pr:
             return
+        current = pr.get("body") or ""
         body = self._proof_body(lane, head, rebased, tip)
-        if (found[0].get("body") or "") != body:
-            self.gh(f"pulls/{found[0]['number']}", "PATCH", {"body": body})
+        if ADOPTED in current:
+            body = self._adopted_proof_body(current, body)
+        if current != body:
+            self.gh(f"pulls/{pr['number']}", "PATCH", {"body": body})
 
     def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
         existing = (
