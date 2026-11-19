@@ -294,3 +294,57 @@ def test_the_report_is_machine_readable(tmp_path):
     assert report["totals"]["workloads"] == 2
     assert report["verdicts"]["app/deployment/app"] == "ADMITTED"
     assert report["blind"] == []
+
+
+def test_a_subdirectory_its_applied_parent_never_names_is_declared_only(tmp_path):
+    # idp#8067, 2026-11-19: platform/llm is applied, platform/llm/pennyd has its own
+    # kustomization.yaml, and platform/llm/kustomization.yaml never named it. The old rule called
+    # anything under an applied path applied, so Flux never deployed pennyd and this gate said ok.
+    root = build_repo(tmp_path / "repo", clean_budget())
+    sub = root / "platform" / "app" / "router"
+    sub.mkdir()
+    (sub / "kustomization.yaml").write_text("resources:\n  - orphan.yaml\n")
+    (sub / "orphan.yaml").write_text(ORPHAN.replace("orphan", "router"))
+    subprocess.run(
+        ["git", "-C", str(root), "add", "-A"], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "router"],
+        check=True,
+        capture_output=True,
+    )
+    out = run(root)
+    assert out.returncode == 1, out.stdout
+    assert "platform/app/router is declared but never applied" in out.stdout
+
+
+def test_a_subdirectory_its_applied_parent_names_is_applied(tmp_path):
+    budget = clean_budget()
+    budget["admission"].append(
+        {
+            "workload": "router/deployment/router",
+            "cpu": "50m",
+            "memory": "64Mi",
+            "justification": "the router",
+            "rung": "7",
+        }
+    )
+    root = build_repo(tmp_path / "repo", budget)
+    sub = root / "platform" / "app" / "router"
+    sub.mkdir()
+    (sub / "kustomization.yaml").write_text("resources:\n  - orphan.yaml\n")
+    (sub / "orphan.yaml").write_text(ORPHAN.replace("orphan", "router"))
+    (root / "platform" / "app" / "kustomization.yaml").write_text(
+        "resources:\n  - app.yaml\n  - router\n"
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "add", "-A"], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "router"],
+        check=True,
+        capture_output=True,
+    )
+    out = run(root)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "platform/app/router" not in out.stdout
