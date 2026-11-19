@@ -21,7 +21,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: pennyd
-          image: ghcr.io/chidionyema/pennyd:v0.2.0
+          image: ghcr.io/chidionyema/pennyd:main-15388-1ca6023698ab49ca3d519ca045b4b6b0a6a3545c
           imagePullPolicy: IfNotPresent
           # no args: the image ENTRYPOINT already supplies /app/config.toml,
           # which the config volume mounts at that exact path
