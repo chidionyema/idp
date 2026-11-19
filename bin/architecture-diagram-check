@@ -24,7 +24,10 @@ the groups' OWN numbers, in the order the code applies them (the code's markers 
   3. ELEMENTS, PER VIEW, WITH MULTIPLICITY. The elements drawn in each view are exactly
      the elements the model puts in that view -- and each of them ONCE. A page that
      simply DROPS a declared element -- the guardian, the gate -- is drift, and so is a
-     page that draws the same box twice.
+     page that draws the same box twice.  An element that has NO RELATIONSHIP AT ALL is
+     not drawn by the renderer: `include *` draws what is in scope, and an element in no
+     relationship is in no scope (measured against the real structurizr by the sixth
+     audit).  Such an element is therefore not expected on the page.
   4. NODE TEXT, PER ELEMENT. Every node is compared against THE DECLARATION OF THAT ONE
      ELEMENT -- not against the model file as a bag of words. The renderer presents an
      element as
@@ -46,13 +49,21 @@ the groups' OWN numbers, in the order the code applies them (the code's markers 
   5. THE MARKER'S DESCRIPTION -- the other half of the same comparison, for the second
      string.  Groups 4 and 5 are ONE code block: the node's text is read once and both
      parts of it are judged against that one element's own declaration.
-  6. EDGE LABELS AND TOPOLOGY. The renderer draws ONE edge per pair of elements, and
-     when several relationships project onto the same pair it draws that pair once,
-     labelled with the FIRST of them the model declares. So the page must draw exactly
-     one edge per projected pair, with that label: a label that is not the model's is
-     drift, a declared relationship that is missing from the page is drift, a
-     relationship the model does not declare is drift, an edge re-pointed at a
-     different element is drift, and a second edge for one pair is drift.
+  6. EDGE LABELS AND TOPOLOGY. How many edges ONE PAIR of elements gets was measured
+     against the REAL structurizr (the sixth audit), and it turns on whether the
+     relationship had to be PROJECTED onto the boundary: a relationship whose endpoints
+     are BOTH DRAWN in the view is ONE EDGE PER RELATIONSHIP -- two relationships
+     between the same pair of systems draw TWO edges, each with its own label -- while
+     a SYSTEM CONTEXT view draws the system as a boundary, so a relationship to
+     something INSIDE it is projected onto that boundary and the projected ones are
+     MERGED per pair, so three relationships from one system to three containers of
+     another draw ONE edge, labelled with the FIRST of them, which is exactly what the
+     committed argon page shows.  (The earlier belief that every view merges a pair
+     came from hand-made fixtures, not from the renderer.)  So the page must draw
+     exactly the projected relationships: a label that is not the model's is drift, a
+     declared relationship that is missing from the page is drift, a relationship the
+     model does not declare is drift, an edge re-pointed at a different element is
+     drift, and an edge count that does not match the view's rule is drift.
   7. THE SYSTEM BOUNDARY. In a container view the renderer nests the software system's
      own containers in a subgraph named after that system. A page that moves a software
      system INSIDE that boundary -- or a container OUTSIDE it -- draws a C4 boundary
@@ -68,14 +79,24 @@ the groups' OWN numbers, in the order the code applies them (the code's markers 
      this file cannot derive.
   9. THE HEADER. The page's header is exactly what architecture/render writes, read
      FROM the render, so there is one source of truth and the render cannot change it
-     silently.
+     silently.  What the render writes depends on HOW it writes it, so the value is
+     derived from the FORM: `printf '%s\n' "..."` writes the string literally whatever
+     the shell is (that is why the render writes its header that way), `echo "..."`
+     writes it literally too as long as it carries no backslash, and an `echo` argument
+     that DOES carry a backslash has a value this file cannot know -- bash's plain echo
+     writes `\t` literally, and `echo -e` writes a TAB -- so it is UNCHECKED rather than
+     judged.  An argument that carries an expansion -- a `$` or a backtick -- is
+     UNCHECKED for the same reason.
   10. ELEMENT NAMES, GLOBALLY. Every element name the model declares is drawn, and
      every name on the page is declared -- so a renamed element cannot leave half the
      page talking about the old name.
   11. NOTHING LEFT UNDECIDED. A line inside a mermaid block that this file has no rule
      for is reported as UNCHECKED and the run FAILS. So is a view kind with no rule
      here, a node this file cannot read, a page whose header this file cannot derive
-     from architecture/render, a relationship the model declares in a form this file
+     from architecture/render, a MODEL, a PAGE or a RENDER that cannot be read as
+     UTF-8, an identifier whose scope names something the model does not declare, a
+     header the render writes in a way whose value depends on the shell, a
+     relationship the model declares in a form this file
      cannot read, a declaration it cannot read, and a deployment environment that
      declares a deployment node with a keyword this file has no rule for. A check that
      says "ok" about something it did not look at is not a check: a parser that DROPS
@@ -95,7 +116,9 @@ WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
   - Whether the .mmd files the renderer produces still match the model. That is what
     `architecture/render --check` is for, and it needs the structurizr image.
   - The page's PROSE after the header (the renderer's own trailing line). Only the
-    header is compared; the trailer is not.
+    header is compared; the trailer is not.  A heading in that prose is prose too: a
+    heading is a VIEW only when a mermaid block follows it, which is how the render
+    writes its views.
   - A relationship's TECHNOLOGY -- the second quoted string on a relationship line. It
     is READ, so the relationship is not invisible (an invisible relationship let a page
     MISSING that edge pass as correct), but it is not COMPARED: the renderer draws it
@@ -107,6 +130,14 @@ WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
     so such an instance is compared BY NAME ONLY. If the page draws no node with that
     name, or draws one with different text, the verdict is UNCHECKED (exit 2): this
     check cannot say the page is wrong, and it says so rather than guessing.
+
+HOW AN IDENTIFIER IS RESOLVED. `scope.alias` names the element `alias` declared
+INSIDE `scope`; a bare `alias` names the element with that alias.  The scope is part
+of the identity: `github.surface` is the container `surface` INSIDE `github`, so a
+model that declares `surface` somewhere else does not satisfy it.  When the scope
+names nothing the model declares, or the alias is declared in two scopes, the
+identifier names NOTHING this file can read -- and the relationship it appears in is
+UNCHECKED (exit 2), never silently resolved to an unrelated element.
 
 `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
 needs the structurizr image. This one needs nothing, so it can run everywhere.
@@ -128,7 +159,7 @@ import sys
 # An element declaration: `alias = kind "Name" ["first string"] ["second string"]`.
 # The match is a PREFIX match on purpose: a block declaration ends with `{`.
 ELEMENT_RE = re.compile(
-    r'^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*(person|softwareSystem|container)\s+"([^"]*)"'
+    r'^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*(person|softwareSystem|container|component)\s+"([^"]*)"'
     r'(?:\s+"([^"]*)")?(?:\s+"([^"]*)")?'
 )
 VIEW_RE = re.compile(
@@ -159,27 +190,36 @@ DEPLOYMENT_ENV_RE = re.compile(r'^\s*deploymentEnvironment\s+"([^"]*)"\s*\{')
 # verdict: both are lines this parser cannot read, and both are REPORTED.  A regex
 # that matched one of them and not the other silently dropped half of a class.
 DECLARATION_RE = re.compile(r'^\s*[^\s=!]+\s*!?=\s*\S+')
+# A `group` block in the model.  Structurizr 5.0.2's model keywords are `group`,
+# `person`, `softwareSystem`, `container` and `component`; the group is the visual
+# grouping the renderer draws as a subgraph.
+GROUP_RE = re.compile(r'^\s*group\s+"([^"]*)"\s*\{')
 # The alias charset above is deliberately wider than the one ELEMENT_RE accepts:
-# a declaration this file cannot read must still be REPORTED, not dropped.  Structurizr
-# accepts identifiers that start with a digit, so `1ghost = container "X"` is a real
-# model, and dropping it silently left the element out of every comparison.
+# a declaration this file cannot read must still be REPORTED, not dropped.  The
+# charset is widened so that ANY unreadable assignment is reported rather than
+# dropped -- not because structurizr accepts every alias this file can read.
+# Structurizr 5.0.2's DSL REJECTS an identifier that starts with a digit, so a model
+# containing one is not a model the renderer would accept; this file reports the line
+# instead of dropping it, so that a hand-edited file is never silently compared as if
+# it were the model the renderer read.
 # The three ways a model says "this environment instantiates that element".
 # `softwareSystemInstance` was NOT in this list, and the omission was invisible: a
 # deployment environment that instantiates a SOFTWARE SYSTEM was read as instantiating
 # nothing at all, so the page could OMIT that instance and the check said "ok" -- a
 # silent pass on real drift -- while a page that DID draw it was reported as drawing an
 # element the model does not declare -- a false failure on a correct page.
-# What the renderer actually DRAWS for a software system instance was never measured
-# against the real renderer (the fixtures are hand-made), so this file knows the
-# instance EXISTS but cannot assert what the page should look like for it.  That
-# difference is carried through to the verdict: a soft instance is compared by name
-# only, and a mismatch is UNCHECKED rather than a claim of drift.
+# What the renderer DRAWS for a software system instance was measured against the
+# real renderer by the seventh audit: it is drawn AS the software system, and NOT AT
+# ALL when that system is the view's subject (the subject is the boundary the view is
+# drawn around).
 INSTANCE_RE = re.compile(
     r'^\s*(containerInstance|softwareSystemInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$'
 )
-# A deployment node written with a keyword this file cannot read.  Dropping it would
-# hide the whole subtree inside it -- the instances, and the boundary the renderer
-# draws for it -- so it is REPORTED instead of dropped.
+# A line that LOOKS like a deployment node but uses a keyword this file cannot read.
+# Structurizr 5.0.2's deployment keywords are `group`, `deploymentGroup` and
+# `deploymentNode`; `infrastructureNode` is not one of them, so this pattern is not a
+# keyword the renderer knows -- it exists so that a line this file cannot read is
+# REPORTED instead of dropped, which would hide the subtree inside it.
 UNREADABLE_NODE_RE = re.compile(r'^\s*infrastructureNode\b')
 # A deployment node is a NESTED box in a deployment view: the model declares it, and the
 # renderer draws it as a subgraph named after it. A check that says "every subgraph must
@@ -193,10 +233,18 @@ KIND_LABEL = {
     "person": "Person",
     "softwareSystem": "Software System",
     "container": "Container",
+    "component": "Component",
 }
 
-# Which kind carries its second string (its description) inside the marker.
-CARRIES_MARKER_DESCRIPTION = {"container": True, "person": False, "softwareSystem": False}
+# Which kind carries its second string (its description) inside the marker.  A
+# component is rendered like a container (the seventh audit measured the renderer
+# draw a component with the same marker shape).
+CARRIES_MARKER_DESCRIPTION = {
+    "container": True,
+    "component": True,
+    "person": False,
+    "softwareSystem": False,
+}
 
 # The label the renderer puts on the subgraph that opens a view, per view kind. The
 # label names the SYSTEM the view is of, not the view's key -- which is why two views
@@ -221,7 +269,10 @@ def _plain(text: str) -> str:
     failure this check exists to catch.
     """
     text = text.replace("<br />", " ")
-    text = re.sub(r"</?div[^>]*>", " ", text)
+    # NOT the div tags.  The renderer's own wrapper tags are already gone -- the caller
+    # splits the renderer's divs out first -- and a description that CONTAINS the
+    # literal text "<div>" is TEXT, not a tag.  Stripping it turned a correct page into
+    # drift (the sixth audit measured it against the real renderer).
     return text
 
 
@@ -261,11 +312,18 @@ class Model:
         self.unparsed_relationships: list[str] = []
         self.duplicate_names: list[str] = []
         self.unreadable_declarations: list[str] = []
+        # An ALIAS declared twice names two different elements, and an identifier
+        # that names the alias cannot say which one it means.
+        self.ambiguous_aliases: set[str] = set()
+        # The elements whose EDGES cannot be compared, because a relationship that
+        # names them has an end this file cannot read.
+        self.edges_left_undecided: set[str] = set()
         self.unreadable_relationships: list[str] = []
         self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
         self.soft_instances: dict[str, list[str]] = {}  # env title -> aliases whose RENDERED FORM is unverified
         self.unreadable_node_envs: set[str] = set()   # environments with a node this file cannot read
         self.deployment_nodes: dict[str, list[str]] = {}  # environment title -> node names
+        self.groups: list[str] = []   # the `group` blocks the model declares
         self.deployment_opaque: list[str] = []        # environments this file cannot read
         self._parse()
 
@@ -303,6 +361,12 @@ class Model:
 
             push: str | None = None
             if not in_views:
+                grp = GROUP_RE.match(line)
+                if grp:
+                    # A `group` is a VISUAL grouping: the renderer draws it as a
+                    # subgraph the page may legitimately show, and the elements inside
+                    # it keep their own parents (a group is not a container).
+                    self.groups.append(grp.group(1))
                 dem = DEPLOYMENT_ENV_RE.match(line)
                 if dem:
                     self.deployments.setdefault(dem.group(1), [])
@@ -357,12 +421,20 @@ class Model:
                     if m:
                         alias, kind, name, first, second = m.groups()
                         element = Element(alias, kind, name, first or "", second or "")
+                        if alias in self.elements:
+                            self.ambiguous_aliases.add(alias)
                         self.elements[alias] = element
                         if name in self.by_name:
                             self.duplicate_names.append(name)
                         self.by_name.setdefault(name, element)
                         self.alias_of.setdefault(name, alias)
-                        if stack and not stack[-1].startswith("#"):
+                        if stack and not stack[-1].startswith("#") and stack[-1] != alias:
+                            # NOT `stack[-1] == alias`: an element that re-uses an
+                            # ancestor's alias would put a SELF-LOOP in the parent map,
+                            # and every walk over it would never end (the seventh audit
+                            # measured an unbounded allocation).  The alias is ambiguous
+                            # anyway, and the ambiguity is what makes the scope
+                            # unresolvable -- below.
                             self.parent[alias] = stack[-1]
                         for owner in stack:
                             if not owner.startswith("#"):
@@ -377,6 +449,14 @@ class Model:
                             to_name = self.resolve(target)
                             if from_name is None or to_name is None:
                                 self.unparsed_relationships.append(line.strip())
+                                # The end that DID resolve names an element whose edges
+                                # cannot be compared: the page may be drawing the edge
+                                # this relationship declares, under a name this file
+                                # cannot read.  Such an edge is UNCHECKED, never drift.
+                                if from_name:
+                                    self.edges_left_undecided.add(from_name)
+                                if to_name:
+                                    self.edges_left_undecided.add(to_name)
                             else:
                                 # The TECHNOLOGY is a second quoted string on the same
                                 # relationship.  It is READ so the relationship is not
@@ -425,10 +505,59 @@ class Model:
                 stack.append(push)
 
     def resolve(self, ident: str) -> str | None:
-        """`genesis.guardian` -> the name of the element declared as `guardian`."""
-        alias = ident.split(".")[-1]
+        """`genesis.guardian` -> the name of the element declared as `guardian` INSIDE `genesis`.
+
+        The scope is part of the identity.  `github.surface` names the container
+        `surface` that lives inside `github`: if the model declares no `github`, or
+        declares `surface` somewhere else, the identifier names NOTHING this file can
+        read, and the relationship it appears in is UNCHECKED.  Dropping the scope
+        prefix (the old behaviour) silently resolved such an identifier to an
+        UNRELATED element, so a model the renderer would reject passed this check as
+        sound -- a false NEGATIVE on the rule that says what the model says.
+        """
+        parts = ident.split(".")
+        alias = parts[-1]
+        scope_path = parts[:-1]
+        if alias in self.ambiguous_aliases:
+            return None
         element = self.elements.get(alias)
-        return element.name if element else None
+        if element is None:
+            return None
+        if not scope_path:
+            return element.name
+        if self.elements.get(scope_path[0]) is None:
+            return None
+        if any(part in self.ambiguous_aliases for part in scope_path):
+            # The scope names an alias the model declares more than once, so the scope
+            # cannot be resolved -- UNCHECKED, never "some other element".
+            return None
+        within = self._within(scope_path, alias)
+        if within is None:
+            return None
+        if not within:
+            return None
+        return element.name
+
+    def _within(self, scope_path: list[str], alias: str) -> bool | None:
+        """Whether `alias` is declared inside the scope the identifier names.
+
+        None means UNDECIDABLE: the parent map holds a cycle, so the scope cannot be
+        resolved and the relationship that names it must be UNCHECKED rather than read
+        as another element (the seventh audit measured an unbounded allocation here).
+        """
+        chain = [alias]
+        seen = {alias}
+        current = self.parent.get(alias)
+        while current:
+            if current in seen:
+                return None
+            seen.add(current)
+            chain.append(current)
+            current = self.parent.get(current)
+        # The chain runs inner -> outer, and the identifier names its scope
+        # OUTERMOST-first: structurizr's own spelling for a depth-2 element is
+        # `sys.outer.inner` (the sixth audit measured it).
+        return list(reversed(chain[1 : 1 + len(scope_path)])) == scope_path
 
     def nearest_visible(self, name: str, visible: set[str]) -> str | None:
         """The element the renderer draws for `name` in a view that draws `visible`.
@@ -443,7 +572,14 @@ class Model:
         if name in visible:
             return name
         alias = self.alias_of.get(name)
+        seen: set[str] = set()
         while alias:
+            if alias in seen:
+                # A cycle in the parent map: the projection cannot be resolved, so the
+                # edge it would carry is UNDECIDABLE (the seventh audit measured an
+                # unbounded allocation here).
+                return None
+            seen.add(alias)
             parent_alias = self.parent.get(alias)
             if not parent_alias:
                 return None
@@ -455,15 +591,124 @@ class Model:
             alias = parent_alias
         return None
 
+    def one_hop(self, seeds: set[str]) -> set[str]:
+        """The seeds and the elements DIRECTLY related to them -- ONE hop.
+
+        The renderer draws a view's scope one hop out from its subject, not the
+        transitive closure: in the chain a -> b -> c, a systemContext view of `a`
+        draws `a` and `b` and NOT `c` (measured against the real structurizr by the
+        ninth audit).  The sixth audit measured the opposite rule -- the transitive
+        closure -- from a fixture that did not separate the two.
+        """
+        adjacency: dict[str, set[str]] = {}
+        for source, target, _ in self.relationships:
+            adjacency.setdefault(source, set()).add(target)
+            adjacency.setdefault(target, set()).add(source)
+        out = set(seeds)
+        for seed in seeds:
+            out |= adjacency.get(seed, set())
+        return out
+
+    def topmost(self, name: str) -> str | None:
+        """The element the renderer draws for `name` at the TOP level.
+
+        The renderer projects an endpoint UP to the level the view draws: a container
+        is drawn as the software system it is in.  The walk is over the IMMEDIATE
+        parent map -- a tree, so it is bounded -- and a cycle resolves to None, which
+        makes the scope undecidable rather than an allocation (the seventh audit).
+        """
+        alias = None
+        for candidate, element in self.elements.items():
+            if element.name == name:
+                alias = candidate
+                break
+        if alias is None:
+            return None
+        seen: set[str] = set()
+        current = alias
+        while True:
+            if current in seen:
+                return None
+            seen.add(current)
+            parent = self.parent.get(current)
+            if not parent:
+                element = self.elements.get(current)
+                return element.name if element else None
+            current = parent
+
+    def scope_names(self, owner: str, kind: str) -> set[str]:
+        """The elements the renderer DRAWS in a view of this kind.
+
+        The scope is ONE HOP from the subject and the subject's descendants, projected
+        onto the LEVEL the view draws (the ninth audit's measurement):
+
+          - a systemContext view draws the subject and the TOP-LEVEL elements -- the
+            persons and the software systems.  A container is drawn as its system.
+          - a container view draws the subject's CONTAINERS and the same top-level
+            projection of everything else.  The subject itself is the boundary the
+            view is drawn around, so it is not drawn as a node.
+        """
+        subject = self.elements[owner].name
+        seeds = {subject} | self.descendants_of(owner)
+        near = self.one_hop(seeds)
+        drawn: set[str] = set()
+        if kind == "systemContext":
+            drawn.add(subject)
+        inside = self.descendants_of(owner)
+        for name in near:
+            if name == subject:
+                continue
+            top = self.topmost(name)
+            if top is None:
+                # The scope cannot be resolved (a cycle in the parent map).  The
+                # caller turns an undecidable scope into UNCHECKED, never a claim.
+                drawn.add("?unresolved:" + name)
+                continue
+            if top == subject:
+                if kind == "container" and name in inside:
+                    drawn.add(name)
+                continue
+            drawn.add(top)
+        if kind == "container":
+            for alias, parent in self.parent.items():
+                if parent != owner:
+                    continue
+                element = self.elements.get(alias)
+                if element is not None:
+                    drawn.add(element.name)
+            drawn.discard(subject)
+        return drawn
+
     def descendants_of(self, alias: str) -> set[str]:
-        """The names of every element inside `alias` in the model's own hierarchy."""
+        """The names of every element inside `alias` in the model's own hierarchy.
+
+        ITERATIVE on purpose: the recursive version blew the interpreter's stack on a
+        deeply nested model, and the traceback exited 1 -- a crash the gate reads as
+        drift (the sixth audit measured it).
+
+        It walks the IMMEDIATE parent map (`self.parent`), not `self.children`.  The
+        children map records every ANCESTOR of an element as a parent, which is what
+        "is this element inside that scope" needs -- but walking it is exponential:
+        on a 1500-deep model the number of paths through it is 2**1499, so the walk
+        never finishes.  A hang is worse than a crash: it is a missing verdict that
+        never arrives.  The immediate parent map is a tree, so the walk is linear.
+        """
+        kids: dict[str, list[str]] = {}
+        for child, parent in self.parent.items():
+            kids.setdefault(parent, []).append(child)
         out: set[str] = set()
-        for child_alias in self.children.get(alias, []):
+        seen: set[str] = set()
+        stack = list(kids.get(alias, []))
+        while stack:
+            child_alias = stack.pop()
+            if child_alias in seen:
+                continue
+            seen.add(child_alias)
             element = self.elements.get(child_alias)
             if element is None:
                 continue
             out.add(element.name)
-            out |= self.descendants_of(child_alias)
+            stack.extend(kids.get(child_alias, []))
         return out
 
     def projected_relationships(self, visible: set[str]) -> set[tuple[str, str, str]]:
@@ -477,55 +722,99 @@ class Model:
             projected.add((near_source, near_target, label))
         return projected
 
-    def expected_for(self, view: dict) -> tuple[set[str] | None, str]:
-        """The elements the model puts in this view, or (None, why) if unknowable."""
+    def expected_for(self, view: dict) -> tuple[dict[str, int] | None, str]:
+        """The elements the model puts in this view and HOW MANY TIMES, or (None, why).
+
+        The counts are part of the contract: a deployment view draws one instance per
+        deployment node, so an instance declared in two nodes is drawn twice (the ninth
+        audit's D3).  A view that draws an element twice when the model puts it there
+        once is drift; a view that draws it twice when the model puts it there twice
+        is not.
+        """
         includes = view["includes"]
-        if includes and includes != ["*"]:
-            names = set()
-            for ident in includes:
-                resolved = self.resolve(ident)
-                if resolved is None:
-                    return None, "an include names %r, which the model does not declare" % ident
-                names.add(resolved)
-            return names, ""
-        if includes != ["*"]:
-            return None, "the view declares no include"
         ident = view["ident"]
         owner = ident.split(".")[-1]
+        if includes and includes != ["*"]:
+            names = set()
+            for ident_ in includes:
+                resolved = self.resolve(ident_)
+                if resolved is None:
+                    return None, "an include names %r, which the model does not declare" % ident_
+                names.add(resolved)
+            # A systemContext view ALWAYS draws its subject, even when the include list
+            # names only other elements: the subject is the view (measured against the
+            # real structurizr by the ninth audit).
+            if view["kind"] == "systemContext" and owner in self.elements:
+                names.add(self.elements[owner].name)
+            return {name: 1 for name in names}, ""
+        if includes != ["*"]:
+            return None, "the view declares no include"
         if owner not in self.elements:
             return None, "the view names %r, which the model does not declare" % ident
         # The rule is the VIEW's kind, not the element's: `container genesis` is a view of
         # the software system's children, and `systemContext genesis` is a view of the
         # system plus everything outside it.
-        if view["kind"] == "container":
-            # `container S` with include * draws S's children and the elements they touch,
-            # but not S itself.
-            return {e.name for e in self.elements.values()} - {self.elements[owner].name}, ""
-        if view["kind"] == "systemContext":
-            # `systemContext S` with include * draws S and everything OUTSIDE it.
-            inside = {self.elements[a].name for a in self.children.get(owner, [])}
-            if not inside:
-                return None, "the model does not say which elements are inside %r" % ident
-            outside = {e.name for e in self.elements.values()} - inside
-            return outside | {self.elements[owner].name}, ""
+        # The scope is ONE HOP from the subject and its descendants, projected onto
+        # the level the view draws (the ninth audit's measurement against the real
+        # structurizr).  The sixth audit measured a TRANSITIVE closure; that was
+        # wrong, and it made a page the renderer itself wrote look like drift.
+        if view["kind"] in ("container", "systemContext"):
+            drawn = self.scope_names(owner, view["kind"])
+            if view["kind"] == "container":
+                # NOT the components inside those children: the renderer draws a
+                # component only in a component view (the seventh audit measured it).
+                components = {
+                    element.name
+                    for element in self.elements.values()
+                    if element.kind == "component"
+                }
+                drawn = drawn - components
+            unresolved = {n for n in drawn if n.startswith("?unresolved:")}
+            if unresolved:
+                return None, (
+                    "the scope of this view cannot be resolved: %s"
+                    % " ".join(sorted(n[len("?unresolved:"):] for n in unresolved))
+                )
+            return {name: 1 for name in drawn}, ""
         if view["kind"] == "deployment":
             # A deployment view draws the INSTANCES its environment declares, so the
             # elements it draws are the ones the model instantiates in that environment.
             title = view.get("title") or ""
             if title not in self.deployments and title not in self.soft_instances:
                 return None, "the model declares no deployment environment titled %r" % title
-            names = set()
-            for alias in list(self.deployments.get(title, [])) + list(
-                self.soft_instances.get(title, [])
-            ):
+            counts: dict[str, int] = {}
+            subject = self.elements[owner].name
+            # A CONTAINER instance is drawn only when its parent is the view's subject
+            # (the seventh audit measured it: a deployment view of an unrelated system
+            # draws the software system instance and NOT the container instance).
+            # And it is drawn ONCE PER DEPLOYMENT NODE: the same container
+            # instantiated in two nodes is drawn twice (the ninth audit measured it).
+            for alias in self.deployments.get(title, []):
                 element = self.elements.get(alias.split(".")[-1])
                 if element is None:
                     return None, (
                         "the deployment environment %r instantiates %r, which the model "
                         "does not declare" % (title, alias)
                     )
-                names.add(element.name)
-            return names, ""
+                parent_alias = self.parent.get(alias.split(".")[-1])
+                parent = self.elements.get(parent_alias) if parent_alias else None
+                if parent is None or parent.name != subject:
+                    continue
+                counts[element.name] = counts.get(element.name, 0) + 1
+            # A SOFTWARE SYSTEM instance is drawn AS the software system -- and not at
+            # all when that system IS the view's subject, because the subject is the
+            # boundary the view is drawn around.
+            for alias in self.soft_instances.get(title, []):
+                element = self.elements.get(alias.split(".")[-1])
+                if element is None:
+                    return None, (
+                        "the deployment environment %r instantiates %r, which the model "
+                        "does not declare" % (title, alias)
+                    )
+                if element.name == subject:
+                    continue
+                counts[element.name] = counts.get(element.name, 0) + 1
+            return counts, ""
         return None, "a %s view with include * is not a rule this check knows" % view["kind"]
 
     def soft_instance_names(self, view: dict) -> set[str]:
@@ -604,8 +893,17 @@ class Node:
             self.reason = "the node has %d divs, not the 3 the renderer writes" % len(divs)
             return
         name_div, marker_div, body_div = divs
-        self.name = _collapse(_plain(name_div))
-        marker_text = _collapse(_plain(marker_div))
+        # HOW THE RENDERER WRITES EACH FIELD -- one table, used on BOTH sides of every
+        # comparison (the ninth audit's D2 and D4):
+        #   VERBATIM: the element name, the marker's description, the relationship's
+        #              technology, the view's title.  The renderer preserves internal
+        #              runs of spaces in these, and so must this parser.
+        #   COLLAPSED: the element's body, the relationship's label.  The renderer
+        #              collapses whitespace in these, and so must this parser.
+        # The two sides must never be normalised differently: when they were, a page
+        # the renderer itself wrote was reported as drift.
+        self.name = _plain(name_div)
+        marker_text = _plain(marker_div)
         mm = MARKER_RE.match(marker_text)
         if not mm:
             self.readable = False
@@ -614,7 +912,9 @@ class Node:
         self.marker = mm.group(1)
         self.marker_label, _, description = self.marker.partition(":")
         self.marker_label = self.marker_label.strip()
-        self.marker_description = _collapse(description)
+        # VERBATIM, like the name: the renderer writes the description inside the
+        # marker exactly as the model declares it, internal spaces included.
+        self.marker_description = description.lstrip()
         self.body = _collapse(_plain(body_div))
 
 
@@ -638,7 +938,14 @@ class Page:
         in_block = False
         orphan = False
         open_subgraphs: list[dict] = []
-        for line in text.split("\n"):
+        lines = text.split("\n")
+        # A heading is a VIEW only when a mermaid block follows it.  The render writes
+        # its views that way and then writes PROSE, so a heading inside that prose is
+        # prose -- not a view the page is missing.  Reading it as a view made this
+        # check reject a page the render itself had produced.
+        mermaid_at = {i for i, line in enumerate(lines) if line.strip() == "```mermaid"}
+        heading_at = [i for i, line in enumerate(lines) if FENCE_OPEN.match(line)]
+        for index, line in enumerate(lines):
             fm = FENCE_OPEN.match(line)
             if fm and in_block:
                 # A heading INSIDE a mermaid block is not a heading: the fence is
@@ -650,6 +957,11 @@ class Page:
                 )
                 continue
             if fm:
+                following = [i for i in heading_at if i > index]
+                end = following[0] if following else len(lines)
+                if not any(index < i < end for i in mermaid_at):
+                    # No mermaid block under this heading: it is the page's prose.
+                    break
                 current = fm.group(1).strip()
                 if current not in self.nodes:
                     self.view_names.append(current)
@@ -750,6 +1062,106 @@ class Page:
         return None
 
 
+ECHO_ESCAPES = {
+    "a": "\a",
+    "b": "\b",
+    "e": "\x1b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
+}
+
+
+def _read_text(path: str) -> tuple[str | None, str]:
+    """Read a file as UTF-8, or say why it could not be read.
+
+    A file that cannot be read is UNCHECKED -- never drift, and never a crash.  A byte
+    that is not valid UTF-8 is something this check cannot decide, so it must not claim
+    the page is wrong; and a traceback is not a verdict either.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read(), ""
+    except UnicodeDecodeError as exc:
+        return None, "it is not readable as UTF-8 (%s)" % exc
+    except OSError as exc:
+        return None, "it could not be read (%s)" % exc
+
+
+def _unescape_double_quotes(text: str) -> str:
+    """What the shell does to a backslash inside a double-quoted string.
+
+    Inside double quotes the shell keeps a backslash that is followed by anything
+    other than `"`, `\`, `$`, a backtick or a newline: it is the echo builtin, not
+    the shell, that turns `\\t` into a TAB.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            nxt = text[index + 1]
+            if nxt in ('"', "\\", "$", "`"):
+                out.append(nxt)
+                index += 2
+                continue
+            if nxt == "\n":
+                index += 2
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _echo_expand(text: str) -> str:
+    """What bash's echo builtin writes for `text` (the same escapes as printf %b)."""
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            nxt = text[index + 1]
+            if nxt == "c":
+                # `\c` stops the output: everything after it is discarded.
+                return "".join(out)
+            if nxt == "0":
+                digits = ""
+                probe = index + 2
+                while probe < len(text) and len(digits) < 3 and text[probe] in "01234567":
+                    digits += text[probe]
+                    probe += 1
+                if digits:
+                    out.append(chr(int(digits, 8) & 0xFF))
+                    index = probe
+                    continue
+            if nxt == "\n":
+                index += 2
+                continue
+            if nxt in ECHO_ESCAPES:
+                out.append(ECHO_ESCAPES[nxt])
+                index += 2
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _has_unescaped(text: str, char: str) -> bool:
+    """Whether `text` holds a `char` the shell would expand."""
+    index = 0
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == char:
+            return True
+        index += 1
+    return False
+
+
 def expected_header(render_path: str) -> tuple[list[str] | None, str]:
     """The header architecture/render writes, read FROM architecture/render.
 
@@ -763,6 +1175,11 @@ def expected_header(render_path: str) -> tuple[list[str] | None, str]:
             text = handle.read()
     except OSError:
         return None, "architecture/render is missing, so the page's header cannot be checked"
+    except UnicodeDecodeError:
+        return None, (
+            "architecture/render is not readable as UTF-8, so the page's header cannot "
+            "be checked"
+        )
     block = re.search(r"render_page\(\)\s*\{(.*?)\n\}", text, re.S)
     if not block:
         return None, "architecture/render has no render_page() block"
@@ -770,21 +1187,75 @@ def expected_header(render_path: str) -> tuple[list[str] | None, str]:
     started = False
     for raw in block.group(1).split("\n"):
         stripped = raw.strip()
+        if stripped.startswith("#"):
+            # A comment says what the writes below it MEAN.  It is not a write, and a
+            # render is allowed to explain itself.
+            continue
         if not started:
             # The block opens with blank lines -- and, in some renders, a `{` that
             # groups the writes -- before the header writes themselves.
             if not stripped or stripped == "{":
                 continue
-            if not stripped.startswith("echo"):
+            if not (stripped.startswith("echo") or stripped.startswith("printf ")):
                 return None, "architecture/render does not start the page with a header"
             started = True
         if stripped.startswith("echo "):
             argument = stripped[5:].strip()
             if not (argument.startswith('"') and argument.endswith('"')):
                 return None, "architecture/render echoes something that is not a quoted string"
-            lines.append(argument[1:-1].replace("\\`", "`"))
+            raw = argument[1:-1]
+            if _has_unescaped(raw, "$") or _has_unescaped(raw, "`"):
+                return None, (
+                    "architecture/render echoes a string with an expansion in it, so what "
+                    "it writes cannot be derived from the render's own text"
+                )
+            # The SHELL has already resolved the double quotes: an escaped quote or
+            # backtick is literal in every shell.  What is LEFT is a backslash the echo
+            # builtin may or may not interpret -- bash's plain echo writes `\t`
+            # literally, `echo -e` writes a TAB, and xpg_echo decides which.  This file
+            # cannot know which shell will run the render, so it does not judge that
+            # header at all (the sixth audit measured the opposite verdict: the page the
+            # render ACTUALLY wrote was rejected).
+            unescaped = _unescape_double_quotes(raw)
+            if "\\" in unescaped:
+                return None, (
+                    "architecture/render echoes a string with a backslash in it, and what "
+                    "the shell writes for that depends on the shell; the page's header "
+                    "cannot be checked"
+                )
+            lines.append(unescaped)
         elif stripped == "echo":
             lines.append("")
+        elif stripped.startswith("printf "):
+            # `printf '%s\n' "..."` writes the string LITERALLY: the format does not
+            # interpret escapes in the argument, and the shell has already resolved the
+            # double quotes.  That is why the render writes its header this way -- the
+            # value does not depend on the shell.
+            rest = stripped[len("printf "):].strip()
+            match = re.match(r"^'([^']*)'\s*(.*)$", rest)
+            if not match:
+                return None, "architecture/render writes the page with a printf form this file cannot read"
+            fmt = match.group(1)
+            argument = match.group(2).strip()
+            if fmt == "\\n" and not argument:
+                # `printf '\n'` -- a blank line.
+                lines.append("")
+                continue
+            if fmt != "%s\\n":
+                return None, "architecture/render writes the page with a printf form this file cannot read"
+            if argument.startswith('"') and argument.endswith('"'):
+                raw = argument[1:-1]
+                if _has_unescaped(raw, "$") or _has_unescaped(raw, "`"):
+                    return None, (
+                        "architecture/render writes a string with an expansion in it, so "
+                        "what it writes cannot be derived from the render's own text"
+                    )
+                lines.append(_unescape_double_quotes(raw))
+            elif argument.startswith("'") and argument.endswith("'"):
+                # Single quotes: the shell expands NOTHING inside them.
+                lines.append(argument[1:-1])
+            else:
+                return None, "architecture/render writes the page with a printf form this file cannot read"
         else:
             break
     if not lines:
@@ -805,8 +1276,22 @@ def main() -> int:
             print("FAIL  architecture-diagram-check: %s is missing" % path, file=sys.stderr)
             return 2
 
-    model = Model(open(model_path, encoding="utf-8").read())
-    page = Page(open(page_path, encoding="utf-8").read())
+    model_text, why = _read_text(model_path)
+    if model_text is None:
+        print(
+            "UNCHECKED  architecture-diagram-check: %s -- %s" % (model_path, why),
+            file=sys.stderr,
+        )
+        return 2
+    page_text, why = _read_text(page_path)
+    if page_text is None:
+        print(
+            "UNCHECKED  architecture-diagram-check: %s -- %s" % (page_path, why),
+            file=sys.stderr,
+        )
+        return 2
+    model = Model(model_text)
+    page = Page(page_text)
     problems: list[str] = []
     undecided: list[str] = []
     # The names whose RENDERED FORM this check cannot verify, per view.  They are
@@ -816,7 +1301,7 @@ def main() -> int:
     }
 
     # --- 1. fences ---------------------------------------------------------
-    raw_page = open(page_path, encoding="utf-8").read()
+    raw_page = page_text
     # Fence accounting, done IN ORDER and by BACKTICK WIDTH. A page may carry plain
     # code blocks as well as mermaid blocks, and a plain block's closing fence is not a
     # mermaid block's closer: counting every bare fence against the mermaid opens
@@ -926,10 +1411,13 @@ def main() -> int:
                 % (view["name"], " ".join(sorted(soft_missing)))
             )
         for name, count in sorted(drawn_counts.items()):
-            if count > 1:
+            if name in extra:
+                continue
+            want = expected.get(name, 0)
+            if count != want:
                 problems.append(
-                    "the page draws %r %d times in %s; the model puts it there once"
-                    % (name, count, view["name"])
+                    "the page draws %r %d times in %s; the model puts it there %d time(s)"
+                    % (name, count, view["name"], want)
                 )
 
     # --- 4/5. node text, against THAT element's own declaration -----------
@@ -953,7 +1441,10 @@ def main() -> int:
                     "%s is drawn as [%s] but the model declares it a %s"
                     % (node.name, node.marker_label, element.label)
                 )
-            if node.body != element.first:
+            # The renderer COLLAPSES runs of whitespace in the model's strings, so the
+            # model side must be collapsed the same way (the seventh audit measured it:
+            # "two  spaces here" is written "two spaces here").
+            if node.body != _collapse(element.first):
                 node_problems.append(
                     "%s shows %r but the model says %r"
                     % (node.name, node.body, element.first)
@@ -993,7 +1484,7 @@ def main() -> int:
             else:
                 problems.extend(node_problems)
 
-    # --- 6. edges: one per projected pair, with the label the renderer picks ---
+    # --- 6. edges: the projected relationships, with the labels the renderer picks ---
     for view in model.views:
         visible, why = model.expected_for(view)
         if visible is None:
@@ -1001,18 +1492,39 @@ def main() -> int:
         view_name = view["name"]
         # The relationships the model projects into this view, IN DECLARATION ORDER. A
         # relationship whose two endpoints project onto the SAME element is internal to
-        # it and the renderer draws no edge for it; several relationships that project
-        # onto the SAME PAIR are drawn as ONE edge, labelled with the FIRST of them.
-        model_labels: dict[tuple[str, str], str] = {}
-        expected_pairs: set[tuple[str, str]] = set()
+        # it and the renderer draws no edge for it.
+        #
+        # HOW MANY EDGES ONE PAIR GETS was measured against the REAL structurizr (the
+        # sixth audit), and it turns on whether the relationship had to be PROJECTED
+        # onto the boundary:
+        #   * a relationship whose endpoints are BOTH DRAWN in the view is ONE EDGE PER
+        #     RELATIONSHIP -- two relationships between the same pair of systems draw
+        #     TWO edges, each with its own label;
+        #   * a SYSTEM CONTEXT view draws the system as a boundary, so a relationship to
+        #     something INSIDE it is projected onto that boundary -- and the projected
+        #     ones are MERGED per pair, so three relationships from one system to three
+        #     containers of another draw ONE edge, labelled with the FIRST of them,
+        #     which is exactly what the committed argon page shows.
+        # The renderer's edge rule, SIMULATED in declaration order (measured by the
+        # seventh audit against the real structurizr and validated against every view
+        # of both repositories): project each end with `nearest_visible`; skip the
+        # relationship when both ends land on the SAME element; skip a PROJECTED
+        # relationship whose pair has already been emitted; otherwise emit the pair and
+        # its label.  The earlier two-bucket guess -- "projected ones merge, direct ones
+        # do not" -- was not a measurement, and it demanded one edge too many.
+        model_labels: dict[tuple[str, str], list[str]] = {}
+        emitted: set[tuple[str, str]] = set()
         for source, target, label in model.relationships:
             near_source = model.nearest_visible(source, visible)
             near_target = model.nearest_visible(target, visible)
             if near_source is None or near_target is None or near_source == near_target:
                 continue
             pair = (near_source, near_target)
-            expected_pairs.add(pair)
-            model_labels.setdefault(pair, label)
+            projected = near_source != source or near_target != target
+            if projected and pair in emitted:
+                continue
+            emitted.add(pair)
+            model_labels.setdefault(pair, []).append(label)
         drawn_pairs: dict[tuple[str, str], list[str]] = {}
         for source_id, target_id, label in page.edges.get(view_name, []):
             source = page.nodes.get(view_name, {}).get(source_id)
@@ -1025,27 +1537,56 @@ def main() -> int:
                 continue
             pair = (source.name, target.name)
             drawn_pairs.setdefault(pair, []).append(label)
-        for pair in sorted(expected_pairs - set(drawn_pairs)):
+        for pair in sorted(set(model_labels) - set(drawn_pairs)):
+            if pair[0] in model.edges_left_undecided or pair[1] in model.edges_left_undecided:
+                # The edge this view is missing may be the one this file cannot read.
+                undecided.append(
+                    "%s does not draw %s -> %s, and the model declares a relationship "
+                    "this check cannot read that may be that edge"
+                    % (view_name, pair[0], pair[1])
+                )
+                continue
             problems.append(
                 "the model declares a relationship the page does not draw in %s: %s -> %s"
                 % (view_name, pair[0], pair[1])
             )
-        for pair in sorted(set(drawn_pairs) - expected_pairs):
+        for pair in sorted(set(drawn_pairs) - set(model_labels)):
+            if pair[0] in model.edges_left_undecided or pair[1] in model.edges_left_undecided:
+                # A relationship this file CANNOT READ may be exactly this edge: the
+                # model declares it, but one of its ends names something this file
+                # cannot resolve.  The edge is therefore UNCHECKED -- this check
+                # cannot say the page draws a relationship the model does not.
+                undecided.append(
+                    "%s draws %s -> %s, and the model declares a relationship this "
+                    "check cannot read that may be that edge" % (view_name, pair[0], pair[1])
+                )
+                continue
             problems.append(
                 "the page draws a relationship the model does not declare in %s: %s -> %s"
                 % (view_name, pair[0], pair[1])
             )
-        for pair in sorted(set(drawn_pairs) & expected_pairs):
+        for pair in sorted(set(drawn_pairs) & set(model_labels)):
             labels = drawn_pairs[pair]
-            if len(labels) > 1:
+            want = model_labels[pair]
+            if len(labels) != len(want):
                 problems.append(
-                    "the page draws %d edges for %s -> %s in %s; the renderer draws one"
-                    % (len(labels), pair[0], pair[1], view_name)
+                    "the page draws %d edges for %s -> %s in %s; the model declares %d "
+                    "relationship(s) for that pair"
+                    % (len(labels), pair[0], pair[1], view_name, len(want))
                 )
-            elif labels[0] != model_labels[pair]:
+            elif pair[0] in model.edges_left_undecided or pair[1] in model.edges_left_undecided:
+                # The renderer draws the FIRST relationship that projects onto a pair,
+                # so the label on this pair may come from the relationship this file
+                # cannot read.  The label is therefore UNCHECKED, not wrong.
+                undecided.append(
+                    "%s draws %s -> %s with a label this check cannot confirm, because "
+                    "the model declares a relationship this check cannot read that may "
+                    "project onto that pair" % (view_name, pair[0], pair[1])
+                )
+            elif sorted(labels) != sorted(want):
                 problems.append(
                     "the page draws %s -> %s %r, but the model declares %r"
-                    % (pair[0], pair[1], labels[0], model_labels[pair])
+                    % (pair[0], pair[1], labels, want)
                 )
     for name in sorted(set(model.duplicate_names)):
         undecided.append(
@@ -1167,6 +1708,8 @@ def main() -> int:
         if view["kind"] == "deployment":
             # A deployment view nests the environment's own NODES as subgraphs.
             declared.update(model.deployment_nodes.get(view.get("title") or "", []))
+        # A `group` in the model is drawn as a subgraph the page may legitimately show.
+        declared.update(model.groups)
         for s in page.subgraphs.get(view_name, []):
             if s["label"] not in declared:
                 problems.append(
@@ -1187,9 +1730,32 @@ def main() -> int:
             )
 
     # --- 10. element names, globally ----------------------------------------
-    model_names = set(model.by_name)
+    # The names the page must carry are the ones the MODEL'S OWN VIEWS put in scope --
+    # not every element the model declares.  The renderer draws what a view has in
+    # scope: an element with no relationship is in no scope and is drawn in no view
+    # (measured against the real structurizr by the sixth audit), and a model may
+    # declare elements that only a view the page does not carry would draw.  Comparing
+    # against the whole model instead would call the renderer's own page wrong.
+    expected_names: set[str] = set()
+    scope_unknown = False
+    for view in model.views:
+        in_scope, why = model.expected_for(view)
+        if in_scope is None:
+            # This view's scope is UNDECIDED.  The global comparison must then be
+            # UNDECIDED too -- a hard claim about material this file cannot read must
+            # never outrank an honest UNCHECKED (the seventh audit measured it
+            # asserting an element set that contradicted the page).
+            scope_unknown = True
+            continue
+        expected_names |= set(in_scope)
+    model_names = expected_names
     drawn_names = {name for view in page.nodes for name in page.names_in(view)}
-    if model_names != drawn_names:
+    if scope_unknown:
+        undecided.append(
+            "the scope of at least one view this model declares is not something this "
+            "check can decide, so it cannot say which elements the page must carry"
+        )
+    elif model_names != drawn_names:
         # A name that is only ever a software system instance is the same case as the
         # per-view comparison above: this check cannot verify the rendered form of one,
         # so it cannot claim the page omits it.
