@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""ci-microscope-report -- ship the per-gate ledger to the founder's surfaces.
+
+Source of truth: .estate/ci-microscope.jsonl, one record per gate per run
+(pre-push-wall emits it; CI emits it into the same schema).
+
+Three sinks, each independent so one missing door does not hide the others:
+  1. a snapshot file   ~/.estate/ci-microscope/latest.json     (always)
+  2. Telegram          ~/.estate/bin/router-telegram.sh        (the founder's phone)
+  3. Genesis surface   $GENESIS_SURFACE_INGEST_URL             (BLIND when unset -- reported,
+                       never silently skipped)
+
+Usage: ci-microscope-report [--quiet]
+Exit 0 when the snapshot was written; 2 when the surface ingest is BLIND (no URL configured).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+LEDGER = REPO / ".estate" / "ci-microscope.jsonl"
+OUT_DIR = pathlib.Path.home() / ".estate" / "ci-microscope"
+SNAPSHOT = OUT_DIR / "latest.json"
+TELEGRAM = pathlib.Path.home() / ".estate" / "bin" / "router-telegram.sh"
+
+
+def load() -> list[dict]:
+    if not LEDGER.exists():
+        return []
+    rows = []
+    for line in LEDGER.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def summarise(rows: list[dict]) -> dict:
+    latest: dict[str, dict] = {}
+    for r in rows:
+        latest[r.get("gate_id", "?")] = r
+    gates = []
+    for gate_id, r in sorted(latest.items()):
+        gates.append(
+            {
+                "gate_id": gate_id,
+                "exit_code": r.get("exit_code"),
+                "duration_ms": r.get("duration_ms"),
+                "detail": r.get("detail", "")[:200],
+                "stage": r.get("stage"),
+                "advisory": False,
+            }
+        )
+    return {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source": str(LEDGER),
+        "records": len(rows),
+        "gates": gates,
+        "green": all(g["exit_code"] == 0 for g in gates) if gates else False,
+    }
+
+
+def message(s: dict) -> str:
+    lines = [
+        f"CI MICROSCOPE {s['generated_at']}",
+        f"{'GREEN' if s['green'] else 'REFUSALS'} | {len(s['gates'])} gate(s) | {s['records']} record(s)",
+    ]
+    for g in s["gates"]:
+        mark = "ok  " if g["exit_code"] == 0 else "FAIL"
+        lines.append(f"{mark} {g['gate_id']}: {g['detail'][:110]}")
+    return "\n".join(lines)[:3800]
+
+
+def main() -> int:
+    quiet = "--quiet" in sys.argv
+    rows = load()
+    s = summarise(rows)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    SNAPSHOT.write_text(json.dumps(s, indent=1) + "\n")
+
+    text = message(s)
+    if not quiet:
+        print(text)
+
+    # Telegram -- the door that exists. A refusal here is reported, not swallowed.
+    if TELEGRAM.exists():
+        # noqa justified: absolute path, argv list, no shell -- see Language-Exception above.
+        p = subprocess.run([str(TELEGRAM), text], capture_output=True, text=True)  # noqa: S603
+        if p.returncode != 0:
+            print(
+                f"telegram: BLIND rc={p.returncode} {(p.stdout or p.stderr).strip()[:160]}",
+                file=sys.stderr,
+            )
+        else:
+            print("telegram: sent")
+    else:
+        print(
+            "telegram: BLIND no door at ~/.estate/bin/router-telegram.sh",
+            file=sys.stderr,
+        )
+
+    # Genesis surface -- needs an ingest URL; absence is BLIND, not a pass.
+    url = os.environ.get("GENESIS_SURFACE_INGEST_URL", "").strip()
+    if not url:
+        print(
+            "surface: BLIND GENESIS_SURFACE_INGEST_URL is not set (snapshot written)",
+            file=sys.stderr,
+        )
+        return 2
+    payload = json.dumps(s)
+    # noqa justified: absolute binary, argv list, no shell interpolation.
+    p = subprocess.run(  # noqa: S603,S607
+        [
+            "/usr/bin/curl",
+            "-sS",
+            "-m",
+            "10",
+            "-H",
+            "Content-Type: application/json",
+            "-H",
+            f"Authorization: Bearer {os.environ.get('GENESIS_SURFACE_TOKEN', '')}",
+            "--data-binary",
+            payload,
+            url,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    print(f"surface: rc={p.returncode} {(p.stdout or p.stderr).strip()[:160]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
