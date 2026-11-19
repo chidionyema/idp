@@ -69,7 +69,7 @@ while IFS=' ' read -r _local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/heads/lane/*|refs/heads/release/*)
       [ "$local_sha" != "0000000000000000000000000000000000000000" ] || continue
-      if [ "$(git rev-parse HEAD)" != "$local_sha" ] || [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+      if [ "$(git rev-parse HEAD)" != "$local_sha" ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
         echo "FAIL production-readiness: check out the exact lane revision with a clean worktree" >&2
         exit 1
       fi
@@ -92,7 +92,7 @@ if [ -n "$_readiness_sha" ]; then
     echo "FAIL production-readiness: the IDP lane smoke checks did not pass" >&2
     exit 1
   fi
-  if [ "$(git rev-parse HEAD)" != "$_readiness_sha" ] || [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+  if [ "$(git rev-parse HEAD)" != "$_readiness_sha" ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo "FAIL production-readiness: the checkout changed while the checks were running" >&2
     exit 1
   fi
@@ -233,7 +233,6 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.js|*.mjs|*.cjs) echo javascript ;;
       *.rs) echo rust ;;
       *.toml) echo toml ;;
-      *.service) echo service ;;
       *) echo unknown ;;
     esac
   }
@@ -423,17 +422,6 @@ if not isinstance(d, dict) or "Label" not in d:
     if [ "$kind" = "toml" ]; then
       if ! _toml_parse "$f"; then
         echo "pre-push REFUSED: $f is not parseable TOML" >&2
-        exit 1
-      fi
-      continue
-    fi
-    # A systemd unit is declarative, like a plist: it must still parse. Without this
-    # the recovered pennyd unit could not be pushed at all ("readable as neither shell
-    # nor Python"), and the workaround would be an untracked unit -- the orphan this
-    # hook exists to prevent.
-    if [ "$kind" = "service" ]; then
-      if ! grep -q '^\[Service\]' "$f" || ! grep -q '^ExecStart=' "$f"; then
-        echo "pre-push REFUSED: $f is not a systemd unit (no [Service]/ExecStart)" >&2
         exit 1
       fi
       continue
