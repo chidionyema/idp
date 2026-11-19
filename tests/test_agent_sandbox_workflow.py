@@ -310,7 +310,8 @@ def test_the_agent_step_hands_on_a_transcript_and_the_patch(tmp_path, harness):
 def test_a_harness_that_leaves_no_transcript_says_why(tmp_path):
     p, _ = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
     assert p.returncode == 1
-    assert "harness exit 1" in p.stdout and "no API key for minimax" in p.stdout
+    assert "harness exit 1" in p.stdout and "private diagnostic retained" in p.stdout
+    assert "no API key for minimax" not in p.stdout
 
 
 def test_a_harness_that_fails_stops_the_run_with_the_providers_reason(tmp_path):
@@ -332,7 +333,7 @@ def test_gemini_runs_in_pi_on_googles_api_with_its_own_key(tmp_path):
     args = (tmp_path / "home" / "args").read_text()
     assert "--provider google" in args and "--model gemini-3.5-flash" in args
     run = _step("agent", "Run the agent")
-    assert run["env"]["GEMINI_API_KEY"] == "${{ secrets.SEED_GEMINI_API_KEY }}"  # noqa: S105
+    assert "secrets.SEED_GEMINI_API_KEY" in run["env"]["GEMINI_API_KEY"]
 
 
 def test_failed_gemini_preserves_its_private_transcript(tmp_path):
@@ -608,3 +609,19 @@ def test_worker_installs_the_pinned_formatter():
     step = _step("agent", "Install the harness")
     assert "ruff==0.15.18" in step["run"]
     assert "format.stdout" in _step("agent", "Encrypt what leaves")["run"]
+
+
+def test_automatic_missions_use_discovery_and_only_the_selected_secret():
+    admit = _step("admit", "Admit exact scope")
+    run = _step("agent", "Run the agent")
+    assert "'claude-code' || 'auto'" in admit["env"]["HARNESS"]
+    assert "'claude-code' || 'auto'" in run["env"]["HARNESS"]
+    assert "--launch-admitted" in run["run"]
+    assert "secrets[needs.admit.outputs.key_secret]" in run["env"]["LEGION_SELECTED_KEY"]
+    assert "ZAI_API_KEY" not in run["env"]
+    assert "DEEPSEEK_API_KEY" not in run["env"]
+    assert "GROQ_API_KEY" not in run["env"]
+    assert "OPENROUTER_API_KEY" not in run["env"]
+    assert "LEGION_PAID_PROVIDERS" in admit["env"]
+    assert "LEGION_DISABLED_PROVIDERS" in admit["env"]
+    assert "firewall" in JOBS["submit-lane"]["needs"]

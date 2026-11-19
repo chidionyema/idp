@@ -433,3 +433,161 @@ def test_claude_native_needs_no_probe_it_proves_its_provider_itself(
     _, url = provider
     r = admit(repo, tmp_path / "o", "Scope: web/f1.txt", url, HARNESS="claude-code")
     assert r.returncode == 0 and _Provider.seen == []
+
+
+# A new provider is data, not another branch in the scheduler.
+def _auto_module():
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
+
+    loader = SourceFileLoader("legion_auto_test", str(ADMIT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def _registry(path, provider, cls="free", price=0, models=("capable", "backup")):
+    path.mkdir(exist_ok=True)
+    header = (
+        f'id="{provider}"\ndialect="openai"\n'
+        f'base_url="https://{provider}.example"\n'
+        'request_path="/v1/chat/completions"\n[auth]\nkind="bearer"\n'
+        f'key_env="{provider.upper()}_API_KEY"\n'
+    )
+    rows = "".join(
+        f'\n[[models]]\nid="{m}"\nclass="{cls}"\n'
+        f"price_in_per_mtok={price}\nprice_out_per_mtok={price}\n"
+        "context_window=131072\n"
+        for m in models
+    )
+    (path / f"{provider}.toml").write_text(header + rows)
+
+
+def test_auto_excludes_unfunded_and_disabled(tmp_path):
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    _registry(tmp_path, "south", "paid", 2)
+    _registry(tmp_path, "west")
+    env = {
+        "NORTH_API_KEY": "n",
+        "SOUTH_API_KEY": "s",
+        "WEST_API_KEY": "w",
+        "LEGION_DISABLED_PROVIDERS": "west",
+    }
+    routes = mod.auto_candidates(tmp_path, env)
+    assert {r["provider"] for r in routes} == {"north"}
+    assert routes[0]["base"] == "https://north.example/v1"
+    env["LEGION_PAID_PROVIDERS"] = "south"
+    assert {r["provider"] for r in mod.auto_candidates(tmp_path, env)} == {
+        "north",
+        "south",
+    }
+
+
+def test_auto_rate_limit_skips_account_not_only_model(tmp_path):
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    _registry(tmp_path, "south")
+    env = {"NORTH_API_KEY": "n", "SOUTH_API_KEY": "s"}
+    seen = []
+
+    def probe(route, env):
+        seen.append(route["provider"])
+        return {
+            "verdict": "rate-limited" if route["provider"] == "north" else "capacity"
+        }
+
+    selected, _ = mod.auto_select(mod.auto_candidates(tmp_path, env), env, probe)
+    assert selected["provider"] == "south"
+    assert seen == ["north", "south"]
+
+
+def test_auto_new_provider_only_requires_registry(tmp_path):
+    mod = _auto_module()
+    _registry(tmp_path, "new")
+    env = {"NEW_API_KEY": "n"}
+    selected, _ = mod.auto_select(
+        mod.auto_candidates(tmp_path, env), env, lambda r, e: {"verdict": "capacity"}
+    )
+    assert selected["provider"] == "new"
+
+
+@pytest.mark.parametrize(
+    "response,verdict",
+    [
+        (
+            {
+                "model": "backup",
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "legion_ready",
+                                        "arguments": '{"ready":true}',
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+            },
+            "capacity",
+        ),
+        (
+            {"model": "other", "choices": [{"message": {"tool_calls": []}}]},
+            "tool-or-model-unverified",
+        ),
+        ({"model": "backup", "choices": []}, "invalid-response"),
+        (
+            {"model": "backup", "choices": [{"message": {"content": "yes"}}]},
+            "tool-or-model-unverified",
+        ),
+    ],
+)
+def test_auto_probe_requires_model_and_tool(tmp_path, response, verdict):
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    env = {"NORTH_API_KEY": "secret"}
+    route = mod.auto_candidates(tmp_path, env)[0]
+    with mock.patch("urllib.request.build_opener") as opener:
+        reader = opener.return_value.open.return_value.__enter__.return_value
+        reader.read.return_value = json.dumps(response).encode()
+        assert mod.auto_probe(route, env)["verdict"] == verdict
+
+
+def test_auto_launcher_binds_base_model_and_isolates_key(tmp_path):
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    env = {
+        "NORTH_API_KEY": "n",
+        "OTHER_API_KEY": "other",
+        "ADMITTED_PROVIDER": "north",
+        "ADMITTED_MODEL": "backup",
+        "ADMITTED_KEY_ENV": "NORTH_API_KEY",
+        "LEGION_SELECTED_KEY": "n",
+        "RUNNER_TEMP": str(tmp_path),
+        "PATH": "/usr/bin",
+    }
+    route = mod.auto_candidates(tmp_path, env)[0]
+    record = {"decision": "ADMITTED", "route": route, "base": "exact"}
+    with (
+        mock.patch("subprocess.check_output", return_value="exact\n"),
+        mock.patch("subprocess.run") as run,
+    ):
+        run.return_value.returncode = 0
+        assert mod.auto_launch(tmp_path, record, "test", tmp_path, env) == 0
+        assert run.call_args.kwargs["env"]["LEGION_SELECTED_KEY"] == "n"
+        assert "OTHER_API_KEY" not in run.call_args.kwargs["env"]
+        config = (tmp_path / "legion-pi/models.json").read_text()
+        assert '"apiKey": "$LEGION_SELECTED_KEY"' in config
+    with pytest.raises(ValueError, match="admission mismatch"):
+        mod.auto_launch(
+            tmp_path, record, "test", tmp_path, dict(env, ADMITTED_MODEL="fake")
+        )

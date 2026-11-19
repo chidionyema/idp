@@ -38,7 +38,7 @@ name: agent-sandbox
 # The run's title is the job's record: Fleet's agent-jobs panel (fleetview_backend/agent_jobs.py)
 # lists these runs and reads harness and task back out of this line, so GitHub is the one ledger.
 # A title, never a script: nothing here is executed.
-run-name: "${{ github.event_name == 'issues' && format('agent (gemini): LEGION #{0}', github.event.issue.number) || format('agent ({0}): {1}', inputs.harness, inputs.task) }}"
+run-name: "${{ github.event_name == 'issues' && format('agent ({0}): LEGION #{1}', github.event.label.name == 'claude-native' && 'claude-code' || 'auto', github.event.issue.number) || format('agent ({0}): {1}', inputs.harness, inputs.task) }}"
 
 on:
   issues:
@@ -49,7 +49,7 @@ on:
         description: "Which agent harness runs the task"
         required: true
         type: choice
-        options: [gemini, claude-code, pi]
+        options: [auto, claude-code, gemini, pi]
       task:
         description: "The task, in plain words"
         required: true
@@ -89,6 +89,9 @@ jobs:
       scope_json: ${{ steps.admission.outputs.scope_json }}
       scope_sha256: ${{ steps.admission.outputs.scope_sha256 }}
       provider: ${{ steps.admission.outputs.provider }}
+      model: ${{ steps.admission.outputs.model }}
+      key_env: ${{ steps.admission.outputs.key_env }}
+      key_secret: ${{ steps.admission.outputs.key_secret }}
       fallback: ${{ steps.admission.outputs.fallback }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -98,10 +101,16 @@ jobs:
       - name: Admit exact scope and provider capacity
         id: admission
         env:
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'auto') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.SEED_ZAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          LEGION_PAID_PROVIDERS: ${{ vars.LEGION_PAID_PROVIDERS }}
+          LEGION_DISABLED_PROVIDERS: ${{ vars.LEGION_DISABLED_PROVIDERS }}
           MODEL: ${{ inputs.model }}
           # Only founder-issued Legion missions receive a bounded provider fallback.
           LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
@@ -109,7 +118,7 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/admission"
           mkdir -p "$out"
-          case "$HARNESS" in gemini|pi|claude-code) ;; *) exit 2 ;; esac
+          case "$HARNESS" in auto|gemini|pi|claude-code) ;; *) exit 2 ;; esac
           # pi's execution model is fixed; probe that exact model.
           if [ "$HARNESS" = pi ]; then export MODEL=MiniMax-M2.7; fi
           python3 bin/legion-admit --out "$out"
@@ -152,12 +161,12 @@ jobs:
 
       - name: Install the harness and age
         env:
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'auto') || inputs.harness }}
         run: |
           set -euo pipefail
           case "$HARNESS" in
             claude-code) npm install -g --silent @anthropic-ai/claude-code@2.1.280 ;;
-            pi|gemini)   npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
+            auto|pi|gemini)   npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
             *)           echo "::error::unknown harness"; exit 1 ;;
           esac
           python3 -m pip install -q ruff==0.15.18
@@ -170,11 +179,16 @@ jobs:
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'auto') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ (github.event.label.name == 'claude-native' || inputs.harness == 'claude-code') && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          MINIMAX_API_KEY: ${{ (inputs.harness == 'pi' || inputs.harness == 'gemini') && secrets.SEED_MINIMAX_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.harness == 'gemini' && secrets.SEED_GEMINI_API_KEY || '' }}
+          LEGION_SELECTED_KEY: ${{ needs.admit.outputs.key_secret != '' && secrets[needs.admit.outputs.key_secret] || '' }}
+          ADMITTED_KEY_ENV: ${{ needs.admit.outputs.key_env }}
+          ADMITTED_MODEL: ${{ needs.admit.outputs.model }}
+          LEGION_PAID_PROVIDERS: ${{ vars.LEGION_PAID_PROVIDERS }}
+          LEGION_DISABLED_PROVIDERS: ${{ vars.LEGION_DISABLED_PROVIDERS }}
           MODEL: ${{ inputs.model }}
           # Only founder-issued Legion missions receive a bounded provider fallback.
           LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
@@ -186,7 +200,7 @@ jobs:
           git rev-parse HEAD > "$out/base"
           TASK="$TASK$(cat "$RUNNER_TEMP/admission/contract.txt")"
           case "$HARNESS:$ADMITTED_PROVIDER" in
-            gemini:google|gemini:minimax|pi:minimax|claude-code:) ;;
+            auto:?*|gemini:google|gemini:minimax|pi:minimax|claude-code:) ;;
             *) echo "::error::provider not admitted"; exit 2 ;;
           esac
           # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
@@ -195,6 +209,11 @@ jobs:
           # an open pipe waits on it.
           newest() { find "$1" -type f -name '*.jsonl' -exec ls -t {} + 2>/dev/null | head -1 || true; }
           case "$HARNESS" in
+            auto)
+              rc=0
+              export TASK
+              python3 bin/legion-admit --launch-admitted "$RUNNER_TEMP/admission/admission.json" --out "$out" --session-dir "$RUNNER_TEMP/pi-sessions" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
             claude-code)
               [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
               # No GitHub token in this job. Authenticate Claude first with a real
@@ -260,7 +279,7 @@ jobs:
           if [ -z "${transcript:-}" ]; then
             # No transcript means the harness never got as far as working; its first line is the
             # reason (a start-up error, not the agent's words).
-            echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
+            echo "::error::the harness left no transcript; private diagnostic retained"
             exit 1
           fi
           # Preserve failed runs too: their private transcript is the diagnostic evidence.
@@ -425,7 +444,7 @@ jobs:
         id: claim
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'auto') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           ISSUE: ${{ github.event_name == 'issues' && github.event.issue.number || inputs.issue }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -449,7 +468,7 @@ jobs:
       - name: Commit through the estate's own hooks and push the lane
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'auto') || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           NUM: ${{ steps.claim.outputs.num }}
           AGENT: ${{ steps.claim.outputs.agent }}

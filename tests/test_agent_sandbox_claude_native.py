@@ -21,7 +21,7 @@ class ClaudeNativeHarnessContract(unittest.TestCase):
         selector = (
             "HARNESS: ${{ github.event_name == 'issues' && "
             "(github.event.label.name == 'claude-native' && "
-            "'claude-code' || 'gemini') || inputs.harness }}"
+            "'claude-code' || 'auto') || inputs.harness }}"
         )
         self.assertEqual(5, s.count(selector))
         self.assertNotIn("issues' && 'gemini' || inputs.harness", s)
