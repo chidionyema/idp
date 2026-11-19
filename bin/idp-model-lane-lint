@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""idp-model-lane-lint -- refuse a deprecated model id, and a lane with no fallback.
+
+FC_HARDCODED_SINGLE_VENDOR_LANE. MEASURED 2026-11-19: the live router answered HTTP 502 on
+`gemini/gemini-2.5-flash` because the lane names one vendor model string and has no chain behind
+it, and Google's 2026-11-03 notice says that id auto-redirects to gemini-3.5-flash-lite on
+2026-12-01 with breaking changes (thought_signature on tool calls, thinking_level replacing
+thinking_budget, temperature/top_p/top_k ignored, prefilled turns and candidate_count>1 -> 400).
+
+Two refusals, both mechanical:
+
+  DEPRECATED_MODEL_ID   a model id with a known retirement date appears in the tree
+  SINGLE_VENDOR_LANE    a provider file declares exactly one model and no fallback of any kind
+
+Usage:
+  bin/idp-model-lane-lint [--root DIR] [--self-test]
+Exit 1 on any refusal.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+# id -> (retirement date, replacement, why)
+DEPRECATED = {
+    "gemini-2.5-flash": (
+        "2026-12-01",
+        "gemini-3.5-flash-lite",
+        "auto-redirect with breaking changes: thought_signature required on tool calls, "
+        "thinking_level replaces thinking_budget, temperature/top_p/top_k ignored",
+    ),
+}
+SCAN_SUFFIXES = {".toml", ".yaml", ".yml", ".json", ".py", ".ts", ".js"}
+SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "target",
+    "dist",
+    "build",
+}
+
+
+def scan_deprecated(root: pathlib.Path) -> list[str]:
+    hits = []
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix not in SCAN_SUFFIXES:
+            continue
+        # docs/ records what was true at a date, including retired ids (AGENTS.md 3a).
+        if "docs" in path.parts:
+            continue
+        # a fixture exists to exercise the checker; it is not a live lane.
+        if "fixtures" in path.parts:
+            continue
+        if SKIP_DIRS & set(path.parts):
+            continue
+        try:
+            text = path.read_text(errors="ignore")
+        except OSError:
+            continue
+        for model_id, (retires, replacement, why) in DEPRECATED.items():
+            for n, line in enumerate(text.splitlines(), 1):
+                if model_id in line and "idp-model-lane-lint" not in line:
+                    hits.append(
+                        f"DEPRECATED_MODEL_ID {path.relative_to(root)}:{n} {model_id} "
+                        f"retires {retires} -> {replacement} ({why})"
+                    )
+    return hits
+
+
+def scan_single_vendor_lanes(root: pathlib.Path) -> list[str]:
+    """A provider file with one model and no fallback key is a lane with no second home."""
+    hits = []
+    for path in sorted(root.glob("**/providers/*.toml")):
+        if SKIP_DIRS & set(path.parts):
+            continue
+        text = path.read_text(errors="ignore")
+        models = re.findall(r"^\s*(?:model|model_id|name)\s*=\s*[\"']", text, re.M)
+        has_fallback = (
+            re.search(r"fallback|chain|order|priority", text, re.I) is not None
+        )
+        if len(models) == 1 and not has_fallback:
+            hits.append(
+                f"SINGLE_VENDOR_LANE {path.relative_to(root)}: one model, no fallback"
+            )
+    return hits
+
+
+def self_test() -> int:
+    import tempfile
+
+    ok = True
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        (root / "providers").mkdir()
+        (root / "providers" / "gemini.toml").write_text('model = "gemini-2.5-flash"\n')
+        hits = scan_deprecated(root)
+        ok &= bool(hits)
+        print(
+            "deprecated id  ->",
+            "REFUSED" if hits else "MISSED",
+            hits[0][:70] if hits else "",
+        )
+
+        (root / "providers" / "gemini.toml").write_text(
+            'model = "gemini-3.5-flash-lite"\n'
+        )
+        hits = scan_deprecated(root)
+        ok &= not hits
+        print("replacement id ->", "accepted" if not hits else "WRONGLY REFUSED")
+
+        (root / "providers" / "solo.toml").write_text('model = "x"\n')
+        lane = [h for h in scan_single_vendor_lanes(root) if "solo.toml" in h]
+        ok &= bool(lane)
+        print("single lane    ->", "REFUSED" if lane else "MISSED")
+
+        (root / "providers" / "solo.toml").write_text('model = "x"\nfallback = ["y"]\n')
+        lane = [h for h in scan_single_vendor_lanes(root) if "solo.toml" in h]
+        ok &= not lane
+        print("with fallback  ->", "accepted" if not lane else "WRONGLY REFUSED")
+    print(
+        "ok idp-model-lane-lint --self-test"
+        if ok
+        else "FAIL idp-model-lane-lint --self-test"
+    )
+    return 0 if ok else 1
+
+
+def scan_added_lines(base: str) -> list[str]:
+    """Only text this change ADDS can be refused: a retired id already in the tree is history.
+
+    MEASURED 2026-11-19: a whole-tree scan reported 51 pre-existing hits, which would refuse
+    the estate's own history instead of the new defect. The same lesson as the ghost scan.
+    """
+    import subprocess
+
+    hits = []
+    for model_id, (retires, replacement, why) in DEPRECATED.items():
+        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "diff", "--unified=0", f"{base}...HEAD"],  # noqa: S607
+            capture_output=True, text=True, check=False,
+        ).stdout
+        for line in out.splitlines():
+            if line.startswith("+") and not line.startswith("+++") and model_id in line:
+                hits.append(
+                    f"DEPRECATED_MODEL_ID {model_id} retires {retires} -> {replacement} ({why})"
+                )
+    return hits
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return self_test()
+    if "--root" in sys.argv:
+        root = pathlib.Path(sys.argv[sys.argv.index("--root") + 1])
+        hits = scan_deprecated(root) + scan_single_vendor_lanes(root)
+    else:
+        base = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
+        hits = scan_added_lines(base)
+    for hit in hits:
+        print(hit, file=sys.stderr)
+    if hits:
+        print(f"REFUSED: {len(hits)} model-lane defect(s)", file=sys.stderr)
+        return 1
+    print("ok: no deprecated model id and no single-vendor lane" + (f" under {root}" if "--root" in sys.argv else " in this change"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
