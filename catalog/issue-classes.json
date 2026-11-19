@@ -1,5 +1,5 @@
 {
- "revision": "2026-11-18",
+ "revision": "2026-11-19",
  "note": "One record per failure class. A class may occur once; a second instance of an open class is a governance failure, not a new incident.",
  "classes": [
   {
@@ -176,6 +176,25 @@
     "2026-11-18"
    ],
    "closed_on": "2026-11-18"
+  },
+  {
+   "class": "enforcement-deleted-comment-retained",
+   "first_seen": "2026-10-25",
+   "instances": [
+    "3acbf81b3 (PR #7117) added the #7116 comment that the DB stand-in must be Ready BEFORE flux_source lays the GitSource and in the same hunk deleted the stand_in_database() call, so the comment describes an ordering nothing implements; every shadow run since leaves litellm CrashLoopBackOff on P1001 (run 44363967714)"
+   ],
+   "gap": "a hunk can add a comment asserting an invariant and delete the only code that enforces it, and nothing fails: no test asserts the call exists, so the prose reads as proof of a behaviour the harness does not have",
+   "compensating_action": "call stand_in_database() before flux_source(head) whenever db_needs_standin(paths), and add the ordering falsifier that fails when the call is absent or moved after the source",
+   "falsifier": "tests/test_the_shadow_lays_the_database_before_the_source.py refuses a bin/idp-shadow whose _verify lays the GitSource before the DB stand-in",
+   "owner": "dsh-shadow-diagnostics-20261118 (claim idp#8229, bin/idp-shadow)",
+   "surfaces": [
+    "shadow",
+    "bin"
+   ],
+   "status": "open",
+   "recurrence_checks": [
+    "2026-11-18"
+   ]
   }
  ]
 }
