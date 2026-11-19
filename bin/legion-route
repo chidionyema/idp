@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Select a Legion inference route from PennyD configuration and trusted capacity offers.
+
+Pure policy: no provider defaults, network calls, secret reads, or second state store.
+The caller must authenticate capacity/lease receipts at the existing estate boundary;
+this module validates their shape, freshness, scope and suitability, not their signature.
+A selection is not an allocation: claim the offer atomically before invoking the worker.
+"""
+from __future__ import annotations
+
+import math
+import re
+import tomllib
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+class NoRoute(ValueError):
+    """No safe allocation can be made using the supplied evidence."""
+
+
+def finite(value):
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def registry(directory):
+    routes = {}
+    for path in sorted(Path(directory).glob("*.toml")):
+        with path.open("rb") as f:
+            provider = tomllib.load(f)
+        ident = provider["id"]
+        if ident != path.stem or not re.fullmatch(r"[a-z][a-z0-9-]*", ident):
+            raise ValueError("invalid provider id")
+        url = urlsplit(provider["base_url"])
+        if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
+            # Local routes need their own trusted execution adapter, not cloud HTTP.
+            continue
+        key = provider.get("auth", {}).get("key_env", "")
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+            continue
+        dialect = provider.get("dialect")
+        if dialect not in ("openai", "anthropic"):
+            continue
+        for model in provider.get("models", []):
+            name = model["id"]
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", name):
+                raise ValueError("invalid model id")
+            route = (ident, name)
+            if route in routes:
+                raise ValueError("duplicate route")
+            context = model.get("context_window")
+            if type(context) is not int or context <= 0:
+                continue
+            routes[route] = {"provider": ident, "model": name, "dialect": dialect,
+                             "context_window": context, "credential_ref": key}
+    return routes
+
+
+def select(routes, offers, failures, *, mission_id, capabilities, tokens, budget, now,
+           max_age=120, denied=(), excluded_domains=()):
+    if not mission_id or type(tokens) is not int or tokens <= 0 or not finite(budget) or budget < 0:
+        raise ValueError("invalid mission envelope")
+    if not finite(now) or not finite(max_age) or max_age <= 0:
+        raise ValueError("invalid policy clock")
+    eligible = []
+    seen = set()
+    # Failure evidence is account-scoped for capacity and authentication; model-level
+    # failures are scoped to the exact route. A later task cannot reset these exclusions.
+    for offer in offers:
+        provider, model = offer.get("provider"), offer.get("model")
+        route = routes.get((provider, model))
+        if route is None or provider in denied or offer.get("failure_domain") in excluded_domains:
+            continue
+        oid, account = offer.get("offer_id"), offer.get("account_id")
+        domain = offer.get("failure_domain")
+        if not all(isinstance(x, str) and x for x in (oid, account, domain)) or oid in seen:
+            raise ValueError("missing or duplicate capacity offer identity")
+        seen.add(oid)
+        if offer.get("mission_id") != mission_id or offer.get("credential_ref") != route["credential_ref"]:
+            continue
+        if offer.get("state") != "AVAILABLE" or offer.get("adapter") != "pi":
+            continue
+        observed, expires = offer.get("observed_at"), offer.get("expires_at")
+        if not finite(observed) or not finite(expires) or not now-max_age <= observed <= now < expires:
+            continue
+        if not isinstance(offer.get("capabilities"), list) or not set(capabilities).issubset(offer["capabilities"]):
+            continue
+        available, cost, success = (offer.get(k) for k in ("available_tokens", "reserved_cost_usd", "success_rate"))
+        if type(available) is not int or available < tokens or route["context_window"] < tokens:
+            continue
+        if not finite(cost) or not 0 <= cost <= budget or not finite(success) or not 0 <= success <= 1:
+            continue
+        blocked = False
+        for failure in failures:
+            if failure.get("provider") != provider or failure.get("account_id") != account:
+                continue
+            if failure.get("class") not in ("CAPACITY", "AUTHENTICATION", "MODEL_UNAVAILABLE", "TRANSPORT"):
+                continue
+            if failure["class"] == "MODEL_UNAVAILABLE" and failure.get("model") != model:
+                continue
+            retry = failure.get("retry_not_before")
+            failed_at = failure.get("observed_at")
+            # Missing expiry requires positive newer evidence; a pre-failure offer
+            # is never evidence of recovery even after the cooldown elapses.
+            if not finite(failed_at) or not finite(retry) or now < retry or observed <= failed_at:
+                blocked = True
+                break
+        if blocked:
+            continue
+        eligible.append((-success, cost, -available, oid, offer))
+    if not eligible:
+        raise NoRoute("NO_ELIGIBLE_ROUTE: preserve mission custody; reconcile capacity")
+    chosen = min(eligible)[-1]
+    return {**routes[(chosen["provider"], chosen["model"])],
+            "offer_id": chosen["offer_id"], "account_id": chosen["account_id"],
+            "failure_domain": chosen["failure_domain"], "mission_id": mission_id,
+            "expires_at": chosen["expires_at"], "reserved_cost_usd": chosen["reserved_cost_usd"]}
