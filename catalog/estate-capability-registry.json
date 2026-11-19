@@ -38134,6 +38134,7 @@
       "contract": {
         "inputs": [
           "--help",
+          "--is-ancestor",
           "--jq",
           "--live",
           "--self-test"
