@@ -58,8 +58,13 @@ if(h.get('register')){
   const dl=document.createElement('dl');[['Change',lines[4]],['Files',lines.slice(5).join(', ')],['Requested',lines[1]],['On top of',lines[2].slice(0,12)],['Content',lines[3].slice(0,12)]]
    .forEach(([k,v])=>{const t=document.createElement('dt');t.textContent=k;const d=document.createElement('dd');d.textContent=v;dl.append(t,d)});
   $('#m').insertBefore(dl,s); say('Approving signs exactly this content. Any later edit voids it.');
+  // idp#8025: Safari on iPhone answered NotAllowedError ("not allowed ... in the current
+  // context"). The handler awaited crypto.subtle.digest BEFORE credentials.get, and WebKit only
+  // honours WebAuthn inside the user's tap when no other async work runs first. The digest is a
+  // pure function of the link, so it is computed at load and the tap goes straight to Face ID.
+  let ch=null;const ready=crypto.subtle.digest('SHA-256',raw).then(d=>{ch=d});
   btn('Approve with Face ID',async()=>{
-   const ch=await crypto.subtle.digest('SHA-256',raw);
+   if(!ch){await ready;throw new Error('the page was still preparing the request')}
    const a=await navigator.credentials.get({publicKey:{challenge:ch,rpId:location.hostname,userVerification:'required',allowCredentials:[]}});
    const body={authenticatorData:b64u.enc(a.response.authenticatorData),clientDataJSON:b64u.enc(a.response.clientDataJSON),signature:b64u.enc(a.response.signature)};
    const r=await fetch('/approve/'+b64u.enc(ch),{method:'POST',body:JSON.stringify(body)});
