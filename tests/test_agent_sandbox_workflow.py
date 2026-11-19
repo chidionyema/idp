@@ -269,6 +269,7 @@ def _agent_step(
         '#!/bin/bash\n[ "$1" = --verify-live ] && { echo receipt; exit 0; }\nshift; exec claude "$@"\n'
     )
     (r / "bin" / "claude-anthropic").chmod(0o755)
+    admitted_provider = {"gemini": "google", "pi": "minimax", "claude-code": ""}
     env = {
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
@@ -278,7 +279,7 @@ def _agent_step(
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
         "MINIMAX_API_KEY": "x",
         "GEMINI_API_KEY": "x",
-        "ADMITTED_PROVIDER": {"gemini": "google", "pi": "minimax", "claude-code": ""}[harness],
+        "ADMITTED_PROVIDER": admitted_provider[harness],
         "ADMITTED_FALLBACK": "1",
     }
     env.update(overrides or {})
@@ -537,9 +538,8 @@ def test_admission_is_an_independent_trusted_job_and_binds_the_patch():
     assert "admit" in JOBS["submit-lane"]["needs"]
     assert submit["env"]["SCOPE_JSON"] == "${{ needs.admit.outputs.scope_json }}"
     assert submit["env"]["SCOPE_SHA256"] == "${{ needs.admit.outputs.scope_sha256 }}"
-    assert (
-        '--scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"' in submit["run"]
-    )
+    scope_args = '--scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"'
+    assert scope_args in submit["run"]
 
 
 def test_outside_admitted_scope_is_refused_even_if_otherwise_legal(tmp_path):
