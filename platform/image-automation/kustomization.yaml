@@ -27,3 +27,6 @@ resources:
   - efda.yaml
   - spine.yaml
   - aei.yaml
+  # idp#8067: the ImagePolicy existed (#8285) but no Kustomization applied it, so no build could ever
+  # reach the pennyd deployment.
+  - pennyd.yaml

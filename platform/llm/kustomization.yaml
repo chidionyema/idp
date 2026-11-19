@@ -13,6 +13,10 @@ resources:
   - spend-breaker-digest.yaml
   - pull-secret.yaml
   - zeroedge.yaml
+  # idp#8067: PennyD was merged (#8192, #8237) but never named here, so Flux never ran it and the
+  # public router stayed LiteLLM. It runs beside LiteLLM; the HTTPRoute moves only once /health
+  # answers with pennyd's git_sha.
+  - pennyd
 images:
   # chidionyema/zeroedge build-image.yml pushes ghcr.io/chidionyema/zeroedge:main-<run>-<sha> on
   # a multiarch manifest list, Trivy-scanned before the push and cosign-signed after it. The tag
@@ -22,6 +26,11 @@ images:
   # (platform/image-automation/zeroedge.yaml); the marker is how it finds the line.
   - name: ghcr.io/chidionyema/zeroedge
     newTag: main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4 # {"$imagepolicy": "flux-system:zeroedge:tag"}
+  # idp#8067: the same agreement for PennyD. build-multiarch pushes ghcr.io/chidionyema/pennyd:main-<run>-<sha>;
+  # ImagePolicy flux-system/pennyd (platform/image-automation/pennyd.yaml) rewrites this line.
+  # v0.2.0 is the tag the deployment declared, which the registry does not hold.
+  - name: ghcr.io/chidionyema/pennyd
+    newTag: v0.2.0 # {"$imagepolicy": "flux-system:pennyd:tag"}
 configMapGenerator:
   # The router config is the file, not a copy of it. tests/test_llm_row.py holds
   # platform/llm/config.yaml to llm/config.yaml model for model.
