@@ -1,0 +1,28 @@
+diff --git a/.github/workflows/agent-sandbox.yml b/.github/workflows/agent-sandbox.yml
+index 631212718..3075c8cf7 100644
+--- a/.github/workflows/agent-sandbox.yml
++++ b/.github/workflows/agent-sandbox.yml
+@@ -318,7 +318,22 @@ jobs:
+           # ancestry against current main. The agent's work must not disappear when
+           # another lane advances main while the model is working.
+           # The Greenlane, not this stage, rebases and independently proves promotion.
+-          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
++          # Admission is a trusted act separate from submission (#8265): the scope is
++          # serialised at the exact base the agent worked from, in a clean detached
++          # worktree, and submission then consumes it under a digest, so a patch that
++          # disagrees with the admitted scope, a base that moved or a policy that
++          # changed refuses here instead of at review.
++          base=$(cat "$work/base")
++          admit="$RUNNER_TEMP/admit"; mkdir -p "$admit"
++          git worktree add --detach --quiet "$admit/tree" "$base" 2>/dev/null || true
++          # The candidate's own paths, read by git from the sealed patch, never typed.
++          paths=$(git -C "$admit/tree" apply --numstat -- "$work/patch" | cut -f3 | jq -R . | jq -sc .)
++          ( cd "$admit/tree" && python3 "$GITHUB_WORKSPACE/bin/idp-agent-base-apply.py" --admit-paths-json "$paths" > "$admit/scope.json" )
++          scope_sha=$(sha256sum "$admit/scope.json" | cut -d" " -f1)
++          git worktree remove --force "$admit/tree"
++          echo "admitted scope $scope_sha over $(jq -c .paths "$admit/scope.json")"
++          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch" \
++            --scope-file "$admit/scope.json" --scope-sha256 "$scope_sha"
+           # Read back what the index now holds, both sides of every rename included, rather than
+           # parse the patch text.
+           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
