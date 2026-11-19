@@ -73,6 +73,13 @@ class Lane:
     rejudged: int = (
         0  # CONSECUTIVE failed conflicts against successive mains; not a lifetime cap
     )
+    # MEASURED 2026-11-19: `attempts` is reset to 0 every time the head is refreshed or main
+    # moves (two places in _observe_lanes and the "main moved; retrying" path), and
+    # repeated_exact_failure only matches a failure at the SAME base. Together those make the
+    # retry cap unreachable: each new main resets the count and the identical red is no longer
+    # "repeated", so a lane that is red on its own is retried forever while every fresh lane
+    # waits behind it. This counter never resets; it is the bound that actually binds.
+    lifetime_red: int = 0
     stamped: float = (
         0.0  # backend clock (minutes) the engine last stamped this lane's claim
     )
@@ -199,6 +206,23 @@ def latency(st: State) -> dict:
         "conflicts_total": st.conflicts,
     }
 
+
+# A lane that is red on its own across this many DIFFERENT mains is not a candidate any more; it
+# is work its owner has to change. Parking it releases the serial slot it was holding.
+LIFETIME_RED_CAP = 8
+
+
+def should_retry(lane, retries: int, repeated: bool, admission_blocked: bool) -> bool:
+    """Whether this red lane gets another turn of the one serial slot.
+
+    Three independent reasons to stop: admission refused it (re-running the same bytes cannot turn
+    that green), the identical failure at this exact base and head was already seen, or it has now
+    failed LIFETIME_RED_CAP times in total across however many mains -- the only bound that
+    survives the attempts reset, which is why the per-base cap alone never bound.
+    """
+    if admission_blocked or repeated or lane.lifetime_red > LIFETIME_RED_CAP:
+        return False
+    return lane.attempts <= retries
 
 class Backend(Protocol):
     """Everything the engine needs from the world. Every method is a read or an idempotent write."""
@@ -612,13 +636,14 @@ class Engine:
             name, head, _ = b.members[0]
             lane = self.s.lanes[name]
             lane.attempts += 1
+            lane.lifetime_red += 1
             cause = fingerprint(reason)
             repeated = repeated_exact_failure(self.s.history, name, head, b.base, cause)
             # An admission block does not become green by re-running the
             # identical source/baseline. Keep the failed lane visible for the
             # owner; a changed HEAD or baseline re-arms the lifecycle.
             admission_blocked = "runner-not-allocated:" in reason
-            if lane.attempts <= self.retries and not repeated and not admission_blocked:
+            if should_retry(lane, self.retries, repeated, admission_blocked):
                 # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
                 # and `_start_batch` serves `queued` before the pending list -- so a lane that
                 # had already spent a full check suite ran as a ONE-lane batch in front of lanes
