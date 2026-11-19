@@ -621,7 +621,7 @@ def plane_mac(blind):
             "mac: not on the Mac; the Mac half runs from the estate clock and lands in raw/mac.json"
         )
         return rows
-    tracked = tracked_files()
+    tracked = {n[:-5] if n.endswith(".tmpl") else n for n in tracked_files()}
     rc, out, err = run(["launchctl", "list"], 30)
     if rc != 0:
         blind.append(f"mac: launchctl list: {last_line(err)}")
