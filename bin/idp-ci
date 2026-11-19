@@ -710,6 +710,31 @@ else
   fail=1
 fi
 
+# 1c.4 legion: the Legion cloud workers' run-and-submit path (idp#8283). The agent-sandbox
+#      falsifiers lived in tests/ but no rung ran them, so they rotted red on main (6 failing on
+#      2026-11-19, among them the submit-lane commit refused by bin/language-gate) while every
+#      worker run since 2026-11-11 failed after inference. Path-scoped to the workflow, the
+#      admission door and every trusted script the workflow's steps execute, so a change to any
+#      of them proves the whole path again: scope + capacity refused before inference
+#      (tests/test_legion_admit.py), the submit lane honouring the admitted scope, the hooks'
+#      stamp and the claim the gate accepts (tests/test_agent_sandbox_workflow.py).
+if touched .github/workflows/agent-sandbox.yml bin/legion-admit bin/idp-agent-base-apply.py \
+    bin/verify_three_proofs.py bin/language-gate bin/claim-gate bin/epistemic_firewall.py \
+    bin/agent-sandbox-age .githooks/commit-msg tests/test_legion_admit.py \
+    tests/test_agent_sandbox_workflow.py tests/test_agent_sandbox_claude_native.py \
+    tests/test_2026_11_11_agent_base_apply.py; then
+  lgn=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_legion_admit.py" \
+    "$IDP/tests/test_agent_sandbox_workflow.py" "$IDP/tests/test_agent_sandbox_claude_native.py" \
+    "$IDP/tests/test_2026_11_11_agent_base_apply.py" 2>&1); lgn_rc=$?
+  if [ "$lgn_rc" -eq 0 ]; then
+    say "ok    legion   $(printf '%s' "$lgn" | grep -oE '[0-9]+ passed' | head -1) -- workers refused before inference, submit bound to the admitted scope"
+  else
+    say "FAIL  legion   the Legion run/submit path's falsifiers (rc=$lgn_rc)"
+    printf '%s\n' "$lgn" | tail -20 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 # 1c.5 language: the founder's ruling (2026-10-30) made mechanical -- Rust over Python for new
 #      estate capability code, unless the reason is compelling and written down. bin/language-gate
 #      refuses a *new* Python file (anywhere, tests/ exempt -- a test mirrors the language already
