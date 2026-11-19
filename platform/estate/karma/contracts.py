@@ -120,6 +120,7 @@ def project(events, verify_external=None):
                 "cost_known": True,
                 "money_cost": None,
                 "yield_evidence": None,
+                "yield_submitters": {},
                 "verified_yield": False,
                 "failures_inherited": [],
                 "verified_corrections": [],
@@ -165,13 +166,23 @@ def project(events, verify_external=None):
                 )
             current["money_cost"] = None
         elif kind == "YIELD_SUBMITTED":
-            current["yield_evidence"] = e.get("evidence_digest") or None
+            digest = e.get("evidence_digest")
+            if actor == "UNKNOWN" or not isinstance(digest, str) or not digest:
+                gaps.append({"event": eid, "reason": "UNATTRIBUTABLE_YIELD"})
+                continue
+            current["yield_evidence"] = digest
+            submitters = current["yield_submitters"].setdefault(digest, [])
+            if actor not in submitters:
+                submitters.append(actor)
             current["state"] = "AWAITING_INDEPENDENT_YIELD"
         elif kind == "YIELD_INDEPENDENTLY_VERIFIED":
             if (
-                actor == current["current_agent"]
+                actor == "UNKNOWN"
+                or actor == current["current_agent"]
                 or not e.get("evidence_digest")
                 or e["evidence_digest"] != current["yield_evidence"]
+                or not current["yield_submitters"].get(current["yield_evidence"])
+                or actor in current["yield_submitters"][current["yield_evidence"]]
             ):
                 gaps.append({"event": eid, "reason": "SELF_GRADED_OR_UNLINKED_YIELD"})
                 continue
