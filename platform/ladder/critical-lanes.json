@@ -7,18 +7,7 @@
     {
       "service": "llm-router",
       "what_breaks": "every agent that talks to a model, the founder's voice loop, and every surface that streams",
-      "selectors": [
-        {
-          "name": "laptop front :4000",
-          "fate": [
-            "host:laptop"
-          ],
-          "reaches": [
-            "laptop front"
-          ],
-          "note": "every local agent's base URL (bin/litellm-status). platform/llm/front.py dials the cloud and its own slots only: not the lifeboat, not the floor."
-        }
-      ],
+      "selectors": [],
       "legs": [
         {
           "name": "lifeboat (Cloudflare edge)",
@@ -48,22 +37,9 @@
           "expect": [
             200
           ]
-        },
-        {
-          "name": "laptop front",
-          "provider": "laptop",
-          "fate": [
-            "host:laptop"
-          ],
-          "role": "dr",
-          "url": "http://127.0.0.1:4000/health/liveliness",
-          "expect": [
-            200
-          ],
-          "expires_at": "2026-12-14T00:00:00Z",
-          "note": "founder, 2026-11-14: the laptop is a DR lifeline only, switch-off by default, with an expiry. It is never a home and never a fallback."
         }
-      ]
+      ],
+      "cutover_note": "Off-host selector and additional independent home not yet proven (#8067). Do not infer reachability from provider probes or declare an unverified selector; this candidate must remain non-operational until the cloud topology and authenticated inference are independently demonstrated."
     },
     {
       "service": "otto",
