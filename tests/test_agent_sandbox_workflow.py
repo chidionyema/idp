@@ -103,9 +103,11 @@ def test_every_action_is_pinned_to_a_commit():
     for job in JOBS:
         for s in _steps(job):
             if "uses" in s:
-                assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", s["uses"]), s[
-                    "uses"
-                ]
+                # owner/repo[/sub-action]@<40-hex commit>: a sub-action (actions/cache/save)
+                # is pinned exactly like its parent.
+                assert re.fullmatch(
+                    r"[\w.-]+/[\w.-]+(?:/[\w.-]+)*@[0-9a-f]{40}", s["uses"]
+                ), s["uses"]
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -617,7 +619,9 @@ def test_automatic_missions_use_discovery_and_only_the_selected_secret():
     assert "'claude-code' || 'auto'" in admit["env"]["HARNESS"]
     assert "'claude-code' || 'auto'" in run["env"]["HARNESS"]
     assert "--launch-admitted" in run["run"]
-    assert "secrets[needs.admit.outputs.key_secret]" in run["env"]["LEGION_SELECTED_KEY"]
+    assert (
+        "secrets[needs.admit.outputs.key_secret]" in run["env"]["LEGION_SELECTED_KEY"]
+    )
     assert "ZAI_API_KEY" not in run["env"]
     assert "DEEPSEEK_API_KEY" not in run["env"]
     assert "GROQ_API_KEY" not in run["env"]

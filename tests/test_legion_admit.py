@@ -591,3 +591,69 @@ def test_auto_launcher_binds_base_model_and_isolates_key(tmp_path):
         mod.auto_launch(
             tmp_path, record, "test", tmp_path, dict(env, ADMITTED_MODEL="fake")
         )
+
+
+def test_an_exhausted_account_is_not_reprobed_on_the_next_run(tmp_path):
+    # Founder, 2026-11-19 21:46 (#8283): run 44619180014 retried Gemini and MiniMax unchanged
+    # after both had 429'd. The cooldown written by one run is read by the next.
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    _registry(tmp_path, "south")
+    env = {"NORTH_API_KEY": "n", "SOUTH_API_KEY": "s"}
+    cool = tmp_path / "cooldown.json"
+    seen = []
+
+    def probe(route, env):
+        seen.append(route["provider"])
+        return {
+            "verdict": "rate-limited" if route["provider"] == "north" else "capacity"
+        }
+
+    routes = mod.auto_candidates(tmp_path, env)
+    first = mod.load_cooldown(cool, 1000.0)
+    mod.auto_select(routes, env, probe, cooldown=first, now=1000.0)
+    mod.save_cooldown(cool, first, 1000.0)
+    assert seen == ["north", "south"]
+
+    seen.clear()
+    second = mod.load_cooldown(cool, 1060.0)
+    selected, observed = mod.auto_select(
+        routes, env, probe, cooldown=second, now=1060.0
+    )
+    assert seen == ["south"]
+    assert selected["provider"] == "south"
+    assert observed[0] == {
+        "provider": "north",
+        "model": routes[0]["model"],
+        "verdict": "cooling",
+        "until": 1000 + mod.COOLDOWN_S["rate-limited"],
+    }
+
+
+def test_a_cooldown_expires_and_the_account_is_probed_again(tmp_path):
+    mod = _auto_module()
+    _registry(tmp_path, "north")
+    env = {"NORTH_API_KEY": "n"}
+    cool = tmp_path / "cooldown.json"
+    mod.save_cooldown(cool, {"north": 2000.0}, 1000.0)
+    assert mod.load_cooldown(cool, 1999.0) == {"north": 2000.0}
+    assert mod.load_cooldown(cool, 2000.0) == {}
+    seen = []
+    selected, _ = mod.auto_select(
+        mod.auto_candidates(tmp_path, env),
+        env,
+        lambda r, e: seen.append(r["provider"]) or {"verdict": "capacity"},
+        cooldown=mod.load_cooldown(cool, 2001.0),
+        now=2001.0,
+    )
+    assert seen == ["north"] and selected["provider"] == "north"
+
+
+def test_an_unreadable_cooldown_file_cools_nothing(tmp_path):
+    mod = _auto_module()
+    cool = tmp_path / "cooldown.json"
+    cool.write_text("{not json")
+    assert mod.load_cooldown(cool, 0.0) == {}
+    cool.write_text('["north"]')
+    assert mod.load_cooldown(cool, 0.0) == {}
+    assert mod.load_cooldown(None, 0.0) == {}
