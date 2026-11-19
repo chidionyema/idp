@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-009-claude-instruction-packet-yield-alpha-quad-dna",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-INBOX-7732",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T20:07:00Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Claude Inbox Core #3: Instruction Packet + Yield Alpha (Operational Value + Epistemic Intelligence + Law Calibration) & The Quad / Identity / DNA / Generations",
+  "payloadSummary": "Formalizes every Founder or coordinator directive as an InstructionPacket that MUST produce a PacketOutcome with measured Yield Alpha (alpha = [alpha_ops + alpha_intel] * alpha_law). Captures first-pass Founder approval, partial progressive value on soft timeouts, epistemic intelligence harvested from mistakes/breaches caught upstream before CI/CD gates, and law calibration, directly evolving The Quad (Mind, 18-Lane Memory, Protocol, Body), Sovereign Identity, DNA Genome, and Generations (Gen-1 -> Gen-4).",
+  "bddContract": {
+    "given": "Argon 18/18 Memory Plane and register/protocol-config.json are online with Quad/Identity/DNA/Generations lineage",
+    "when": "node bin/estate-protocol-engine --execute-packet --json runs an InstructionPacket and grades Yield Alpha",
+    "then": "exit_code == 0 && test_pass:instruction_packet_yield_alpha_and_quad_dna && grep_match:PROTOCOL_ENGINEERING_AND_YIELD_ALPHA_VERIFIED"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-009"
+}

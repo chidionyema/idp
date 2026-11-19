@@ -1,0 +1,51 @@
+name: "HOP-03: Genesis Airlock Verification (Grader != Builder)"
+
+on:
+  push:
+    branches:
+      - "genesis-live"
+      - "inbox/**"
+  pull_request:
+    branches:
+      - "main"
+
+permissions:
+  contents: read
+
+jobs:
+  hop03_airlock_verify:
+    name: "HOP-03 Independent Out-of-Process Airlock Grader"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Proposed Branch or Drop Envelope
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies (Verify 0 ERESOLVE Conflicts)
+        run: npm install --no-audit --no-fund
+
+      - name: Verify AGENTS.md <= 120 Lines Constitutional Cap (Law I1)
+        run: |
+          LINES=$(wc -l < AGENTS.md)
+          echo "AGENTS.md line count: ${LINES}"
+          if [ "${LINES}" -gt 120 ]; then
+            echo "FATAL: AGENTS.md exceeds 120-line constitutional limit (${LINES})"
+            exit 1
+          fi
+
+      - name: Execute All Deterministic Unit Tests (node:test)
+        run: npm test
+
+      - name: Execute All 8 On-Disk Law Enforcers (I1-I8) & 8 Counterfactual Mutation Falsifiers
+        run: npm run enforce
+
+      - name: Verify B-1 Signed SOURCE_MANIFEST.json Out-of-Process Ed25519 Signature
+        run: npm run sync:github

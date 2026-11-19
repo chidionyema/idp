@@ -1,0 +1,29 @@
+{
+  "receiptId": "OUTBOX-2026-1031-004",
+  "sourceInboxEnvelopeId": "INBOX-004-ticket-minimax-big-7712",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T19:17:09.284Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (6/6 Gates PASS · MiniMax Big-Ticket Sandbox Verified)",
+  "exitCode": 0,
+  "deliverySummary": "Consulting Lane audited INBOX-004-ticket-minimax-big-7712 (TICKET-MINIMAX-BIG-7712) from minimax-fenced-worker-01 (MiniMax-M2.7), verifiedBDD predicate (exit_code == 0), and promoted signed output to chidionyema/estate-outbox.",
+  "artifactsDelivered": [
+    "relay/inbox/INBOX-004-ticket-minimax-big-7712.json",
+    "relay/outbox/OUTBOX-2026-1031-004.json",
+    "register/machine-repo-catalog.json"
+  ],
+  "rollbackCmd": "git checkout main -- relay/inbox/INBOX-004-ticket-minimax-big-7712.json",
+  "cifHmacSignature": "a85538b868fea2e5dd8dfc3891df012940ab506989c2bc354c00ba309c581536",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- relay/inbox/INBOX-004-ticket-minimax-big-7712.json"
+  ]
+}

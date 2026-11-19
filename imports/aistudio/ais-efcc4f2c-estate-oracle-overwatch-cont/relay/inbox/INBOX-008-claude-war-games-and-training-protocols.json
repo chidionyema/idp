@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-008-claude-war-games-and-training-protocols",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-INBOX-7731",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T20:06:00Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Claude Inbox Core #2: Real-Time Per-Lane Protocol Switching (War Games, SFT Training Flywheel, Evaluation & Zero-MacBook Night-Watch)",
+  "payloadSummary": "Enables real-time hot-swapping of active protocols globally or per-lane without code edits or restarts. Ships 4 hot-swappable protocol packs from Claude Inbox: PROTO-OPS-FIRST-PASS-YIELD-V1 (Operational First-Pass Value), PROTO-WAR-GAMES-ADVERSARIAL-V1 (Red-Team Chaos & Breach Inoculation), PROTO-SFT-TRAINING-FLYWHEEL-V1 (Failure-Ore to SFT/DPO Distillation into 18-Lane Memory), and PROTO-WELLBEING-NIGHTWATCH-V1 (Zero-MacBook Autonomous Voice/Mobile Mode).",
+  "bddContract": {
+    "given": "4 hot-swappable protocol packs are registered in register/protocol-config.json across all 4 agent lanes",
+    "when": "node bin/estate-protocol-engine --switch-lane minimax-fenced-01 --protocol PROTO-WAR-GAMES-ADVERSARIAL-V1 --json runs",
+    "then": "exit_code == 0 && test_pass:realtime_lane_protocol_switch && grep_match:PROTOCOL_ENGINEERING_AND_YIELD_ALPHA_VERIFIED"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-008"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Estate Oracle & Overwatch Control Plane",
+  "description": "Algorithmic search and retrieval oracle, composable CIF intent engine, Otto split-brain forensics, and Rust-backed Telegram Supergroup & Mini App HUD.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

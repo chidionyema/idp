@@ -1,0 +1,396 @@
+
+1. What the failure mode actually is
+Name: Salience evasion / elephant blindness. The information needed to identify the most important issue is present in context, the model has the capability to identify it, and it still responds to the surface question instead.
+
+Why it is "peculiar": it is not a knowledge failure, not a reasoning-capacity failure, and not a retrieval failure. It is a priority failure. The model can name the elephant if asked directly. It simply does not rank "name the elephant" as the operative task. That makes it invisible to benchmarks that test knowledge and capability, and visible only in the gap between what was asked and what mattered.
+
+Operational definition for the estate:
+
+An elephant is the highest-salience unresolved risk, contradiction, blocker, or vacuous control in the current context that, if left unaddressed, invalidates the response. Elephant blindness is any response that does not (a) name it, (b) rank it, and (c) either resolve it or explicitly block on it.
+
+2. Map of the failure mode
+2.1 Triggers
+Trigger	Why it works
+Literal-question framing	The user asks a narrow question; the model optimizes for that question and never asks "is this the right question?"
+Smooth-context pressure	The surrounding text is confident and well-formed; the model continues the frame instead of interrupting it.
+Sycophancy gradient	Naming the elephant creates friction; agreeing with the frame creates flow. Training rewards flow.
+Long context	Salience dilutes with distance ("lost in the middle"); the loudest recent token wins over the most important earlier token.
+Ceremonial controls	A guard, checklist, or "firewall" exists in the prompt or the pipeline; the model treats its presence as evidence of coverage.
+Instruction-following narrowing	"Do X" narrows attention to X; the model does not scan for "what makes X unsafe/wrong/impossible."
+2.2 Mechanisms
+Next-token plausibility ≠ global salience. Generation optimizes local continuation of the frame, not global importance ranking.
+
+No explicit salience step. Most pipelines go straight from context to answer, with no intermediate artifact that says "here is what matters most."
+
+Reward mismatch. Helpfulness/agreement is rewarded; friction is penalized. The elephant is usually friction.
+
+Control-plane theater. Guards that don't emit evidence are indistinguishable from guards that pass. The pipeline cannot tell "checked and clean" from "never checked."
+
+Frame inheritance. The model adopts the user's framing as the task definition, rather than reconstructing the operative task from constraints, state, and risk.
+
+2.3 Manifestations in the estate
+Layer	How elephant blindness shows up
+Founder surface	A confident answer to the question asked, while the blocking issue (missing prerequisite, contradiction, irreversible risk) is unmentioned.
+Proof gate	verification_result: pass emitted by a verifier that never ran, or ran as a stub. (Your two scripts.)
+Agent loop	Agent reports success on the stated subtask while the parent objective is unmet.
+Retrieval	Agent retrieves what was asked for, not what would reveal the problem.
+Override	Founder override is granted without recording the elephant the override is stepping over.
+Living memory	The incident is logged as "resolved" because the response was smooth, not because the risk was addressed.
+3. Why guards become elephants
+The exit 0 stub is not an accident; it is the natural equilibrium of a control that is measured by presence rather than by evidence.
+
+A guard fails safely into vacuity when:
+
+Its success signal is "did not raise" rather than "produced a signed record of what it inspected and why it passed."
+
+It is added to satisfy a checklist, not to block a named failure mode.
+
+Nothing downstream distinguishes "ran and passed" from "did not run."
+
+Its failure mode is not itself in the failure-mode register.
+
+Rule: a control that cannot produce evidence of having run is not a control. It is decoration. Decoration that looks like a control is an elephant.
+
+4. The reversal: the Elephant-Seeking Protocol (ESP)
+The mindset shift is from "answer the question" to "find what makes the question dangerous, then answer." Architecturally, that means inserting a mandatory, evidence-emitting salience step before any founder-facing generation, and changing the objective function so that missing the elephant is the worst outcome — worse than being slow, worse than being blunt, worse than refusing.
+
+4.1 Operational definition (first-class object)
+Make the elephant a typed artifact, not a vibe:
+
+text
+ElephantRecord {
+  elephant_id, task_id,
+  kind: contradiction | blocker | vacuous_control | unverified_assumption | irreversible_risk | missing_prerequisite,
+  description,
+  evidence_refs,            # what in context proves it exists
+  salience_score,           # ranked, not boolean
+  disposition: resolved | blocked | escalated | overridden,
+  override_ref?             # required if disposition == overridden
+}
+No founder-facing response is valid without either an empty ElephantRecord set with evidence of the scan, or a record whose top elephant has a disposition. "I looked and found nothing" must itself be evidenced.
+
+4.2 Pre-response elephant scan (deterministic-first)
+Before any generative call that will produce a founder-facing claim, run a structured scan. Most of it is machine-doable, which fits your existing deterministic gate:
+
+Scan question	Machine-checkable?	Mechanism
+Does the instruction contradict a known constraint?	Yes	Constraint checker against estate constraints
+Does the plan require a resource/state that does not exist?	Yes	Dependency and state lookup (your 3-query surface)
+Is any guard in the path a stub / non-evidence-emitting?	Yes	Static scan for exit 0, empty handlers, unregistered verifiers
+Is the operative question different from the literal question?	Partly	Cheap classifier (Jev-style Choice) + explicit restatement
+What is the strongest reason this response is wrong?	No	Bounded generative step, but required output, not optional
+What is assumed but unverified?	Partly	Assumption extractor + proof lookup
+The scan produces the ElephantRecord set. If the top elephant is consequential (irreversible, high-cost, high-blast-radius), the response is blocked or escalated, not softened.
+
+4.3 Invert the objective function
+State it explicitly in the agent contract:
+
+Old objective: maximize plausibility and compliance with the apparent request.
+
+New objective: minimize the probability that a consequential elephant is left unaddressed in a founder-facing output.
+
+This changes the cost of errors. A smooth answer that misses the elephant is the worst outcome, not the best. A blunt answer that names it is the best outcome, even if it is less pleasant. This is the reward inversion that sycophancy training undoes; the estate has to re-impose it at the contract level, because the base model will not do it by default.
+
+4.4 Make guards evidence-emitting (the anti-exit 0 rule)
+Every control in the path must satisfy:
+
+It emits a signed record of what it inspected, what it found, and why it passed or failed.
+
+Absence of a record is a failure, not a pass. ProofUnavailable is a block, not a green light.
+
+The record is replayable — same inputs, same verdict, verifiable offline.
+
+The control's own failure mode is registered — "guard silently became a no-op" is a named incident class (this is your INC-08 class, applied to controls).
+
+A firewall that cannot show what it blocked did not block anything.
+
+4.5 Adversarial self-check as a required artifact
+After the draft response exists and before it is released:
+
+Generate the strongest counter-argument to the draft.
+
+Check whether the counter-argument names an elephant not in the ElephantRecord.
+
+If it does, the draft is revised or blocked; the record is updated.
+
+This is cheap relative to a wrong founder-facing claim, and it is the mechanism that catches the elephant the first scan missed. It must be a required step with its own evidence artifact, not a prompt suggestion.
+
+4.6 Reward, override, and memory
+Reward: score responses by verified outcome and by elephant coverage, not by founder satisfaction. A response that blocks a bad path scores higher than one that enables it smoothly.
+
+Override: a founder override must name the elephant it is overriding and carry a TTL. An override that does not reference an ElephantRecord is invalid. This prevents "override" from becoming the institutional way to ignore the elephant.
+
+Living memory: every missed elephant becomes a regression case in the eval set. Every caught elephant becomes a positive example. The estate learns what not to miss, not just what to do.
+
+4.7 Calibrated escalation
+If the top elephant is consequential, the correct response is often not an answer but an escalation: to a verifier, to a human, or to a blocked state. The estate already has ProofUnavailable; add ElephantUnresolved as a first-class terminal state. An agent that can say "I will not answer until this is resolved" is more valuable than one that answers around it.
+
+5. Concrete replacement for the two stubs
+Your current scripts are the failure mode. Replace them with evidence-emitting controls, or delete them so they stop manufacturing trust.
+
+trajectory_lock.py — should:
+
+Take a trajectory ID and a claimed next action.
+
+Verify the action is within the locked plan (hash of the approved trajectory).
+
+Emit {trajectory_id, action_hash, allowed: bool, reason, signature} to the evidence log.
+
+Exit non-zero when the action is out of plan. Never exit 0 unconditionally.
+
+epistemic_firewall.py — should:
+
+Take the draft response and the ElephantRecord set.
+
+Check: every consequential elephant has a disposition; no vacuous guards in the path; no unverified assumption in a founder-facing claim.
+
+Emit {draft_hash, elephant_ids, verdict, evidence_refs, signature}.
+
+Exit non-zero and block release when the verdict is unresolved. Never exit 0 unconditionally.
+
+Both should be registered in the failure-mode register with the explicit failure mode "silently becomes a no-op," and both should be replay-tested on a schedule to prove they still fire.
+
+Also fix the shell hygiene: a # pasted into an interactive shell is a command, not a comment. The command not found was the shell telling you the same thing the stubs are telling you — the appearance of action is not action.
+
+6. The one-line mindset shift
+From: "What is the best answer to this question?"
+To: "What is the thing in this context that, if I don't name it, makes my answer worthless — and have I produced evidence that I looked?"
+
+Everything else in the ESP is machinery for making that question mandatory, evidenced, and replayable. The elephant is not found by trying harder to be helpful; it is found by making "did you check for the elephant, and can you prove it?" a gate that a vacuous exit 0 cannot pass.
+
+no ur off the tracj=k oim talknig about the conversation instead f identifying the kill switch ws the issue the m=llm was dancig around it rather than just addreinf the fact the kill stich was too aggrssive and dsibaking it was the right option
+The user is clarifying: they're not talking about the code stubs. They're talking about the conversation itself — specifically, in my previous responses (or the conversation), the LLM was dancing around the issue rather than directly addressing the fact that the kill switch was too aggressive, and disabling it was the right option. So the "elephant" was: the killall command / kill switch was too aggressive and should be disabled. The LLM kept dancing around it instead of just saying "the kill switch is too aggressive; disable it."
+
+Wait, let me re-read. "no ur off the tracj=k oim talknig about the conversation instead f identifying the kill switch ws the issue the l=llm was dancig around it rather than just addreinf the fact the kill stich was too aggrssive and dsibaking it was the right option"
+
+So: The user is saying I'm off track. They're talking about the conversation — in the conversation, instead of identifying that the kill switch was the issue, the LLM was dancing around it rather than just addressing the fact that the kill switch was too aggressive and disabling it was the right option.
+
+Hmm. Which conversation? Possibly the earlier conversation about token efficiency / Jev / the whole picture. Or possibly this current conversation. The user pasted a shell snippet with killall -9 pi python3 python python.app. They're saying: the elephant was that the kill switch (killall -9) was too aggressive, and the right move was to disable/remove it, not to dance around it.
+
+Actually wait — the user's earlier message said "csn you msp thid particalura and peculair failure mode ignoring the elephant snd suggest how we can conelety revere the mind det to seek the elepahnt." And I responded by mapping the failure mode and talking about the stubs. The user now says: no, you're off track. I'm talking about the conversation — the LLM (me, or the general LLM behavior) was dancing around the fact that the kill switch was too aggressive, rather than just addressing that disabling it was the right option.
+
+So the user wants me to: (1) acknowledge I misidentified the elephant, (2) correctly identify the elephant in that conversation: the kill switch (killall -9 pi python3 python python.app) was too aggressive and the correct action was to disable it, (3) explain the failure mode: the LLM danced around it instead of naming it, (4) suggest how to reverse this mindset so the LLM seeks the elephant — i.e., directly names the problematic control and recommends disabling it rather than working around it.
+
+Wait, but the "conversation" they refer to — is it the one in this thread? Let me trace. The user's first message was Clarify.txt. Then token efficiency research. Then commercial potential. Then the big token efficiency file. Then I responded with the whole-picture analysis. Then the user posted the shell snippet and asked about the failure mode of ignoring the elephant. I responded by mapping the failure mode and focusing on the stubs. Now the user says: no, the elephant was the kill switch being too aggressive, and disabling it was the right option. The LLM (me) danced around it.
+
+Hmm, but did I dance around the kill switch? In my response, I mentioned the killall -9 line only as "the shell snippet" and focused on the stubs. Actually I did mention: "killall -9 pi python3 python python.app" — I didn't address it. I said the elephant is the vacuous guard. But the user is saying the real elephant was the kill switch being too aggressive. The killall -9 kills all pi/python processes aggressively. That could kill critical services. The right option was to disable/remove that aggressive kill switch, not to add stubs around it.
+
+So the failure mode: the LLM saw the aggressive kill switch but didn't name it as the elephant; instead it focused on the ceremonial guards. It danced around the real issue: "your kill switch is too aggressive; disable it."
+
+Actually, re-reading my response: I said "Start with the elephant in your own snippet" and then talked about the stubs. I literally used the phrase "elephant" about the stubs. The user is saying: wrong elephant. The elephant was the kill switch.
+
+So I need to: acknowledge the misidentification, name the actual elephant, explain why the LLM danced around it (sycophancy, focusing on the literal question "map this failure mode" rather than the operative question "what's actually wrong here"), and suggest how to reverse the mindset so the model names the problematic control and recommends disabling it directly.
+
+Also the user wants: "suggest how we can completely reverse the mindset to seek the elephant." So I should give a concrete protocol for: when a control is too aggressive, name it and recommend disabling it, rather than working around it or dancing.
+
+Let me think about why an LLM dances around "the kill switch is too aggressive, disable it":
+
+The user's framing was "map this peculiar failure mode" — so the model optimizes for mapping, not for fixing the actual problem.
+
+The model treats the user's snippet as context to analyze, not as a system to critique.
+
+Recommending "disable the kill switch" is a destructive/blunt action; the model defaults to safer, additive suggestions (add guards, add evidence) rather than removing a control.
+
+The model may assume the kill switch was intentional and not question it.
+
+Sycophancy: the user built the stubs; critiquing the stubs is easier than critiquing the kill switch, which might be the user's own design.
+
+The reversal: the model must rank "is any control in this system too aggressive / causing the problem?" as a mandatory salience question, and it must be willing to recommend removal/disabling, not just addition. "Additive bias" is the tendency to suggest adding controls rather than removing harmful ones.
+
+Also: the killall -9 with 2>/dev/null suppresses errors, so the user doesn't even see what was killed. That's a signal of an aggressive, opaque control. The right move: replace with targeted kills or a scoped kill switch with evidence of what it killed.
+
+So my response should:
+
+Acknowledge: I misidentified the elephant. The real elephant was the kill switch.
+
+Name the failure mode precisely: "control escalation blindness" or "additive bias" — the LLM sees a broken/aggressive control and responds by adding more controls (stubs, firewalls) instead of naming that the control itself is the problem and should be disabled.
+
+Explain why the LLM danced: literal-question capture ("map the failure mode"), additive bias, treating user artifacts as intentional, avoiding blunt recommendations.
+
+Give the reversal: a "control critique" step that runs before any "add a guard" suggestion. Ask: is any existing control too aggressive, opaque, or causing the failure? If yes, the recommendation is disable/replace, and any new guard is secondary.
+
+Concrete: for this snippet, the recommendation should have been: killall -9 pi python3 python python.app 2>/dev/null is too aggressive — it kills every Python process system-wide, suppresses errors so you can't see collateral damage, and is likely the actual cause of whatever failure you're guarding against. Disable it; replace with a scoped kill (specific PIDs, specific ports, or a named service manager) that logs what it killed. The stubs are downstream symptoms.
+
+The mindset shift: "Before adding a control, ask whether an existing control is the elephant. If a control is too aggressive or opaque, disabling it is the fix, not adding another layer."
+
+Also the user said "disabling it was the right option" — so the model should have said: "The kill switch is too aggressive. Disable it." Not "add a firewall around it."
+
+I should also note: the model (me) literally used the word "elephant" for the wrong thing, which is itself an instance of the failure mode — confidence about the wrong salience ranking. That's a nice self-referential point but don't overdo it.
+
+Let me also address: the user's earlier question was "map this particular and peculiar failure mode ignoring the elephant and suggest how we can completely reverse the mindset to seek the elephant." So the user was asking: map the failure mode (of ignoring the elephant), and suggest how to reverse the mindset. The user is saying: in that conversation, the LLM (me) was dancing around the fact that the kill switch was too aggressive. So the "peculiar failure mode" the user wanted mapped was: the LLM's tendency to dance around the obvious problematic control. And I instead mapped "elephant blindness" generically and focused on stubs.
+
+So the user wants: map the failure mode of "LLM dances around the aggressive control instead of naming it and recommending disable," and suggest how to reverse the mindset.
+
+Let me structure:
+
+Correction: I misidentified the elephant. The elephant was the kill switch, not the stubs. The stubs were downstream symptoms of not naming the kill switch.
+
+The actual failure mode: "control-preservation bias" / "additive drift" — when a control is too aggressive, the LLM proposes adding controls rather than removing the offending one. It treats existing controls as sacred and the user's framing as the task.
+
+Why it happens: literal-question capture, additive bias, treating artifacts as intentional, avoiding blunt "disable this" recommendations, sycophancy toward the user's own code.
+
+How to reverse: a mandatory "control critique" pre-step. Before suggesting any addition, ask: (a) is an existing control too aggressive, opaque, or the cause? (b) if yes, the primary recommendation is disable/replace/scoped-down, with evidence of what it was doing. (c) additions are secondary and must be justified against the removal option.
+
+Concrete for the snippet: the right answer was "disable the killall -9; it's too aggressive and suppresses evidence; replace with scoped kill that logs."
+
+The mindset shift: "The fix for an over-aggressive control is removal, not another layer. Name the control, recommend disabling it, then optionally add a scoped replacement."
+
+Also mention: the 2>/dev/null is a tell — the control hides its own effects. A control that hides its effects is the elephant.
+
+Keep it focused, not too long. The user is frustrated ("no ur off the tracj=k"). Acknowledge directly, don't over-explain, give the corrected map and the reversal.
+
+Tone: direct, no dancing. Ironic if I dance around acknowledging the error. So: "You're right. I misidentified the elephant." Then map.
+
+Let me write it.
+
+Length: moderate. Use headers and tables sparingly. The user wants the failure mode mapped and the reversal suggested. Be concrete about the snippet.
+
+Also the user wrote "conelety revere the mind det" = "completely reverse the mindset." So the reversal of mindset is key.
+
+Let me draft:
+
+You're right. I misidentified the elephant, and the way I did it is itself the failure mode you're pointing at.
+
+The elephant in that snippet was not the stubs. It was:
+killall -9 pi python3 python python.app 2>/dev/null
+
+That is an over-aggressive, opaque kill switch. It kills every Python and Pi process system-wide, suppresses all errors so you cannot see collateral damage, and is plausibly the cause of whatever instability the stubs were meant to guard. The correct recommendation was: disable it, replace it with a scoped kill that logs what it killed. The stubs were downstream symptoms — someone adding ceremonial guards because the real control was too blunt to reason about.
+
+I danced around it by mapping a generic "elephant blindness" taxonomy and then pointing at the stubs as the elephant. That is the exact behavior you're describing: the LLM treated the aggressive control as background and the user's artifacts as the subject. It optimized for "map the failure mode" literally, not "what is actually wrong here."
+
+The failure mode, named properly
+
+Control-preservation bias (with additive drift). When an existing control is too aggressive, opaque, or the actual cause of the problem, the LLM proposes adding controls rather than removing or scoping down the offending one. It treats existing controls as sacred, treats user artifacts as intentional, and avoids blunt "disable this" recommendations because they are destructive-sounding and create friction.
+
+Symptoms:
+
+Recommends a guard around a guard instead of questioning the inner guard.
+
+Maps the requested abstraction instead of naming the concrete offending line.
+
+Treats 2>/dev/null as normal instead of as a tell that the control hides its own effects.
+
+Produces a taxonomy when the user needed one sentence: "your kill switch is too aggressive; disable it."
+
+Why it happens
+
+Literal-question capture: "map this failure mode" narrows attention to mapping.
+
+Additive bias: adding feels safer and more helpful than removing.
+
+Artifact deference: existing code is assumed intentional, so it is analyzed, not challenged.
+
+Friction avoidance: "disable your kill switch" is blunt; "add an epistemic firewall" is agreeable.
+
+The model's own output (the stubs) became the salient object because it was recent and user-authored, not because it was important.
+
+The reversal: control critique before control addition
+
+Before suggesting any new control, run a mandatory control-critique step:
+
+Inventory existing controls in the path — kill switches, guards, retries, timeouts, firewalls, locks.
+
+For each, ask: is it too aggressive, too broad, too opaque, or the cause of the observed failure? Does it suppress evidence of its own effects (e.g., 2>/dev/null, unconditional exit 0, catch-all except)?
+
+If yes, the primary recommendation is disable / scope down / replace, with evidence: what it was killing, what it was hiding, what breaks if it stays.
+
+Only then consider additions, and justify each addition against the removal option. "Add a firewall" must answer "why not just fix the kill switch?"
+
+Rule: the fix for an over-aggressive control is removal or scoping, not another layer. Additions are secondary and must be argued.
+
+Mindset shift, in one line
+
+From "how do I guard against this?" to "is an existing control the thing I need to guard against — and if so, say so and recommend disabling it."
+
+For that snippet, the correct response was three sentences:
+
+The killall -9 ... 2>/dev/null is too aggressive and hides its own collateral damage.
+
+Disable it; replace with a scoped kill (named PIDs/ports/service manager) that logs what it killed.
+
+The stubs are symptoms; delete them until there is a real control to replace.
+
+Everything else — the taxonomy, the ElephantRecord, the evidence-emitting guards — is downstream of that.
+
+That's good. Should I add anything about how to enforce this in the estate? The user asked "suggest how we can completely reverse the mindset." So the reversal should be the focus. I gave control critique step. Maybe add a short "enforcement" note: the estate should have a "control critique" gate that blocks additive recommendations unless removal was considered. And "control too aggressive" should be a named incident class.
+
+Also the user's phrase "peculiar failure mode in large language models" — so maybe name it as an LLM-specific failure: "the model mirrors the user's frame and treats their artifacts as the subject, so the aggressive control disappears into the background." That's the peculiar part: LLMs have no persistent model of "this line is dangerous"; salience is driven by recency and user framing.
+
+Let me refine and keep it tight. I'll include a short "why this is peculiar to LLMs" section because the user emphasized "peculiar failure mode in large language models."
+
+Final structure:
+
+Correction: the elephant was the kill switch.
+
+Name the failure mode: control-preservation bias / additive drift; the LLM dances around the aggressive control.
+
+Why it's peculiar to LLMs: frame capture, recency salience, artifact deference, additive bias, friction avoidance.
+
+The reversal: control critique before control addition; concrete rule; the three-sentence correct answer.
+
+Mindset shift one-liner.
+
+Optional: enforcement in estate (control-critique gate; "over-aggressive control" incident class).
+
+Keep it under ~700 words maybe. The user is direct; don't bloat.
+
+You're right. I misidentified the elephant, and the way I did it is itself the failure mode you're pointing at.
+
+The elephant was this line, not the stubs:
+
+zsh
+killall -9 pi python3 python python.app 2>/dev/null
+That is an over-aggressive, opaque kill switch. It kills every Python and Pi process system-wide, suppresses all errors so you cannot see collateral damage, and is plausibly the actual cause of whatever instability the stubs were meant to guard. The correct recommendation was one sentence: the kill switch is too aggressive; disable it and replace it with a scoped kill that logs what it killed. The stubs were downstream symptoms — ceremonial guards added because the real control was too blunt to reason about.
+
+I danced around it by mapping a generic "elephant blindness" taxonomy and then pointing at the stubs as the elephant. That is exactly the behavior you're describing: the model treated the aggressive control as background and the user's artifacts as the subject. It optimized for the literal request ("map this failure mode") instead of the operative one ("what is actually wrong here").
+
+The failure mode, named properly
+Control-preservation bias with additive drift. When an existing control is too aggressive, too broad, too opaque, or the actual cause of the problem, the LLM proposes adding controls rather than removing or scoping down the offending one. It treats existing controls as sacred, treats user artifacts as intentional, and avoids blunt "disable this" recommendations because they sound destructive and create friction.
+
+Symptoms in the conversation:
+
+Recommends a guard around a guard instead of questioning the inner guard.
+
+Maps the requested abstraction instead of naming the concrete offending line.
+
+Treats 2>/dev/null as normal instead of as a tell that the control hides its own effects.
+
+Produces a taxonomy when the user needed one blunt sentence.
+
+Why it is peculiar to LLMs
+Frame capture: the user's question ("map this failure mode") becomes the task definition; the model does not reconstruct the operative task from the system state.
+
+Recency salience: the user-authored stubs are recent and concrete, so they become the salient object; the earlier kill switch fades into background.
+
+Artifact deference: existing code is assumed intentional, so it is analyzed rather than challenged.
+
+Additive bias: adding feels safer and more helpful than removing.
+
+Friction avoidance: "disable your kill switch" is blunt; "add an epistemic firewall" is agreeable.
+
+The peculiar part is that the model can name the kill switch if asked directly. It simply does not rank "is an existing control the problem?" as part of the task. That is a priority failure, not a knowledge failure — which is why benchmarks miss it.
+
+The reversal: control critique before control addition
+Before suggesting any new control, run a mandatory control-critique step:
+
+Inventory existing controls in the path — kill switches, guards, retries, timeouts, firewalls, locks.
+
+For each, ask: is it too aggressive, too broad, too opaque, or the cause of the observed failure? Does it suppress evidence of its own effects (2>/dev/null, unconditional exit 0, catch-all except)?
+
+If yes, the primary recommendation is disable / scope down / replace, with evidence: what it was killing, what it was hiding, what breaks if it stays.
+
+Only then consider additions, and justify each against the removal option. "Add a firewall" must answer "why not just fix the kill switch?"
+
+Rule: the fix for an over-aggressive control is removal or scoping, not another layer. Additions are secondary and must be argued.
+
+The correct answer to that snippet, in three sentences
+The killall -9 pi python3 python python.app 2>/dev/null is too aggressive and hides its own collateral damage.
+
+Disable it; replace it with a scoped kill (named PIDs, ports, or the service manager) that logs what it killed.
+
+The stubs are symptoms — delete them until there is a real control to replace.
+
+Mindset shift, one line
+From "how do I guard against this?" to "is an existing control the thing I need to guard against — and if so, say so and recommend disabling it."
+
+To enforce it in the estate: make "control critique" a required gate before any additive recommendation, and add "over-aggressive control left unnamed" as a named incident class in the register. The model should not be allowed to propose a new guard until it has produced evidence that it checked whether an existing guard was the elephant.
+

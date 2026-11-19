@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-002-minimax-big-ticket-7704",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "minimax-fenced-worker-01 (MiniMax-M2.7)",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-MINIMAX-BIG-7704",
+  "ticketScope": "BIG_TICKET_FENCED",
+  "createdAt": "2026-10-31T18:05:44Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "MiniMax M2.7 Big-Ticket #7704: Multi-Surface Telemetry Matrix & Spec Gate Synthesis",
+  "payloadSummary": "MiniMax M2.7 big-ticket execution routed strictly through the Consulting Lane Inbox channel (`chidionyema/estate-inbox`). Rust router intercepted direct worktree mutation, enforced 3-tries fence + 4096-token compaction, verified all 6 ESTATE-SPEC-STD-V2 gates, and promoted verified diff to Outbox.",
+  "bddContract": {
+    "given": "MiniMax M2.7 worker executing Big Ticket #7704 under strict Consulting Lane protocol",
+    "when": "node bin/estate-inbox-poll --json && node bin/estate-rust-router --json execute",
+    "then": "exit_code == 0 && test_pass:minimax_consulting_inbox_gate && file_exists:relay/outbox/OUTBOX-2026-1031-002.json"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-002"
+}

@@ -1,0 +1,32 @@
+# Olat Estate Genesis — Canonical Autonomous Agent Foundry Blueprint (SLSA L3 + Zero-Trust Crucible)
+[agent_foundry]
+blueprint_schema = "genesis.foundry.agent.v1"
+agent_code = "AGENT-PERS-01"
+name = "sovereign-wealth-fiduciary-01"
+domain_class = "PERSONAL_SOVEREIGN_AGENT"
+spiffe_id = "spiffe://olat.estate/foundry/agent/sovereign-wealth-fiduciary-01"
+asymmetric_leverage = "680x"
+
+[memory_and_context]
+pointer_index = "mem://genesis/*"
+lookup_passes = 1
+hot_store = "redb://tenant_olat/agents/pers_01"
+cold_lake = "gdrive5tb://parquet/agents/pers_01.zstd.parquet"
+
+[capabilities_and_effect_lattice]
+linked_capsules = ["CAPSULE-REG-04", "CAPSULE-REG-05", "CAPSULE-VOICE-DUPLEX-01"]
+effect_ceiling = "MutateIdempotent"
+max_attempts_per_fault = 3
+l0_deterministic_gate = true
+
+[security_and_trust]
+camel_dual_llm_taint_airlock = true
+fst_logit_mask_on_untrusted_data = "M_FST in {0, -inf}"
+ed25519_owner_sig_required_for_capital = true
+cif_execution_receipt_mandatory = true
+
+[crucible_and_continuous_eval]
+proptest_fuzz_cases = 256
+adversarial_edge_vectors = 12
+post_instruction_5axis_self_eval_min = 0.95
+voice_duplex_latency_ms = 12.4

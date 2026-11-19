@@ -1,0 +1,6 @@
+{
+  "name": "Mnemosyne — Frontier AI Memory & Non-Fungible Verification Suite",
+  "description": "Deep architectural research dossier, active focus & multitasking engine, context rot resolver, and cryptographic non-fungible verification benchmark suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

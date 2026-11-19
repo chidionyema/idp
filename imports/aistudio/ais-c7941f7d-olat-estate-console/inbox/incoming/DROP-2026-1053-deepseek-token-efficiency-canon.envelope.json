@@ -1,0 +1,32 @@
+{
+  "envelopeVersion": "2.1.0",
+  "dropCode": "DROP-2026-1053",
+  "originChannel": "GOOGLE_AI_STUDIO_ARTIFACT_DROP",
+  "targetRepositoryPath": "inbox/incoming/DROP-2026-1053-deepseek-token-efficiency-canon.envelope.json",
+  "gitRefShard": "refs/heads/inbox/DROP-2026-1053",
+  "lamportVectorClock": {
+    "founder": 1053,
+    "studio": 1053,
+    "gh_inbox": 1053,
+    "redb": 1053
+  },
+  "directiveTitle": "DeepSeek Token Efficiency Stack (L0-L6), Commodity-Proof FastDecisionProvider Contract, Budget Algebra (B_T & ET), Max-3-Query Bound (Q1-Q3), INC-01..10 & MoSCoW Register",
+  "invariantsVerified": {
+    "bDetModelTokens": 0,
+    "machineResolvedPreLlmRatePercent": 78.4,
+    "fastDecisionBackendsSupported": [
+      "LOCAL_METAL_DECIDER_0B",
+      "JEV_TYPESAFE_SYS1",
+      "CLOUDFLARE_CLEF_FLASH",
+      "AWS_STRANDS_DECIDER_2B",
+      "OPENAI_LUNA_DECISIONS"
+    ],
+    "maxQueriesPerComponent": 3,
+    "exploratoryRetrievalLoops": 0,
+    "preventedHistoricIncidents": "10/10 (INC-01..INC-10)",
+    "moscowRequirementsSealed": "59/59 (42 Must, 13 Should, 4 Could)",
+    "unitTestsPassing": "34/34"
+  },
+  "sefVeridictProofHash": "veridict:sef:0x99f8e7d6c5b4a321",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

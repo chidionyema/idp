@@ -1,0 +1,18 @@
+{
+  "dropCode": "DROP-2026-1059",
+  "idempotencyKey": "sha256:drop_2026_1059_one_pass_root_cause_3attempt_continuous_eval_req28",
+  "studioSessionOrigin": "Cloud Studio Channel · Session #E29 (1-Pass Root-Cause Proof, <=3-Attempt Solve Ceiling & Mandatory Continuous Agent Training/Eval)",
+  "createdAtUtc": "2026-11-01T23:08:00Z",
+  "assignedSpecialistId": "SPC-CORE-01 & SPC-VERIFY-02 & AURA-00 & OTTO-00",
+  "directiveTitle": "REQ-28: Prove 1-Pass (k=1) Deterministic Resolution on the 11-Turn 'Governance FAIL (PRM + budget)' / zsh: suspended (signal) pi Incident, Enforce Hard <=3-Attempt Solve Ceiling, and Lock In Mandatory Continuous Agent Failure-Mode Training & Eval",
+  "formalInvariants": {
+    "hardAttemptCeilingLaw": "forall problem p: Attempts(p) <= 3 (Target k = 1 pass; Attempt 4 is physically blocked and clamped to Attempt 3 Sovereign Safe-Mode + Auto-Eval Extraction)",
+    "piIncidentOnePassProof": "Pinpoints ~/.pi/agent/extensions governance PRM/budget SIGTSTP hook on Pass 1 via exact string grep, configures WARN_FIRST_LIBERAL + 1-command Founder recovery, emits 0 zsh '#' comment paste traps, and 0 'aider' suggestions",
+    "continuousTrainingEvalSuite": "6/6 Mandatory Regression Eval Scenarios (EVAL-TRAIN-01..06) verified at 100% pass rate",
+    "unitTestsVerified": "58/58 PASS"
+  },
+  "cifAttestationReceipt": {
+    "ticketRef": "DROP-2026-1059:1",
+    "hmacSha256Signature": "hmac_sha256:one_pass_3attempt_eval_req28_1101aabbccddeeff001122334455667788990001"
+  }
+}

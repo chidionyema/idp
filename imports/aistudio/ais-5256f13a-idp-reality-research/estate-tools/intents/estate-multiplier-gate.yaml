@@ -1,0 +1,26 @@
+name: estate-multiplier-gate
+description: >-
+  Unified Enforce, Monitor and Evaluate spine for the estate's exponential multiplier kernels
+  (idp#7497, #7499, #7506, #7248). Runs epistemic_loop.py fan-out across independent sources,
+  evaluates LIVENESS and GOAL via critical-watch.py over ~/.estate/heartbeats, and grades external
+  world progress plus the 3-strike LOOP breaker via epistemic_loop.py judge.
+class: read
+args:
+  mode:
+    type: string
+    default: "all"
+    description: "Which verification mode to run: all | enforce | monitor | evaluate"
+  json_output:
+    type: string
+    default: "false"
+    description: "Set to true to emit a single structured JSON receipt"
+door_s: 60
+halt_on_failure: true
+steps:
+  - name: run_enforce_monitor_evaluate
+    cmd: |
+      if [ {{json_output}} = "true" ]; then
+        python3 bin/estate-enforce-and-evaluate --json
+      else
+        python3 bin/estate-enforce-and-evaluate
+      fi

@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-001-claude-catalog-respec",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-CATALOG-7701",
+  "ticketScope": "STANDARD_SPEC_AUDIT",
+  "createdAt": "2026-10-31T18:02:11Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Re-Refine Machine-Generated Repo Catalog & Close Whole-Repo Export UI Gap",
+  "payloadSummary": "Claude generated the initial machine repo catalog in today's private repo, but the Founder wasn't aware of whole-repo export (.tar.gz / .bundle) and 3 delivery loopholes existed. Requesting Consulting Lane re-refinement to ESTATE-SPEC-STD-V2 and Outbox promotion.",
+  "bddContract": {
+    "given": "Claude's private repo catalog draft + whole-repo git bundle/tarball endpoints",
+    "when": "node bin/estate-catalog-export --json && node bin/estate-spec-enforce --json execute",
+    "then": "exit_code == 0 && file_exists:register/machine-repo-catalog.json && grep_match:WHOLE_REPO_EXPORT_READY"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-001"
+}

@@ -1,0 +1,24 @@
+{
+  "envelopeId": "DROP-2026-1074",
+  "schemaVersion": "genesis.inbox.envelope.v2",
+  "epoch": 1762055703,
+  "lamportClock": 1074,
+  "originSurface": "FOUNDER_DOCTRINE_RULING",
+  "proposerSpiffeId": "spiffe://olat.estate/founder/s1-constitutional-ruling",
+  "targetBranchProposal": "refs/heads/inbox/DROP-2026-1074",
+  "neverForcePushMain": true,
+  "baseCommitSha": "28f6cab296f0b5d8474df40c7e35a8bdc3663a3f",
+  "semanticTouchSet": {
+    "filesModified": [
+      "FOUNDER_DOCTRINE_DECISIONS.md",
+      "scripts/secrets/bitwarden-secret-manifest.json"
+    ],
+    "exportedSymbolsModified": [],
+    "intentSummary": "Resolve both in-flight agent blockers: (1) Confirm Post-OKE Serverless Doctrine (OKE & handoff fleet permanently retired; OCI account restricted to $0 Always-Free stateless ARM64 capsule workers only) and (2) Unblock P0.T2 backups immediately via chidionyema/argon Git bundle + 5TB Google DriveFS XChaCha20-Zstd WORM lake (R2 demoted to optional Bitwarden-synced Tier-3 mirror)."
+  },
+  "decisionsSealed": {
+    "decision1_postOkeServerlessDoctrine": "CONFIRMED_OKE_RETIRED_SERVERLESS_AND_STATELESS_ARM64_ONLY",
+    "decision1_ociAccountDisposition": "ALWAYS_FREE_ARM64_STATELESS_CAPSULES_ONLY_ZERO_OKE_ZERO_PAID_SKUS",
+    "decision2_p0t2Backups": "UNBLOCKED_VIA_GITHUB_ARGON_AND_5TB_GOOGLE_DRIVEFS_WORM_R2_OPTIONAL"
+  }
+}

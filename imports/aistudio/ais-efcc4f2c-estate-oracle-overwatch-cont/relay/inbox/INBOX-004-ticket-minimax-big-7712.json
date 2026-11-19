@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-004-ticket-minimax-big-7712",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "minimax-fenced-worker-01 (MiniMax-M2.7)",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-MINIMAX-BIG-7712",
+  "ticketScope": "BIG_TICKET_FENCED",
+  "createdAt": "2026-10-31T19:17:09.284Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "MiniMax M2.7 Big-Ticket #7712: Cross-Surface Telemetry & Spec Catalog Verification",
+  "payloadSummary": "Routed via chidionyema/estate-inbox so Consulting Lane audits ESTATE-SPEC-STD-V2 compliance before promoting to chidionyema/estate-outbox.",
+  "bddContract": {
+    "given": "minimax-fenced-worker-01 (MiniMax-M2.7) dispatches TICKET-MINIMAX-BIG-7712 to chidionyema/estate-inbox",
+    "when": "Consulting Lane poller runs bin/estate-inbox-poll && bin/estate-spec-enforce",
+    "then": "exit_code == 0 && test_pass:minimax_consulting_inbox_gate && file_exists:register/machine-repo-catalog.json"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-004"
+}

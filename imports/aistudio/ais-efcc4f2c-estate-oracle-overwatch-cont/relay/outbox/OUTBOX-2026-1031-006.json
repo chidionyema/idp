@@ -1,0 +1,30 @@
+{
+  "receiptId": "OUTBOX-2026-1031-006",
+  "sourceInboxEnvelopeId": "INBOX-006-claude-dual-router-deepseek-watchdog",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01 + deepseek-direct-nonrouter-01",
+  "verifiedAt": "2026-10-31T19:36:25Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (7/7 Gates PASS)",
+  "exitCode": 0,
+  "deliverySummary": "Executed Claude Inbox Next Work #2 (TICKET-CLAUDE-INBOX-7721): Deployed Dual-Engine Active-Active Router (bin/estate-router v2.5.0) + Standalone Non-Router Direct DeepSeek Socket (bin/deepseek-direct v2.5.0) with automatic R1 reasoning_content/temperature sanitization.",
+  "artifactsDelivered": [
+    "crates/estate-router/src/main.rs",
+    "bin/estate-router",
+    "bin/deepseek-direct",
+    "relay/outbox/OUTBOX-2026-1031-006.json"
+  ],
+  "rollbackCmd": "git checkout main -- crates/estate-router/src/main.rs bin/estate-router bin/deepseek-direct",
+  "cifHmacSignature": "b83f6d91e2614a72c590b3d1f882654390edcb231098afedcb76543212345678",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- crates/estate-router/src/main.rs bin/estate-router bin/deepseek-direct"
+  ]
+}

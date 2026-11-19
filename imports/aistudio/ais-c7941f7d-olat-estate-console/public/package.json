@@ -1,0 +1,41 @@
+{
+  "name": "olat-estate-genesis",
+  "private": true,
+  "version": "1.0.27",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit",
+    "test": "tsx --test src/lib/protocolEngine.test.ts",
+    "enforce": "tsx scripts/enforcers/enforce_i1_to_i8.ts",
+    "hop:sequencer": "tsx scripts/sequencer/inbox_hop_sequencer.ts",
+    "secrets:sync": "bash public/sync-bitwarden-to-github.sh",
+    "verify:release": "tsx scripts/verify/verify_release.ts",
+    "sync:github": "tsx scripts/sync/sync_genesis_live_to_github.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^8.3.0",
+    "express": "^4.21.2",
+    "dotenv": "^17.2.3",
+    "motion": "^12.23.24"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2",
+    "@types/express": "^4.17.21"
+  }
+}

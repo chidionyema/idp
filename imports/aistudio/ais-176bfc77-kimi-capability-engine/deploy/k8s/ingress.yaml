@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kimi-capability-first-engine
+  namespace: argon-genesis
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  tls:
+    - hosts:
+        - capability-engine.estate.argon.internal
+      secretName: kimi-capability-engine-tls
+  rules:
+    - host: capability-engine.estate.argon.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kimi-capability-first-engine
+                port:
+                  number: 80

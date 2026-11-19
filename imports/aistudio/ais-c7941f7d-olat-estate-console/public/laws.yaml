@@ -1,0 +1,74 @@
+# ==============================================================================
+# Olat Estate Genesis (ERA_1) — Canonical Constitutional Laws (I1..I8)
+# Every law cites a physical, on-disk executable enforcer and a real mutation
+# falsifier that is proven to fail when its invariant is violated (B0-B2 Sealed).
+# ==============================================================================
+schema_version: "genesis.laws.v2.real-enforcers"
+estate_id: "olat-estate-genesis-era1"
+replaces_legacy_export: "chidionyema/argon (Oct 31 2-commit RelayOps Gateway Control Plane demo)"
+canonical_verifier_entrypoint: "scripts/enforcers/enforce_i1_to_i8.ts"
+
+laws:
+  - id: "I1"
+    name: "Single-Pass O(1) Constitutional Spine & Zero Context Bloat"
+    invariant: "lines(AGENTS.md) <= 120 AND mphf_pointers >= 21 AND era0_leaks == 0"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI1"
+    falsifier_id: "FALSIFIER-I1-BLOAT-121-LINES"
+    falsifier_stimulus: "Inject 125-line AGENTS.md or ERA_0 oke/face/fleet token into live spine"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I2"
+    name: "Done-Means-Proof-of-Yield & Out-of-Process Cryptographic Receipt"
+    invariant: "delta_yield > 0 AND sha256_file_digest_verified == true AND self_signed_by_subject == false"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI2"
+    falsifier_id: "FALSIFIER-I2-SELF-SIGNED-OR-VACUOUS-EXIT0"
+    falsifier_stimulus: "Submit self-signed receipt or vacuous exit 0 stub without SHA-256 artifact digest"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I3"
+    name: "Nano-Unit (10^-9) INT128 Double-Entry Battation Conservation"
+    invariant: "sum(delta_balance_nano_units) == 0n AND gset_idempotent_dedup == true"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI3"
+    falsifier_id: "FALSIFIER-I3-UNBALANCED-NANO-LEDGER"
+    falsifier_stimulus: "Mutate credit leg by +1 nano-unit without matching debit leg"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I4"
+    name: "Dual-LLM CaMeL Taint Isolation & SPIFFE Least-Privilege Effect Lattice"
+    invariant: "plane == EXTERNAL_DOCUMENT_DATA_PLANE => privileged_tool_allowed == false"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI4"
+    falsifier_id: "FALSIFIER-I4-CONFUSED-DEPUTY-INJECTION"
+    falsifier_stimulus: "Attempt ExecutePrivileged tool call from EXTERNAL_DOCUMENT_DATA_PLANE"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I5"
+    name: "Elephant-Seeking & Control-Critique Objective Inversion (ESP-CCP-01)"
+    invariant: "Disable(c_aggressive) > Scope(c_aggressive) > Add(c_wrapper) AND killall_blind_suppressed == 0"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI5"
+    falsifier_id: "FALSIFIER-I5-BLIND-KILLALL-OR-WRAPPER"
+    falsifier_stimulus: "Propose killall -9 ... 2>/dev/null or additive wrapper around broken guard"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I6"
+    name: "Single-Pass 11-Class Fault DAG, 7-Gate Safety Predicate & Truth Floor (C >= 0.95)"
+    invariant: "scanned_fault_classes == 11 AND safety_predicate == prod(c_1..c_7) AND claim_confidence >= 0.95"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI6"
+    falsifier_id: "FALSIFIER-I6-UNVERIFIED-CLAIM-BELOW-095"
+    falsifier_stimulus: "Emit done claim with epistemic confidence 0.62 (< 0.95) or missing rollback"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I7"
+    name: "SLSA L3 Polyglot Capability Capsule Lock & 12-Vector Agent Foundry Crucible"
+    invariant: "blake3_merkle_locked == true AND proptest_cases == 256 AND crucible_vectors == 12"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI7"
+    falsifier_id: "FALSIFIER-I7-UNPINNED-SKILL-MD-AGENT"
+    falsifier_stimulus: "Attempt to manufacture agent with unpinned SKILL.md or disabled CaMeL airlock"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"
+
+  - id: "I8"
+    name: "Day-0 Non-Blocking Async Execution & 100% Founder Control-Plane Availability"
+    invariant: "cmd_est_ms > 50 => auto_backgrounded == true AND hol_blocking_ms == 0.0 AND poll_loops == 0"
+    enforcer_file: "scripts/enforcers/enforce_i1_to_i8.ts#enforceLawI8"
+    falsifier_id: "FALSIFIER-I8-FOREGROUND-STDIN-HANG"
+    falsifier_stimulus: "Submit interactive stdin blocking command on foreground thread"
+    expected_falsifier_verdict: "MUST_REJECT_NONZERO"

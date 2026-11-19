@@ -1,0 +1,6 @@
+{
+  "name": "Olat Estate — Protocol & Autonomous Fleet Console",
+  "description": "Protocol engineering, headless specialist teams, event-driven state machines, private inbox/outbox architecture, and instruction-to-yield tracking with founder review.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

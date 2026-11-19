@@ -1,0 +1,22 @@
+{
+  "envelopeVersion": "1.0.0-ERA_1",
+  "dropCode": "DROP-2026-1054",
+  "studioSessionOrigin": "Google AI Studio Channel · Session #E24 (Battation Enterprise Metering & CIF/Argon Synthesis)",
+  "privateRepoInboxPath": "inbox/incoming/DROP-2026-1054-battation-enterprise-metering-ledger.envelope.json",
+  "gitRefShard": "refs/heads/inbox/DROP-2026-1054 -> fast-forward main",
+  "directiveTitle": "Battation Enterprise Commercial Metering Service (INV-BAT-01..05), CIF Execution Receipt Verification (estate-execute --receipt), Unified Oracle Pass Rationing (P_oracle = $0 Tenant Charge), Bi-Temporal ASC 606 Watermarking & Argon/Greenlane 4-Step GitOps Handoff",
+  "assignedSpecialistId": "SPC-ECON-23 (Battation Metering & CIF Kernel Architect)",
+  "lamportVectorClock": "LVC[founder:1054, studio:1054, gh_inbox:1054, redb:1054]",
+  "idempotencyKey": "sha256:idemp:tenant_olat_meridian:DROP-2026-1054:1",
+  "cifExecutionReceipt": "hmac_sha256:cif:0x3ea01b2c4d5e6f708192a3b4c5d6e7f8",
+  "sparseMerkleRoot": "smt_root:blake3:0x3ec01f2b8a99e4b7_4",
+  "verifiedInvariants": [
+    "INV-BAT-01: INT128 (10^-9) Fixed-Point Ring & Zero-Sum Double-Entry Conservation (sum Delta B_a = 0)",
+    "INV-BAT-02: Idempotent Commutative Monoid G-Set Ingestion (L join {e_k} join {e_k} = L join {e_k})",
+    "INV-BAT-03: CIF HMAC-SHA256 Execution Receipts (ESTATE_RECEIPT_KEY) & Sparse Merkle Tree Invoice Roots",
+    "INV-BAT-04: Two-Phase Escrow Leases & Oracle Pass Rationing (POOR_ORACLE routed to System:OracleDefectExpense, $0 Tenant Charge)",
+    "INV-BAT-05: Bi-Temporal Watermarking (t_event vs t_ledger) & ASC 606 PRIOR_PERIOD_ADJUSTMENT"
+  ],
+  "verificationSuiteStatus": "38/38 Deterministic Unit Tests Passing · Triad (Spec = Tests = Runtime) Matched",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

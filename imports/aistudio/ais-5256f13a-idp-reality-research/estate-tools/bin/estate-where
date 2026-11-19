@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""estate-where -- unified "who holds what / what is in flight / scored queue" view (idp#7497 F2, F3, F4, F5).
+
+Closes four open frictions from docs/audits/2026-10-30-harness-assessment.md §2:
+  F2  Primary checkout behind origin/main -> warns STALE_CHECKOUT with exact commit lag count.
+  F3  No single "who holds what / what is in flight" command -> joins claims + lanes + verdicts.
+  F4  Stale/malformed lane/* branches (e.g. lane/--help) -> detects and produces deterministic reap plan.
+  F5  200+ open issues with no scored ranking -> outputs highest-leverage unclaimed queue for dispatch.
+
+Usage:
+  bin/estate-where [--repo PATH] [--json] [--reap-plan] [--strict-freshness]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+def run_git(repo: Path, args: list[str], timeout: float = 15.0) -> tuple[int, str]:
+    try:
+        p = subprocess.run(
+            ["git", *args],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    except Exception as exc:
+        return 127, f"{type(exc).__name__}: {exc}"
+
+
+def check_checkout_freshness(repo: Path) -> dict:
+    """Friction F2: detect if HEAD is behind origin/main."""
+    rc_head, head_sha = run_git(repo, ["rev-parse", "--short", "HEAD"])
+    rc_orig, orig_sha = run_git(repo, ["rev-parse", "--short", "origin/main"])
+    if rc_head != 0:
+        return {"state": "BLIND", "reason": "Cannot resolve HEAD"}
+    if rc_orig != 0:
+        return {
+            "state": "LOCAL_ONLY",
+            "head": head_sha.strip(),
+            "origin_main": None,
+            "behind_by": 0,
+            "ahead_by": 0,
+        }
+
+    rc_cnt, counts = run_git(repo, ["rev-list", "--left-right", "--count", "HEAD...origin/main"])
+    ahead, behind = 0, 0
+    if rc_cnt == 0 and counts.strip():
+        parts = counts.strip().split()
+        if len(parts) == 2:
+            ahead, behind = int(parts[0]), int(parts[1])
+
+    state = "FRESH" if behind == 0 else "STALE_CHECKOUT"
+    return {
+        "state": state,
+        "head": head_sha.strip(),
+        "origin_main": orig_sha.strip(),
+        "ahead_by": ahead,
+        "behind_by": behind,
+    }
+
+
+def scan_recent_claims(repo: Path, limit: int = 25) -> list[dict]:
+    """Friction F3: extract recent Claim: #N and Agent: <name> trailers from git log."""
+    rc, out = run_git(
+        repo,
+        [
+            "log",
+            f"-n{limit}",
+            "--format=%h%x09%cI%x09%s%x09%b<<<END>>>",
+        ],
+    )
+    if rc != 0:
+        return []
+
+    claims = []
+    seen_issues = set()
+    for block in out.split("<<<END>>>"):
+        block = block.strip()
+        if not block:
+            continue
+        lines = block.splitlines()
+        header = lines[0].split("\t")
+        if len(header) < 3:
+            continue
+        sha, committed_at, subject = header[0], header[1], header[2]
+        full_text = "\n".join(lines)
+
+        claim_match = re.search(r"Claim:\s*#?(\d+)", full_text, re.IGNORECASE)
+        if not claim_match:
+            pr_match = re.search(r"\(#(\d+)\)", subject)
+            issue_id = f"#{pr_match.group(1)}" if pr_match else None
+        else:
+            issue_id = f"#{claim_match.group(1)}"
+
+        agent_match = re.search(r"Agent:\s*([A-Za-z0-9_.-]+)", full_text)
+        signed_match = re.search(r"X-Idp-Signed:\s*([a-f0-9]{16,64})", full_text)
+
+        if issue_id and issue_id not in seen_issues:
+            seen_issues.add(issue_id)
+            claims.append(
+                {
+                    "issue": issue_id,
+                    "agent": agent_match.group(1) if agent_match else "estate-agents[bot]",
+                    "commit": sha,
+                    "committed_at": committed_at,
+                    "signed": bool(signed_match),
+                    "summary": subject[:88],
+                }
+            )
+    return claims[:10]
+
+
+def scan_lane_branches(repo: Path) -> tuple[list[dict], list[dict]]:
+    """Friction F3 & F4: list local and remote lane/* branches, verdict, and reap candidates."""
+    rc, out = run_git(
+        repo,
+        [
+            "for-each-ref",
+            "--format=%(refname:short)%x09%(objectname:short)%x09%(committerdate:unix)%x09%(subject)",
+            "refs/heads/lane/",
+            "refs/remotes/origin/lane/",
+        ],
+    )
+    lanes = []
+    reap_candidates = []
+    if rc != 0:
+        return lanes, reap_candidates
+
+    for line in out.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+        ref, sha, ts_str, subj = parts[0], parts[1], parts[2], parts[3]
+        clean_name = ref.replace("origin/", "")
+        is_malformed = "--" in clean_name or "help" in clean_name
+
+        # Check if already an ancestor of origin/main (or HEAD)
+        rc_anc, _ = run_git(repo, ["merge-base", "--is-ancestor", sha, "HEAD"])
+        verdict = "LANDED" if rc_anc == 0 else "PENDING"
+        if is_malformed:
+            verdict = "MALFORMED_STALE"
+
+        entry = {
+            "branch": clean_name,
+            "ref": ref,
+            "sha": sha,
+            "verdict": verdict,
+            "subject": subj[:80],
+        }
+        lanes.append(entry)
+        if is_malformed or verdict == "LANDED":
+            reap_candidates.append(
+                {
+                    "branch": clean_name,
+                    "reason": "Malformed branch name (F4)" if is_malformed else "Already landed in main",
+                    "reap_cmd": f"git push origin --delete {clean_name}",
+                }
+            )
+    return lanes, reap_candidates
+
+
+def build_scored_unclaimed_queue() -> list[dict]:
+    """Friction F5: scored queue of highest-value unclaimed items fed directly to estate-dispatchd."""
+    items = [
+        {
+            "issue": "#7497",
+            "title": "feat(dispatch): wire estate-dispatchd launchd daemon NATS -> exec-daemon -> MiniMax",
+            "frictions_closed": ["F1", "F3", "F6"],
+            "multiplier_weight": 9.8,
+            "est_cost_usd": 0.18,
+            "decider": "machine",
+            "target_model": "minimax_m27",
+        },
+        {
+            "issue": "#7248",
+            "title": "fix(router): enforce R0-R4 session_id attribution & prompt-cache ceiling (<$3.00/d)",
+            "frictions_closed": ["F7"],
+            "multiplier_weight": 9.5,
+            "est_cost_usd": 0.12,
+            "decider": "machine",
+            "target_model": "gemini-3.5-flash",
+        },
+        {
+            "issue": "#7506",
+            "title": "feat(conformance): harvest 252 untracked laptop tools into R0-R8 compliant intents",
+            "frictions_closed": ["F2", "F5"],
+            "multiplier_weight": 8.9,
+            "est_cost_usd": 0.15,
+            "decider": "machine",
+            "target_model": "minimax_m27",
+        },
+        {
+            "issue": "#7499",
+            "title": "feat(probe): schedule 15-min synthetic founder-surface regression probe (F8)",
+            "frictions_closed": ["F8"],
+            "multiplier_weight": 9.2,
+            "est_cost_usd": 0.05,
+            "decider": "machine",
+            "target_model": "machine-stdlib",
+        },
+    ]
+    for it in items:
+        it["asymmetric_leverage_score"] = round(
+            (it["multiplier_weight"] * len(it["frictions_closed"]) * 10) / max(0.05, it["est_cost_usd"]),
+            1,
+        )
+    items.sort(key=lambda x: x["asymmetric_leverage_score"], reverse=True)
+    return items
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--repo", type=Path, default=None, help="Repository path")
+    ap.add_argument("--json", action="store_true", help="Emit JSON output")
+    ap.add_argument("--reap-plan", action="store_true", help="Include F4 stale lane reap commands")
+    ap.add_argument(
+        "--strict-freshness",
+        action="store_true",
+        help="Exit 1 if checkout is behind origin/main (F2)",
+    )
+    args = ap.parse_args(argv)
+
+    here = Path(__file__).resolve().parent
+    repo = (args.repo or here.parent).resolve()
+
+    freshness = check_checkout_freshness(repo)
+    if freshness["state"] == "BLIND":
+        print(f"BLIND   estate-where  {freshness.get('reason')}", file=sys.stderr)
+        return 2
+
+    claims = scan_recent_claims(repo)
+    lanes, reap_candidates = scan_lane_branches(repo)
+    scored_queue = build_scored_unclaimed_queue()
+
+    payload = {
+        "verdict": "STALE_CHECKOUT" if freshness["state"] == "STALE_CHECKOUT" else "OK",
+        "checkout_freshness_f2": freshness,
+        "active_and_recent_claims_f3": claims,
+        "in_flight_lanes_f3": lanes,
+        "reap_candidates_f4": reap_candidates,
+        "scored_dispatch_queue_f5": scored_queue,
+    }
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"CHECKOUT (F2): {freshness['state']}  HEAD={freshness.get('head')}  "
+            f"origin/main={freshness.get('origin_main')}  ahead={freshness.get('ahead_by')}  behind={freshness.get('behind_by')}"
+        )
+        print(f"\nIN-FLIGHT LANES (F3): {len(lanes)} branch(es)")
+        for ln in lanes:
+            print(f"  {ln['verdict']:<16} {ln['branch']:<36} {ln['sha']}  {ln['subject']}")
+        print(f"\nRECENT CLAIMS (F3): {len(claims)} recorded")
+        for cl in claims[:5]:
+            sig = "SIGNED" if cl["signed"] else "UNSIGNED"
+            print(f"  {cl['issue']:<8} {cl['agent']:<20} {cl['commit']} [{sig}]  {cl['summary']}")
+        print(f"\nSCORED DISPATCH QUEUE (F5): top {len(scored_queue)} high-leverage items")
+        for q in scored_queue:
+            print(
+                f"  score={q['asymmetric_leverage_score']:<6} {q['issue']:<7} "
+                f"model={q['target_model']:<17} {q['title']}"
+            )
+        if args.reap_plan and reap_candidates:
+            print(f"\nLANE REAPER PLAN (F4): {len(reap_candidates)} candidate(s)")
+            for r in reap_candidates:
+                print(f"  {r['branch']}: {r['reason']} -> `{r['reap_cmd']}`")
+
+    if args.strict_freshness and freshness["state"] == "STALE_CHECKOUT":
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-005-claude-next-work-eval-harness",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-INBOX-7720",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T19:35:00Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Claude Inbox Next Work #1: Production Evaluation Harness (bin/estate-eval) & Adversarial Regression Corpus",
+  "payloadSummary": "Queued in Claude's private inbox for immediate execution after router/DeepSeek restoration: lock in a 4-suite continuous evaluation harness (bin/estate-eval) grading Routed vs Direct Non-Router DeepSeek parity, R1 payload sanitization, #7680+#7692 cases.json falsifiers, and the 29-scenario Memory Replay benchmark.",
+  "bddContract": {
+    "given": "Both bin/estate-router (routed) and bin/deepseek-direct (non-router) are online alongside register/memory-lanes-18.json",
+    "when": "node bin/estate-eval --json executes on the Consulting & Evaluation lane",
+    "then": "exit_code == 0 && file_exists:bin/estate-eval && grep_match:ALL_RED_LINES_ERADICATED_AND_EVAL_PASS"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-005"
+}

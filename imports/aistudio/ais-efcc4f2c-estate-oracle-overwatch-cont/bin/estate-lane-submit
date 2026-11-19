@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+/**
+ * bin/estate-lane-submit
+ * Production CLI for Ticket #42 Lane-Submit Memory Chokepoint & CIF HMAC Capture.
+ * Captures step execution outcome into .estate/memory-spool/spool.jsonl with HMAC-SHA256 verification.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { execSync } from 'child_process';
+
+const args = process.argv.slice(2);
+if (args.includes('--probe') || args.includes('--a2m-health')) {
+  console.log('[ESTATE-LANE-SUBMIT] PROBE_OK: Ticket #42 lane-submit capture hook operational.');
+  process.exit(0);
+}
+
+const ticketArg = args.find((a) => a.startsWith('--ticket='))?.split('=')[1] || 'TICKET-42';
+const dashDashIdx = args.indexOf('--');
+const cmdToRun = dashDashIdx !== -1 ? args.slice(dashDashIdx + 1).join(' ') : 'echo "LANE_SUBMIT_CHECK"';
+
+let stdoutPayload = '';
+let stderrPayload = '';
+let exitCode = 0;
+
+try {
+  stdoutPayload = execSync(cmdToRun, {
+    cwd: process.cwd(),
+    encoding: 'utf-8',
+    timeout: 15000,
+  }).trim();
+} catch (err) {
+  exitCode = err.status || 1;
+  stdoutPayload = err.stdout ? String(err.stdout).trim() : '';
+  stderrPayload = err.stderr ? String(err.stderr).trim() : String(err.message);
+}
+
+const secret = 'CIF_KERNEL_HMAC_KEY_ESTATE_V2_998102348a7f6e5c';
+const canonical = `${ticketArg}|1|${cmdToRun}|${stdoutPayload}|${exitCode}`;
+const hmacSignature = crypto.createHmac('sha256', secret).update(canonical, 'utf8').digest('hex');
+
+const spoolDir = path.resolve(process.cwd(), '.estate', 'memory-spool');
+fs.mkdirSync(spoolDir, { recursive: true });
+const spoolFile = path.join(spoolDir, 'spool.jsonl');
+
+const record = {
+  timestamp: new Date().toISOString(),
+  ticketId: ticketArg,
+  cmd: cmdToRun,
+  exitCode,
+  stdoutPayload,
+  stderrPayload,
+  hmacSignature,
+};
+
+fs.appendFileSync(spoolFile, JSON.stringify(record) + '\n', 'utf-8');
+console.log(
+  `[ESTATE-LANE-SUBMIT] Captured & Signed (${ticketArg}) · Exit: ${exitCode} · CIF-HMAC: ${hmacSignature.slice(
+    0,
+    16
+  )}...`
+);
+process.exit(exitCode);

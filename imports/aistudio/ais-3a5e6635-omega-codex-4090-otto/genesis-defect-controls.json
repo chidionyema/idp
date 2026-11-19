@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "2026.11.06",
+  "policy": "GENESIS_DEFECT_CONTROL_GATE",
+  "worktreeFallbackMode": "STRICT_TRACKED",
+  "controls": [
+    {
+      "id": "DEF-20261104-GATE-BYPASS-002",
+      "title": "Pre-push gate bypass via untracked worktree hook path",
+      "repo": "argon",
+      "severity": "CRITICAL",
+      "status": "CONTROL_VERIFIED",
+      "remediationRule": "Enforce strict hook path resolution in bin/idp-ci and commit genesis-defect-controls.json so isolated worktrees resolve the same registry.",
+      "verificationCommand": "node bin/verify_defect_controls.mjs --strict-worktree",
+      "verificationHash": "sha256:9021fa8c4d12",
+      "updatedAt": "2026-11-06T01:44:12Z"
+    },
+    {
+      "id": "DEF-20261104-VENDOR-IGNORE-001",
+      "title": "Unignored third-party vendor artifacts inflating argon-sync index (3,566 dirty entries)",
+      "repo": "argon-sync",
+      "severity": "HIGH",
+      "status": "CONTROL_VERIFIED",
+      "remediationRule": "Lock .gitignore vendor exclusions and archive session blobs into ~/.estate/snapshots/ outside the git index.",
+      "verificationCommand": "git -C ~/estate/argon-sync status --porcelain --ignored=matching",
+      "verificationHash": "sha256:3b77e019c88a",
+      "updatedAt": "2026-11-06T01:44:12Z"
+    },
+    {
+      "id": "DEF-20261104-RUST-DIRTY-001",
+      "title": "Cargo incremental build artifacts & Cargo.lock drift across 25 idp worktrees",
+      "repo": "idp",
+      "severity": "HIGH",
+      "status": "CONTROL_VERIFIED",
+      "remediationRule": "Route CARGO_TARGET_DIR to shared ~/.estate/cargo-target cache and prune 22 merged recovery worktrees.",
+      "verificationCommand": "cargo metadata --format-version 1 && df -h ~/.estate",
+      "verificationHash": "sha256:7d41c208e551",
+      "updatedAt": "2026-11-06T01:44:12Z"
+    }
+  ]
+}

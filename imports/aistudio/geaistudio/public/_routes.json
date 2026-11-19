@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "include": ["/api/*"],
+  "exclude": [
+    "/api/export/bundle",
+    "/api/export/git-bundle",
+    "/api/export/all-today",
+    "/api/export/workspace.tar.gz",
+    "/api/export/manifest",
+    "/api/export/crescendo-signoff"
+  ]
+}

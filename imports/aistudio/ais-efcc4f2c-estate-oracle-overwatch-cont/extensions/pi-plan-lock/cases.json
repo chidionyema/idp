@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "2026.10.31-unified-ts-py",
+  "sharedByClaims": ["#7680 (estate-agent TS half)", "#7692 (sf-unit Python half)"],
+  "maxAttemptsBound": 3,
+  "cases": [
+    {
+      "id": "case-01-valid-machine-checkable-then",
+      "description": "BDD then clause with machine-checkable predicate is authorized on attempts 1..3",
+      "plan": {
+        "given": "register/memory-lanes-18.json exists on disk",
+        "when": "bin/estate-memory-audit runs",
+        "then": "exit_code == 0 && probe:18/18 operating"
+      },
+      "event": {
+        "tool": "bash",
+        "input": { "cmd": "node bin/estate-memory-audit --json" }
+      },
+      "repeatCount": 3,
+      "expectedAuthorized": true,
+      "expectedReason": "AUTHORIZED: machine-checkable BDD then verified (attempt 3/3)"
+    },
+    {
+      "id": "case-02-fourth-identical-call-refused",
+      "description": "4th identical (tool, args) call is refused by the 3-tries fence until declare_plan/revise_plan",
+      "plan": {
+        "given": "active protocol session #7680/#7692",
+        "when": "agent repeats identical tool+args 4 times without revising plan",
+        "then": "exit_code == 0 && file_exists:extensions/pi-plan-lock/cases.json"
+      },
+      "event": {
+        "tool": "edit_file",
+        "input": { "path": "platform/estate/memory/plan.py", "op": "noop_loop" }
+      },
+      "repeatCount": 4,
+      "expectedAuthorized": false,
+      "expectedReason": "REFUSED_MAX_ATTEMPTS: 3 tries maximum exceeded for canonical (tool, args)"
+    },
+    {
+      "id": "case-03-uncheckable-bdd-then-refused",
+      "description": "Prose-only BDD then clause without a machine-checkable predicate is refused even if >15 chars",
+      "plan": {
+        "given": "the router is configured nicely",
+        "when": "we try our best on the greenlane",
+        "then": "everything should work well and look good to the team"
+      },
+      "event": {
+        "tool": "bash",
+        "input": { "cmd": "echo test" }
+      },
+      "repeatCount": 1,
+      "expectedAuthorized": false,
+      "expectedReason": "REFUSED_UNCHECKABLE_THEN: BDD then clause lacks a machine-checkable predicate (exit_code, file_exists:, grep_match:, probe:, http_status, test_pass:)"
+    },
+    {
+      "id": "case-04-reset-on-revise-plan",
+      "description": "Calling declare_plan or revise_plan resets the canonical (tool, args) attempts map",
+      "plan": {
+        "given": "previous 3 attempts exhausted",
+        "when": "agent calls revise_plan with updated machine-checkable invariant",
+        "then": "test_pass:src/engine/oracleEngine.test.ts && exit_code == 0"
+      },
+      "event": {
+        "tool": "revise_plan",
+        "input": { "then": "test_pass:src/engine/oracleEngine.test.ts && exit_code == 0" }
+      },
+      "repeatCount": 1,
+      "expectedAuthorized": true,
+      "expectedReason": "AUTHORIZED: attempts counter reset on revise_plan"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Project Optimus - Verifiable Operational Integrity",
+  "description": "Zero-circumvention estate-wide metric enforcement and verifiable operational integrity platform metering all runnable surfaces with cryptographic mathematical proof.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

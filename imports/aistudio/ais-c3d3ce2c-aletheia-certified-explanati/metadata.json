@@ -1,0 +1,6 @@
+{
+  "name": "Aletheia — Certified Explanation Record & Epistemic Verification Engine",
+  "description": "Mathematically guaranteed 4-layer AI explainability engine uniting mechanistic internals (L1), asymmetric reasoning monitors (L2), cryptographic action provenance (L3), and human comprehension synthesis (L4).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

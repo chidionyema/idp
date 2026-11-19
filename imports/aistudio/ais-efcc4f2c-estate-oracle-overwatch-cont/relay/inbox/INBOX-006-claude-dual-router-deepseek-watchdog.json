@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-006-claude-dual-router-deepseek-watchdog",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-INBOX-7721",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T19:35:30Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Claude Inbox Next Work #2: Dual-Engine Active-Active Watchdog (estate-router + deepseek-direct) & R1 Sanitizer",
+  "payloadSummary": "Second queued work item from Claude's inbox: ensure the Founder never loses fleet coverage by running Engine A (estate-router v2.5.0 Rust/Node Routed) and Engine B (deepseek-direct v2.5.0 Non-Router Direct Socket) side-by-side with automatic R1 reasoning_content/temperature sanitization and sub-5ms cross-engine failover.",
+  "bddContract": {
+    "given": "crates/estate-router/src/main.rs v2.5.0, bin/estate-router, and bin/deepseek-direct are installed",
+    "when": "node bin/estate-router --json && node bin/deepseek-direct --json && node bin/estate-rust-router --json execute",
+    "then": "exit_code == 0 && file_exists:bin/deepseek-direct && test_pass:dual_engine_active_active"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-006"
+}

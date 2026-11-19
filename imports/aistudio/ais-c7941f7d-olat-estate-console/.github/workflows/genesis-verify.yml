@@ -1,0 +1,61 @@
+name: "HOP-03: Genesis Airlock Verification (Grader != Builder)"
+
+on:
+  push:
+    branches:
+      - "main"
+      - "genesis-live"
+      - "inbox/**"
+  pull_request:
+    branches:
+      - "main"
+
+permissions:
+  contents: read
+
+jobs:
+  hop03_airlock_verify:
+    name: "HOP-03 Independent Out-of-Process Airlock Grader"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Proposed Branch or Drop Envelope
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies with Lockfile (npm ci)
+        run: npm ci
+
+      - name: Lint Codebase (TypeScript 0 Errors)
+        run: npm run lint
+
+      - name: Verify AGENTS.md <= 120 Lines Constitutional Cap (Law I1)
+        run: |
+          LINES=$(wc -l < AGENTS.md)
+          echo "AGENTS.md line count: ${LINES}"
+          if [ "${LINES}" -gt 120 ]; then
+            echo "FATAL: AGENTS.md exceeds 120-line constitutional limit (${LINES})"
+            exit 1
+          fi
+
+      - name: Execute All Deterministic Unit Tests (node:test)
+        run: npm test
+
+      - name: Execute All 8 On-Disk Law Enforcers (I1-I8) & Falsifiers
+        run: npm run enforce
+
+      - name: Execute Inbox Hop Sequencer
+        run: npm run hop:sequencer
+
+      - name: Build Production Applet
+        run: npm run build
+
+      - name: Non-Mutating Release Verification
+        run: npm run verify:release

@@ -1,0 +1,82 @@
+apiVersion: genesis.olat.estate/v1alpha1
+kind: AutonomousRunbookController
+metadata:
+  name: genesis-l4-self-healing-mesh
+  namespace: genesis-spine
+  annotations:
+    genesis.olat.estate/requirement: "REQ-26"
+    genesis.olat.estate/mphf-pointer: "mem://genesis/sre/fmea2100"
+    genesis.olat.estate/composite-availability-target: "99.9999%"
+    genesis.olat.estate/max-autonomous-mttr-ms: "45.0"
+spec:
+  founderNotificationPolicy:
+    mode: AMBIENT_1BIT_CALM_HORIZON
+    interruptOnSelfHealedFault: false
+    minVoiThresholdUsdForInterrupt: 2500
+    emitCryptographicReceiptToInbox: true
+  epistemicGapChaosFuzzer:
+    enabled: true
+    heartbeatIntervalSeconds: 6
+    probes:
+      - SHADOW_CHAOS_MUTATION_FUZZER
+      - KOOPMAN_RESIDUAL_ANOMALY_DETECTOR
+      - ADVERSARIAL_RED_TEAM_SYNTHESIZER
+    autoCompileZ3GuardAndPromoteToL4: true
+  activeActiveDistributedCells:
+    - cellCode: CELL-01-MACBOOK-METAL
+      substrate: "Rust redb + Apple Metal SIMD + Direct Kernel (0.4ms)"
+      slaPercent: 99.95
+      monthlyBurnUsd: 0.00
+    - cellCode: CELL-02-CLOUDFLARE-EDGE
+      substrate: "Anycast Workers + R2 Sparse Merkle Snapshots"
+      slaPercent: 99.99
+      monthlyBurnUsd: 0.00
+    - cellCode: CELL-03-ORACLE-ARM64
+      substrate: "Ampere A1 4-OCPU/24GB + Z3 Prover + Argon GitOps"
+      slaPercent: 99.95
+      monthlyBurnUsd: 0.00
+    - cellCode: CELL-04-BROWSER-OPFS
+      substrate: "WebAssembly Deterministic Protocol Engine + OPFS WAL"
+      slaPercent: 99.95
+      monthlyBurnUsd: 0.00
+  runbooks:
+    - fmeaCode: FMEA-GEN-01
+      runbookCode: RBK-GEN-01
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 0.8
+      action: "Switch to Hybrid Logical + Lamport Vector Clocks <M,T,C,G>"
+    - fmeaCode: FMEA-GEN-02
+      runbookCode: RBK-GEN-02
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 13.4
+      action: "MVCC shadow-root swap + O(log N) Sparse Merkle page re-hydration"
+    - fmeaCode: FMEA-GEN-03
+      runbookCode: RBK-GEN-03
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 4.2
+      action: "L0 Deterministic Gate (0 tokens) + FastDecisionProvider failover to Local Metal 0B"
+    - fmeaCode: FMEA-GEN-04
+      runbookCode: RBK-GEN-04
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 11.6
+      action: "300s dual-key overlap [kid_curr, kid_prev] + Battation TTL lease reaper"
+    - fmeaCode: FMEA-GEN-05
+      runbookCode: RBK-GEN-05
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 19.2
+      action: "Kalman gain ratchet K_k -> 0.92 + 3-tick deficit specialist eviction"
+    - fmeaCode: FMEA-GEN-06
+      runbookCode: RBK-GEN-06
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 1.4
+      action: "FST logit mask M_FST in {0, -inf} + CaMeL sandbox isolation + SPIFFE rotation"
+    - fmeaCode: FMEA-GEN-07
+      runbookCode: RBK-GEN-07
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 28.5
+      action: "OTTO-00 40ms dead-man switch preemption + 8-lane SIMD Map-Reduce re-sharding"
+    - fmeaCode: FMEA-GEN-08
+      runbookCode: RBK-GEN-08
+      tier: L4_PREDICTIVE_PREEMPTIVE_IMMUNITY
+      mttrMs: 3.1
+      action: "Promote Local MacBook Metal + OPFS to sovereign offline primary; G-Set merge on reconnect"

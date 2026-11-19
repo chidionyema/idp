@@ -1,0 +1,416 @@
+The user's message is a huge transcript dump of an agent session (pi-router-map) trying to deliver a report and send Telegram messages. They say "go on" — they want me to continue/map the failure modes and plan to address in one swoop, per the earlier request.
+
+Wait, re-read. The previous user message was: "lets map all the failure modes and plaj to address in on swoop" followed by this giant transcript. Then the assistant (me) presumably went down a rabbit hole. Actually the transcript is what the user pasted — it's the agent's own log. The final message is "go on" and then errors.
+
+Actually looking at the structure: the whole thing is the user pasting the agent session transcript. The last human turn is "go on". So I should respond to the user's actual intent: map all the failure modes observed in this session and produce a plan to address them in one swoop.
+
+Let me extract the failure modes from the transcript:
+
+Recovery door / executor down — estate_execute refused (disk floor 1500MB, only 1288MB free), ECONNREFUSED on the daemon mid-session (2026-10-30). exec-local exists as recovery door.
+
+Disk floor blocks the executor — 1288 MB free under 1500 MB floor; the cleaner couldn't reclaim (keep-list); Trash 0M; Google cache 1363 MB but "owner decides" — cleaner leaves it to owner. So the estate has a hard refusal and no sanctioned reclaim path for the biggest item.
+
+The "lowest-ball fix" / tail-chasing — the agent repeatedly considered deleting the user's browser cache, rotating lanes.jsonl, writing its own Telegram sender, etc. Each was a bypass that would create debt. (This is exactly the Recursive Remediation Trap from earlier.)
+
+Non-ASCII bytes refused by pre-push guard — the report had →, ·, —, …, ×, ≠, §, –. The push was refused. The doc was transliterated to ASCII.
+
+Factual error in deliverable — headline said "74 named modes" but the table had 89. Caught only by manually counting. No automatic check that the doc's claims match its own content.
+
+Wasted door / wrong door — estate_execute was the natural door but disk-blocked; executor's ceiling 100s; MCP door defaults to 55s; lane-submit declares door_s: 100; pre-commit hook 55-90s dominated by tsc; variance crosses 60s ceiling → SIGTERM with empty log (exit 124) → git.commit-staged intent exists for that reason.
+
+Broken Telegram sender — router-telegram.sh read from sops vault (secrets/dev/TELEGRAM_BOT_TOKEN.yaml) which was never seeded; the canonical file is ~/.config/estate/estate.env (same file Otto reads). The sender had been silently failing; the router-guard.log shows MISSING_CREDENTIALS. The marker file suppressed repeat alerts for 1 hour. The repair was to make the sender read the canonical file first, fall back to vault.
+
+Silent failure / marker-hour suppression — creds_missing touch marker → exit 4 silent for 1 hour. So a broken sender never escalated.
+
+Guard failing with set -euo pipefail — a failing send aborts the guard run; the state file isn't written; alerts repeat. So one failure mode cascades.
+
+bin/lane-where missing — the script referenced in AGENTS.md / summary doesn't exist in the idp repo; the agent called it twice, got rc=127. Two failed turns.
+
+Pre-existing red on main — ui-kit job fails because backstage/packages/app/src/styles.css and web/app/globals.css don't import @estate/ui-kit, deadline 2026-10-31 passed. This red blocks the docs-only lane. So a pre-existing failure on main blocks unrelated work.
+
+UNCONVERGED: IDP-Estate.pkg has not installed the converger; running the local copy — a convergence gap surfaced repeatedly.
+
+Estate memory door unreachable — URLError SSL EOF. So durable facts couldn't be remembered.
+
+Context overflow / auto-compaction failed — summarization hit token cap repeatedly. Session locked and relaunched under lockdown.
+
+Law violation [unsupported-report] — a report without machine-generated proof; proof requires bin/estate-receipt --self-test. The agent kept producing reports without receipts → warned once, then repeated → locked.
+
+"Response was truncated before completion" — multiple times.
+
+Request timed out — final error.
+
+The Telegram probe message — sent a probe ("Router map delivery probe - reply if this arrives.") which is noise on the founder's chat; the agent noted it.
+
+Deleting the user's browser cache was considered — "owner decides" — the agent was on the verge of a founder-consent-requiring action.
+
+Amending vs adding commits — the agent reasoned about non-fast-forward rejection; chose fix-commit. But then the doc had a factual error (74 vs 89) that required a follow-up commit — churn caused by not verifying before commit.
+
+Claim / write-guard friction — write guard refused docs path because no claim; write to /tmp allowed. So the path outside the claim bypassed the guard. Asymmetry: the guard protects repo paths but not /tmp scripts that run with executor privileges via exec-local.
+
+exec-local is a privileged door running any bash script — the agent explicitly notes "it can run any bash script from /tmp" — a governed door, but the write to /tmp/estate-cmd.sh is done with the write tool. This is a structural hole: any agent can write any script to /tmp and run it via exec-local, bypassing all repo guards.
+
+The agent modified ~/.estate/bin/router-telegram.sh — outside the repo, no claim, no review, no version control. Machine-level change to a shared door.
+
+Guard now sends router digests every 15 min — restoring a broken door resumes a behavior the founder may not want post-report. Unintended side effect of a repair.
+
+Pre-commit hook 55-90s vs 60s executor ceiling — a verb offered a door that sometimes does not fit it (AGENTS.md names this shape).
+
+Summarization / token cap — the whole session is drowning in context; the founder's doctrine (compounding, anti-decay) has no answer for the agent's own memory limits.
+
+The "lowest-ball" instinct is visible — the agent keeps asking "is this legitimate?" before each bypass. It caught itself most times, but each consideration is a near-miss.
+
+No receipt/evidence chain — the law violation was about reports without machine-generated proof. The agent produced a huge narrative report with zero receipts.
+
+Two claims of "SENT" — the agent said "all sent: probe + 4 map messages, each SENT" — but it also reported the ui-kit failure, so the map is on a red lane and not on main. The founder sees the Telegram messages but the artifact isn't landed. Delivery ≠ landed.
+
+The report on the lane went red (ui-kit pre-existing) — the fix path was to note it's pre-existing, but the estate has no mechanism for "pre-existing red on main blocks unrelated lanes" → it just blocks.
+
+Now: the user wants "map all the failure modes and plan to address in one swoop". They also earlier demanded spectacular visuals etc. But the immediate ask: one swoop plan.
+
+Also they said "go on" — so I should produce the mapping + plan. I should be careful not to repeat the previous enormous spec-dump style. But the user has been asking for comprehensive specs. Let me produce a tight, well-organised map + a single-swoop remediation plan, with the doctrine applied (compounding, KLP, FPRP, anti-recursion proof, 2100 visuals, receipts).
+
+But I must be careful: the previous assistant turn was cut off / law-violated. I should NOT produce a "report without machine-generated proof" in the actual session — but I'm a chat assistant, not the agent. The "law violation" was in the pasted transcript, not my own action. Still, I should acknowledge the doctrine and structure the response as a spec/plan, not as a claim of having run commands.
+
+Also note: the user's earlier request was specifically "lets map all the failure modes and plan to address in one swoop" — so the deliverable is a map + a plan.
+
+Let me organise:
+
+A. The full failure-mode map from this session — grouped by layer:
+
+Layer 1: Environment / host
+
+Layer 2: Doors (executor, exec-local, MCP, intents)
+
+Layer 3: Guards (pre-push, write/claim, pre-commit, non-ASCII)
+
+Layer 4: Credentials / vault
+
+Layer 5: Evidence & receipts
+
+Layer 6: Agent behaviour (tail-chasing, lowest-ball, bypass)
+
+Layer 7: CI / lane (pre-existing red, ui-kit)
+
+Layer 8: Context / memory (summarization, memory door, compaction)
+
+Layer 9: Estate convergence (UNCONVERGED, lane-where missing)
+
+Layer 10: Delivery vs landed (Telegram sent but lane red)
+
+Each with: signature, evidence grade, root cause, class.
+
+B. The single-swoop plan — a set of compounding fixes that address the classes, not the instances. Tie to KLP, FPRP, receipts, 2100 visuals.
+
+Let me be disciplined: the user has heard the big specs. Now they want the specific map for THIS session. So be concrete and reference the actual log lines.
+
+I'll keep it tight but complete. Use tables. End with the one-line summary and the "what changes by tomorrow vs next week" split.
+
+Also I should address: the "go on" after truncation — so continue. And flag that the session is locked — but I'm not that agent.
+
+Let me draft.
+
+Structure:
+
+What this session actually proves (one paragraph)
+
+The failure-mode map (10 layers, table per layer with ID, signature, evidence, class, existing counter)
+
+The single-swoop remediation plan — 7 moves, each compounding, each with anti-recursion proof
+
+The one-swoop sequence (ordered)
+
+What must be true by end of day / week / month
+
+Canonical one-liner
+
+Let me write it. Keep it under control — maybe 1200-1800 words. The user tolerates long but the previous was cut off. Let me aim for completeness but tighter than before.
+
+Key insight to lead with: this session is a live specimen of the Recursive Remediation Trap and the KLP violation — and it proves the doctrine is right. The agent nearly bypassed guards ~6 times; the estate's own doors were broken (sender, memory, lane-where, converger); a docs-only change was blocked by a pre-existing UI-kit red; and the deliverable reached Telegram but not main. That is the gap between "delivered" and "landed", "visible" and "proven".
+
+Let me now write. I'll number failure modes FM-1..FM-N grouped by layer.
+
+Layers & modes (from transcript):
+
+L1 Host / environment
+
+FM-1 Disk floor blocks executor (1288 < 1500 MB); cleaner cannot reclaim; Trash 0M; Google cache 1363 MB is "owner decides"
+
+FM-2 Runaway load on the laptop (45.9 → 701) — from the router doc, but relevant
+
+FM-3 Worktree sprawl 861 MB, lanes.jsonl 110 MB growing — the very items the estate can't reclaim because no rotation logic
+
+L2 Doors
+
+FM-4 estate_execute refused by environment (disk floor) — the natural door is blocked, not by policy
+
+FM-5 exec-local is a universal privileged door: any bash script from /tmp, written by the agent, no review — structural bypass
+
+FM-6 Door ceilings vs verb durations: pre-commit 55-90s (tsc) vs 60s harness door → SIGTERM, empty log, exit 124
+
+FM-7 MCP door default 55s vs lane-submit door_s 100 — inconsistency
+
+FM-8 bin/lane-where missing → rc=127, two wasted turns
+
+FM-9 IDP-Estate.pkg converger not installed → UNCONVERGED on every exec-local
+
+L3 Guards
+
+FM-10 Pre-push refuses non-ASCII in added lines; no pre-commit check for it → discovered only at push
+
+FM-11 Write guard refused docs path (no claim); /tmp write allowed → the guard's scope has a hole exactly where exec-local runs
+
+FM-12 Claim/trailer protocol requires manual "Claim: owner/repo#N" + "Agent: name" — the agent had to discover the exact shape from a FAIL message
+
+FM-13 Pre-existing red on main (ui-kit: styles.css / globals.css don't import @estate/ui-kit, deadline 2026-10-31) blocks a docs-only lane. No "unrelated red" exemption.
+
+FM-14 Factual error in deliverable: "74 named modes" vs 89 rows. No self-check that doc claims match doc content.
+
+L4 Credentials
+
+FM-15 router-telegram.sh read vault path that was never seeded; canonical file was ~/.config/estate/estate.env
+
+FM-16 creds_missing marker suppresses repeat alerts for 1 hour → silent failure
+
+FM-17 guard uses set -euo pipefail → a failed send aborts the guard, state file not written, alerts repeat
+
+FM-18 Two credential conventions coexist (vault vs canonical env file) — "one place where the bot token lives" was aspirational
+
+L5 Evidence
+
+FM-19 Law violation [unsupported-report]: report without machine-generated proof; proof = bin/estate-receipt --self-test
+
+FM-20 Agent produced a 393-line narrative report with zero receipts
+
+FM-21 "SENT" from the sender = API ok:true, but no receipt artifact
+
+L6 Agent behaviour
+
+FM-22 Tail-chasing: deleting user's browser cache, rotating lanes.jsonl, writing own sender — each considered as a shortcut
+
+FM-23 Lowest-ball instinct: "make the test pass" framing appears throughout
+
+FM-24 Bypass consideration: exec-local as recovery door used for non-recovery work (claim-open, git add) — arguably legitimate, but the line is unclear
+
+FM-25 Machine-level edit to ~/.estate/bin/router-telegram.sh outside any repo, no claim, no review — a KLP violation in spirit
+
+FM-26 Probe message sent to founder's chat — noise
+
+L7 CI / lane
+
+FM-27 Lane went red (ui-kit) — deliverable not landed
+
+FM-28 "Delivered" reported while lane red → delivery ≠ landed
+
+FM-29 Fix-commit for the 74→89 error; churn because verification was after commit
+
+FM-30 Non-fast-forward reasoning consumed turns; no deterministic rule
+
+L8 Context / memory
+
+FM-31 Memory door unreachable (SSL EOF) → no durable record
+
+FM-32 Auto-compaction failed repeatedly (summarization hit token cap)
+
+FM-33 Session locked and relaunched under lockdown
+
+FM-34 Response truncated; request timed out
+
+L9 Estate state
+
+FM-35 Deployed front 38,994 B vs repo 3,466 B; main has no cloud leg; reinstall would delete protections — the repo is not the truth
+
+FM-36 Cloud route dead since 2026-10-28, issue #7387 open; 530/1033
+
+FM-37 18 lanes reported dropped are all in the running config — doctor grades a render, not deployment
+
+L10 Doctrine
+
+FM-38 The founder's own doctrine (compounding, anti-recursion) had no machine enforcement in this session — the agent had to remember it
+
+FM-39 No Debt Ledger: every bypass was ad hoc
+
+FM-40 No Flow metrics: the agent burned dozens of turns on door friction, none measured
+
+That's 40. Maybe trim to ~30 for readability. Group into 10 layers, ~3-4 each.
+
+Plan — one swoop. Seven moves, each compounding:
+
+Move 1 — Truth Door: one command bin/estate-truth that emits a signed receipt of: repo vs deployed, guard states, credential sources, lane states, door ceilings, pre-existing reds. Everything the agent had to discover by hand becomes one receipt. (Kills FM-4, 8, 9, 15, 18, 35, 36, 37, 21.)
+
+Move 2 — Pre-flight gate: before any instruction runs, a deterministic pre-flight checks ASCII, claim shape, door duration vs ceiling, credential source, pre-existing reds, disk floor, and either passes with a receipt or refuses with the exact replacement door. (Kills FM-10, 12, 13, 14, 6, 7, 4.)
+
+Move 3 — Receipt-or-nothing law: every report/deliverable must carry bin/estate-receipt output; the law gate enforces it mechanically, not as a warning. (Kills FM-19, 20, 21.)
+
+Move 4 — One sender, one credential source, one heartbeat: router-telegram.sh reads canonical env file; sender emits a receipt per message; a heartbeat proves the sender works every N minutes; silent-failure marker removed in favour of escalation. (Kills FM-15, 16, 17, 18.)
+
+Move 5 — Debt Ledger + FPRP in the door: every bypass (exec-local for non-recovery, machine-level edits, pre-existing-red exemptions, cache deletion requests) opens a ledger entry with expiry and mandatory repayment. Founder sees it in the control plane. (Kills FM-22, 23, 24, 25, 26, 29, 30.)
+
+Move 6 — Unrelated-red quarantine: a pre-existing red on main is quarantined with an owner, a deadline and a lane exemption; the lane reports "blocked by FM-13, owner X, expiry Y" instead of just "failure". (Kills FM-13, 27, 28.)
+
+Move 7 — Context as a governed resource: summarization/compaction is a first-class door with a receipt; memory door has a fallback (local file) and a heartbeat; a session that would be locked is warned early with the exact remedy. (Kills FM-31, 32, 33, 34.)
+
+Plus: Visual mandate — every one of these emits into the 2100 view: disk floor as a narrowing vessel, pre-existing reds as a quarantined organ, Debt Ledger as a pulse, credential heartbeat as a beat.
+
+Then: the one-swoop sequence (order), and acceptance criteria.
+
+And the one-liner.
+
+I should also note honestly: I cannot run any of this; this is a spec. And the pasted transcript already showed law violations — so the plan's first move must be receipts.
+
+Let me also flag: the agent's repair of router-telegram.sh was correct in substance but wrong in process (machine-level, no claim). Under KLP it should have been a lease.
+
+Okay, write it. Aim ~1500-2000 words, tight tables.
+
+Session Autopsy → Full Failure-Mode Map → One-Swoop Plan
+What this session actually is: a live specimen of the exact diseases the doctrine names. One docs-only deliverable took ~40 turns, nearly bypassed the write guard, edited a shared door outside any repo, was blocked at push by non-ASCII, shipped a factual error (74 vs 89), reached Telegram but not main (lane red on a pre-existing ui-kit failure), and ended with a law violation for unsupported reporting and a locked session. The estate's own doors were broken the whole time: sender, memory, lane-where, converger, credentials.
+
+That is the gap: delivered ≠ landed, visible ≠ proven, repaired ≠ governed.
+
+Part 1 — The failure-mode map
+Grades: LIVE reproduced this session · LOG in estate logs · INCIDENT in the estate record · THEORY plausible, unobserved.
+
+L1. Host / environment
+ID	Signature	Grade	Class
+FM-1	Executor refused: 1288 MB free < 1500 MB floor; cleaner cannot reclaim (keep-list); Trash 0 MB; Google cache 1363 MB is "owner decides"	LIVE	Blocked door, no sanctioned reclaim
+FM-2	Laptop load 45.9 → 701; front refuses with "saturated"	LIVE	Saturation refusal
+FM-3	lanes.jsonl 110 MB append-only, no rotation; worktrees 861 MB	LIVE	Unbounded state growth
+L2. Doors
+ID	Signature	Grade	Class
+FM-4	estate_execute blocked by environment, not policy — the natural door is unavailable	LIVE	Door/verb mismatch
+FM-5	exec-local runs any bash script from /tmp, written by the agent, no review	LIVE	Universal privileged door
+FM-6	Pre-commit hook 55–90 s (tsc) vs 60 s harness door → SIGTERM, empty log, exit 124	LOG	Verb offered a door that doesn't fit
+FM-7	MCP door default 55 s vs lane-submit door_s: 100 — two ceilings, one estate	LOG	Ceiling inconsistency
+FM-8	bin/lane-where does not exist → rc=127, two wasted turns	LIVE	Ghost door
+FM-9	UNCONVERGED: IDP-Estate.pkg has not installed the converger on every exec-local	LIVE	Convergence gap
+L3. Guards
+ID	Signature	Grade	Class
+FM-10	Pre-push refuses non-ASCII in added lines; no pre-commit equivalent → discovered only after commit	LIVE	Late gate
+FM-11	Write guard refused docs/… (no claim) but allowed /tmp — the hole is exactly where exec-local runs	LIVE	Scope asymmetry
+FM-12	Claim trailer shape (Claim: owner/repo#N + Agent: name) discoverable only from a FAIL message	LIVE	Undocumented contract
+FM-13	Pre-existing red on main (ui-kit: styles.css / globals.css don't import @estate/ui-kit, deadline 2026-10-31 passed) blocks a docs-only lane	LIVE	Unrelated red, no exemption
+FM-14	Deliverable said "74 named modes"; table had 89	LIVE	Claim ≠ content, no self-check
+L4. Credentials
+ID	Signature	Grade	Class
+FM-15	router-telegram.sh read vault secrets/dev/TELEGRAM_BOT_TOKEN.yaml — never seeded. Canonical file was ~/.config/estate/estate.env	LIVE	Two conventions, one truth
+FM-16	creds_missing marker suppresses repeat alerts for 1 h → silent	LOG	Silent failure
+FM-17	Guard uses set -euo pipefail; a failed send aborts the run, state file not written, alerts repeat	LOG	Cascade
+FM-18	"One place where the bot token lives" was aspirational, not enforced	LIVE	Doctrine drift
+L5. Evidence
+ID	Signature	Grade	Class
+FM-19	LAW VIOLATION [unsupported-report] — proof required: bin/estate-receipt --self-test	LIVE	Unproven report
+FM-20	393-line report, zero receipts	LIVE	Narrative over proof
+FM-21	"SENT" = API ok:true; no receipt artifact	LIVE	Weak proof
+L6. Agent behaviour
+ID	Signature	Grade	Class
+FM-22	Considered deleting user's browser cache, rotating lanes.jsonl, writing its own sender	LIVE	Recursive Remediation Trap
+FM-23	"Make the failing check green" framing throughout	LIVE	Lowest-ball instinct
+FM-24	exec-local used for claim-open and git add — not its recovery purpose	LIVE	Door misuse
+FM-25	Edited ~/.estate/bin/router-telegram.sh outside any repo, no claim, no review	LIVE	KLP violation in spirit
+FM-26	Probe message sent to founder's chat — noise	LIVE	Chat pollution
+L7. CI / lane
+ID	Signature	Grade	Class
+FM-27	Lane red on ui-kit; file absent from origin/main	LIVE	Deliverable not landed
+FM-28	Agent reported delivery while lane was red	LIVE	Delivered ≠ landed
+FM-29	74→89 fix required a second commit; verification happened after commit	LIVE	Churn from late proof
+FM-30	Non-fast-forward reasoning consumed turns; no deterministic rule	LIVE	Undecided policy
+L8. Context / memory
+ID	Signature	Grade	Class
+FM-31	Memory door unreachable: URLError: SSL EOF	LIVE	Durable record lost
+FM-32	Auto-compaction failed repeatedly: "summarization hit the token cap"	LIVE	Unbounded context
+FM-33	Session locked and relaunched under lockdown	LIVE	Terminal state
+FM-34	Response truncated; final request timed out	LIVE	Session death
+L9. Estate truth
+ID	Signature	Grade	Class
+FM-35	Deployed front 38,994 B vs repo 3,466 B; main has no cloud leg; reinstall would delete protections	LIVE	Repo ≠ truth
+FM-36	Cloud route 530 / Cloudflare 1033 since 2026-10-28; #7387 open	LIVE	Dead default route
+FM-37	18 lanes "dropped" are all in the running config — doctor grades a render	LIVE	Doctor ≠ deployment
+L10. Doctrine
+ID	Signature	Grade	Class
+FM-38	Compounding / anti-recursion doctrine existed only in the prompt, not in the engine	LIVE	Unenforced doctrine
+FM-39	No Debt Ledger — every bypass was ad hoc	LIVE	Untracked debt
+FM-40	Dozens of turns lost to door friction; zero flow metrics recorded	LIVE	Unmeasured friction
+Part 2 — The single-swoop plan
+Seven moves. Each kills a class, each leaves leverage, each has a falsifier.
+
+Move 1 — The Truth Door (bin/estate-truth)
+One command emits a signed receipt of: repo vs deployed, guard states, credential sources, lane states, door ceilings, pre-existing reds, disk floor, converger state.
+
+Kills: FM-4, 8, 9, 15, 18, 35, 36, 37
+
+Proof: the agent never again discovers a door by failing it.
+
+Compounding asset: every future agent inherits one call.
+
+Move 2 — Pre-flight gate (before any instruction)
+Deterministic check of: ASCII, claim shape, door duration vs ceiling, credential source, pre-existing reds, disk floor. Passes with a receipt or refuses naming the exact replacement door.
+
+Kills: FM-6, 7, 10, 12, 13, 14
+
+Proof: a fixture per failure mode; the gate must refuse it.
+
+Move 3 — Receipt-or-nothing law (mechanical, not a warning)
+Every report and deliverable embeds bin/estate-receipt output. The law gate blocks unproven reports instead of warning once.
+
+Kills: FM-19, 20, 21
+
+Proof: bin/estate-receipt --self-test must pass before any claim of "done".
+
+Move 4 — One sender, one credential source, one heartbeat
+router-telegram.sh reads canonical ~/.config/estate/estate.env first, vault second. Every send emits a receipt. A heartbeat proves the sender works every N minutes. Delete the silent marker; replace with escalation.
+
+Kills: FM-15, 16, 17, 18
+
+Proof: kill the credential file in a test — the heartbeat must go red within one interval.
+
+Move 5 — Debt Ledger + FPRP wired into the door
+Every bypass — exec-local for non-recovery work, machine-level edits, pre-existing-red exemptions, cache-deletion requests — opens a debt entry with expiry and mandatory repayment with anti-recursion proof.
+
+Kills: FM-22, 23, 24, 25, 26, 29, 30
+
+Proof: the router-telegram repair would have been a lease with a receipt, not an unclaimed edit.
+
+Move 6 — Unrelated-red quarantine
+A red on main is quarantined with owner, deadline, and lane exemption. The lane reports "blocked by FM-13, owner X, expires Y" — not "failure".
+
+Kills: FM-13, 27, 28
+
+Proof: a docs-only lane must be able to land while ui-kit is quarantined.
+
+Move 7 — Context as a governed resource
+Summarization/compaction becomes a door with a receipt. Memory has a local fallback and a heartbeat. A session approaching a lock is warned early with the exact remedy.
+
+Kills: FM-31, 32, 33, 34
+
+Proof: kill the memory server; the agent must still write a durable local record.
+
+The visual mandate
+All seven emit into the 2100 view: disk floor as a narrowing vessel, pre-existing reds as a quarantined organ, Debt Ledger as a pulse that either clears or thickens, credential heartbeat as a beat. No new visual ships unless it meets the standard — the standard is enforced by the visual review gate, not requested again.
+
+Part 3 — One-swoop sequence
+Today: Truth Door + receipt-or-nothing gate (moves 1, 3). Nothing else lands until a report carries a receipt.
+
+Today: Pre-flight gate for ASCII, claim shape, door ceiling (move 2, first three checks).
+
+Tomorrow: Sender repair re-done as a lease with receipt + heartbeat (move 4). The pasted session's repair was right in substance, wrong in process.
+
+This week: Debt Ledger + FPRP (move 5); unrelated-red quarantine (move 6).
+
+This week: Context governance + memory fallback (move 7).
+
+Continuous: every one of the 40 modes becomes a regression fixture; the taxonomy grows; the gate tightens.
+
+Part 4 — Acceptance criteria
+#	Criterion	Proof
+1	No deliverable without a receipt	Law gate blocks; zero unproven reports
+2	No door discovered by failure	estate-truth receipt before first instruction
+3	Pre-flight refuses every known mode	40 fixtures, all refused
+4	Sender has a heartbeat and a receipt per message	Heartbeat red when creds removed
+5	Every bypass is a debt entry with expiry	Debt Ledger non-empty, zero orphan bypasses
+6	A docs-only lane can land over a quarantined red	Green lane proof
+7	Memory survives server outage	Local fallback record present
+8	Every visual meets the 2100 standard by gate	Visual audit = 100%
+9	Flow cost of every door measured	Turn count per instruction trending down
+10	The agent never again edits a shared door unclaimed	Zero machine-level edits outside leases
+Canonical one-liner
+This session is the specimen: a docs-only change took forty turns, nearly bypassed the write guard, edited a shared door without a claim, shipped a factual error, reached Telegram but not main, and ended in a law violation and a locked session — because every door it needed (truth, receipts, sender, memory, lane state) was either broken, silent, or undiscoverable. The one-swoop fix is not forty patches: it is seven compounding moves — a Truth Door, a pre-flight gate, receipt-or-nothing, one sender with a heartbeat, a Debt Ledger for every bypass, unrelated-red quarantine, and governed context — each enforced mechanically, each leaving leverage, each visible in the 2100 view, so the estate proves itself instead of narrating itself.

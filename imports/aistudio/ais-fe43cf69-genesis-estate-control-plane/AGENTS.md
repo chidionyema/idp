@@ -1,0 +1,24 @@
+# AGENTS.md — Canonical Estate Operating Constitution (Line-1 Enforced)
+
+1. **MANDATORY LINE-1 LAW**: Run `estate-session` (`bin/io session-start --actor-did <did> --domain <domain> --pack <pack-id>`) BEFORE any read-modify-write, branch, stash, or preview work. Commits, yields, or state mutations without an active `estate-session` and persistent real-name owner are deterministically rejected (`ESTATE_SESSION_REQUIRED`).
+2. **SINGLE WORK GRAPH & ZERO INVISIBLE WORK**: Parking work in unowned git stashes, unmerged orphan branches, loose dist bundles, or unregistered external previews is forbidden. Every artifact must bind to one of the **15 Canonical Packs** (`PACK-01`..`PACK-15`) with a persistent real-name steward, accountable human principal (`Chidi Onyema <chidionyema@gmail.com>`), and forced write-back receipt before session close.
+3. **ONE CANONICAL IO ENGINE (`PACK-15: @meridian-estate/io-engine` + `bin/io`)**:
+   - Never rebuild `ORACLE-00` (`evaluateOmniscientMegaOracleAndCausalAdjudicator`, formerly `src/lib/protocolEngine.ts:17129` at `255295f`) or `SYNAPSE-00` (`evaluateSynapseEstateWideSyncAndZeroTouchOperationalization`, formerly `src/lib/protocolEngine.ts:18925` at `a127ac2`) inside monolith files or ad-hoc previews.
+   - Import `@meridian-estate/io-engine` (`packages/io-engine/index.ts`) or invoke `bin/io`.
+4. **FORCED REAL-TIME EVAL & TRAINING ON EVERY ACTIVITY**:
+   - Every mutation or execution automatically passes through the 5-gate real-time evaluator (`evaluateMandatoryRealtimeActivity`) and appends a verified `SFT_GOLD_TRAJECTORY` or `DPO_REJECTION_PAIR` + `PASS_0_ANTIBODY` tuple to `.ops/realtime-training-dataset.jsonl`, streamed live to the Founder Command Surface in `<15ms`.
+5. **ESTATE BUS CANONICAL DOORS**:
+   - Query `/beast`, `/academy`, `/standards`, `/synchrony`, `/omega`, `/packs`, `/session`, `/capabilities`, and `/api/work-graph` before starting any task. Never rely on filename luck.
+6. **CODENAME OMEGA (`@meridian-estate/omega-core` + `bin/omega` + `omega.wit` / `omega_hal.h`)**:
+   - Never rebuild Chronos/Tempo, Estate Law, Genesis Core, or IO per surface. All devices (laptops, web, phones, smart glasses, cameras, drones, robotics, and future hardware) link the unmodified Ring-0 `omega-core` engine and implement ONLY the 3 thin Ring-2 HAL functions (`sense`, `actuate`, `link`).
+7. **THE BEAST CONTINUOUS PROOF & REGO CONSTITUTION (`@meridian-estate/beast-governor` + `bin/beast` + `estate.rego`)**:
+   - Zero sessions may exist or mutate state without live real-time evaluation attached (`ZERO_UNEVALUATED_SESSIONS`). Boundaries across IDP, Pi-extensions, Bitwarden secret leases, Legion free-lane overflow, and all 15 UI surfaces are enforced declaratively via `estate.rego` + Dynamic Founder Dials (`MAXIMUM_LOCKDOWN` by default) with `< 15 ms` all-surface disruptive incident wake-up across WebAgent Browsers, Local Console, and Always-On Cloud.
+8. **UNIVERSAL WEB OF SYNCHRONY, LIVING BROCHURE & OMNI-NODE MAPPER (`#catalog` + `/synchrony` + `/api/beast/brochure`)**:
+   - Zero throwaway collateral or unmapped nodes: every Product Menu capability (`Founder 10/10` -> `Investor 7/10` -> `Enterprise 5/10` -> `Public 3/10`), Living Brochure claim, source pack, cookie/storage policy, and compute/browser node is hashed and deep-linked (`beast://` + `#route?...`) into The Beast across 1s Tempo, 1m Pulse, 1d Tactical, and 1w Chronos horizons.
+9. **SOVEREIGN STANDARDS, 5-TIER WHITE-BOX MEMORY, TOMBSTONE ONBOARDING & SPECGATE BDD (`#standards` + `/standards` + `bin/standards` + `STANDARDS_CONSTITUTION.md`)**:
+   - Run `./bin/standards onboard` before mutating state: agents must ingest all **7 Sealed Tombstones** (`Telegram 3327`, `Cloudflare scratch`, `OCI OKE #2468`, `protocolEngine.ts:17129`, `~/.estate`, `32 stashes`, `dumb-cache self-memory`) and are **STRICTLY FORBIDDEN** from re-asking the Founder about dead or resolved blockers.
+   - Agents may NEVER self-write unverified prose into memory (`REJECTED_UNVERIFIED_DUMB_CACHE_WRITE`); only kernel-verified `exitCode=0` SHA-256 receipts commit to `.ops/whitebox-memory-ledger.json`.
+   - Zero raw prompts may propagate across the network (`BLOCKED_RAW_UNSPECIFIED_PROMPT`): every Founder prompt must compile into a `FormalIntentBddSpec` (preconditions, invariants, postconditions + `>= 3` executable Gherkin BDD scenarios) sealed by `specMerkleSha256`.
+10. **GENESIS ASYMMETRIC ACADEMY (`#academy` + `/academy` + `bin/academy`)**:
+   - Zero passive 40-hour MP4 lectures or toy fill-in-the-blank sandboxes: every capability ships with 45-second social Micro-Sparks adapted across 4 Human Learning Lenses (`EXPLORER_KIDS`, `LIFE_NAVIGATOR`, `CAREER_BUILDER`, `FOUNDER_ARCHITECT`), a live Two-Zone Estate Simulation Lab minting `.ops/register.jsonl` proof receipts, and 4-tier SHA-256 Proof-of-Execution credentials (`CERT_L1`..`CERT_L4`) operating at `>96%` gross margin via `$0` Free-Lane compute routing.
+

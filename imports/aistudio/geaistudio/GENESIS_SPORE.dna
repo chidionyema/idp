@@ -1,0 +1,46 @@
+{
+  "schema": "genesis-spore-dna-v1",
+  "law": "LAW_SYSTEM_FIRST_IOC_RECONCILER",
+  "updated_at_utc": "2026-11-17T14:50:00Z",
+  "interchangeable_actuators": ["gemini", "glm-5.3", "deepseek", "kimi", "claude", "chatgpt"],
+  "active_merkle_root": "9f84c2e1d70a4b63c5e8192047fa31d8b6c209e471a5d83f62c0b94e17a3d528",
+  "monotonic_fencing_token": 512,
+  "reversible_state_journal": {
+    "checkpoint_id": "KGC-20261117-3DAY-SYNC-DR",
+    "canonical_local_router": "http://127.0.0.1:4200",
+    "canonical_cloud_router": "https://llm.mumchimp.com",
+    "canonical_k8s_cluster": "k3s-oci-ampere-a1:/etc/rancher/k3s/k3s.yaml",
+    "canonical_bus": "OMNIFLOW_SSE_HTTPS",
+    "bundle_path": "dist-exports/meridian-hermes-today.bundle",
+    "agents_md_ceiling_lines": 300,
+    "max_spore_bytes": 4096,
+    "clean_room_stages": 6,
+    "closed_loop_fsms": 10
+  },
+  "constitutional_invariants": [
+    "INV-01: System-First IoC — models are stateless actuators; canonical truth lives in repo + OMNIFLOW.",
+    "INV-02: Zero Custom Env Vars — no new vars in .env.example or process.env.*.",
+    "INV-03: AGENTS.md Ratchet — AGENTS.md strictly <= 300 lines.",
+    "INV-04: Zero Client HTTP Polling (I-8090) — SSE only, never setInterval fetch.",
+    "INV-05: Proof-2 Closure — 1..5 unguarded files, 1 subsystem, or auto-decompose.",
+    "INV-06: Pinned Scope — expectedBaseSha === observedBaseSha & diff subset of manifest.",
+    "INV-07: Live Host Shield — block unprobed/ghost hosts at HTTP 422 pre-token.",
+    "INV-08: Canonical Router — pennyd 127.0.0.1:4200; LiteLLM :4000-:4002 tombstoned.",
+    "INV-09: Canonical Cluster — k3s on OCI Ampere A1; OKE 193.123.184.22 tombstoned.",
+    "INV-10: Canonical OMNIFLOW — 409 lease fencing & 10s TTL; DO is stateless adapter.",
+    "INV-11: Epistemic Candor (R-010) — Plan != Merged PR != Measured Live Yield.",
+    "INV-12: Closed-Loop Finality — 10/10 BFS-proven FSMs; verifierId !== executorId."
+  ],
+  "catechism_antibodies": [
+    { "id": "AB-01", "code": "RETIRED_OKE_GHOST_IP_193_123_184_22", "block": "193.123.184.22, 141.147.80.229:6443, oke-direct, config-estate", "enforced_truth": "k3s on OCI Ampere A1 (/etc/rancher/k3s/k3s.yaml)" },
+    { "id": "AB-02", "code": "RETIRED_LITELLM_PORT_4000_4002", "block": "LiteLLM :4000-:4002 & com.estate.litellm-*", "enforced_truth": "pennyd 127.0.0.1:4200 + PENNYD_API_KEY max_tokens:0 probe" },
+    { "id": "AB-03", "code": "UNSEALED_MULTI_SUBSYSTEM_MANIFEST_8194", "block": "Multi-subsystem or >5-file unsplit dispatch", "enforced_truth": "HTTP 422 pre-token or auto-split into single-subsystem lanes" },
+    { "id": "AB-04", "code": "FAKE_YIELD_UNPROBED_OPERATING", "block": "Grading merged PRs/static deploys as OPERATING", "enforced_truth": "DECLARED_UNPROBED until bin/estate-live-probe MEASURED_OK" },
+    { "id": "AB-05", "code": "COMPETING_DO_SPLIT_BRAIN_LEASE", "block": "Durable Object competing lease authority", "enforced_truth": "Stateless DO adapter forwarding to canonical OMNIFLOW" },
+    { "id": "AB-06", "code": "GUI_ONLY_3080_LAUNCHAGENT_DEATH", "block": "GUI LaunchAgent logout death or wedged :3080", "enforced_truth": "system/ai.estate.dsh-web + 30s ai.estate.dsh-web-heal" },
+    { "id": "AB-07", "code": "MOCK_CI_POSTGRES_DNS_OVERRIDE", "block": "Ephemeral Actions Postgres overriding DNS", "enforced_truth": "k3d + Flux + CloudNativePG (estate-rw.estate-db.svc)" },
+    { "id": "AB-08", "code": "UNVERIFIED_BUNDLE_INGEST_7760", "block": "Unauthenticated upload or unchecked SHA-256", "enforced_truth": "Bearer auth + <=16 MiB + R2 write + byte readback" },
+    { "id": "AB-09", "code": "BROWSER_REGISTRATION_AS_EXECUTION", "block": "Counting registered seats as live execution", "enforced_truth": "Authenticated execution receipts across 7/7 seats" },
+    { "id": "AB-10", "code": "OPEN_LOOP_OR_SELF_VERIFIED_FSM", "block": "Dangling waits, missing quarantine, self-verify", "enforced_truth": "10/10 Closed-Loop FSMs + KARMA 403 self-verify block" }
+  ]
+}

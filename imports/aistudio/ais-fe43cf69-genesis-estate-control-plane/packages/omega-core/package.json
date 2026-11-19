@@ -1,0 +1,17 @@
+{
+  "name": "@meridian-estate/omega-core",
+  "version": "1.0.0",
+  "description": "Ring-0 Substrate-Independent Sovereign Microkernel binding Chronos/Tempo (Time), Estate (Law & Identity), Genesis + IO (Mind), 4KB Capsule + Antibody Ledger (Memory), and 3-Trait Universal HAL Transducers across Laptops, Phones, Smart Glasses, Cameras, Drones, Robotics, and Future Hardware.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./wit": "./omega.wit",
+    "./c-abi": "./omega_hal.h"
+  },
+  "bin": {
+    "omega": "../../bin/omega"
+  },
+  "author": "Chidi Onyema <chidionyema@gmail.com>",
+  "license": "Proprietary"
+}

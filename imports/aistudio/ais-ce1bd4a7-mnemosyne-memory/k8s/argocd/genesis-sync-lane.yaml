@@ -1,0 +1,99 @@
+# ============================================================================
+# GENESIS ESTATE — ARGO CD GITOPS DECLARATIVE SYNC LANE MANIFEST
+# Bound Protocols: GEN-NET-003, GEN-DIP-003, GEN-SCI-003, GEN-NET-004, GEN-NET-005
+# Synchronizes:
+#   Wave 0: Protocol-First ZIWP Kernel & 11 Hoare-TLA+ Ratified Protocols
+#   Wave 1: Bi-Temporal Knowledge Graph (t_valid / t_invalid) & Prefix Sinks
+#   Wave 2: Genesis 6-Agent Fleet, £200/mo Custodian Treasury, Model Rota &
+#           6 Zero-RAM LiteLLM-Parity Efficiency Optimizations (EFF-01..EFF-06)
+#   Wave 3: Non-Fungible SHA-256 Verification Ledger & 5 Sacred Floor Token Guards
+# ============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: genesis-sovereign-memory-os
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    genesis.estate/ziwp-firewall: "STRICT_ENFORCED"
+    genesis.estate/protocol-binding: "GEN-NET-003"
+    genesis.estate/treasury-edict: "GEN-DIP-003"
+    genesis.estate/anti-plague-protocol: "GEN-NET-005"
+    genesis.estate/token-efficiency-multiplier: "3.49x"
+spec:
+  project: genesis-estate-core
+  source:
+    repoURL: https://git.genesis.estate/sovereign/genesis-memory-os.git
+    targetRevision: argon-sync
+    path: k8s/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: genesis-estate
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - ApplyOutOfSyncOnly=true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genesis-wave0-protocol-registry
+  namespace: genesis-estate
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  ziwp_mode: "ZERO_INSTRUCTION_WITHOUT_PROTOCOL"
+  formal_standard: "HOARE_LOGIC_TLA_PLUS_DEADLOCK_FREE"
+  bootstrap_protocols: "GEN-DIP-001,GEN-DIP-002,GEN-DIP-003,GEN-SCI-001,GEN-SCI-002,GEN-SCI-003,GEN-NET-001,GEN-NET-002,GEN-NET-003,GEN-NET-004,GEN-NET-005"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genesis-wave1-bitemporal-memory-graph
+  namespace: genesis-estate
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  bitemporal_mode: "strict_atomic_invalidation"
+  prefix_sink_allocation_pct: "15"
+  middle_trough_defrag: "enabled"
+  kv_prefix_cache_breakeven_gate_pct: "28"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genesis-wave2-agent-treasury-and-minimax-federation
+  namespace: genesis-estate
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+data:
+  active_agents: "agent-genesis-prime,agent-kernel-architect,agent-security-sentinel,agent-concierge-affairs,agent-otto-governor,agent-commercial-director"
+  custodian_iban: "GB82 GENM 0400 7291 8402 11"
+  standing_order_gbp: "200.00"
+  standing_order_window: "2026-12-02_to_2027-03-02"
+  core_permanent_models: "google-gemini-antigravity,deepseek-r1-v3,minimax-m2.7-subscription"
+  backup_elastic_models: "zai-glm,claude-sonnet,codex-chatgpt,kimi-k1.5"
+  litellm_ban_policy: "BANNED_ON_ALL_NODES_UNDER_4GB_RAM"
+  minimax_m27_subscription_gateway: "STATELESS_EDGE_MULTIPLEXER_WITH_CANARY_RETRY"
+  zero_ram_litellm_parity_optimizations: "EFF-01-PREFIX-PINNING,EFF-02-SINGLEFLIGHT-CACHE,EFF-03-TOOL-TREESHAKE,EFF-04-CASCADE-ROUTING,EFF-05-MAX-TOKENS-GOVERNOR,EFF-06-HEADER-PACEMAKER"
+  anti_overzealous_sacred_floor_guards: "GUARD-01-28PCT-EPOCH-GATE,GUARD-02-SACRED-TOKEN-FLOOR,GUARD-03-REASONING-FLOOR-512,GUARD-04-LIVE-CANARY-CACHE-BYPASS,GUARD-05-HIGH-STAKES-FIDELITY-LOCK"
+  effective_token_multiplier: "3.49x_412GBP_EQUIVALENT_FROM_118GBP_CORE"
+  mac_load_ceiling: "4.0"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genesis-wave3-nonfungible-verification-ledger
+  namespace: genesis-estate
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+data:
+  hash_algorithm: "SHA-256-DETERMINISTIC"
+  invariants_enforced: "INV-01,INV-02,INV-03,INV-04,INV-05-NO-LITELLM-OOM,INV-06-MINIMAX-CANARY,INV-07-SACRED-TOKEN-FLOOR"

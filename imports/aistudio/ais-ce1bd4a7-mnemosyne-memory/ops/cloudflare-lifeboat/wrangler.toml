@@ -1,0 +1,9 @@
+name = "lifeboat-llm"
+main = "index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+MINIMAX_BASE_URL = "https://api.minimax.io/v1/text/chatcompletion_v2"
+MINIMAX_MODEL = "MiniMax-M2.7"
+GEMINI_PINNED_MODEL = "gemini-2.5-flash"

@@ -1,0 +1,6 @@
+{
+  "name": "Genesis Estate Control Plane",
+  "description": "Evidence-enforced autonomous estate control plane unifying Genesis Founder Surface, Legion 8-formation cloud execution with Geburah falsifiers, FLOW durable lifecycles, and Greenlane Git governance.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

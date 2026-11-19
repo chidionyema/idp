@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimi-capability-first-engine
+  namespace: argon-genesis
+  labels:
+    app.kubernetes.io/name: kimi-capability-first-engine
+    app.kubernetes.io/part-of: argon-genesis
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kimi-capability-first-engine

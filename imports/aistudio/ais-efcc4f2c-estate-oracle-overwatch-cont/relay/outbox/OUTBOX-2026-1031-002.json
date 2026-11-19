@@ -1,0 +1,29 @@
+{
+  "receiptId": "OUTBOX-2026-1031-002",
+  "sourceInboxEnvelopeId": "INBOX-002-minimax-big-ticket-7704",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T18:05:47Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (6/6 Gates PASS · MiniMax Big-Ticket Sandbox Verified)",
+  "exitCode": 0,
+  "deliverySummary": "MiniMax M2.7 Big Ticket #7704 audited via Consulting Lane Inbox poller. Enforced 3-tries fence, 4096-token compaction, and machine-checkable BDD predicate before promoting output to chidionyema/estate-outbox.",
+  "artifactsDelivered": [
+    "crates/estate-router/src/main.rs",
+    "bin/estate-rust-router",
+    "bin/estate-inbox-poll"
+  ],
+  "rollbackCmd": "git checkout main -- crates/estate-router/src/main.rs bin/estate-rust-router",
+  "cifHmacSignature": "b73a90d41e28c65f0392a847d1e6c3f89012b4a5c7d8e9f01a2b3c4d5e6f7081",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- crates/estate-router/src/main.rs bin/estate-rust-router"
+  ]
+}

@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kimi-capability-first-engine
+  namespace: argocd
+  labels:
+    estate.argon.internal/owner: kimi
+    estate.argon.internal/priority: p0
+    estate.argon.internal/contract: capability-first
+    app.kubernetes.io/managed-by: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Private GitHub repository for Argo sync
+    repoURL: 'git@github.com:argon-genesis/capability-first-estate.git'
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: argon-genesis
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/metadata/annotations/genesis.flow.lease.token

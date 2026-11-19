@@ -1,0 +1,6 @@
+{
+  "name": "Genesis Founder Concierge · AURA-2100",
+  "description": "Voice-led command surface and fail-closed sovereign gateway for Argon #20, Legion, and IDP #7664 operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

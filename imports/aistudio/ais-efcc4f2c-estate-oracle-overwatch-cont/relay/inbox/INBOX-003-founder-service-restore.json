@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-003-founder-service-restore",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "founder-command-deck (chidionyema@gmail.com)",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-FOUNDER-RESUSCITATE-7709",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T18:08:30Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Restore All Local Agent Services (0 -> 4 Core Loops) & Unify Dual Private-Repo Comms",
+  "payloadSummary": "Founder directive to restore immediate agent service across Argon Consulting, DeepSeek Protocol, Claude Catalog Auditor, and MiniMax Fenced Worker lanes, activate the Consulting Lane Inbox poller timer, and close the Outbox delivery loop.",
+  "bddContract": {
+    "given": "Founder has 0 active local agents and requires immediate seamless operation",
+    "when": "node bin/estate-service-up --json && node bin/estate-inbox-poll --json execute",
+    "then": "exit_code == 0 && grep_match:4_OF_4_CORE_AGENT_DAEMONS_ONLINE && file_exists:relay/outbox/OUTBOX-2026-1031-003.json"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-003"
+}

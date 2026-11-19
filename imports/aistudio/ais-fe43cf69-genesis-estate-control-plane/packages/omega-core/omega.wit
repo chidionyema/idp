@@ -1,0 +1,103 @@
+// ============================================================================
+// OMEGA UNIVERSAL INTERFACE CONTRACT (WASI 0.2 Component Model / WIT)
+// Package: meridian:omega@1.0.0
+//
+// THE LAW OF ZERO REWRITES:
+// Ring-0 (`omega-kernel`) NEVER imports DOM, POSIX sockets, Swift/Kotlin UI,
+// camera SDKs, PX4 MAVLink, or ROS 2 topics directly.
+// Every present or future device implements ONLY the 3 `omega-hal` functions:
+//   1. `sense()`   -> What the hardware perceives on this tick
+//   2. `actuate()` -> What the hardware executes AFTER Ring-0 safety stamping
+//   3. `link()`    -> How the <= 4,096 B Omega Capsule syncs across transports
+// ============================================================================
+
+package meridian:omega@1.0.0;
+
+interface types {
+  enum substrate-class {
+    posix-daemon,
+    wasm-browser-cloud,
+    wasi-mobile-sandbox,
+    openxr-spatial-visor,
+    wasi-nn-camera-isp,
+    c-abi-rtos-flight,
+    ros2-rt-humanoid,
+    custom-future-substrate,
+  }
+
+  record safety-envelope {
+    max-contact-force-newtons: f32,
+    max-velocity-mps: f32,
+    min-power-reserve-pct: f32,
+    geofence-radius-meters: f32,
+    human-proximity-estop-meters: f32,
+    require-e1-capability-grant: bool,
+  }
+
+  record observation-frame {
+    device-id: string,
+    lamport-seq: u64,
+    observed-at-us: u64,
+    modality: string,
+    payload-summary: string,
+    telemetry-force-newtons: f32,
+    telemetry-velocity-mps: f32,
+    telemetry-battery-pct: f32,
+    telemetry-human-distance-m: f32,
+  }
+
+  record verified-intent {
+    intent-id: string,
+    session-id: string,
+    actor-did: string,
+    target-actuator: string,
+    command-op: string,
+    command-magnitude: f32,
+    safety-verdict: string,
+    failsafe-mode: string,
+    proof-sha256: string,
+  }
+
+  record actuation-receipt {
+    executed: bool,
+    hardware-status: string,
+    measured-latency-us: u64,
+    receipt-sha256: string,
+  }
+
+  // Strictly bounded <= 4,096 bytes for Turn-0 teleportation over BLE/UART/LoRa/SSE
+  record omega-capsule-4kb {
+    capsule-id: string,
+    byte-length: u32,
+    lamport-clock: u64,
+    session-id: string,
+    actor-did: string,
+    source-device-id: string,
+    target-device-id: string,
+    payload-json: string,
+    capsule-sha256: string,
+  }
+}
+
+// Implemented per hardware device (< 120 lines of glue code; Core untouched)
+interface omega-hal {
+  use types.{observation-frame, verified-intent, actuation-receipt, omega-capsule-4kb};
+
+  sense: func() -> observation-frame;
+  actuate: func(intent: verified-intent) -> actuation-receipt;
+  link: func(capsule: omega-capsule-4kb) -> bool;
+}
+
+// Compiled ONCE from Omega Core; runs identically everywhere
+interface omega-kernel {
+  use types.{observation-frame, verified-intent, omega-capsule-4kb};
+
+  step: func(obs: observation-frame) -> verified-intent;
+  pack-capsule: func(target-device-id: string) -> omega-capsule-4kb;
+  hydrate-capsule: func(capsule: omega-capsule-4kb) -> bool;
+}
+
+world omega-embodiment {
+  import omega-hal;
+  export omega-kernel;
+}

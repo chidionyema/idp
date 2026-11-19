@@ -1,0 +1,34 @@
+{
+  "envelopeId": "DROP-2026-1073",
+  "schemaVersion": "genesis.inbox.envelope.v2",
+  "epoch": 1762053626,
+  "lamportClock": 1073,
+  "originSurface": "CLOUD_STUDIO_SANDBOX_AIRLOCK",
+  "proposerSpiffeId": "spiffe://olat.estate/studio/c7941f7d-31d5-4d5c-8637-5aee66a7e622",
+  "targetBranchProposal": "refs/heads/inbox/DROP-2026-1073",
+  "neverForcePushMain": true,
+  "baseCommitSha": "a63d8cded496fe639660873554978fb3bca742bd",
+  "semanticTouchSet": {
+    "filesModified": [
+      "inbox/README.md",
+      "scripts/sequencer/inbox_hop_sequencer.ts",
+      ".github/workflows/genesis-verify.yml",
+      ".github/workflows/genesis-inbox-sequencer.yml",
+      "scripts/sync/sync_genesis_live_to_github.ts",
+      "src/lib/protocolEngine.ts",
+      "src/lib/protocolEngine.test.ts"
+    ],
+    "exportedSymbolsModified": [
+      "executeSixHopInboxSequencerAndSemanticConflictCheck",
+      "INITIAL_INBOX_SIX_HOP_HONESTY_AND_SEQUENCER_SPEC"
+    ],
+    "intentSummary": "Cure all 3 external auditor hardening notes on inbox/ 6-Hop Airlock: (1) propose-only branch transport (0 force-push to main), (2) HOP-06 single named sequencer with semantic touch-set collision detection, (3) honest REAL_POSIX_CI vs DEFERRED_SIMULATED tags on HOP-04/05 and copy-paste-safe ASCII formulas in inbox/README.md."
+  },
+  "hop01PreflightProof": {
+    "unitTestsPassed": 114,
+    "unitTestsFailed": 0,
+    "lawsPassedOnCleanState": 8,
+    "falsifiersRejectedMutatedState": 8,
+    "antiSlopAstGatesPassed": "6/6"
+  }
+}

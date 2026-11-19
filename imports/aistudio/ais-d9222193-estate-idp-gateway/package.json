@@ -1,0 +1,15 @@
+{
+  "name": "mission-continuity-kernel",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "tsx --test src/engine/missionContinuity.test.ts src/engine/missionContinuity.sqlite.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  }
+}

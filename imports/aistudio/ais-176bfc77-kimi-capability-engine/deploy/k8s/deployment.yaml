@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-capability-first-engine
+  namespace: argon-genesis
+  labels:
+    app.kubernetes.io/name: kimi-capability-first-engine
+    app.kubernetes.io/part-of: argon-genesis
+    estate.argon.internal/owner: kimi
+    estate.argon.internal/priority: p0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kimi-capability-first-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kimi-capability-first-engine
+        app.kubernetes.io/part-of: argon-genesis
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      serviceAccountName: kimi-flow-engine-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: resolution-engine
+          image: ghcr.io/argon-genesis/kimi-capability-first-engine:v3.2.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: ESTATE_ENV
+              value: "production"
+            - name: FLOW_LIFECYCLE_VERSION
+              value: "3.0.0"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5

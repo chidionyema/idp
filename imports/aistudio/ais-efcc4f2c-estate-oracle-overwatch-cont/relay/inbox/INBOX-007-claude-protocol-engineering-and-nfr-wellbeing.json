@@ -1,0 +1,22 @@
+{
+  "envelopeId": "INBOX-007-claude-protocol-engineering-and-nfr-wellbeing",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxTargetRepo": "chidionyema/estate-outbox",
+  "senderAgent": "claude-catalog-auditor-01",
+  "consultingLane": "argon-consulting-01 + deepseek-protocol-01",
+  "ticketId": "TICKET-CLAUDE-INBOX-7730",
+  "ticketScope": "FOUNDER_PRIORITY_P0",
+  "createdAt": "2026-10-31T20:05:00Z",
+  "status": "AUDITED_AND_PROMOTED_TO_OUTBOX",
+  "specStandardId": "ESTATE-SPEC-STD-V2",
+  "subject": "Claude Inbox Core #1: World-Class Declarative Config (Zero Hardcoded Rules/Timeouts) & Protocol Engineering for Founder Wellbeing + Zero-MacBook Friction NFRs",
+  "payloadSummary": "Eliminates hardcoded rules, protocols, and rigid timeouts in code by externalizing all behavioral governance into register/protocol-config.json. Replaces binary hard-timeout failures with Progressive Partial-Value Yield ('better to deliver some value than none'). Enforces Non-Functional Requirements (Founder Wellbeing: 0 MacBook tether minutes; Friction: 0 manual interventions) upstream via Protocol Engineering so late CI/CD gates are rarely hit.",
+  "bddContract": {
+    "given": "Declarative manifest register/protocol-config.json is loaded by bin/estate-protocol-engine with zero hardcoded timeouts in code",
+    "when": "node bin/estate-protocol-engine --json executes upstream protocol engineering and NFR verification",
+    "then": "exit_code == 0 && file_exists:register/protocol-config.json && grep_match:PROTOCOL_ENGINEERING_AND_YIELD_ALPHA_VERIFIED"
+  },
+  "maxAttemptsBound": 3,
+  "autoCompactionTokenCap": 4096,
+  "linkedOutboxReceiptId": "OUTBOX-2026-1031-007"
+}

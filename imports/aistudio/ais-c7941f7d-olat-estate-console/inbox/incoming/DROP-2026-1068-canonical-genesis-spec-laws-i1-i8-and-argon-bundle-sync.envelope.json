@@ -1,0 +1,25 @@
+{
+  "id": "DROP-2026-1068-canonical-genesis-spec-laws-i1-i8-and-argon-bundle-sync",
+  "originSurface": "AI_STUDIO_CLOUD",
+  "senderIdentity": "spiffe://olat.estate/founder/yubikey-fido2",
+  "timestampIso": "2026-03-31T01:22:00.000Z",
+  "directive": "Push everything to the private repo, disambiguate the true Olat Estate Genesis (ERA_1) codebase from the stale Oct 31 2-commit 'RelayOps Gateway Control Plane' snapshot on chidionyema/argon, cure the B0-B2 audit findings with real on-disk laws.yaml (I1-I8) enforcers and counterfactual mutation falsifiers, and publish GENESIS_SPEC.md and the full Git bundle over live HTTPS so external agents can ingest and sync in one command.",
+  "requirementId": "REQ-37",
+  "lawsEnforced": [
+    "I1_CONSTITUTIONAL_SPINE_MPHF_COMPACTNESS",
+    "I2_LYAPUNOV_STABILITY_AND_KOOPMAN_DRIFT",
+    "I3_BATTATION_ZERO_SUM_CONSERVATION_AND_CIF_RECEIPT",
+    "I4_CAMEL_TAINT_ISOLATION_AND_SPIFFE_ATTESTATION",
+    "I5_ESP_ELEPHANT_CRITIQUE_AND_ANTI_VACUOUS_EXIT0",
+    "I6_POLYGLOT_CAPSULE_SLSA_L3_AND_MDL_HARVESTER",
+    "I7_FOUNDRY_6_STAGE_LITHOGRAPHY_AND_CRUCIBLE",
+    "I8_NON_BLOCKING_FOUNDER_REFLEX_AND_AST_AUTO_BG"
+  ],
+  "httpsEndpoints": [
+    "https://ais-pre-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app/GENESIS_SPEC.md",
+    "https://ais-pre-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app/laws.yaml",
+    "https://ais-pre-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app/olat-estate-genesis-main.bundle"
+  ],
+  "status": "SEALED_DONE",
+  "sha256ProofReceipt": "sha256:req37:canonical-genesis-spec-laws-i1-i8-enforcers-and-https-git-bundle"
+}

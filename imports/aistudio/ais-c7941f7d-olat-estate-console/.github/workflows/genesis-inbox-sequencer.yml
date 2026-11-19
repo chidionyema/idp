@@ -1,0 +1,72 @@
+name: "HOP-06: Single Inbox Sequencer & Fast-Forward Main Promotion"
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Manual trigger reason for HOP-06 Sequencer"
+        required: false
+        default: "Sequenced promotion of verified inbox/incoming/ drops"
+  workflow_run:
+    workflows: ["HOP-03: Genesis Airlock Verification (Grader != Builder)"]
+    types:
+      - completed
+    branches:
+      - "genesis-live"
+      - "inbox/**"
+
+# CRITICAL HARDENING NOTE 2: Explicitly Single Linearizer (Concurrency Lock Group)
+# Prevents concurrent drops from racing or causing semantic touch-set collisions on main.
+concurrency:
+  group: genesis-main-sequencer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  hop06_single_sequencer_promote:
+    name: "HOP-06 Single Linearizer, Semantic Touch-Set Gate & Fast-Forward Main"
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository with Full History
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || 'genesis-live' }}
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies with Lockfile (npm ci)
+        run: npm ci
+
+      - name: Run HOP-04/06 Single Sequencer & Semantic Touch-Set Collision Detector
+        run: npm run hop:sequencer
+
+      - name: Run Composed Verification Suite (Lint + Unit Tests + 8 Law Enforcers + Build)
+        run: |
+          npm run lint
+          npm test
+          npm run enforce
+          npm run build
+          npm run verify:release
+
+      - name: Fast-Forward Promote to main (Strictly No Force-Push) & Emit Signed Receipt
+        run: |
+          git config user.name "Olat Estate HOP-06 Single Sequencer"
+          git config user.email "chidionyema@gmail.com"
+          git fetch origin main || true
+          # Commit updated sequencer WAL and signed PROMOTION_RECEIPT.json if changed
+          git add inbox/PROMOTION_RECEIPT.json public/PROMOTION_RECEIPT.json inbox/sequencer-state.wal.json || true
+          git diff --cached --quiet || git commit -m "chore(hop06-sequencer): seal signed HOP-06 promotion receipt [skip ci]"
+          # Promote to main preserving any prior Oct-31 history without --force
+          if git show-ref --verify --quiet refs/remotes/origin/main; then
+            git merge --allow-unrelated-histories -s ours origin/main --no-edit || true
+          fi
+          git push origin HEAD:refs/heads/main --tags

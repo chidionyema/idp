@@ -1,0 +1,20 @@
+{
+  "envelopeVersion": "2.1.0",
+  "dropCode": "DROP-2026-1052",
+  "originChannel": "GOOGLE_AI_STUDIO_ARTIFACT_DROP",
+  "targetRepositoryPath": "inbox/incoming/DROP-2026-1052-northgate-z3-easement.envelope.json",
+  "gitRefShard": "refs/heads/inbox/DROP-2026-1052",
+  "lamportVectorClock": {
+    "founder": 1052,
+    "studio": 1052,
+    "gh_inbox": 1052,
+    "redb": 1052
+  },
+  "directiveTitle": "Northgate Parcel Graph Z3 Setback Theorem & Eastside SOFR Cap Covariance Guard",
+  "assignedSpecialistId": "SPC-SEC-04",
+  "blake3ArtifactHash": "blake3:0x5c10e9789a22d860",
+  "genesisRedbKey": "redb://tenant_olat/github_inbox/DROP-2026-1052",
+  "verifiedYieldAnnualUsd": 49200,
+  "sefVeridictProofHash": "sha256:0x84a1e073c9b2d411",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

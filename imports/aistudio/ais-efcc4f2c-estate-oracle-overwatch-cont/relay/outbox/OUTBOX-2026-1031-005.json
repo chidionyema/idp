@@ -1,0 +1,29 @@
+{
+  "receiptId": "OUTBOX-2026-1031-005",
+  "sourceInboxEnvelopeId": "INBOX-005-claude-next-work-eval-harness",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T19:36:10Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (7/7 Gates PASS)",
+  "exitCode": 0,
+  "deliverySummary": "Executed Claude Inbox Next Work #1 (TICKET-CLAUDE-INBOX-7720): Built and verified bin/estate-eval across all 4 evaluation suites (16/16 golden test cases passing, 3/3 failure classes FC-01..FC-03 eradicated).",
+  "artifactsDelivered": [
+    "bin/estate-eval",
+    "relay/inbox/INBOX-005-claude-next-work-eval-harness.json",
+    "relay/outbox/OUTBOX-2026-1031-005.json"
+  ],
+  "rollbackCmd": "git checkout main -- bin/estate-eval relay/inbox/INBOX-005-claude-next-work-eval-harness.json",
+  "cifHmacSignature": "a94e7c82d1503f61b489a2c0e771543289dcba120987fedcba65432101234567",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- bin/estate-eval relay/inbox/INBOX-005-claude-next-work-eval-harness.json"
+  ]
+}

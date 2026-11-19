@@ -1,0 +1,23 @@
+{
+  "envelopeVersion": "2.1.0",
+  "dropCode": "DROP-2026-MASTER-GENESIS",
+  "originChannel": "GOOGLE_AI_STUDIO_ARTIFACT_DROP",
+  "targetRepositoryPath": "inbox/incoming/DROP-2026-MASTER-GENESIS-COMPLETE.envelope.json",
+  "gitRefShard": "refs/heads/main",
+  "lamportVectorClock": {
+    "founder": 1054,
+    "studio": 1054,
+    "gh_inbox": 1054,
+    "redb": 1054
+  },
+  "directiveTitle": "Complete Day-0 Olat Estate Genesis Constitutional Spine (REQ-01..REQ-22 · 34/34 Unit Tests · L0-L6 Token Stack · FastDecisionProvider · 3-Query Bound · INC-01..10 & MoSCoW Register)",
+  "sharedPreviewAppUrl": "https://ais-pre-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app",
+  "devAppUrl": "https://ais-dev-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app",
+  "requirementsVerified": "22/22 (REQ-01..REQ-22)",
+  "unitTestsPassing": "34/34",
+  "agentsMdLines": 71,
+  "totalVerifiedAnnualYieldUsd": 186400,
+  "monthlyCloudCashBurnUsd": 0.0,
+  "sefVeridictProofHash": "veridict:sef:0x99f8e7d6c5b4a321",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

@@ -1,0 +1,152 @@
+{
+  "catalogId": "ESTATE-MACHINE-CATALOG-2026-10-31",
+  "generatedBy": "Claude Catalog Auditor Lane (Re-Refined & Verified by Argon + DeepSeek to ESTATE-SPEC-STD-V2)",
+  "generatedAt": "2026-10-31T18:12:00Z",
+  "status": "WHOLE_REPO_EXPORT_READY",
+  "headBranch": "main",
+  "wholeRepoExportChannels": [
+    {
+      "channelId": "EXPORT-TAR-GZ",
+      "label": "Full Repository Source Archive (.tar.gz)",
+      "endpoint": "/api/deploy/estate-oracle-overwatch.tar.gz",
+      "cliCommand": "curl -sSL http://localhost:3000/api/deploy/estate-oracle-overwatch.tar.gz -o estate-oracle-overwatch.tar.gz && tar -xzf estate-oracle-overwatch.tar.gz",
+      "description": "Complete working tree including Rust router crate, TypeScript engines, 9 executable bin/* CLIs, Inbox/Outbox relay, and unit tests."
+    },
+    {
+      "channelId": "EXPORT-GIT-BUNDLE",
+      "label": "Cryptographic Git Bundle (.bundle with Full Commit History)",
+      "endpoint": "/api/deploy/estate-overwatch.bundle",
+      "cliCommand": "curl -sSL http://localhost:3000/api/deploy/estate-overwatch.bundle -o estate.bundle && git clone estate.bundle ~/estate-oracle-overwatch",
+      "description": "Self-contained Git repository bundle ready to clone offline or push directly to chidionyema/estate-inbox and chidionyema/estate-outbox."
+    },
+    {
+      "channelId": "EXPORT-MACHINE-CATALOG-JSON",
+      "label": "Machine-Generated Repository Catalog Manifest (.json)",
+      "endpoint": "/api/catalog/export",
+      "cliCommand": "node bin/estate-catalog-export --json > machine-repo-catalog.json",
+      "description": "Structured machine-readable inventory of every subsystem, CLI binary, Rust crate, spec standard gate, and CIF verification probe."
+    },
+    {
+      "channelId": "EXPORT-ONE-LINE-INSTALLER",
+      "label": "Zero-Friction 1-Line Curl Installer (/install.sh)",
+      "endpoint": "/install.sh",
+      "cliCommand": "curl -sSL http://localhost:3000/install.sh | bash -s -- estate-oracle-overwatch",
+      "description": "Bootstraps SQLite FTS5 BM25 index, locks Otto Direct Bypass, starts the Consulting Lane Inbox Poller, and syncs private repos."
+    }
+  ],
+  "catalogEntries": [
+    {
+      "path": "crates/estate-router/src/main.rs",
+      "subsystem": "Rust High-Speed Model Router",
+      "category": "rust_crate",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-rust-router --json",
+      "capabilities": [
+        "64-byte cache-aligned AtomicU64 EWMA latency scoring",
+        "Zero-copy SIMD-style JSON-RPC frame classification (<72us)",
+        "18ms P95 speculative hedged requests + automatic circuit-breaker",
+        "Strict Consulting-Lane Inbox sandbox for MiniMax M2.7 big tickets",
+        "4096-token rolling auto-compaction pre-filter + 3-tries FNV-1a ring fence"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-rust-router --json"
+    },
+    {
+      "path": "bin/estate-service-up",
+      "subsystem": "Founder Zero-to-Live Agent Service Resuscitator",
+      "category": "cli_daemon",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-service-up --json",
+      "capabilities": [
+        "Brings up 4 core operational agent loops (Argon Consulting, DeepSeek Protocol, Claude Catalog Auditor, MiniMax Fenced Worker)",
+        "Restores 18/18 operating lanes and starts Consulting Lane Inbox poller"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-service-up --json"
+    },
+    {
+      "path": "bin/estate-inbox-poll",
+      "subsystem": "Bidirectional Private-Repo Inbox/Outbox Comms Relay",
+      "category": "cli_daemon",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-inbox-poll --json",
+      "capabilities": [
+        "Polls relay/inbox/ (chidionyema/estate-inbox) on configurable Consulting Lane timer",
+        "Audits incoming Founder, Claude, and MiniMax big-ticket envelopes against ESTATE-SPEC-STD-V2",
+        "Emits CIF-HMAC signed delivery receipts to relay/outbox/ (chidionyema/estate-outbox)"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-inbox-poll --json"
+    },
+    {
+      "path": "bin/estate-spec-enforce",
+      "subsystem": "Mandatory Spec & Delivery Standard Enforcer (ESTATE-SPEC-STD-V2)",
+      "category": "cli_verifier",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-spec-enforce --json",
+      "capabilities": [
+        "Enforces all 6 mandatory spec & delivery gates (BDD predicate, 3-tries fence, Inbox/Outbox loop, Artifact catalog, SLOs, Rollback)",
+        "Audits and re-refines Claude's private repo items created today"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-spec-enforce --json"
+    },
+    {
+      "path": "bin/estate-catalog-export",
+      "subsystem": "Machine-Generated Repo Catalog & Whole-Repo Exporter",
+      "category": "cli_exporter",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-catalog-export --json",
+      "capabilities": [
+        "Generates and verifies the complete machine-readable catalog of files, CLIs, Rust crates, and export artifacts",
+        "Verifies .tar.gz and .bundle whole-repo export readiness"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-catalog-export --json"
+    },
+    {
+      "path": "extensions/pi-plan-lock/plan.ts",
+      "subsystem": "Unified ProtocolKit Plan Fence (#7680 TS + #7692 Python)",
+      "category": "protocol_fence",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-plan --json",
+      "capabilities": [
+        "Enforces 3-tries canonical (tool, args) cap and machine-checkable BDD then clauses",
+        "Evaluates shared extensions/pi-plan-lock/cases.json falsifiers (4/4 pass)"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-plan --json"
+    },
+    {
+      "path": "src/engine/oracleEngine.ts",
+      "subsystem": "Algorithmic Estate Oracle (BM25F + Trigram + RRF) & Otto Bypass",
+      "category": "search_engine",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "npx tsx --test src/engine/oracleEngine.test.ts",
+      "capabilities": [
+        "Pass-1 sub-2ms field-weighted BM25F + character trigram Jaccard + Reciprocal Rank Fusion",
+        "Canonical Day-0 Otto Direct Router-Bypass socket & CIF HMAC-SHA256 ledger"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "npx tsx --test src/engine/oracleEngine.test.ts"
+    },
+    {
+      "path": "src/engine/memoryPlaneEngine.ts",
+      "subsystem": "Argon Governed Memory Plane (D1-D9) & Dreaming Daemon",
+      "category": "memory_plane",
+      "specStandard": "ESTATE-SPEC-STD-V2",
+      "verificationProbe": "node bin/estate-memory-audit --json",
+      "capabilities": [
+        "18-lane memory register with 4 typed memory stores (invariant, scar, topology, episodic)",
+        "29/29 Replay Benchmark (100% prevention rate) & Bi-Temporal truth probes"
+      ],
+      "instructionsFile": "INSTRUCTIONS.md",
+      "quickstartCmd": "node bin/estate-memory-audit --json"
+    }
+  ],
+  "instructionsEnforced": true,
+  "rootInstructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ]
+}

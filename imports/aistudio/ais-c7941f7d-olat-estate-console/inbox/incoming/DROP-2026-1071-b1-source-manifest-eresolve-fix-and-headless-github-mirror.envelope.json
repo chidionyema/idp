@@ -1,0 +1,17 @@
+{
+  "dropCode": "DROP-2026-1071",
+  "title": "REQ-40 · B-1 Cryptographically Signed SOURCE_MANIFEST.json, package.json ERESOLVE Cure (esbuild vs vite@8.3.5), Non-Destructive genesis-live Mirror & Headless Container-to-GitHub Sync Pipeline",
+  "originSurface": "AI_STUDIO_CLOUD_CHANNEL",
+  "AppletId": "c7941f7d-31d5-4d5c-8637-5aee66a7e622",
+  "lamportVectorClock": "LVC[founder:1071, studio:1071, otto:1071, oracle:1071, redb:1071]",
+  "auditorReportsResolved": [
+    "REPORT-01 (02:25) · Container -> GitHub Standing Pipeline: Fact-checked container (`git version 2.34.1` present, outbound HTTPS `api.github.com` returns HTTP/2 200), built `/scripts/sync/sync_genesis_live_to_github.ts` (`npm run sync:github`) to push to `refs/heads/genesis-live` using `ARGON_GITHUB_PAT` and verify remote commit SHA via GitHub REST API (Trap T1 & T13 cured).",
+    "REPORT-02 (02:25) · Measured Gate Results & B-1 Source Bridge: Removed unused `esbuild: ^0.25.0` devDependency from `package.json` to cure `npm install` `ERESOLVE` against `vite@8.3.5`, generated and signed `/SOURCE_MANIFEST.json` + `/public/SOURCE_MANIFEST.json` with real `SHA-256` + `Ed25519` (`spiffe://olat.estate/genesis/b1-source-bridge-ed25519`), and replaced `git push -f` with non-destructive `genesis-live` + `--allow-unrelated-histories -s ours` merge onto `main`."
+  ],
+  "verificationSummary": {
+    "masterRequirementsVerified": "40/40",
+    "unitTestsPassing": "106/106",
+    "lawsI1ToI8Enforcers": "8/8 PASS + 8/8 FALSIFIERS REJECTED",
+    "agentsMdLineCount": 95
+  }
+}

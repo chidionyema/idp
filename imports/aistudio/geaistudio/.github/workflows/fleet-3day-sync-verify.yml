@@ -1,0 +1,82 @@
+name: Fleet 3-Day Sync Completeness, Anti-Confusion & Multi-Remote Mirror
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'aistudio/**'
+      - 'lane/**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify-3day-fleet-seal:
+    name: Verify 3-Day Inventory, Lint, Full Suites & Bundle Seal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Full Git History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Clean Dependency Install
+        run: npm ci
+
+      - name: TypeScript Strict Check (Zero Errors)
+        run: npm run lint
+
+      - name: Sequential Live TCP HTTP & SSE Integration Suite
+        run: npx --yes tsx --test --test-concurrency=1 src/engine/httpIntegration.test.ts
+
+      - name: Sequential Core Engine, 12-FSM, Turnkey DR & 3-Day Completeness Suite
+        run: npx --yes tsx --test --test-concurrency=1 src/engine/router.test.ts
+
+      - name: Production Build & Static Export Materialization
+        run: npm run build
+
+      - name: Verify Sealed Git Bundle & Emit 3-Day Digest Summary
+        run: |
+          git bundle verify dist-exports/meridian-hermes-today.bundle
+          BUNDLE_SHA=$(sha256sum dist-exports/meridian-hermes-today.bundle | awk '{print $1}')
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "### Fleet 3-Day Canonical Sync Verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Git HEAD:** \`$HEAD_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Bundle SHA-256:** \`$BUNDLE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Canonical Manifest:** \`FLEET_3DAY_CANONICAL_MANIFEST.md\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Verified 3-Day Git Bundle & Canonical Manifest Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meridian-3day-canonical-bundle
+          path: |
+            dist-exports/meridian-hermes-today.bundle
+            FLEET_3DAY_CANONICAL_MANIFEST.md
+            TEAM_HANDOFF_TODAY.md
+            ROUTER.md
+            GENESIS_SPORE.dna
+          retention-days: 30
+
+      - name: Mirror HEAD to Canonical Fleet Remotes (argon-sync & gemini-sync) When FLEET_SYNC_PAT Configured
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_SYNC_PAT: ${{ secrets.FLEET_SYNC_PAT }}
+        run: |
+          if [ -z "$GITHUB_SYNC_PAT" ]; then
+            echo "Optional GitHub repo secret FLEET_SYNC_PAT not set; skipping cross-repo mirror (this repo itself is already synced on GitHub)."
+            exit 0
+          fi
+          git push --atomic "https://x-access-token:${GITHUB_SYNC_PAT}@github.com/chidionyema/argon-sync.git" \
+            +HEAD:refs/heads/aistudio/meridian-hermes-carbon-20261117 \
+            +HEAD:refs/heads/aistudio/meridian-hermes-live \
+            +HEAD:refs/heads/lane/aistudio-3day-sync-20261117
+          git push --atomic "https://x-access-token:${GITHUB_SYNC_PAT}@github.com/chidionyema/gemini-sync.git" \
+            +HEAD:refs/heads/aistudio/meridian-hermes-carbon-20261117 \
+            +HEAD:refs/heads/aistudio/meridian-hermes-live \
+            +HEAD:refs/heads/lane/aistudio-3day-sync-20261117

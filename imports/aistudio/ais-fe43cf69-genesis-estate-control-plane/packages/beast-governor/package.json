@@ -1,0 +1,15 @@
+{
+  "name": "@meridian-estate/beast-governor",
+  "version": "1.0.0",
+  "description": "Sovereign Beast Nervous System: Fractal 6-Layer Continuous Proof, Declarative Rego Policy Engine & Dynamic Founder Dials, Zero-Unevaluated-Session Gate, Full Resource/Bitwarden/Free-Lane Ledger, Millisecond All-Surface Incident Wake-Up Cascade, and Dreams Counterfactual Consolidation.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./rego": "./estate.rego"
+  },
+  "bin": {
+    "beast": "./cli.ts"
+  },
+  "author": "Chidi Onyema <chidionyema@gmail.com>"
+}

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.estate.dispatchd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>ESTATE_AGENT=dispatch</string>
+    <string>ESTATE_FLEET_ACK_WAIT=60</string>
+    <string>bin/estate-fleet</string>
+    <string>inbox</string>
+    <string>--pipe</string>
+    <string>bin/estate-dispatchd</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>15</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.estate.dispatchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.estate.dispatchd.err.log</string>
+</dict>
+</plist>

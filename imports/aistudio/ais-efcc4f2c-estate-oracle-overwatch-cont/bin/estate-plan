@@ -1,0 +1,149 @@
+#!/usr/bin/env node
+/**
+ * bin/estate-plan
+ * Unified Plan Contract Fence for Claim #7680 (estate-agent TS half) & Claim #7692 (sf-unit Python half).
+ * Enforces:
+ * 1. Machine-checkable BDD `then` clause predicate check (not just clause character length!)
+ * 2. Canonical (tool, args) attempts counter with strict 3-tries maximum (4th identical call refused)
+ * 3. Deterministic counter reset on declare_plan / revise_plan
+ * 4. Passes event.input into authorize() and validates all shared falsifiers in extensions/pi-plan-lock/cases.json
+ */
+
+import fs from 'fs';
+import path from 'path';
+
+const MACHINE_CHECKABLE_PATTERNS = [
+  /exit_code\s*==\s*0/i,
+  /file_exists:[^\s]+/i,
+  /grep_match:[^\s]+/i,
+  /probe:[^\s]+/i,
+  /http_status\s*==\s*200/i,
+  /test_pass:[^\s]+/i,
+  /sha256:[a-f0-9]+/i,
+];
+
+export function isMachineCheckableThen(thenClause) {
+  if (!thenClause || typeof thenClause !== 'string' || thenClause.trim().length < 8) {
+    return false;
+  }
+  return MACHINE_CHECKABLE_PATTERNS.some((re) => re.test(thenClause));
+}
+
+export function canonicalizeToolArgs(tool, inputArgs) {
+  const sortedKeys =
+    inputArgs && typeof inputArgs === 'object' ? Object.keys(inputArgs).sort() : [];
+  const normalized = {};
+  for (const k of sortedKeys) {
+    normalized[k] = inputArgs[k];
+  }
+  return `${String(tool || 'unknown')}::${JSON.stringify(normalized)}`;
+}
+
+export class PlanContractFence {
+  constructor(maxAttempts = 3) {
+    this.maxAttempts = maxAttempts;
+    this.attempts = new Map();
+  }
+
+  declareOrRevisePlan(plan) {
+    if (!isMachineCheckableThen(plan?.then)) {
+      return {
+        authorized: false,
+        reason:
+          'REFUSED_UNCHECKABLE_THEN: BDD then clause lacks a machine-checkable predicate (exit_code, file_exists:, grep_match:, probe:, http_status, test_pass:)',
+      };
+    }
+    this.attempts.clear();
+    return {
+      authorized: true,
+      reason: 'AUTHORIZED: attempts counter reset on declare_plan/revise_plan',
+    };
+  }
+
+  authorize(plan, event) {
+    const tool = event?.tool || '';
+    const input = event?.input || {};
+
+    if (tool === 'declare_plan' || tool === 'revise_plan') {
+      return this.declareOrRevisePlan({ then: input.then || plan?.then });
+    }
+
+    if (!isMachineCheckableThen(plan?.then)) {
+      return {
+        authorized: false,
+        reason:
+          'REFUSED_UNCHECKABLE_THEN: BDD then clause lacks a machine-checkable predicate (exit_code, file_exists:, grep_match:, probe:, http_status, test_pass:)',
+      };
+    }
+
+    const key = canonicalizeToolArgs(tool, input);
+    const prev = this.attempts.get(key) || 0;
+    const nextCount = prev + 1;
+    this.attempts.set(key, nextCount);
+
+    if (nextCount > this.maxAttempts) {
+      return {
+        authorized: false,
+        attempt: nextCount,
+        reason: `REFUSED_MAX_ATTEMPTS: ${this.maxAttempts} tries maximum exceeded for canonical (tool, args) [${key}]`,
+      };
+    }
+
+    return {
+      authorized: true,
+      attempt: nextCount,
+      reason: `AUTHORIZED: machine-checkable BDD then verified (attempt ${nextCount}/${this.maxAttempts})`,
+    };
+  }
+}
+
+const casesPath = path.resolve(process.cwd(), 'extensions', 'pi-plan-lock', 'cases.json');
+if (process.argv[1] && process.argv[1].endsWith('estate-plan')) {
+  const casesData = JSON.parse(fs.readFileSync(casesPath, 'utf-8'));
+  let passed = 0;
+  const results = [];
+
+  for (const tc of casesData.cases) {
+    const fence = new PlanContractFence(casesData.maxAttemptsBound || 3);
+    let lastRes = { authorized: false, reason: '' };
+    for (let i = 0; i < (tc.repeatCount || 1); i++) {
+      lastRes = fence.authorize(tc.plan, tc.event);
+    }
+    const ok = lastRes.authorized === tc.expectedAuthorized;
+    if (ok) passed += 1;
+    results.push({
+      id: tc.id,
+      passed: ok,
+      actualAuthorized: lastRes.authorized,
+      expectedAuthorized: tc.expectedAuthorized,
+      reason: lastRes.reason,
+    });
+  }
+
+  if (process.argv.includes('--json')) {
+    console.log(
+      JSON.stringify(
+        {
+          contract: 'UNIFIED-PI-PLAN-LOCK-7680-7692',
+          maxAttemptsBound: 3,
+          passedCases: passed,
+          totalCases: casesData.cases.length,
+          results,
+        },
+        null,
+        2
+      )
+    );
+    process.exit(passed === casesData.cases.length ? 0 : 1);
+  }
+
+  console.log('====================================================================');
+  console.log(
+    `ESTATE-PLAN FENCE (#7680 TS + #7692 PY) · ${passed}/${casesData.cases.length} CASES VERIFIED`
+  );
+  console.log('====================================================================');
+  for (const r of results) {
+    console.log(`[${r.passed ? 'PASS' : 'FAIL'}] ${r.id} -> ${r.reason}`);
+  }
+  process.exit(passed === casesData.cases.length ? 0 : 1);
+}

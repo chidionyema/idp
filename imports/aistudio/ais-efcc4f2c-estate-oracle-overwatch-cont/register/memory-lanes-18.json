@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "2026.10.31-argon",
+  "registerId": "ESTATE-MEMORY-REGISTER-18",
+  "owner": "@mike (Argon)",
+  "lanes": [
+    {
+      "id": "mem-lane-01",
+      "laneNumber": 1,
+      "name": "claim-open-brief-injector",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "claim-open",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --probe"
+    },
+    {
+      "id": "mem-lane-02",
+      "laneNumber": 2,
+      "name": "lane-submit-capture-hook",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "lane-submit",
+      "memoryKind": "project",
+      "launcherOrPath": "bin/estate-lane-submit",
+      "probeCmd": "node bin/estate-lane-submit --probe"
+    },
+    {
+      "id": "mem-lane-03",
+      "laneNumber": 3,
+      "name": "local-capture-spool",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "store-kernel",
+      "memoryKind": "project",
+      "launcherOrPath": ".estate/estate_ledger.json",
+      "probeCmd": "test -f .estate/estate_ledger.json"
+    },
+    {
+      "id": "mem-lane-04",
+      "laneNumber": 4,
+      "name": "growmos-git-audit-store",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "store-kernel",
+      "memoryKind": "reference",
+      "launcherOrPath": "bin/estate-decide",
+      "probeCmd": "node bin/estate-decide --check-unique-ids"
+    },
+    {
+      "id": "mem-lane-05",
+      "laneNumber": 5,
+      "name": "claude-code-memory-hook",
+      "runtimeSurface": "Claude Code",
+      "chokepoint": "claim-open",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --runtime=claude-code --probe"
+    },
+    {
+      "id": "mem-lane-06",
+      "laneNumber": 6,
+      "name": "gemini-cli-memory-adapter",
+      "runtimeSurface": "Gemini CLI",
+      "chokepoint": "claim-open",
+      "memoryKind": "project",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --runtime=gemini-cli --probe"
+    },
+    {
+      "id": "mem-lane-07",
+      "laneNumber": 7,
+      "name": "cursor-ide-memory-adapter",
+      "runtimeSurface": "Cursor",
+      "chokepoint": "claim-open",
+      "memoryKind": "feedback",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --runtime=cursor --probe"
+    },
+    {
+      "id": "mem-lane-08",
+      "laneNumber": 8,
+      "name": "cline-runtime-memory-bridge",
+      "runtimeSurface": "Cline",
+      "chokepoint": "claim-open",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --runtime=cline --probe"
+    },
+    {
+      "id": "mem-lane-09",
+      "laneNumber": 9,
+      "name": "codex-runtime-memory-bridge",
+      "runtimeSurface": "Codex",
+      "chokepoint": "claim-open",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --runtime=codex --probe"
+    },
+    {
+      "id": "mem-lane-10",
+      "laneNumber": 10,
+      "name": "kimi-failure-ore-extractor",
+      "runtimeSurface": "Kimi Lane",
+      "chokepoint": "lane-submit",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/estate-lane-submit",
+      "probeCmd": "node bin/estate-lane-submit --runtime=kimi --probe"
+    },
+    {
+      "id": "mem-lane-11",
+      "laneNumber": 11,
+      "name": "otto-front-door-memory-plane",
+      "runtimeSurface": "Otto Front-Door",
+      "chokepoint": "claim-open",
+      "memoryKind": "user",
+      "launcherOrPath": "src/engine/oracleEngine.ts",
+      "probeCmd": "test -f src/engine/oracleEngine.ts"
+    },
+    {
+      "id": "mem-lane-12",
+      "laneNumber": 12,
+      "name": "memory-mcp-spool-bridge",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "router-hook",
+      "memoryKind": "reference",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --mcp-health"
+    },
+    {
+      "id": "mem-lane-13",
+      "laneNumber": 13,
+      "name": "memory-a2m-spool-bridge",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "router-hook",
+      "memoryKind": "reference",
+      "launcherOrPath": "bin/estate-lane-submit",
+      "probeCmd": "node bin/estate-lane-submit --a2m-health"
+    },
+    {
+      "id": "mem-lane-14",
+      "laneNumber": 14,
+      "name": "memory-dream-consolidation-daemon",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "dream-cron",
+      "memoryKind": "procedural",
+      "launcherOrPath": "bin/memory-dream",
+      "probeCmd": "node bin/memory-dream --probe"
+    },
+    {
+      "id": "mem-lane-15",
+      "laneNumber": 15,
+      "name": "bitemporal-truth-probe-engine",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "claim-open",
+      "memoryKind": "reference",
+      "launcherOrPath": "src/engine/memoryPlaneEngine.ts",
+      "probeCmd": "test -f src/engine/memoryPlaneEngine.ts"
+    },
+    {
+      "id": "mem-lane-16",
+      "laneNumber": 16,
+      "name": "maple-trust-contradiction-guard",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "claim-open",
+      "memoryKind": "feedback",
+      "launcherOrPath": "bin/estate-claim-brief",
+      "probeCmd": "node bin/estate-claim-brief --verify-maple-guard"
+    },
+    {
+      "id": "mem-lane-17",
+      "laneNumber": 17,
+      "name": "rls-cross-tenant-canary",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "store-kernel",
+      "memoryKind": "user",
+      "launcherOrPath": "bin/estate-memory-audit",
+      "probeCmd": "test -f register/memory-lanes-18.json"
+    },
+    {
+      "id": "mem-lane-18",
+      "laneNumber": 18,
+      "name": "router-passive-memory-tap",
+      "runtimeSurface": "Shared Substrate",
+      "chokepoint": "router-hook",
+      "memoryKind": "project",
+      "launcherOrPath": "server.ts",
+      "probeCmd": "test -f server.ts"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "receiptId": "OUTBOX-2026-1031-001",
+  "sourceInboxEnvelopeId": "INBOX-001-claude-catalog-respec",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T18:02:14Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (6/6 Gates PASS)",
+  "exitCode": 0,
+  "deliverySummary": "Re-refined Claude's Machine-Generated Repo Catalog to ESTATE-SPEC-STD-V2, closed all 3 specification loopholes, and surfaced 1-click Whole-Repo Export (.tar.gz, .bundle, catalog JSON) in the Founder UI.",
+  "artifactsDelivered": [
+    "register/machine-repo-catalog.json",
+    "register/spec-delivery-standard-v2.json",
+    "bin/estate-catalog-export",
+    "bin/estate-spec-enforce"
+  ],
+  "rollbackCmd": "git checkout main -- register/machine-repo-catalog.json bin/estate-catalog-export",
+  "cifHmacSignature": "e94f1c82a703d5419b2e084c71a56f3d8e20b1497c63a4f2d190e8b3c4a75120",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- register/machine-repo-catalog.json bin/estate-catalog-export"
+  ]
+}

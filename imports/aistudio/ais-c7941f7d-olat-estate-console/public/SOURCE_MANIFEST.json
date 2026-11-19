@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "genesis.b1.source-manifest.v1",
+  "aiStudioAppletId": "c7941f7d-31d5-4d5c-8637-5aee66a7e622",
+  "exportTimestampIso": "2026-11-02T06:55:00.000Z",
+  "gitHeadCommitSha": "5029524c6f35cd7b5e501c72cfdec693d9a7b653",
+  "gitTag": "v1.0.27",
+  "targetMirrorBranch": "genesis-live",
+  "canonicalProtectedBranch": "main",
+  "preserveLegacyOct31SnapshotHistory": true,
+  "containerPreflightFacts": {
+    "gitBinaryInstalled": true,
+    "gitVersionString": "git version 2.34.1",
+    "outboundGithubApiReachable": true,
+    "npmEresolveConflictFixed": true,
+    "nodeVersion": "v22.23.3",
+    "platformArch": "linux-x64"
+  },
+  "measuredVerificationGates": {
+    "unitTestCommand": "npx --yes tsx --test src/lib/protocolEngine.test.ts",
+    "unitTestsPassed": 141,
+    "unitTestsFailed": 0,
+    "unitTestExitCode": 0,
+    "lawsEnforcerCommand": "npx --yes tsx scripts/enforcers/enforce_i1_to_i8.ts",
+    "lawsPassedOnCleanState": 8,
+    "falsifiersRejectedMutatedState": 8,
+    "enforcerExitCode": 0,
+    "uiScreenshotProofPath": "public/screenshots/section-44-opportunity-harvester.png"
+  },
+  "headlessGithubMirrorSync": {
+    "tokenEnvVarNameOnly": "ARGON_GITHUB_PAT",
+    "tokenPresentInContainerEnv": false,
+    "syncMode": "SIGNED_B1_BUNDLE_READY_AWAITING_ARGON_GITHUB_PAT_SECRET",
+    "nonDestructiveMirrorCommand": "curl -fsSL https://ais-pre-pnuj6ysc7lwv3pfgp5xuxv-534240513427.europe-west3.run.app/bootstrap-argo-sync.sh | bash",
+    "promoteToMainPreservingHistoryCommand": "git fetch argon main && git branch archive/oct31-relayops-snapshot argon/main && git push argon archive/oct31-relayops-snapshot:refs/heads/archive/oct31-relayops-snapshot && git checkout -B main && git merge --allow-unrelated-histories -s ours argon/main -m \"chore(genesis): merge and preserve Oct 31 RelayOps snapshot history into Genesis ERA_1 main\" && git push argon main:main --tags"
+  },
+  "artifacts": [
+    {
+      "filename": "olat-estate-genesis-main.bundle",
+      "relativePath": "public/olat-estate-genesis-main.bundle",
+      "sha256": "7e2d4852c906a2c5275ef65bb720db1829662c9fea5aa9ee5bdbac8412d6eecf",
+      "byteSize": 7378509
+    },
+    {
+      "filename": "bootstrap-argo-sync.sh",
+      "relativePath": "public/bootstrap-argo-sync.sh",
+      "sha256": "1257b25c4a1b6541ba5155d959f2c9f8928c0cd35db2b53ffb5bd5962f45cd78",
+      "byteSize": 2323
+    },
+    {
+      "filename": "sync-bitwarden-to-github.sh",
+      "relativePath": "public/sync-bitwarden-to-github.sh",
+      "sha256": "c570cd76e000bf71df539e8266fcd49eb57c4a5a5c319e2a2e1075cf033d171e",
+      "byteSize": 4502
+    },
+    {
+      "filename": "bitwarden-secret-manifest.json",
+      "relativePath": "scripts/secrets/bitwarden-secret-manifest.json",
+      "sha256": "f5d3a42665b73a431a3d32288b25c124849bb50f11645555660cceb36eb2eb7c",
+      "byteSize": 1671
+    },
+    {
+      "filename": "bitwarden-secrets-sync.yml",
+      "relativePath": "workflows/github-actions/bitwarden-secrets-sync.yml",
+      "sha256": "6cbec77ae71a237d9b15a64bad1270c3271d71b74c391198655965e318ad28ef",
+      "byteSize": 2569
+    },
+    {
+      "filename": "BOOTSTRAP_ARGO_SYNC.md",
+      "relativePath": "BOOTSTRAP_ARGO_SYNC.md",
+      "sha256": "8c91961f0a17c60f095581eef977d4a77208b23f3cda66a88de2f2a4ddb6a388",
+      "byteSize": 4529
+    },
+    {
+      "filename": "README.md",
+      "relativePath": "inbox/README.md",
+      "sha256": "a0685f7f88f358d74022149ff361a9d739ac736f0658b99a7b12313edd809c9f",
+      "byteSize": 5980
+    },
+    {
+      "filename": "PROMOTION_RECEIPT.json",
+      "relativePath": "inbox/PROMOTION_RECEIPT.json",
+      "sha256": "e8800c76efd0a4111d0c55fef0841f7053193939fc747bb1246bbb6ba1968067",
+      "byteSize": 24141
+    },
+    {
+      "filename": "DROP-2026-1073-inbox-6hop-sequencer-and-semantic-conflict-airlock.envelope.json",
+      "relativePath": "inbox/incoming/DROP-2026-1073-inbox-6hop-sequencer-and-semantic-conflict-airlock.envelope.json",
+      "sha256": "499b6fe2d424169aa74986b6303dac0085c49afd4425b86bc0b6494a20c648af",
+      "byteSize": 1492
+    },
+    {
+      "filename": "genesis-verify.yml",
+      "relativePath": "workflows/github-actions/genesis-verify.yml",
+      "sha256": "60fa277501cd236370f0c5f5f4a031b30c6256f8f7abd00754403e6ed3b0c1bb",
+      "byteSize": 1404
+    },
+    {
+      "filename": "genesis-inbox-sequencer.yml",
+      "relativePath": "workflows/github-actions/genesis-inbox-sequencer.yml",
+      "sha256": "5a18b2be0bc92b7d328d0fefc67342386b3442240523c6cbd96e5773c5b97a67",
+      "byteSize": 2620
+    },
+    {
+      "filename": "inbox_hop_sequencer.ts",
+      "relativePath": "scripts/sequencer/inbox_hop_sequencer.ts",
+      "sha256": "a10b947262f260dc36ea7caacc3cfff03917be75602ae09884207e8ea8d49652",
+      "byteSize": 13756
+    },
+    {
+      "filename": "GENESIS_SPEC.md",
+      "relativePath": "GENESIS_SPEC.md",
+      "sha256": "799a1ed346c5eba26e6a77280eb6d5ba1cf4f9fb6e447e4dd7268b0026268a28",
+      "byteSize": 6220
+    },
+    {
+      "filename": "laws.yaml",
+      "relativePath": "laws.yaml",
+      "sha256": "a79ece9f913cb4f3317c93d0cec8b3d7ed1d5da4219194a0c3f6a4137497dcb9",
+      "byteSize": 4479
+    },
+    {
+      "filename": "AGENTS.md",
+      "relativePath": "AGENTS.md",
+      "sha256": "c13933cf2bb88f8d2723ac683abafe4191ebd9bcbc84d08d42be301a3450cd76",
+      "byteSize": 24008
+    },
+    {
+      "filename": "package.json",
+      "relativePath": "package.json",
+      "sha256": "77f0a7c9b24702c3e180b5f78fc8fca3234555b847eda9447330956b53455776",
+      "byteSize": 1249
+    },
+    {
+      "filename": "capsule.toml",
+      "relativePath": "capsules/genesis-k8s-externalsecret-verify/capsule.toml",
+      "sha256": "ccf5c24ba611e6c55a20fc17618c297653b610da969d0a9c96b060d581ed624b",
+      "byteSize": 1240
+    },
+    {
+      "filename": "agent-blueprint.toml",
+      "relativePath": "capsules/foundry/agent-blueprint.toml",
+      "sha256": "bb43c1d8635601930d5a01af92da12be91e6f8559ac38f913bf53fe2f10e4793",
+      "byteSize": 1138
+    },
+    {
+      "filename": "enforce_i1_to_i8.ts",
+      "relativePath": "scripts/enforcers/enforce_i1_to_i8.ts",
+      "sha256": "89c87085b7667d4d263e6a3c6faf01681f8cb1bb70ba6c482d953d6d628b4b77",
+      "byteSize": 12982
+    },
+    {
+      "filename": "sync_genesis_live_to_github.ts",
+      "relativePath": "scripts/sync/sync_genesis_live_to_github.ts",
+      "sha256": "0f3d55f19035b4e1e938a6e307c83c6411928380a2d31dd8beb3b2839ec56203",
+      "byteSize": 16138
+    },
+    {
+      "filename": "protocolEngine.ts",
+      "relativePath": "src/lib/protocolEngine.ts",
+      "sha256": "1b15db4f0e637f9a278326e58fe327660656d3e982d598e3b0014c053b2301a5",
+      "byteSize": 1039728
+    },
+    {
+      "filename": "protocolEngine.test.ts",
+      "relativePath": "src/lib/protocolEngine.test.ts",
+      "sha256": "d895d646b8d0a402bd8a9d83e0798161631d23823097554c927703d6b827b7cf",
+      "byteSize": 151559
+    },
+    {
+      "filename": "DROP-2026-1072-quis-custodiet-meta-governance-and-closed-loop-control-defense.envelope.json",
+      "relativePath": "inbox/incoming/DROP-2026-1072-quis-custodiet-meta-governance-and-closed-loop-control-defense.envelope.json",
+      "sha256": "687be9041c37015bc67424533e5f748962daaf7cd126b67aafbe2706d0d3a67a",
+      "byteSize": 1837
+    },
+    {
+      "filename": "DROP-2026-1077-omni-modal-all-ways-fleet-doctrine-and-failure-mode-exhaustion.envelope.json",
+      "relativePath": "inbox/incoming/DROP-2026-1077-omni-modal-all-ways-fleet-doctrine-and-failure-mode-exhaustion.envelope.json",
+      "sha256": "c0060450bcf9afc6c6627441d4a737a8220b82de4d7d0e66c93fcb266ce8348d",
+      "byteSize": 2065
+    },
+    {
+      "filename": "genesis-verify.yml",
+      "relativePath": ".github/workflows/genesis-verify.yml",
+      "sha256": "38fc23f46259c003fbec63986fa43a65fb87597c9b6e2a8ff07485f3942d9bfe",
+      "byteSize": 1546
+    },
+    {
+      "filename": "genesis-inbox-sequencer.yml",
+      "relativePath": ".github/workflows/genesis-inbox-sequencer.yml",
+      "sha256": "ca3783ca78eae4d05fb95d0f6d4a4626d5038c4874bfadb7c9df20f97948d241",
+      "byteSize": 2712
+    },
+    {
+      "filename": "section-44-opportunity-harvester.png",
+      "relativePath": "public/screenshots/section-44-opportunity-harvester.png",
+      "sha256": "c5d407c00bae7ebb1ed91005b76ed463874880f8664fc9e7248c52d9aeb3324c",
+      "byteSize": 224994
+    },
+    {
+      "filename": "verify_sec40_custodes_meta_governance.png",
+      "relativePath": "public/screenshots/verify_sec40_custodes_meta_governance.png",
+      "sha256": "4d4ed0496f2392ebcf71de7456a15acfa361579355ad511bade5756e9ca811fa",
+      "byteSize": 197921
+    }
+  ],
+  "merkleRootOverAllArtifacts": "merkle_b1:a45dcf413303b2224cee3abdb7ebeba2b83aff9dcfe1deedb3f417f3bf09fd52",
+  "signerIdentity": "spiffe://olat.estate/genesis/b1-source-bridge-ed25519",
+  "keyId": "ed25519:genesis-b1-key-0x99f4e2a1",
+  "ed25519PublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEApAKzHs0uPnDcLwmZkPFJ/0E6fRVb2Tjk2CH5mx5Ewuo=\n-----END PUBLIC KEY-----\n",
+  "ed25519SignatureHex": "e5328f39b2ce51e9456c4a3e48a0374b723ed9af9a665b71d498d1ab46d87a18aa44c0d482ceea3e788fbf9d5d64fb8f349a6cb8221d690d78ad44cfb0d0c808",
+  "signatureVerifiedOutOfProcess": true
+}

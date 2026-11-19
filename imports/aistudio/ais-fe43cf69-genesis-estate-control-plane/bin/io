@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# bin/io — Portable POSIX Launcher for Canonical PACK-15 (@meridian-estate/io-engine)
+# Works identically across macOS & Linux without BSD `env -S` incompatibilities.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec npx --yes tsx "${SCRIPT_DIR}/../packages/io-engine/cli.ts" "$@"

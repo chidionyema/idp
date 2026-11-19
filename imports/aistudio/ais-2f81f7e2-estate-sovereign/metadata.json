@@ -1,0 +1,6 @@
+{
+  "name": "Estate Sovereign - Founder Visual Intelligence & Algorithmic Command",
+  "description": "Real-time visual intelligence, artifact track-and-trace registry, closed-loop algorithmic feedback engine, and financial & cognitive risk telemetry for autonomous estate governance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

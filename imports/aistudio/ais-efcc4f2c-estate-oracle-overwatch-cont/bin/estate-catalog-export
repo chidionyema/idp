@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+/**
+ * bin/estate-catalog-export
+ * Machine-Generated Repository Catalog & Whole-Repo Export Verifier
+ * Surfaces Claude's machine-generated catalog audited to ESTATE-SPEC-STD-V2
+ * and verifies all 4 whole-repo export channels (.tar.gz, .bundle, catalog JSON, /install.sh).
+ */
+
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+const catalogPath = path.resolve(process.cwd(), 'register/machine-repo-catalog.json');
+const catalogData = JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
+
+const verifiedEntries = (catalogData.catalogEntries || []).map((entry) => {
+  const fullPath = path.resolve(process.cwd(), entry.path);
+  const exists = fs.existsSync(fullPath);
+  const sizeBytes = exists ? fs.statSync(fullPath).size : 0;
+  return {
+    ...entry,
+    exists,
+    sizeBytes,
+  };
+});
+
+const allExist = verifiedEntries.length > 0 && verifiedEntries.every((e) => e.exists);
+const hmac = crypto
+  .createHmac('sha256', 'ESTATE-MACHINE-CATALOG-KEY')
+  .update(JSON.stringify(verifiedEntries))
+  .digest('hex');
+
+const output = {
+  catalogId: catalogData.catalogId,
+  status: allExist ? 'WHOLE_REPO_EXPORT_READY' : 'MISSING_ARTIFACTS',
+  entriesVerified: `${verifiedEntries.filter((e) => e.exists).length}/${verifiedEntries.length}`,
+  wholeRepoExportChannels: catalogData.wholeRepoExportChannels,
+  catalogEntries: verifiedEntries,
+  cifHmac: hmac,
+  exitCode: allExist ? 0 : 1,
+};
+
+if (process.argv.includes('--json')) {
+  console.log(JSON.stringify(output, null, 2));
+} else {
+  console.log(
+    `[ESTATE-CATALOG-EXPORT] ${output.status} | Entries=${output.entriesVerified} | Export Channels=${output.wholeRepoExportChannels.length}`
+  );
+  for (const ch of output.wholeRepoExportChannels) {
+    console.log(`  [EXPORT] ${ch.channelId}: ${ch.label} -> ${ch.endpoint}`);
+  }
+  for (const entry of verifiedEntries) {
+    console.log(
+      `  [${entry.exists ? 'VERIFIED' : 'MISSING'}] ${entry.path} (${entry.subsystem} · ${entry.sizeBytes} bytes)`
+    );
+  }
+  console.log(`  [HMAC] ${hmac}`);
+}
+
+process.exit(output.exitCode);

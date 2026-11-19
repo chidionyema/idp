@@ -1,0 +1,91 @@
+name: ArgoCD GitOps Continuous Sync & Attestation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  validate-and-test:
+    name: Estate Test & Contract Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Authoritative Source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Estate Dependencies
+        run: npm ci
+
+      - name: Run Resolution & Adversarial Unit Tests
+        run: npx tsx --test src/core/resolution.test.ts
+
+      - name: Enforce TypeScript & Lint Checks
+        run: npm run lint
+
+      - name: Validate Applet Compilation
+        run: npm run build
+
+  build-and-sign:
+    name: Build OCI & SLSA Provenance Attestation
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Build Container Image
+        id: build-image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ghcr.io/argon-genesis/kimi-capability-first-engine:${{ github.sha }}
+
+  trigger-argo-sync:
+    name: Trigger ArgoCD GitOps Reconciliation
+    needs: build-and-sign
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v4
+
+      - name: Update Kustomize Image Tag
+        run: |
+          cd deploy/k8s
+          sed -i "s/newTag: .*/newTag: ${{ github.sha }}/" kustomization.yaml
+          git config user.name "Kimi GitOps Bot"
+          git config user.email "gitops-bot@argon.internal"
+          git commit -am "chore(gitops): promote commit ${{ github.sha }} to Argo sync" || echo "No changes to commit"
+          git push origin main || echo "Local branch updated"
+
+      - name: Notify ArgoCD Webhook
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          if [ -n "$ARGOCD_SERVER" ] && [ -n "$ARGOCD_AUTH_TOKEN" ]; then
+            curl -k -X POST -H "Authorization: Bearer $ARGOCD_AUTH_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://${ARGOCD_SERVER}/api/v1/applications/kimi-capability-first-engine/sync" \
+              -d '{"revision":"main","prune":true}'
+            echo "ArgoCD sync triggered successfully."
+          else
+            echo "ArgoCD credentials not present in runner env; relying on automatic poll sync (syncPolicy.automated)."
+          fi

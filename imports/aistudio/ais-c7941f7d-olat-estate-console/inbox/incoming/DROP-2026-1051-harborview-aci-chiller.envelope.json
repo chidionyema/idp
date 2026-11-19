@@ -1,0 +1,20 @@
+{
+  "envelopeVersion": "2.1.0",
+  "dropCode": "DROP-2026-1051",
+  "originChannel": "GOOGLE_AI_STUDIO_ARTIFACT_DROP",
+  "targetRepositoryPath": "inbox/incoming/DROP-2026-1051-harborview-aci-chiller.envelope.json",
+  "gitRefShard": "refs/heads/inbox/DROP-2026-1051",
+  "lamportVectorClock": {
+    "founder": 1051,
+    "studio": 1051,
+    "gh_inbox": 1051,
+    "redb": 1051
+  },
+  "directiveTitle": "Harborview Chiller Adaptive Conformal Prediction (ACI) Pre-Cooling Schedule Patch",
+  "assignedSpecialistId": "SPC-OPS-03",
+  "blake3ArtifactHash": "blake3:0x6d21f089ab33e971",
+  "genesisRedbKey": "redb://tenant_olat/github_inbox/DROP-2026-1051",
+  "verifiedYieldAnnualUsd": 18400,
+  "sefVeridictProofHash": "sha256:0x99d4f210a8b3c522",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

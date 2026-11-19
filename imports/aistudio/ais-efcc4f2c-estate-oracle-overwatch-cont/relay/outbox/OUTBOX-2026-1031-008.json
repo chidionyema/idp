@@ -1,0 +1,28 @@
+{
+  "receiptId": "OUTBOX-2026-1031-008",
+  "sourceInboxEnvelopeId": "INBOX-008-claude-war-games-and-training-protocols",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T19:53:31.527Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (6/6 Gates PASS)",
+  "exitCode": 0,
+  "deliverySummary": "Audited INBOX-008-claude-war-games-and-training-protocols (TICKET-CLAUDE-INBOX-7731) on Consulting Lane and promoted signed deliverable to chidionyema/estate-outbox.",
+  "artifactsDelivered": [
+    "register/spec-delivery-standard-v2.json",
+    "register/machine-repo-catalog.json"
+  ],
+  "rollbackCmd": "git checkout main -- relay/inbox/INBOX-008-claude-war-games-and-training-protocols.json",
+  "cifHmacSignature": "62722d6ebd0483833db3c8957052bc76c847ec2d8e5d20558a12f628ea63e2e9",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- relay/inbox/INBOX-008-claude-war-games-and-training-protocols.json"
+  ]
+}

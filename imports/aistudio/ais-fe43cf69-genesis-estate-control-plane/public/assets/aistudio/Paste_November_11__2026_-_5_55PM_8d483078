@@ -1,0 +1,163 @@
+ompletion or proof of any remote worker receipt.
+
+0. The founder's instruction and the epistemic rule
+The founder is transferring operational initiative to capable agents because ChatGPT has not achieved the requested production outcomes. Do not stall for permission or founder laptop/CLI assistance on ordinary delegated engineering. Execute the real work through authorized cloud services; integrate changes into the appropriate main branches; run end-to-end tests; deploy through existing pipelines; independently demonstrate live effect. Be ambitious with experimentation and rigorous with evidence.
+
+The founder is mobile/voice first. Do not treat a conversation, unmerged PR, documentation, green unit test, HTTP 200, deployment claim, fake worker run, or screenshot of a static deck as verified operational yield. Respect all real authentication, secrets, GitHub protection, security and financial-approval boundaries. Silence is not founder approval.
+
+Required proof chain: instruction ID -> accepted durable instruction / assigned worker -> exact execution ID and recovery state -> changed source SHA -> relevant integration/negative tests -> CI run and result -> merged main SHA -> deployment/build ID and environment -> independent browser/API/infrastructure verification -> founder-visible receipt (Telegram/Genesis, when actually connected). Every uncertainty and missing link is explicit.
+
+Authority / evidence classes
+E1: Direct GitHub API results observed in this handover session (2026-11-11), with exact URL/SHA when supplied.
+E2: Earlier ChatGPT tool results with exact artefacts, but potentially stale; refresh before acting.
+E3: Founder decisions and earlier conversation context; authoritative as intent, not proof implemented.
+U: Access missing or implementation currently unverified. Never silently promote E3/U to E1.
+1. Company, purpose and operating posture
+The founder identifies Merdian/Merian Intelligence (spelling has varied in conversation; confirm brand in canonical brand assets) as a parent company. MumChimp is a group company. Genesis / Autonomous Estate is an agentic operating-platform/product and the company's internal command infrastructure, not a static UI. Other initiatives include Prospector, Mums Concierge, TechMastery.MarketPlace, Mer(d)ian Fieldbooks / education, a consultancy site (Always On Technologies), Glustack, and earlier quant/identity engineering products. Confirm authoritative company structure rather than assuming every historical repository is an active commercial product.
+
+Capital is constrained. Seek low-cost cloud-native operation and commercial revenue; do not relocate operation to the founder's Mac. Founder wants asymmetric research strength, product quality and execution speed. Provider competition is welcome: Gemini, Claude, AI Studio / Genesis Argon, Gemini Carbon, DeepSeek, MiniMax, Codex and other models are replaceable workforce inputs, not the source of company continuity. No provider-specific memory should be the sole source of truth.
+
+R&D doctrine: Chesed first, Geburah second. Rapidly build/run/measure ambitious internal capabilities; falsify and refine them. Distinguish internal experimental freedom from customer-facing production: commercial releases need security, accessibility, reproducible QA, rollback, branding and live visitor-side proof. Do not invent a governance bureaucracy before testing the actual capabilities. Conversely do not bypass security controls for green checks.
+
+2. Canonical platform architecture and institutional decisions (E3 unless reverified)
+FLOW — Fractal Lifecycle of Operational Work: authoritative instruction-to-independently-verified-yield state machine, recursively applied to tasks, substeps, incidents and remediation. Durable acceptance, causal linkage, idempotency, retries, bounded recovery, evidence and cancellation; no orphan instructions or false verified states. Prior requirement: genuine inactivity/stagnation monitor ~600 seconds, followed by autonomous recovery; inspect argon PR #50 and existing Temporal/IDP implementation before duplicating.
+Legion: model-agnostic real cloud-resident workforce using IDP agent-sandbox, epistemic firewall, claim-gate, Greenlane and FLOW. Eight formations: Sniper, Phalanx, Pipeline, Swarm, Supervisor/Centurion, Adversarial, Tournament, Sieve. Run actual tests with independent falsifiers, fenced workspaces, concurrency isolation, cost/model metrics, replay and context recovery. No pretending that a static dashboard represents running agents.
+HELM: founder-designed behavioural agent helmet, with founder-controlled local degrees of freedom and bounded one-shot/limited-shot specialist regimes; e.g. one reconnaissance pass, one algorithmic write, measured trials. Experimental capability, not blanket mandatory policy until falsified in real deployments. See Argon PRs #78/#79 and IDP #7919/#7969.
+Genesis Founder Surface: voice-first mobile mission control; One Eye = an agent's evidence-backed estate view, All-Seeing Eye = founder-wide reconciled view of every worker, gaps, freshness, instruction progress and claims. Needs real live event sources and provenance, not the 394 KB/static deck failure. Preserve product parity and original AI Studio work. Earlier peer design used IDP NATS JetStream, AURA SSE and observation receipts. Validate infrastructure topology.
+One Brain / intelligence: collect raw observable operational metrics and decision intelligence, including Optimus-related telemetry, execution, context, model/cost, CI/release and recovery. Do not claim insight absent upstream measurement; provide freshness and raw source pointers.
+estate-graph: authoritative shared memory, knowledge/topology/skills proposal; inspect existing private repo and PRs rather than spawning new memory stores. Prior work included FTS5 / optional Model2Vec and verified-only skill knowledge, reported 31 tests but no asserted deployment.
+argon-sync: Rust authority/lease candidate; verify fencing and fail-closed semantics. Prior estate-graph PR #7 / readiness requirement reported nine checks via bin/estate-readiness; status now unknown.
+Greenlane / DoF / CI: durable autonomous delivery with genuine checks, no stranded red PRs, idempotent retries and reconciliation. Do not assume bypass authority; do not arbitrarily change protected-main rules, signed-commit provenance, founder pause/waiver constraints or OCI vault expectations.
+Company operations: Linear for provider-independent tickets, Chronos/Tempo for durable calendar, operating cadence, bounded goals, schedules and ownership. Telegram as low-friction founder communications, pin / acknowledgement where actually supported. The estate must not be managed from ChatGPT automations alone.
+Existing estate bus / orchestration: NATS JetStream, Temporal, GitHub issueops/peer board, OCI/Cloudflare/Vercel and IDP runners are historically described. Discover existing code and services before adding another queue/state store.
+Research/commercial ecosystem: evaluate Temporal, OpenTelemetry, OPA, OpenFeature, Langfuse, LangChain/Fuse interoperability and component replaceability; validate licenses before embedding in a commercial product.
+Founder notification: status should be observable on real Genesis and Telegram; agent may also use preexisting gcp_board or .genesis/outbox. Issue comments are only a fallback receipt, not proof Telegram was sent.
+3. GitHub source inventory (E1: connected account listing, 2026-11-11)
+The connected account exposes 75 repositories belonging to chidionyema, not all necessarily company-owned/active. This is the curated estate-relevant set observed:
+
+Private: chidionyema/argon, chidionyema/argon-sync, chidionyema/argo-greenlane, chidionyema/estate-graph, chidionyema/estate-secrets, chidionyema/estate-archive, chidionyema/idp-archive, chidionyema/mums-concierge, chidionyema/tempo-node.
+
+Public: chidionyema/idp, chidionyema/crew, chidionyema/estate, chidionyema/estate-core, chidionyema/estate-guards, chidionyema/estate-intents, chidionyema/hermes-agent, chidionyema/hermes-config, chidionyema/hermes-operator, chidionyema/hermes-v2, chidionyema/prospector, chidionyema/mumchimp-medusa, chidionyema/TechMastery.MarketPlace.
+
+Scan all active repos, default branches, releases, open and abandoned PRs, duplicate worktrees/branches, protected rules, incidents, CI, environment secrets without leaking them, code ownership and remote deployments. Respect private/public boundaries. There were reports of shared checkout deletion, orphan work and Codex Desktop session loss. Preserve every recoverable useful patch before branch cleanup. Do not assume a branch is merged because another agent cited it.
+
+Currently observed main SHA (E1 at observation time)
+argon: bc61148828d04d84c4862cdef0be33f56060f7b0 (previous ChatGPT handover update).
+idp: d05d6fef60454f059cf9db943bfc66b0d3079e00. Main may have moved. Always re-read before commit / release.
+4. Existing open work and stranded PR backlog (E1 snapshot, not an approval to merge)
+Argon open PRs at 2026-11-11 scan:
+
+#91 authenticated Google Gemini inbound bridge — current head 85d50c4d288653336eff2b09e2f5e07b38bf6a38, open. Both Genesis inbound contract CI and provenance FAIL at exact head: actions runs 43070104254 and 43070103951; latest attempted source fix was a Gmail label handling correction, not verified yield.
+#88 staging: cloud build must pass real integration tests.
+#84 real-time operations calendar and Telegram single-pin alerts.
+#83 Chronos-owned, Linear-indexed operating calendar.
+#81 private sourced Book / recovered antibodies / rescue-risk audit.
+#79 private HELM exact-task learning.
+#78 live HELM evidence with freshness/research caveats.
+#77 research doctrine Chesed before Geburah.
+#76 mobile founder performance.
+#75 voice-first founder home + evidence truth contract + browser acceptance.
+#72 Otto Private Office premium live founder surface.
+#66 cloud recovery identity.
+#50 Genesis instruction-flow 600-second watchdog.
+IDP open PRs at 2026-11-11 scan:
+
+#7981 Gemini inbound bridge — current head a75bf6e8a20ad614fe27f5ddc8ba7b5d891f4612, open. At exact head the following observed GitHub workflows passed: shadow-verify 43070767724; ruff-required 43070766710; guarded-paths 43070766861; Genesis authenticated Google inbound bridge 43070766789; mutation-pr-gate 43070766860; factory-ci 43070766617; no-harness-folders 43070767220. This is not a complete certification of all required checks/merge/deployment, and Google intake remains not activated.
+#7974 staging integrated worker tests per SHA.
+#7973 Legion real cloud worker age bootstrap.
+#7971 Meridian Mailjet inquiry delivery without obsolete UI.
+#7969 HELM bounded-shot helmet and paired trials.
+#7966 FLOW canonical Argon instruction IDs to Temporal.
+#7921 lab persistent operational intelligence.
+#7919 HELM cross-session experience.
+#7901 Merdian Fieldbooks publishing and merchant-safe checkout.
+#7894 visual regression protection / UI excellence.
+#7889 verified-sender company enquiries.
+#7850 stranded DoF-red Greenlane recovery.
+#7840 actions security updates.
+#7837 premium consultancy/laboratory/ventures website.
+These PR lists are discovery clues. Individually compare each head to current main, checks, dependencies, code changes, duplicate PRs and production outcomes. Do not blindly merge or mark merged. Prior founder instruction: all authorized validated work must land in main; no permanent PR graveyard.
+
+Other earlier PR pointers requiring fresh verification
+IDP: onboarding #7794, continuity #7790.
+Argon: older Genesis/MORPH and AI Studio source candidates; prior #55/#21/#57 reportedly unmerged during older session; may now be superseded.
+estate-graph: PRs #1–#5 and #7, readiness and permissions.
+argon-sync: lease authority candidate and prior #6/#7.
+Founder suspension founder-pause-20261031T175942 was reported to have a human-only terminal waiver. Do not treat this handover as a blanket revocation of explicit founder security pauses; inspect precise policy state.
+5. Gemini / Google Workspace handoff: exact current work (E1/E2)
+Private machine handover: argon/.genesis/outbox/gemini-lead-p0-continuity-20261111.json.
+
+Bridge proposed in:
+
+argon PR #91: bin/genesis-inbound-bridge.py, .github/workflows/genesis-inbound-bridge.yml.
+idp PR #7981: same paths.
+Intended read-only sources: authenticated Gmail Drafts with [GENESIS-OUTBOX] subject; Google Drive configured folder containing files with [GENESIS-OUTBOX] prefix. JSON v1 dispatch has v, repo, instruction_id, title, body; public IDP/Hermes requires explicit public:true. Current bridge creates only GitHub issues labelled genesis-inbound with RECEIVED_UNVERIFIED; it does not execute instructions, merge PRs, send Telegram, or prove delivery.
+
+Workflow currently sets polling only when repository variable GENESIS_INBOUND_ENABLED=true; requires GitHub secret material for GENESIS_GOOGLE_CLIENT_ID, GENESIS_GOOGLE_CLIENT_SECRET, GENESIS_GOOGLE_REFRESH_TOKEN, optional GENESIS_DRIVE_FOLDER_ID. The available GitHub connector cannot inspect or provision these secrets or variables. Neither Google account nor its actual dispatches was accessible through available connections. Gmail/Google Drive ChatGPT plugins were discoverable but not installed. Credential state unknown. Google cloud identity must be accessed by an actually authorized worker; never hallucinate success.
+
+There is an earlier different proposed read-only OAuth genesis_drop.ingest / AI Studio source capture flow using GOOGLE_WORKSPACE_OAUTH_JSON, propose/aistudio-* branches, outbox-state ledger, and paths argon-workspace-ingest/bin/genesis_workspace.py, genesis-workspace-ingest.py, genesis-lane-poll.py, omega-codex-live.py; older patch SHA reported b5531c... (incomplete SHA; search source). Reconcile, do not create competing transports or believe the relay is already working. Google Apps Script -> GitHub was previously discussed but never end-to-end demonstrated.
+
+Bridge acceptance: real Gemini-authored instruction from the actual authorized cloud source -> observed authenticated read -> persistent immutable instruction record -> worker authorization -> real cloud worker execution -> tests -> PR integrated on main -> deployment -> live falsifier -> output visible and acknowledged in Genesis/Telegram. If the current bridge only creates an issue, build/reuse the authorized downstream worker intake; do not imply issue creation fulfills the mission.
+
+6. CI / secrets / provenance incidents (E2 with exact historical evidence)
+Argon: latest observed PR #91 bridge workflow and provenance both FAIL, runs above. Prior attempt exact head f40d058ee79767148bd22587ef0f3860b5e817c7: bridge run 43067881707 contract job 130688319832 failed; accessible job steps empty; logs returned BlobNotFound, root cause undetermined. Argon main provenance run 43060055329 and guardian run 43060055290 failed. GENESIS_GUARDIAN_SHA cannot safely be advanced without independently knowing last verified trust commit; connector cannot read/update Actions variables. Failing gate is a problem to diagnose, not bypass by rewriting trust baselines.
+IDP vault reads: run 43059348616, SHA b37e8c1e32e24c42cb6ce1e7ccc742e0f97b02a2, failed its missing-key incident step; agent-foundry-hf required by platform/compiled/agent-foundry-hf/external-secret.yaml absent from OCI Vault, issue chidionyema/idp#2468. Restore expected secret only through authorized vault capability or remove truly retired manifest after production/cluster demand verified; never mute monitor.
+IDP DoF: dof-gate had succeeded on an observed older #7981 CI job 130687259793 in run 43067788035, despite historic incidents. Recheck exact current head, do not misreport it as permanently broken.
+IDP protected main: do not bypass main rules. CI history included failing registry-snapshot, portal-app, guarded-paths, ci/fast-gate on earlier head; latest #7981 head had several checks green but all required gate inventory not yet independently certified.
+Possible source loss: shared worktree deletion, stranded branches, fake merge/cross-session continuity. Prefer isolated worktrees, deterministic reconciliation and downstream proof.
+7. Live surfaces and production truth (E2, recheck immediately)
+Genesis founder Cloudflare Pages: https://genesis-founder-surface.pages.dev/ (includes #otto route). Earlier inspection saw a read-only cloud projection, wrong/static Otto mock and missing real observability. This is not the intended complete founder platform.
+Otto Vercel: https://otto-private-office.vercel.app/. Previously homepage HTTP 200; /api/brain/legion HTTP 404; newer deployment reportedly blocked by build/type errors before a source fix. No verified current live Legion.
+Meridian/Merdian Intelligence: https://meridian-intelligence-uk.vercel.app/, compatibility aliases https://merdian-intelligence.vercel.app/ (and any other assignment discovered in hosting configuration). Previous homepage 200; earlier branding regression and unreadable hero image; legacy green-themed site must not reappear. Earlier enquiry endpoint suffered HTTP 503 from missing CONTACT_WEBHOOK_URL; newer Mailjet PRs may supersede it. Confirm actual live flows, not claims.
+MumChimp: public customer-facing experience, telegram and face/avatar. Discover exact currently authoritative production URLs from Vercel/deployment config; do not invent them.
+AI Studio: earlier research reported 19 AI Studio projects. Source recovery and verified deployment not completed in our connected session. The founder explicitly wants original projects inspected before speculative rebuilds. Use the Cloud Browser/AI Studio integration legitimately available to receiving workers and synchronize changes through the existing pipelines. No founder manual file transfer.
+Release tests: real browser screenshots/readability, responsive viewport, WCAG AA, interactions, API/Telegram integration and direct visitor-side alias checks. Block release claims on actual failure. Commercial site quality is institutional, not demo-grade.
+
+8. Business functions and monetization to preserve
+Company operations: Linear ticket centre, Chronos/Tempo operating calendar, Monday/Tuesday/Wednesday cadence with bounded activities, autonomous routines, CEO/founder operational overview, evidence receipts and escalation. Provider-independent business schedules, not ChatGPT-only reminders.
+
+Commercial: Merdian Intelligence premium consultancy/research/lab/ventures positioning, enquiry delivery, brand standards and regression safety. MumChimp and Mums Concierge as real products; Prospector outbound prospecting pipeline. Merdian Fieldbooks, structured eBooks, courses, masterclasses, Gumroad/merchant-safe distribution; preserve proprietary research and commercial rights. Build a measurable acquisition -> qualification -> conversion -> revenue model. Avoid premature public disclosure of confidential internal architecture.
+
+Older projects/history (not asserted current P0 estate work): TechMastery.MarketPlace (.NET clean architecture CQRS/EF Core, Next.js/MUI, Stripe, 15% platform fee); consultancy Always On Technologies (case studies), Glustack (historically unfunded and few users; never invent traction), quant ML/backtesting research, independent .NET JWT/Identity service, CV/job match bot. Do not repurpose these as current company commitments without reconciling ownership and status.
+
+9. Remote automation / institutional continuity (E3)
+Previous ChatGPT automations described as active:
+
+Argon IDP Hermes Delivery — hourly around minute 20, instruction to actually ship outstanding source/CI/deploy across Argon/IDP/Hermes; platform-specific task ID Automation_a067643307b48191b3e8adae304dc808.
+Meridian Commercial Production Regression Watch — hourly around minute 24, real visitor-facing checks, ID Automation_cf4f3e252a488191a1de2b9033625e47.
+GitHub Pro Funding Checkpoint — once on 2026-12-02 at 08:00, conditional funding check, ID Automation_a36230d567248191b8d055463801f914.
+These are not an independent company's central scheduler, not evidence tasks ran successfully, and other models cannot assume they can control ChatGPT automations. Migrate/replicate only through authorized durable company infrastructure and verify each task contract. Never disclose financial information without foundation.
+
+10. Required immediate takeover plan (execute, don't replan)
+Priority A — continuity and source recovery. Read AGENTS.md, canonical FLOW/Greenlane policies, IDP/Argon runbooks, actual open PRs and existing owner schedules. Find all sessions/branches/AI Studio assets that can be recovered. Diff every PR against main; identify stranded work and produce bounded merge/release order. Respect owner/security boundaries. Reconcile this handover against live data and preserve all genuine previous agent work.
+
+Priority B — end-to-end instruction bridge. Choose one existing Google intake authority; prove a real dispatch; wire to authorized durable worker; enforce idempotency and privacy; include negative cases, restart/retry/duplicate recovery and exact worker receipt. If Google credentials inaccessible, log the evidence of the precise missing capability and pursue existing authenticated infrastructure, not fake intake success.
+
+Priority C — production delivery spine. Resolve provenance, vault and actual required checks. Set up CI integration against real test environments and negative falsifiers. Unblock legitimate merges, deploy through the existing release pipelines and verify live UI/API. Never mark a failing or skipped gate as green.
+
+Priority D — show real cloud workforce and founder control. Exercise Legion's eight formations against realistic tasks; prove workers ran, model IDs, metrics, costs and independent evaluation; reveal worker state in Genesis One Eye/All-Seeing Eye and Telegram; verify out-of-laptop operation.
+
+Priority E — operational company and revenue. Activate Linear, Chronos/Tempo and recurring operating cadence, then stabilize customer-facing Meridian/MumChimp, enquiry/conversion, Fieldbooks and commercial offers. Preserve research velocity but release with product-grade proof.
+
+11. Agent rules / anti-pattern register
+No hallucinated yield. If execution did not happen, say so; if evidence is stale, recheck.
+No orphaned code. A PR is not shipping; work is not done until accepted into an authoritative release. Do not blindly merge failing checks.
+No zombie sessions. Persist instructions, context, leases, outputs, SHA and recovery checkpoints.
+No duplication. Examine existing AI Studio code, protocols, event buses, source repos, memory and open PRs before creating replacements.
+No founder laptop dependency. Run cloud-side, escalate only real unavoidable access/approval decisions.
+No production theatre. Screenshots, polished static decks, HTTP 200 or test mocks do not establish real connectivity/benefits.
+No security theatre either. Real security gates remain enforced; debug their errors and prove fixes rather than ceremonial documents.
+Cost awareness. Cloud runs must be observable, bounded and compatible with capital constraints.
+Continuity independent of any model. Preserve machine-readable shared source, existing board/Linear tickets and evidence; no provider-exclusive implicit memory.
+Candid uncertainty. Never attribute remote actions to Gemini/Claude without a logged action from them.
+12. What ChatGPT actually possesses, what it does not
+ChatGPT held conversation-derived design and company history, the source file/PR/CI evidence described here, and access to a connected GitHub repository connector and some Vercel capabilities. It has not retrieved Gemini's actual Gmail/Drive outbox, authenticated to Google AI Studio, activated required GitHub Actions secrets, proved Google dispatch into a worker, delivered verified Genesis/Legion deployments, confirmed Telegram pin/receipt, or completed the PR recovery backlog. Do not inherit any of these as accomplished. Nor does this document provide credentials, access grants, private cloud sessions, model context dumps or the entirety of undiscovered GitHub code. Inspect the original repos and storage.
+
+The original bridge handover is also available at argon/.genesis/outbox/gemini-lead-p0-continuity-20261111.json. Use both. This is an intentionally broad export of the available company context, not a private chain-of-thought export.
+
+13. Immediate acceptance condition
+The receiving executor must leave a verifiable receipt linked to this exact file and identify the concrete accountable work lane(s), then begin real tests, reconciliation, merges and live verification. Machine-readable proof belongs in the existing estate board and founder-facing surfaces; avoid verbose chat-only updates.
+
+Handover itself is complete only when file existence/readback is verified. Autonomous worker pickup, Gemini/Claude acknowledgment, integration execution and operational yields remain separate, unproven states until independently observed.
+
+Founder instruction: We need A players and elite asymmetry. Make the estate produce real value; stop stalling the company.

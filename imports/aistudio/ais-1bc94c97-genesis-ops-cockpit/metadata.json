@@ -1,0 +1,6 @@
+{
+  "name": "Genesis Ops Cockpit: Voice-First Briefing Surface",
+  "description": "Voice-first ops cockpit for autonomous agent legions. Spoken 60-90s executive briefs condensed from raw JSONL transcripts with SHA-256 verifiable receipts, Piper neural TTS, and Telegram spooler.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

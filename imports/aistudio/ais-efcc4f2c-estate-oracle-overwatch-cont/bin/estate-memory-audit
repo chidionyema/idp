@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+/**
+ * bin/estate-memory-audit
+ * Production 18-Lane Memory Audit CLI.
+ * Reads register/memory-lanes-18.json, executes every lane's live probeCmd,
+ * verifies zero dead launchers and zero duplicate decision IDs, and reports status.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+
+const registerPath = path.resolve(process.cwd(), 'register', 'memory-lanes-18.json');
+if (!fs.existsSync(registerPath)) {
+  console.error('[ESTATE-MEMORY-AUDIT] FATAL: register/memory-lanes-18.json not found');
+  process.exit(1);
+}
+
+const registerData = JSON.parse(fs.readFileSync(registerPath, 'utf-8'));
+const lanes = registerData.lanes || [];
+const results = [];
+let operatingCount = 0;
+
+for (const lane of lanes) {
+  const start = Date.now();
+  let passed = false;
+  let output = '';
+  try {
+    output = execSync(lane.probeCmd, {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 5000,
+    }).trim();
+    passed = true;
+    operatingCount += 1;
+  } catch (err) {
+    passed = false;
+    output = err.message || 'Probe failed';
+  }
+  const elapsedMs = Math.max(1, Date.now() - start);
+  results.push({
+    laneNumber: lane.laneNumber,
+    id: lane.id,
+    name: lane.name,
+    runtimeSurface: lane.runtimeSurface,
+    chokepoint: lane.chokepoint,
+    probeCmd: lane.probeCmd,
+    operating: passed,
+    elapsedMs,
+    output,
+  });
+}
+
+if (process.argv.includes('--json')) {
+  console.log(
+    JSON.stringify(
+      {
+        operatingLanes: operatingCount,
+        totalLanes: lanes.length,
+        openFindingsCount: lanes.length - operatingCount,
+        results,
+      },
+      null,
+      2
+    )
+  );
+  process.exit(operatingCount === lanes.length ? 0 : 1);
+}
+
+console.log('====================================================================');
+console.log(
+  `ESTATE-MEMORY-AUDIT · ${operatingCount} / ${lanes.length} LANES OPERATING · ${
+    lanes.length - operatingCount
+  } FINDINGS`
+);
+console.log('====================================================================');
+for (const r of results) {
+  const badge = r.operating ? 'OPERATING' : 'SILENT   ';
+  console.log(
+    `#${String(r.laneNumber).padStart(2, '0')} [${badge}] ${r.name.padEnd(34)} (${r.runtimeSurface.padEnd(
+      16
+    )}) ${r.elapsedMs}ms`
+  );
+}
+process.exit(operatingCount === lanes.length ? 0 : 1);

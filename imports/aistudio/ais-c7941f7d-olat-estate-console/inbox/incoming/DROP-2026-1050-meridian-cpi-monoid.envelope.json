@@ -1,0 +1,20 @@
+{
+  "envelopeVersion": "2.1.0",
+  "dropCode": "DROP-2026-1050",
+  "originChannel": "GOOGLE_AI_STUDIO_ARTIFACT_DROP",
+  "targetRepositoryPath": "inbox/incoming/DROP-2026-1050-meridian-cpi-monoid.envelope.json",
+  "gitRefShard": "refs/heads/inbox/DROP-2026-1050",
+  "lamportVectorClock": {
+    "founder": 1050,
+    "studio": 1050,
+    "gh_inbox": 1050,
+    "redb": 1050
+  },
+  "directiveTitle": "Meridian 48-Unit Q4 CPI Escalator Commutative Monoid & CAM Sub-Meter Reconciliation",
+  "assignedSpecialistId": "SPC-FIN-02",
+  "blake3ArtifactHash": "blake3:0x7e32a190bc44f082",
+  "genesisRedbKey": "redb://tenant_olat/github_inbox/DROP-2026-1050",
+  "verifiedYieldAnnualUsd": 33200,
+  "sefVeridictProofHash": "sha256:0x77b2d098e3a1c600",
+  "status": "SEALED_MAIN_YIELD_VERIFIED"
+}

@@ -1,0 +1,46 @@
+{
+  "envelopeId": "DROP-2026-1078-opportunity-harvester-autoclaw-and-genesis-transition-canon",
+  "schemaVersion": "genesis.inbox.envelope.v1",
+  "originSurface": "CLOUD_STUDIO_SANDBOX_CHANNEL",
+  "agentPair": "OTTO-00 + AURA-00 + ORACLE-00 + CUSTODES-00 + SYNAPSE-00",
+  "createdAtIso": "2026-11-02T05:58:00.000Z",
+  "requirementId": "REQ-45",
+  "title": "Autonomous Daily Opportunity Harvester, AutoClaw Claim Engine (Up to 80M Free Model Tokens) & Genesis Transition Canon for External Agents and Collaborators",
+  "touchSetPaths": [
+    "src/lib/protocolEngine.ts",
+    "src/lib/protocolEngine.test.ts",
+    "src/components/GenesisBootstrapMathOttView.tsx",
+    "STATE_BEACON.json",
+    "FOUNDER_DOCTRINE_DECISIONS.md",
+    "AGENTS.md"
+  ],
+  "opportunityHarvesterCapabilitiesSealed": {
+    "totalScannedCount": 6,
+    "verifiedCleanCount": 5,
+    "quarantinedShadyCount": 1,
+    "totalValueUsd": 9140.0,
+    "totalFreeTokensM": 580,
+    "autoClawHarvest": {
+      "offer": "AutoClaw Halloween Reward Claim",
+      "tokensClaimableM": 80,
+      "creditsClaimable": 8000,
+      "deadline": "2026-11-08T15:59:00Z",
+      "claimMode": "ONE_TAP_DELEGATED_WEBRTC",
+      "frictionSeconds": 2.8,
+      "status": "STAGED_READY_TO_CLAIM"
+    },
+    "transitionCanonAxioms": [
+      "Rule 1: Eradicate Defunct Host Filesystem Assumptions (/Users/... quarantined)",
+      "Rule 2: Single-Pass Context Resolution (k = 1, <= 0.71ms via mem://genesis/*)",
+      "Rule 3: Air-Gapped State Beacon for External Models & Collaborators (/STATE_BEACON.json)",
+      "Rule 4: Canonical Remote is chidionyema/argon.git (main and genesis-live)",
+      "Rule 5: Autonomous Free-Tier Claims + Fiduciary Spend Airlock (Law I4)"
+    ]
+  },
+  "verificationGates": {
+    "unitTestsPassed": 127,
+    "lawsPassed": 8,
+    "hop06SequencerVerified": true
+  },
+  "ed25519Signer": "spiffe://olat.estate/genesis/inbox-drop-signer"
+}

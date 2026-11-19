@@ -1,0 +1,15 @@
+{
+  "name": "@meridian-estate/io-engine",
+  "version": "1.0.0",
+  "description": "Canonical extracted IO Engine (PACK-15): ORACLE-00 (evaluateOmniscientMegaOracleAndCausalAdjudicator), SYNAPSE-00 (evaluateSynapseEstateWideSyncAndZeroTouchOperationalization), Single Work Graph, Persistent Real-Name Identity, and Forced Real-Time Eval & Training.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "bin": {
+    "io": "../../bin/io"
+  },
+  "author": "Chidi Onyema <chidionyema@gmail.com>",
+  "license": "UNLICENSED"
+}

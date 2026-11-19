@@ -1,0 +1,29 @@
+{
+  "receiptId": "OUTBOX-2026-1031-003",
+  "sourceInboxEnvelopeId": "INBOX-003-founder-service-restore",
+  "inboxRepo": "chidionyema/estate-inbox",
+  "outboxRepo": "chidionyema/estate-outbox",
+  "auditedByLane": "argon-consulting-01 + deepseek-protocol-01",
+  "verifiedAt": "2026-10-31T18:08:32Z",
+  "specStandardVerified": "ESTATE-SPEC-STD-V2 (6/6 Gates PASS · 4/4 Core Agent Loops Resuscitated)",
+  "exitCode": 0,
+  "deliverySummary": "Resuscitated all 4 local operational agent loops (Argon Consulting, DeepSeek Protocol, Claude Catalog Auditor, MiniMax Fenced Worker), unified #7680+#7692, and armed the 15s Consulting Lane Inbox poller.",
+  "artifactsDelivered": [
+    "bin/estate-service-up",
+    "bin/estate-inbox-poll",
+    "extensions/pi-plan-lock/plan.ts"
+  ],
+  "rollbackCmd": "git checkout main -- bin/estate-service-up extensions/pi-plan-lock/plan.ts",
+  "cifHmacSignature": "f19c83e47a02b65d9183c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e62",
+  "instructionsIncluded": true,
+  "instructionsFiles": [
+    "README.md",
+    "INSTRUCTIONS.md"
+  ],
+  "instructionsRunbook": [
+    "1. Boot & Resuscitate All 4 Agent Services: node bin/estate-service-up",
+    "2. Poll Consulting Lane Inbox & Promote to Outbox: node bin/estate-inbox-poll",
+    "3. Verify Spec Standard & Instructions (Gate G1..G7): node bin/estate-spec-enforce && node bin/estate-push-instructions",
+    "4. Deterministic Rollback: git checkout main -- bin/estate-service-up extensions/pi-plan-lock/plan.ts"
+  ]
+}

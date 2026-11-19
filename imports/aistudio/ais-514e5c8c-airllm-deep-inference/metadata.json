@@ -1,0 +1,6 @@
+{
+  "name": "Genesis · AirLLM Deep Inference & Autonomous Estate Control",
+  "description": "Strategic research assessment, dynamic inference router, cost-per-verified-result economics calculator, hardware quota guardrails, and Deep Inference Evaluation Lane for the IDP autonomous AI estate.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

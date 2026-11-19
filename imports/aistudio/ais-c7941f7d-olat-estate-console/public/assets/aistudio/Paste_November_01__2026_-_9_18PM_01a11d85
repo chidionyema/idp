@@ -1,0 +1,702 @@
+research aand briansorm alll possible ways we can acehive token effciency from and encforce it mathemationcally an d furute prrof it, anyhtikng that can be machine done must be before using a model that costs money , omny fonuder can overrid configurable
+
+
+
+The user wants a comprehensive research and brainstorm on token efficiency: all possible ways to achieve it, enforce it mathematically, future-proof it, with the principle that anything machine-doable must be done before using a costly model, and founder can override configurably. I need to search for relevant information across multiple areas: token efficiency techniques, deterministic-first routing, formal verification of LLM pipelines, cost-aware routing, semantic caching, prompt compression, cascade routing, uncertainty quantification, etc. I'll run parallel searches.
+
+Found 69 web pages
+
+Search results are rich. Need to open key sources for deeper details. Let's open several: result 0 (efficient inference survey), result 6 from search 0 (Awesome Token Efficiency), result 0 from search 4 (Blueprint First), result 0 from search 5 (4/delta bound), result 0 from search 7 (adaptive computation survey), result 4 from search 7 (Doing More with Less). Also semantic caching result 6 (continuous semantic caching theoretical framework). And maybe prompt compression result 0. We'll open in parallel.
+
+Read 6 pages
+Efficient Inference for Large Reasoning Models: A Survey
+
+title: "Awesome Token Efficiency — the catalog of token / context / KV-cache efficiency methods"
+
+The 4/δ\delta Bound: Designing Predictable LLM-Verifier Systems for Formal Method Guarantee - The results clearly showed that our initial hypothesis of almost-sure convergence was correct (RQ1), with a 100% success rate ac...
+
+Adaptive Computation in the LLM Era : A Unified Survey of Routing, Cascades, and Test-Time Scaling - Adaptive Computation in the LLM Era : A Unified Survey of Routing, Cascades, and Test-Time Scaling
+
+Doing More with Less: A Survey on Routing Strategies for Resource Optimisation in Large Language Model-Based Systems
+
+View All
+
+Need more sources for mathematical enforcement, future-proofing, machine-doable-before-model, founder override, token efficiency methods catalog. Search results already have good items. Need to search specifically for "token budget enforcement mathematical proof", "cost-aware agent architecture token budget", "LLM gateway token limit enforcement", "deterministic tool use before LLM", "machine first model last". Also "prompt caching KV cache efficiency", "context engineering token efficiency". We have enough breadth but need depth on enforcement math. Let's search for "token budget formal guarantee LLM", "hard cap token per task mathematical", "SLA token cost bound", "regression testing token efficiency", "token efficiency future proof architecture". Also "canary token budget" maybe. We'll do more searches.
+
+Found 71 web pages
+
+We have a lot of material. Need to synthesize into a structured answer: a research/brainstorm document organizing all possible ways to achieve token efficiency, mathematical enforcement, future-proofing, with deterministic-first and founder override.
+We should organize into layers:
+1. Deterministic-first execution (machine-doable before model)
+2. Input-side token reduction (prompt compression, context engineering, caching, retrieval)
+3. Routing and cascades (model selection, cascade, uncertainty-guided)
+4. Output-side control (max tokens, reasoning budget, early exit)
+5. Caching (exact, semantic, prompt/KV)
+6. Architecture/harness (budget engine, hard caps, quotas)
+7. Mathematical enforcement (budget algebra, formal bounds, SLAs, regression gates)
+8. Future-proofing (calibration under drift, regression benchmarks, modularity, versioning)
+9. Founder override configurability
+10. Open questions / implementation roadmap
+Need citations from sources. Use citations like [reference:0] etc.
+We should also include a "token efficiency stack" with layers and default-on vs lossy flags. The Awesome Token Efficiency catalog distinguishes lossless/mechanical vs lossy/semantic, default-on vs flag. That's a key framing: mechanical+lossless can be default-on; semantic/lossy need guardrails. Cite [reference:1].
+Deterministic-first: Blueprint First Model Second, Source Code Agent, deterministic engine executes workflow, LLM only bounded subtasks, never decides path. 27.1% efficiency improvement, 96% constraint violation reduction. Cite . Also "framework acts first, only calls LLM for what genuinely needs judgment" [reference:3]. Static tool execution before model processes request [reference:4].
+Token efficiency methods:
+* Prompt compression: lexical deterministic pipeline 40.3% reduction at BERTScore 0.876, stopword-only 29.6% at 0.913. Deterministic, CPU-only, training-free. Cite . MetaGlyph 62-81% token reduction symbolic metalanguages [reference:6]. Learned compression (LLMLingua) higher but non-deterministic and auxiliary LM cost. Need guardrails.
+* Semantic caching: 30-70% API cost reduction, 62% hit rate, 48% token usage reduction [reference:7]. MCP semantic cache 98% on cached reads [reference:8]. Theoretical framework with sublinear regret bound for continuous semantic caching [reference:9]. Cache-aware client-side request planning reduces billed cost up to 60% on agentic tool-use workload [reference:10].
+* Prompt/KV caching: provider prompt cache 50-90% cost savings, cache reads 0.1× base input rate (90% cheaper) [reference:11]. 30-turn agent session 90% hit rate cost $0.459 vs $1.58 [reference:12]. Mechanical lossless default-on [reference:13].
+* Routing/cascades: FrugalGPT up to 98% cost reduction, 50-98% average savings [reference:14]. RouteLLM >85% cost reduction on MT Bench, only 14% queries to strong model [reference:15]. FrugalGPT preserves 96.8% quality with 44.1% cost reduction in one comparison, but headline 98% possible [reference:16]. Adaptive computation survey: decision signal must be substantially cheaper than action avoided, calibrated near deployment threshold [reference:17]. Cost-aware routing surveys formalize as performance-cost optimization [reference:18].
+* Uncertainty-guided token-level routing: TokenRouter reduces large-model activation to 56.2-76.0% of generated tokens while maintaining >99% accuracy [reference:19]. STIR reduces average token consumption up to 35% [reference:20]. CP-Router reduces token usage vs LRM alone [reference:21]. Abstention: entropy-guided abstention +9.0 to +15.7 pp success at 20% abstention .
+* Reasoning token efficiency: explicit compact CoT vs implicit latent CoT [reference:23]. Reasoning models inefficient token usage. Need budgeted reasoning, early exit, token-level routing.
+* Context engineering: harness token budget, compaction when input crosses half of ceiling [reference:24]. Harpe picks context items under token budget [reference:25]. Budget guard alerts at 90% [reference:26]. Three principles: only needed context, reduce irrelevant, reduce duplicate .
+* Gateway quota enforcement: hardcap per-tenant token budgets without overshooting, reserve-extend-settle accounting [reference:28]. APISIX Redis shared counter, llm-token-limit policy [reference:29]. KrakenD persistent quota system [reference:30].
+Mathematical enforcement:
+* Cost budget as control plane: ceiling on tokens per task, per tenant, per run-rate; latency SLA; kill switches [reference:31]. Budgets the system enforces, SLAs measured against. Need token metering, per-feature cost budgets, regression checks .
+* Formal LLM-verifier convergence theorem: expected iterations ≤ 4/δ, almost-sure termination, worst-case outliers mathematically bounded [reference:33]. This is for verification pipelines, but analogous for bounded retry/escalation loops. Could use similar potential-function argument for token budget: expected retries bounded by success probability.
+* Monte Carlo for cost bound: historical sampling + Monte Carlo simulation to project future token expenditure over time horizon [reference:34]. MCTS workflow search jointly optimizes performance, token consumption, latency, failure risk [reference:35]. Agent coordination bound validated with 50,000-run Monte Carlo [reference:36]. So future-proofing via simulation.
+* Semantic caching theoretical framework: sublinear regret bound against optimal oracle, formal quantification of uncertainty in continuous query space [reference:37]. This is a mathematical guarantee for cache performance.
+* Hard cap with formal semantics: depth cap changes language, engine enforces L(A) ∩ {nesting depth ≤64}, stops with explicit error rather than invalid token [reference:38]. Token budget as formal language restriction. Budget boundary effects: cumulative token cap can fall inside derivation; strict vs advisory cap [reference:39]. Need explicit semantics.
+* Regression gates: token-efficiency benchmark harness, Effective Tokens metric weights output 4x, cache reads 0.1x, model multiplier; catches regressions [reference:40]. Automated benchmark every two weeks across providers [reference:41]. Evaluation gates as CI/CD primitives, compare runs detect regressions beyond tolerance [reference:42]. Cost tracking normalized per 1K tokens, detect cost creep [reference:43].
+* Cost model & SLA in architecture, kill switches [reference:44].
+Future-proofing:
+* Calibration under distribution shift is open problem [reference:45]. Dynamic calibration with sliding window; if performance drops below practical region, trigger context resets or strategy shifts [reference:46]. This is for verifier but applies to routers/caches.
+* Versioning and model generation tracking: estate machine tracks model version with generation. Already in previous requirement. Need to tie to token efficiency: when model or tokenizer changes, re-benchmark.
+* Modularity: replaceable routing/caching/compression layers, lossless default-on vs lossy flagged. "Mechanical + lossless safe to turn on by default; semantic/lossy need guardrail and usually a flag" [reference:47]. This is future-proof because defaults don't degrade fidelity.
+* Price and provider drift: multi-provider regression testing detects cost creep across API changes [reference:48]. Price snapshots in routing evaluations are inconsistent; need normalized audit [reference:49].
+* Tokenizer changes: mechanical lossless methods include tokenizer choice [reference:50]. Need to re-evaluate when tokenizer changes.
+* Cache invalidation and switching costs: continuous semantic caching optimizes to reduce switching costs, sublinear regret [reference:51].
+Founder override:
+* Configurable autonomy, configurable threshold, budget boundaries. Founder override should be a first-class configuration with audit and automatic expiry? Need to propose: override token with scope, TTL, reason, logged; override can bypass caps but not proof requirements. Since previous doc says founder can override configurable. We need to formalize: override is itself a budgeted action, with default deny, explicit allow, time-bound, logged as estate memory. Also "advisory vs strict" cap semantics: advisory allows finishing current attempt, strict stops at cap. Founder chooses per task class.
+Also "anything machine-done must be before using a model that costs money" — this is the deterministic-first principle. We need to enumerate machine-doable categories:
+* Parsing, validation, schema checks
+* Retrieval, search, grep, exact match, SQL queries
+* Rule engines, regex cascades, policy checks
+* Caching lookups
+* Tool execution (APIs, file ops, transformations)
+* Arithmetic, aggregation, unit conversion
+* Deduplication, diffing, hashing
+* Static analysis, linting, type checking
+* Workflow control flow, routing decisions based on explicit rules
+* Budget checks, quota enforcement
+* Context assembly, trimming, compaction
+* Output validation, format checking, proof verification
+Only escalate to model when: ambiguity, natural language understanding, generation, judgment under uncertainty, creative synthesis, or proof search that requires semantic reasoning.
+We should propose a "Deterministic Gate" before every model call: a pre-model invocation checklist that must pass. If any deterministic handler can resolve, return that. This gate is configurable but default enforced. This maps to "pre-invocation cost gate" in flaky-test repair: HSP classifies failure error classes via regex cascade and skips LLM calls when predicted success below threshold [reference:52].
+Need also mention token efficiency metrics:
+* Billed input/output tokens
+* Cache read/write tokens
+* Effective Tokens (ET) weighted
+* Cost per successful task
+* Tokens per verified outcome
+* Regression-Run Efficiency (RRE): tokens to re-verify known flow per run [reference:53].
+* Token budget utilization
+* Escalation rate
+* Cache hit rate
+* Compression ratio at fidelity floor
+* Machine-resolved rate before model call
+Mathematical enforcement framework: We can propose an "Estate Token Budget Algebra":
+* Every task class has a hard budget B_task, decomposed into B_det + B_cache + B_model + B_verify + B_retry.
+* Deterministic phase must consume 0 model tokens; if it consumes model tokens, it's not deterministic.
+* Model phase has max_tokens input and output caps enforced at gateway.
+* Retry/escalation bounded by formal potential function: expected retries ≤ 1/(1-p) or ≤ 4/δ analog.
+* Cache hit probability p_cache; effective cost C = (1-p_cache)*C_model + C_cache_lookup. Enforce C ≤ C_max.
+* Routing decision uses calibrated score; threshold set so expected cost ≤ budget with confidence level.
+* Regression gate: any change must not increase ET per successful task by more than ε (configurable, default 0%) without founder override.
+* Monte Carlo simulation of token expenditure with historical distribution to set B_task at P95 or P99, and alarm if actual exceeds bound.
+* Formal cap semantics: strict vs advisory; strict yields explicit budget-exhausted error, never silent truncation. Cite [reference:54].
+Need to be careful: "mathematical guarantee" is strong; we can say "provable under stated assumptions" and "statistical guarantee with confidence level" where exact proof not possible.
+We should include a table of methods with layer, loss, default, expected savings, enforcement mechanism, future-proofing notes.
+Let's structure the answer:
+1. Framing: token efficiency is not one technique; it's a stack with a deterministic gate.
+2. The Token Efficiency Stack (layers 0-6)
+3. Deterministic-first: what must be machine-done before any model call
+4. Complete method catalog (table or grouped list)
+5. Mathematical enforcement architecture
+6. Future-proofing
+7. Founder override design
+8. Metrics and regression gates
+9. Open research / implementation sequence
+Need to cite sources throughout. Let's ensure citations map to claims.
+Let's write in a clear, organized way. The user asked "research and brainstorm all possible ways we can achieve token efficiency from and enforce it mathematically and future proof it". So a comprehensive brainstorm with research backing.
+We should include "all possible ways" grouped. Let's aim for thorough but not bloated. Use tables.
+Let's draft.
+Potential outline:
+A. Principle: Deterministic gate before every model call
+* Definition of machine-doable
+* Pre-model invocation checklist
+* Evidence: deterministic-first architecture, static tool execution, pre-invocation cost gate, framework acts first.
+B. The token efficiency stack (7 layers)
+Layer 0: Workflow/control plane (deterministic) Layer 1: Context construction (retrieval, compression, packing) Layer 2: Cache (exact, semantic, prompt/KV) Layer 3: Routing/cascade (model selection, uncertainty, abstention) Layer 4: Generation control (reasoning budget, max tokens, early exit, speculative decoding) Layer 5: Gateway enforcement (quotas, hard caps, reserve-settle) Layer 6: Verification/proof (only pay when outcome verified)
+For each, methods, evidence, default policy.
+C. Complete method catalog
+Maybe a table with ~20 methods:
+* Deterministic tool execution
+* Rule/regex cascade
+* Static retrieval / SQL / search
+* Exact-match cache
+* Semantic cache
+* Provider prompt cache / KV reuse
+* Prefix caching / cache-aware request planning
+* Prompt compression (lexical deterministic)
+* Symbolic metalanguage compression
+* Context pruning / compaction / summarization
+* Lazy tool loading
+* Model routing (pre-generation)
+* Cascade (cheap→expensive)
+* Token-level routing / uncertainty-guided
+* Abstention / selective prediction
+* Reasoning token budget / compact CoT
+* Early exit / adaptive depth
+* Batch API
+* Speculative decoding (not token billing but resource)
+* Tokenizer choice
+* Output format constraints (structured outputs)
+* Parallel tool calls
+* Bounded retries / verifier-guided loops
+* Deduplication
+* Memory indexing on demand
+Maybe too many; group.
+D. Mathematical enforcement
+* Hard caps with formal semantics
+* Budget algebra and decomposition
+* Probabilistic bounds for retries/escalation (4/δ analog)
+* Monte Carlo for budget setting and outlier detection
+* Cache performance bound (sublinear regret)
+* Regression gates with ET metric and tolerance
+* Control plane: budgets, SLAs, kill switches
+* Calibration and confidence intervals for routing thresholds
+E. Future-proofing
+* Lossless/mechanical default-on; lossy/semantic flagged
+* Re-benchmark on model/tokenizer/price changes
+* Dynamic calibration under drift
+* Cache invalidation and switching cost management
+* Multi-provider regression testing
+* Versioned protocol registry
+* Monte Carlo re-simulation
+* Modular replaceable layers
+* Founder override with expiry
+F. Founder override design
+* Default deny, explicit allow
+* Scope: task class, tenant, time window
+* TTL and auto-expiry
+* Reason and proof required for override? Maybe override can bypass efficiency but not proof. Logged in estate memory.
+* Advisory vs strict budget mode
+* Override cannot disable deterministic gate permanently; only per instance or time-boxed.
+* Configurable thresholds for regression tolerance, cache similarity, routing confidence, compression fidelity floor.
+G. Metrics
+* Billed tokens per verified outcome
+* Effective Tokens (ET)
+* Machine-resolved rate
+* Escalation rate
+* Cache hit rate
+* Compression ratio at fidelity floor
+* Cost per successful task
+* Token budget utilization
+* Regression-Run Efficiency (RRE)
+H. Open problems / implementation sequence
+* Phase 1: deterministic gate + exact cache + prompt cache + gateway hard caps
+* Phase 2: lexical compression + semantic cache + pre-generation routing
+* Phase 3: uncertainty-guided token routing + cascade + formal budget bounds
+* Phase 4: Monte Carlo budget simulation + continuous calibration + protocol generation for efficiency
+Need to mention "protocol research" from previous requirement: estate can suggest new efficiency protocols per problem class.
+Let's cite carefully.
+Key citations:
+* Awesome Token Efficiency: lossless/mechanical default-on, lossy/semantic flagged [reference:55][reference:56].
+* Blueprint First: deterministic engine executes workflow, LLM bounded subtasks, 27.1% efficiency improvement .
+* Runtime loop: framework acts first, only calls LLM for judgment [reference:58].
+* Static tool execution before model processes request [reference:59].
+* Pre-invocation cost gate: regex cascade skips LLM when predicted success below threshold [reference:60].
+* Lexical compression: 40.3% reduction at BERTScore 0.876; stopword-only 29.6% at 0.913 .
+* Semantic cache: 30-70% cost reduction, 62% hit rate, 48% token reduction [reference:62]; 98% on cached reads [reference:63]; continuous semantic caching theoretical framework sublinear regret [reference:64]; cache-aware request planning up to 60% cost reduction [reference:65].
+* Prompt caching: 50-90% cost savings, 0.1x base input rate [reference:66]; 30-turn session 90% hit rate $0.459 vs $1.58 [reference:67].
+* FrugalGPT: up to 98% cost reduction, 50-98% average [reference:68].
+* RouteLLM: >85% cost reduction, only 14% to strong model [reference:69].
+* Adaptive computation survey: decision signal cheaper than action, calibrated near threshold [reference:70].
+* TokenRouter: >99% accuracy, large-model activation 56.2-76.0% of tokens [reference:71].
+* STIR: up to 35% token reduction [reference:72].
+* Abstention: entropy-guided +9 to +15.7 pp at 20% abstention .
+* Compact CoT vs latent CoT [reference:74].
+* Harness context budget compaction [reference:75]; budget guard 90% [reference:76]; three principles .
+* Gateway hardcap: per-tenant without overshoot, reserve-extend-settle [reference:78]; APISIX Redis counter [reference:79].
+* Cost budget as control plane: ceiling per task/tenant/run-rate, latency SLA, kill switches [reference:80]; token metering, per-feature cost budgets, regression checks .
+* LLM-Verifier convergence theorem: expected iterations ≤4/δ, worst-case bounded [reference:82].
+* Monte Carlo budget projection [reference:83]; MCTS cost-aware workflow search [reference:84]; Agent Coordination Bound 50k Monte Carlo [reference:85].
+* Formal token budget semantics: depth cap language restriction, explicit error rather than invalid token [reference:86]; advisory vs strict cap [reference:87].
+* Regression gates: ET metric [reference:88]; automated benchmark across providers [reference:89]; CI/CD eval gates [reference:90]; cost creep detection [reference:91].
+* Dynamic calibration sliding window, context resets [reference:92].
+* Routing surveys formalize performance-cost optimization [reference:93]; adaptive computation as budgeted sequential decision-making [reference:94].
+We can also mention "batch tiers" as mechanical lossless [reference:95].
+Now, compose a comprehensive answer. The user's language is English, somewhat informal. We should respond in English. Use a professional, structured tone. No need for code, but tables help.
+Let's write.
+
+Token Efficiency: Research, Brainstorm, and Enforcement Architecture
+0. The core principle: deterministic gate before every metered model call
+The strongest token-efficiency lever is not making models cheaper — it is not calling a model at all when a deterministic mechanism can produce or verify the result. Every model invocation should pass a pre-model deterministic gate:
+
+
+Gate check	What must happen before any model call
+Is this request already answerable from exact-match cache?	Return cached result.
+Is there a semantic cache hit above a calibrated threshold?	Return cached result with provenance.
+Can a rule engine, regex cascade, schema validator, SQL query, search index, or static tool resolve it?	Execute deterministically; do not invoke a model.
+Is this a workflow step with a known deterministic procedure?	Run the blueprint; model is not allowed to choose the path.
+Is the required context already resident in a prompt-cache prefix?	Reuse the prefix; never re-send identical tokens.
+Is the token budget exhausted for this task class?	Stop with an explicit budget-exhausted error, not a silent truncation.
+Only after all deterministic options are exhausted: invoke the smallest/cheapest model that can pass verification.	Log the escalation reason and the deterministic options attempted.
+This is supported by the deterministic-first literature: the “Blueprint First, Model Second” framework codifies the workflow into an execution blueprint run by a deterministic engine, invoking the LLM only for bounded sub-tasks and never to decide the workflow path. On TravelPlanner it improved execution efficiency by 27.1% while cutting constraint violations by 96.0%. The runtime-loop pattern is the same: the framework acts first and only calls the LLM for what genuinely requires judgment. Static tool execution can run tools automatically before the model processes the request, rather than letting the model decide whether tools are needed. A pre-invocation cost gate can even use a regex cascade and historical success rates to skip LLM calls entirely when predicted success is below a configurable threshold.
+The estate principle from your previous document — anything that can be machine-done must be done before using a model that costs money — should therefore be implemented as an enforced deterministic gate, not a guideline.
+
+1. The token-efficiency stack: seven layers
+Token efficiency is a stack, not a single trick. The layers below are ordered from “most deterministic and lossless” to “most semantic and lossy.” Mechanical + lossless methods are safe to default-on; semantic/lossy methods need a guardrail and usually a founder-visible flag.
+
+
+Layer	What it controls	Default posture	Typical savings
+L0. Deterministic control plane	Workflow path, tool execution, validation, routing rules	Enforced default	Eliminates entire model calls
+L1. Context construction	What tokens enter the prompt: retrieval, compression, packing, deduplication	Lossless first; compression behind fidelity floor	30–80% input reduction
+L2. Cache	Exact-match, semantic, provider prompt cache, KV reuse	Lossless/exact default-on; semantic flagged	30–98% on cached work
+L3. Routing and cascades	Which model, whether to escalate, whether to abstain	Calibrated router with cost gate	30–98% model-cost reduction
+L4. Generation control	Reasoning budget, output cap, early exit, compact CoT	Hard cap per task class	20–60% output reduction
+L5. Gateway enforcement	Per-tenant quotas, hard caps, reserve-settle accounting	Enforced at gateway	Prevents overshoot
+L6. Verification	Only pay for model calls whose outcomes can be machine-verified	Proof-gated	Eliminates unproductive calls
+2. Layer-by-layer method catalog
+L0 — Deterministic control plane
+Machine-doable before any model call:
+* Parsing, tokenization, schema validation, type checking.
+* Regex cascades, rule engines, policy checks.
+* Exact search, grep, SQL, indexed retrieval, static lookups.
+* Arithmetic, aggregation, unit conversion, diffing, hashing.
+* Deduplication and canonicalization.
+* Static analysis, linting, test execution.
+* API/tool calls with known input-output contracts.
+* Budget checks and quota enforcement.
+* Output format validation and proof verification.
+* Workflow control flow: ordered blocks, retries with fixed counts, escalation rules.
+Only escalate to a model for: ambiguity resolution, natural-language understanding, generation, judgment under uncertainty, creative synthesis, or semantic proof search.
+Evidence: Deterministic-first architectures use well-defined deterministic workflows as primary processors and ML elements only to handle variation, maintaining predictable behavior. The Source Code Agent framework explicitly decouples workflow logic from the generative model: the LLM handles bounded complex sub-tasks but “never decides the workflow’s path”.
+Enforcement mechanism: A pre_model_gate component with a registry of deterministic handlers. If any handler claims the request, the model call is blocked. The gate is configurable by founder override, but the default is deny-model-until-deterministic-options-exhausted.
+
+L1 — Context construction
+
+
+Method	Mechanism	Evidence / expected effect	Default posture
+Lexical prompt compression	Deterministic, training-free, CPU-only pipeline: stopword removal, filler deletion, POS pruning, lemmatization, synonym shortening, named-entity preservation	40.3% mean token reduction at BERTScore-F1 0.876; stopword-only 29.6% at 0.913	Flagged by task category; commonsense reasoning is a known failure mode under aggressive compression
+Symbolic metalanguage compression	Encode instructions in a compact symbolic form	MetaGlyph achieves 62–81% token reduction across task types	Flagged; requires semantic-equivalence check
+Context pruning / compaction	Drop old turns, summarize, compact when input crosses a fraction of the context ceiling	Harness compacts once a call’s input crosses half the context budget; budget guard alerts at 90%	Lossy; behind flag with fidelity witness
+Context budgeting engine	Select which context items enter each call under a token budget	Harpe picks context items under a token budget	Default-on for mechanical packing; lossy pruning flagged
+Lazy tool loading	Do not load tool schemas into context until needed	Mechanical lossless saver	Default-on
+Deduplication / canonicalization	Remove repeated content before prompt assembly	Mechanical lossless	Default-on
+Retrieval discipline	Retrieve only what the task needs; no “just in case” retrieval	Reduces irrelevant and duplicate context	Enforced by context budget
+Key distinction: Lexical compression is deterministic and training-free, unlike LLMLingua-style learned compression which requires an auxiliary LM and is non-deterministic. For a proof-oriented estate, deterministic compression is preferable where it meets the fidelity floor; learned compression is a flagged optimization, not a default.
+
+L2 — Caching
+
+
+Method	Mechanism	Evidence / expected effect	Default posture
+Exact-match cache	Hash the full prompt; reuse identical responses	“Safest and cheapest” cache layer	Default-on
+Provider prompt cache / KV prefix reuse	Keep a byte-identical prefix so the provider bills cache reads at a discount	Cache reads at 0.1× base input rate, 90% cheaper; 50–90% cost savings in major providers; 30-turn session at 90% hit rate costs $0.459 instead of $1.58	Default-on; mechanical lossless
+Semantic cache	Reuse responses for semantically equivalent prompts	30–70% API cost reduction; 62% hit rate, 48% token reduction; ~98% token savings on cached reads	Flagged; requires calibrated equivalence threshold and out-of-domain rejection
+Cache-aware request planning	Schedule requests to maximize cache hits	Up to 60% billed-cost reduction on agentic tool-use workload with no quality loss	Default-on where scheduler is deterministic
+Continuous semantic caching	Formal framework for infinite continuous query space	Sublinear regret bound against an optimal oracle; formally quantifies estimation uncertainty	Research-grade; ideal for future-proof semantic cache
+Mathematical enforcement for semantic cache: The continuous semantic caching framework provides a sublinear regret bound against an optimal oracle, meaning the cache’s performance gap to the best possible cache grows slower than linearly with queries. This is a usable mathematical guarantee for cache governance: enforce that the semantic cache’s regret bound is monitored and that the similarity threshold is calibrated so the error rate among accepted cached answers stays below a configured risk level.
+
+L3 — Routing and cascades
+
+
+Method	Mechanism	Evidence / expected effect	Default posture
+Pre-generation routing	Decide the model before generation, using query features	Most routing strategies adopt pre-generation approach, generally more resource-efficient	Default-on with calibrated router
+Cascade	Cheap model first; escalate only if confidence/verification fails	FrugalGPT up to 98% cost reduction; 50–98% average savings	Default-on; escalation bounded
+Learned router	Train a router on preference or quality data	RouteLLM >85% cost reduction on MT Bench while keeping 95% of GPT-4 performance, sending only 14% of queries to the strong model	Flagged if router itself costs tokens
+Uncertainty-guided token-level routing	Route at token or step level between small and large models	TokenRouter maintains >99% of pure-LLM accuracy while reducing large-model activation to 56.2–76.0% of generated tokens	Advanced; flagged until calibrated
+Abstention / selective prediction	Abstain when confidence is low rather than paying for a likely-wrong answer	Entropy-guided abstention gives +9.0 to +15.7 pp success-rate improvement at 20% abstention	Default-on for high-risk task classes
+Reasoning-vs-standard routing	Route to a reasoning model only when needed	CP-Router reduces token consumption compared to routing all prompts to reasoning models while maintaining or improving accuracy	Default-on with calibrated gate
+Cost-aware workflow search	Optimize workflow topology for performance, tokens, latency, and failure risk	MCTS jointly optimizes these objectives via a cost-aware reward function	Offline design-time; not per-call
+Critical governance rule from the adaptive-computation survey: adaptive policies are most credible when the decision signal is substantially cheaper than the action it avoids and is calibrated near the deployment threshold. A router that costs 500 tokens to save 400 tokens is negative-value. Enforce a router economics check: cost(router_signal) < expected_savings × confidence_margin.
+
+L4 — Generation control
+
+
+Method	Mechanism	Evidence / expected effect
+Compact Chain-of-Thought	Reduce explicit reasoning tokens while preserving reasoning structure	Survey taxonomy: explicit compact CoT reduces tokens while keeping explicit reasoning structure
+Implicit latent CoT	Encode reasoning steps in hidden representations instead of explicit tokens	Alternative to explicit CoT; trades interpretability for token efficiency
+Hard output token cap	Enforce max_tokens per task class at the gateway	Prevents runaway generation
+Reasoning token budget	Cap thinking tokens; stop when budget exhausted	Budget boundary effects must be handled explicitly: strict cap stops at the cap; advisory cap lets the current attempt finish
+Early exit / adaptive depth	Stop computation when confidence threshold is reached	Dynamic token computation survey covers early-exit and adaptive-depth strategies
+Structured outputs	Constrain output format to reduce wasted tokens on formatting and re-asks	Reduces output tokens and retry loops
+Parallel tool calls	Execute independent tool calls in parallel rather than serially through the model	Reduces model turns and repeated context
+Bounded retries with verifier	Retry only if a deterministic verifier or cheap judge rejects the output	LLM-Verifier convergence theorem bounds expected iterations by 4/δ
+Enforcement: output caps and reasoning budgets are enforced at the gateway, not in prompt instructions. A prompt instruction “be concise” is not a mathematical cap; max_tokens is.
+
+L5 — Gateway enforcement
+
+
+Mechanism	What it enforces	Evidence
+Per-tenant token budgets	Hard ceiling on tokens per tenant, without overshoot across replicas	hardcap gateway: reserve → extend → settle accounting with crash-safe reservations
+Shared quota counter	Multiple gateway nodes share one token counter	APISIX + Redis: read counter before proxying, record provider-reported usage after response
+Per-task / per-run-rate cost budget	Ceiling on tokens and dollars per task, per tenant, and per run-rate	Cost model as control plane with budgets the system enforces
+Kill switches	Trip when budget or error threshold is exceeded	Kill switches are part of the cost control plane
+Token metering and per-feature budgets	Normalized per-1K-token metrics; regression checks	Enterprise blueprint: token metering, latency SLOs, regression checks, per-feature cost budgets
+Quota policy at API gateway	Input/output/total token buckets per user	Envoy Gateway can maintain separate buckets for input, output, and total tokens
+Mathematical enforcement: the gateway must enforce tokens_consumed ≤ B_task with an explicit strict vs advisory semantics. Under strict mode, the engine stops with an explicit budget-exhausted error rather than emitting an invalid or truncated token stream. The founder can choose advisory mode for task classes where finishing the current attempt is worth the overshoot; advisory mode must still log the overshoot and charge it against a separate override budget.
+
+L6 — Verification
+Token efficiency and proof discipline are the same loop: do not pay for model calls whose outcomes cannot be verified. The estate should prefer model calls whose outputs are machine-checkable — schema validation, unit tests, formal verification, deterministic replay — over open-ended generative calls. Formal verification itself can be token-expensive (Anthropic reportedly spent over 100 million tokens on a formal-verification run), but when a task class is amenable to formal proof, the verification cost buys a durable guarantee that eliminates repeated model calls.
+
+3. Mathematical enforcement architecture
+3.1 Budget algebra
+Define for every task class T:
+text
+B_T = B_det + B_cache + B_model_in + B_model_out + B_verify + B_retry
+* B_det must be zero in model tokens. Deterministic work is CPU/tool cost, not token cost.
+* B_cache is cache lookup and cache read cost; provider cache reads may be 0.1× base input rate.
+* B_model_in and B_model_out are hard-capped at the gateway.
+* B_retry is bounded by the expected number of verification iterations.
+Enforced invariant:
+text
+for every completed task t in T:
+    tokens_billed(t) ≤ B_T
+OR
+    task returns BudgetExhausted and no founder-facing claim is made
+This mirrors the formal token-budget semantics where a depth cap restricts the language and the engine stops with an explicit error rather than emitting an invalid token.
+3.2 Probabilistic bound for retries and escalation
+For a verification or escalation loop with per-attempt success probability δ, the expected number of iterations is bounded by 4/δ, with worst-case outliers mathematically bounded and almost-sure termination proven. Use this as the formal basis for B_retry: set B_retry = max_attempts × max_tokens_per_attempt, with max_attempts derived from the calibrated δ for the task class. If δ degrades under distribution shift, the bound automatically tightens the retry budget or triggers recalibration.
+3.3 Monte Carlo budget setting and outlier detection
+Use historical sampling of completed runs and Monte Carlo simulation to project future token expenditure over a configurable time horizon. Set B_T at a chosen percentile (e.g., P95 or P99) of the simulated distribution. If actual expenditure exceeds the simulated bound more than a configured number of standard deviations, trip an alarm and require recalibration. Monte Carlo Tree Search can also jointly optimize workflow topology for performance, token consumption, latency, and failure risk. Agent coordination bounds can be validated with 50,000-run Monte Carlo simulation.
+3.4 Cache mathematical guarantee
+For semantic caching in continuous query space, the sublinear regret bound against an optimal oracle provides a formal performance guarantee. Enforce:
+* Similarity threshold calibrated to a maximum accepted error rate among cached answers.
+* Regret bound monitored; if the empirical regret exceeds the theoretical bound, the cache is invalidated or the threshold is tightened.
+* Switching costs are optimized so that changing cached responses does not itself become a cost source.
+3.5 Regression gates with a single efficiency metric
+Use an Effective Tokens (ET) metric that weights output tokens at 4×, cache reads at 0.1×, then applies a model multiplier (e.g., small model 0.25×, mid 1.0×, frontier 5.0×) so a single number compares cost across models and catches regressions. Gate every prompt, model, tokenizer, router, or cache change:
+text
+ET_after ≤ ET_before × (1 + ε)
+where ε is the founder-configurable regression tolerance (default: 0%). If the gate fails, the change is blocked unless a founder override is recorded with reason and expiry.
+Also track:
+* Regression-Run Efficiency (RRE): tokens an agent/CI reads to re-verify a known flow per run. A deterministic test suite can be ~175 tokens; an LLM re-drive can be ~30,249 tokens.
+* Cost creep: normalized per-1K-token cost, not raw per-request cost, across providers and API changes.
+* Escalation rate: percentage of tasks that reach a metered model after the deterministic gate.
+* Machine-resolved rate: percentage of tasks resolved before any model call.
+3.6 Calibration and confidence intervals
+Routing and abstention thresholds must be calibrated, not heuristic. Uncertainty scores should be converted into risk-controlled selective-answering rules using confidence-interval-based calibration. The decision signal must be substantially cheaper than the action it avoids and calibrated near the deployment threshold.
+
+4. Future-proofing
+
+
+Future-proofing requirement	Mechanism
+Model and tokenizer changes	Version-pinned benchmark harness; re-run ET regression gates on every model generation and tokenizer change. Mechanical lossless methods include tokenizer choice as a saver.
+Provider price changes	Multi-provider automated regression testing detects cost creep across API changes the estate does not control. Normalized per-1K-token metrics, not raw per-request.
+Distribution shift in routing/caching	Dynamic calibration with a sliding window; if the estimated success rate drops below the practical-region threshold, trigger context resets or strategy shifts. Calibration under distribution shift remains an open problem, so the estate must monitor, not assume.
+Cache staleness and switching cost	Continuous semantic caching with sublinear regret and switching-cost optimization; cache invalidation is a first-class operation.
+Lossy compression drift	Compression fidelity floors per task category; commonsense reasoning is a known failure mode under aggressive lexical compression. Re-benchmark fidelity floors when the task mix changes.
+Router/verifier drift	Version the router and verifier separately from the model; treat them as replaceable modules. Re-run calibration on a holdout set at a fixed cadence.
+Protocol evolution	The estate’s protocol registry should include efficiency protocols per problem class: which deterministic handlers exist, which cache thresholds apply, which fidelity floor is allowed, and which model tier is the escalation ceiling. New protocols inherit the same budget algebra and regression gates.
+Deterministic defaults	Default-on only mechanical + lossless methods; semantic/lossy methods behind flags with a witness. This ensures future model or data changes cannot silently degrade fidelity.
+Founder override expiry	Every override is time-bound and scoped; it cannot become a permanent bypass.
+5. Founder override design
+Founder override is required, but it must itself be governed. The estate should implement override as a first-class, auditable, time-bound configuration:
+
+
+Override dimension	Design
+Scope	Task class, tenant, workflow, or single run.
+TTL	Auto-expiry after a configured duration or number of runs.
+Mode	Override the deterministic gate, the budget cap, the fidelity floor, the routing threshold, or the regression tolerance.
+Proof requirement	Override may bypass efficiency controls but must not bypass proof requirements. A founder-facing claim still requires machine-verified proof.
+Logging	Every override is recorded in estate memory with founder identity, reason, scope, TTL, and the efficiency metric it overrides.
+Default deny	The system defaults to enforced efficiency; override is an explicit allow.
+Advisory vs strict	Founder can set a task class to advisory budget mode, where the current attempt may finish beyond the cap, but overshoot is logged and charged to an override budget.
+Regression tolerance	Founder can temporarily raise ε for a specific change, but the override expires and the next regression gate reverts to default.
+No permanent bypass	An override cannot disable the deterministic gate permanently. It can only allow a specific model call or task class for a bounded period.
+6. Implementation sequence
+Phase 1 — Enforce the deterministic gate and baseline controls
+* Registry of deterministic handlers.
+* Exact-match cache.
+* Provider prompt-cache prefix discipline.
+* Gateway hard caps with strict/advisory semantics.
+* ET metric and baseline regression harness.
+Phase 2 — Add lossless and near-lossless savings
+* Lexical deterministic compression with fidelity floors per task category.
+* Context budgeting and compaction.
+* Pre-generation routing with calibrated thresholds.
+* Lazy tool loading and deduplication.
+Phase 3 — Add semantic and probabilistic layers
+* Semantic cache with out-of-domain rejection and regret monitoring.
+* Cascade with verification-gated escalation.
+* Uncertainty-guided token-level routing and abstention for high-risk tasks.
+* Formal retry bound 4/δ integrated into B_retry.
+Phase 4 — Future-proofing and protocol generation
+* Monte Carlo budget simulation and outlier detection.
+* Dynamic calibration under drift.
+* Automated multi-provider regression benchmarks.
+* Estate-generated efficiency protocols per problem class, each inheriting the same budget algebra, deterministic gate, and regression gates.
+
+7. Open questions to resolve in the design
+1. What counts as “machine-verified proof” for a token-efficiency claim? The ET regression artifact, the cache-hit provenance, or the verifier output? Define the artifact format.
+2. What is the default regression tolerance ε? Zero is safest but may block legitimate improvements that trade a small token increase for a large quality gain; the override mechanism exists for this, but the default needs a policy.
+3. How is δ estimated for the retry bound per task class? Historical success rates, rolling window, or calibrated judge?
+4. What is the cache error risk appetite? Semantic cache thresholds trade hit rate against wrong-answer risk; this must be a founder-visible configuration, not an implementation detail.
+5. Should the deterministic gate be global-default-deny or per-task-class opt-in? Global default-deny is stronger, but requires every task class to register its deterministic handlers before it can run.
+6. How does the estate detect that a “deterministic” handler has silently become non-deterministic? Replay tests and output hashing on a sample of deterministic executions.
+The short version: token efficiency is a control-plane problem, not a prompting problem. The estate should enforce a deterministic gate, default-on only mechanical lossless savers, put every lossy/semantic optimization behind a calibrated flag with a witness, bound every model call with a gateway-enforced budget, and gate every change through an ET regression harness. Founder override exists, but it is scoped, time-bound, logged, and cannot bypass proof.
+ Resolved: “search and retrieval — no retrieval”
+Corrected definition: The requirement is discovery and retrieval of information to fulfil any instruction must be ultra-efficient and fast, so agents can do more work and not waste time or tokens on endless searching. Agents should never have to perform open-ended retrieval loops.
+This is now interpreted as a retrieval-efficiency mandate, not a “no retrieval” mandate. Retrieval is allowed and necessary; what is prohibited is unbounded, token-expensive retrieval that an agent must perform repeatedly because the estate did not make the answer directly reachable.
+Operational definition:
+
+
+Term	Resolved meaning
+Ultra-efficient discovery	An agent can locate the relevant state, component, or record in a bounded number of operations, without scanning the estate or re-searching the same surface.
+Ultra-efficient retrieval	The information is returned in a compact, directly usable form, with provenance, without requiring the agent to read raw logs, source trees, or full documents unless the task explicitly requires it.
+“No retrieval” prohibition	The estate must not force agents into endless retrieval loops. Every instruction must be preceded by a live/cached/snapshot context sufficient to execute without exploratory search.
+Discovery surface	The registered, queryable index of all knowable state: components, APIs, metrics, dependencies, errors, telemetry, failure modes, and decisions.
+Consequence for token efficiency: The max-3-query guarantee is the enforcement mechanism. If an agent needs more than three queries to retrieve all knowable information about a component or surface, the estate has failed the retrieval-efficiency mandate. Jev should be used as the fast relevance gate before retrieval: a Jev Choice or Noul call decides whether a retrieval is necessary, which source to query, and whether the retrieved result is relevant, before any generative model touches the task.
+
+2. Resolved: What is “Jev fast layer”?
+Jev is TypeSafe AI’s System One decision model, released September 15, 2026. It is not an LLM: it does not generate text. It takes a block of context and a set of predefined typed questions and returns a probability distribution over the allowed answers in a single parallel forward pass.
+
+
+Property	Resolved detail
+Output type	Typed answers: Choice (one option from a fixed list), Score (ordered scale), Noul (yes/no probability)
+Latency	70–500 ms end-to-end; ~102 ms average in agent runs
+Cost	$0.042 per million input tokens; output tokens free
+Speed/cost claim	20–200× faster and 40–400× cheaper than a standard LLM call on decision tasks; TypeSafe claims up to 193.6× faster and 444.6× cheaper
+Confidence	Calibrated probabilities via Reinforcement Learning for Calibrated Decisions (RLCD), so a 0.85 confidence threshold is meaningful
+Deployment	Hosted API only; no self-hosting for the proprietary model
+Role in the estate	The fast layer for bounded decisions inside agent pipelines: route, gate, rerank, verify, judge, classify, score, guardrail
+Why this matters for token efficiency: Every bounded decision currently sent to a generative LLM is a token-efficiency failure if Jev can resolve it deterministically. Jev’s calibrated confidence makes it a gate: above threshold, act automatically; below threshold, escalate to a generative model or a human. This is the practical implementation of “anything that can be machine-done must be done before using a model that costs money.”
+
+3. Resolved: Machine-verified proof
+Definition: A machine-verified proof is a durable, replayable artifact that an independent deterministic verifier has checked and marked verified: true, with a confidence or binary pass/fail result, stored in estate memory and linked to the decision record.
+
+
+Component	Resolved specification
+Verifier	A deterministic component (test runner, schema validator, formal checker, replay harness, or calibrated Jev Noul/Score judgment) that produces a pass/fail or calibrated probability. The verifier must be independent of the generating model—a model cannot verify its own output as proof.
+Artifact format	A proof record containing: proof_id, task_id, decision_id, verifier_id, verifier_version, input_hash, output_hash, verification_result (binary or calibrated score), timestamp, replay_command, and provenance_chain linking back to the original instruction and context snapshot.
+Minimum verification classes	(1) Deterministic pass: unit tests, schema validation, formal proof, exact replay. (2) Calibrated judgment: Jev Noul/Score with a calibrated confidence threshold, used where formal verification is impossible but a bounded judgment is sufficient. (3) Human-founder attestation: only for exception cases, logged as an override, not as machine proof.
+Exception handling	If no verifier can produce a proof, the task returns ProofUnavailable. A founder-facing claim must not be made. The task may still execute internally, but its outcome is logged as unproven and excluded from yield calculations. A founder override can allow a founder-facing claim only with an explicit proof_override record containing reason, scope, and TTL.
+Proof vs narration	Narration is any natural-language claim not backed by a proof artifact. Narration is permitted only in exploratory drafts, never in founder-facing outputs or decision records.
+Jev’s role in proof: Jev is the fast proof layer for bounded claims—for example, “does this code change pass the acceptance criteria?” (Noul), “which of these remediations is most relevant?” (Choice), or “how severe is this bottleneck?” (Score). The verifier artifact records the Jev question, the calibrated confidence, and the threshold applied.
+
+4. Resolved: Definition of “query” for the max-3-query guarantee
+Definition: A query is a single structured retrieval operation against the estate’s discovery surface, specified by (target_type, target_id, query_class), returning a single typed response. A query may aggregate multiple underlying lookups only if the aggregation is deterministic and the result is returned as one response.
+
+
+Query class	What it returns	Example
+Q1: identity	Component identity, summary, owner, version, interfaces/APIs	“What is module X, what does it expose, who owns it?”
+Q2: operational	Metrics, telemetry, errors, dependencies, failure modes, touched surfaces	“What can fail in module X, what does it depend on, what does it touch?”
+Q3: historical	Decision history, proof records, incident history, evolution record	“What decisions have involved module X, and what were the verified outcomes?”
+Guarantee: For any registered component or surface, an agent can retrieve all knowable information in at most three queries: Q1 → Q2 → Q3. If a fourth query is required, the component is not compliant with the estate’s context-exposure standard.
+What does not count as a query: model calls, tool executions, file reads, log scans, or exploratory searches. If the agent must do any of these to answer a Q1–Q3 question, the discovery surface has failed.
+Jev’s role: Jev can pre-classify the query intent (Choice: which query class is needed?) and post-filter the result (Noul: is this result sufficient?) before the agent spends a generative call interpreting the response.
+
+5. Resolved: Yield — numeric and domain definitions
+Core definition: Yield is the verified value produced per unit of constrained resource consumed. It is a ratio, not an absolute count.
+text
+Yield = (verified_outcome_value) / (resource_consumed)
+
+
+Domain	Verified outcome (numerator)	Resource consumed (denominator)	Numeric target
+Knowledge work	Verified deliverables (proof-passed tasks)	Tokens + wall-clock time + tool cost	≥ 1 verified deliverable per 10k effective tokens (founder-configurable baseline)
+Decision quality	Decisions whose machine-verified outcome matches the intended outcome	Decision cost (Jev + escalation + verification)	≥ 95% verified-outcome match for automatable decisions
+Engineering	Merged, proof-passed changes	Agent tokens + CI cost + human review time	≥ 1 proof-passed change per 50k effective tokens
+Retrieval	Instructions fulfilled without exploratory search	Queries + tokens spent on discovery	≥ 90% of instructions resolved within the 3-query bound
+Estate efficiency	Machine-resolved tasks (before any metered generative call)	Total tasks	≥ 60% machine-resolved by deterministic handlers + Jev
+Proof integrity	Founder-facing claims with a verified proof artifact	Total founder-facing claims	100% (zero unproven claims)
+Yield loop: Every task record must carry yield_inputs (resources consumed), yield_outputs (verified outcomes), and yield_ratio. A task with yield_ratio below the domain floor triggers a review, not automatic acceptance. Jev’s calibrated confidence is part of the yield calculation: a high-confidence Jev decision that avoids a generative call contributes positively to yield; a low-confidence Jev decision that escalates contributes the escalation cost to the denominator.
+
+6. Resolved: “Historic incidents” to be prevented
+The document refers to “another incident like the historic ones” without naming them. The following incident classes are now the named prevented-incident register, derived from the estate’s stated concerns and the failure modes already identified in the architecture:
+
+
+Incident class	What it means	Prevention mechanism
+INC-01: Unverified founder claim	A founder-facing claim or decision made without a machine-verified proof artifact	Proof gate: no founder-facing claim without verification_result: pass
+INC-02: Runaway model spend	Token or cost overshoot beyond the task budget, often from repeated retrieval or generation loops	Gateway hard caps; deterministic gate; Jev fast layer; ET regression gates
+INC-03: Silent model or provider regression	A model update, tokenizer change, or provider price change degrades cost or quality without detection	ET regression harness; multi-provider benchmarks; version-pinned evaluation
+INC-04: Context starvation / endless retrieval	Agent cannot retrieve the state it needs and enters an exploratory loop, wasting time and tokens	Max-3-query guarantee; live snapshot exposure; discovery surface completeness
+INC-05: Lossy compression fidelity failure	Aggressive token compression changes the meaning of the input and causes a wrong decision	Fidelity floors per task category; deterministic compression only where fidelity is verified
+INC-06: Cache-induced wrong answer	A semantic cache returns a stale or semantically non-equivalent answer	Calibrated similarity threshold; out-of-domain rejection; regret-bound monitoring
+INC-07: Irreversible action without rollback	An agent executes a state-changing action that cannot be rolled back or replayed	First-class reversibility; pre-execution snapshot; replay harness
+INC-08: Failure-mode blindness	A component or surface fails in a way the estate did not know about	Failure-mode register per component; Monte Carlo failure mapping; continuous simulation
+INC-09: Router or verifier drift	The routing or verification logic degrades under distribution shift, sending tasks to the wrong model or accepting wrong proofs	Calibration monitoring; sliding-window drift detection; holdout recalibration
+INC-10: Override permanence	A founder override becomes a permanent bypass of efficiency or proof controls	Time-bound overrides; auto-expiry; override audit record
+These ten incidents form the incident-prevention baseline against which every new component, protocol, and optimization must be checked.
+
+7. MoSCoW priority and ownership for every requirement
+Ownership is expressed as a domain owner role, not a named individual. The estate’s organizational design should assign these roles explicitly.
+7.1 Core operating principles
+
+
+ID	Requirement	MoSCoW	Owner
+P-01	Proof over narration; founder responses must be machine-verified	Must	Proof & Verification Lead
+P-02	Yield loop connecting decisions to verified outcomes	Must	Yield & Outcome Lead
+P-03	Constraint-first engineering; optimize before scaling	Must	Architecture Lead
+P-04	Efficiency as architectural and engineering standard	Must	Architecture Lead + Engineering Standards Lead
+P-05	Reversibility, rollback, replay, simulation as first-class	Must	Reliability & Replay Lead
+P-06	Failure-mode awareness for every component and the estate	Must	Reliability & Replay Lead
+P-07	Unified, monitored, founder-visible estate	Should	Platform Integration Lead
+P-08	Living memory from genesis onward	Must	Estate Memory Lead
+P-09	Formalized creativity under estate guidelines	Could	Agent Governance Lead
+P-10	Learn what not to do as well as what to do	Should	Estate Memory Lead + Research Lead
+7.2 Decision and outcome system
+
+
+ID	Requirement	MoSCoW	Owner
+FR-DEC-01	Decision-as-a-Service for complex decisions; default for all agents but configurable	Must	Decision Systems Lead
+FR-DEC-02	Map → Reduce decision pipeline where applicable	Should	Decision Systems Lead
+FR-DEC-03	Track every decision to machine-verified outcome	Must	Yield & Outcome Lead
+FR-DEC-04	Record decision context: inputs, constraints, alternatives, model version, proof, outcome	Must	Estate Memory Lead
+FR-DEC-05	Prove all reasonable options within constraints exhausted before funding/spend	Must	Decision Systems Lead + Finance Owner
+FR-DEC-06	Free/cheap service posture where possible; efficiency and cost control required	Must	Architecture Lead + Finance Owner
+FR-DEC-07 (new)	Jev (or equivalent System One model) is the default fast layer for bounded decisions before any generative model call	Must	Decision Systems Lead + Token Efficiency Lead
+7.3 Estate machine, memory, and tracking
+
+
+ID	Requirement	MoSCoW	Owner
+FR-MEM-01	Estate Machine tracks agents, instructions, models, versions, decisions, outcomes	Must	Estate Memory Lead
+FR-MEM-02	Living memory from history to genesis: agents, models, libraries, packages, decisions, standards	Must	Estate Memory Lead
+FR-MEM-03	Predictions and dream logging as memory records linked to outcomes	Should	Research Lead + Estate Memory Lead
+FR-MEM-04	Learn what works and what does not, including what not to do	Should	Research Lead + Estate Memory Lead
+FR-MEM-05	Unified view of estate state, decisions, memory, outcomes	Should	Platform Integration Lead
+7.4 Context, state exposure, and max-3-query guarantee
+
+
+ID	Requirement	MoSCoW	Owner
+FR-CTX-01	Live/cached/snapshot of all relevant state before any instruction runs	Must	Platform Integration Lead
+FR-CTX-02	Expose components with summary, APIs, interfaces, metrics, dependencies, errors, telemetry, failure modes	Must	Engineering Standards Lead + Reliability & Replay Lead
+FR-CTX-03	Mathematical guarantee of at most 3 queries to retrieve all knowable information about a component and touched surfaces	Must	Architecture Lead + Discovery Surface Lead
+FR-CTX-04	Define query operationally and verify the 3-query bound per component	Must	Discovery Surface Lead
+FR-CTX-05 (new)	Retrieval-efficiency mandate: agents must never enter endless retrieval loops; discovery must be bounded and fast	Must	Discovery Surface Lead + Token Efficiency Lead
+7.5 Failure modes, simulation, recovery
+
+
+ID	Requirement	MoSCoW	Owner
+FR-FAIL-01	Known failure-mode register for every component	Must	Reliability & Replay Lead
+FR-FAIL-02	Estate-wide failure-mode model	Must	Reliability & Replay Lead
+FR-FAIL-03	Monte Carlo research on uncertainty to map failure conditions thoroughly	Should	Reliability & Replay Lead + Research Lead
+FR-FAIL-04	Continuous simulation and seamless-recovery drills	Should	Reliability & Replay Lead
+FR-FAIL-05	Use historic incidents to prevent recurrence	Must	Reliability & Replay Lead
+FR-FAIL-06	Failure modes tracked for every surface a component touches	Must	Reliability & Replay Lead + Discovery Surface Lead
+7.6 Reversibility, rollback, replay, simulation
+
+
+ID	Requirement	MoSCoW	Owner
+FR-REV-01	Reversibility, rollback, replay, simulation as first-class requirements	Must	Reliability & Replay Lead
+FR-REV-02	Pre-execution snapshot sufficient for rollback/replay for every instruction/work	Must	Reliability & Replay Lead
+FR-REV-03	Measured probability/reliability of rollback and replay	Must	Reliability & Replay Lead
+FR-REV-04	Maintained simulation baselines for recovery and testing	Should	Reliability & Replay Lead
+7.7 Routing, integration, founder surfaces
+
+
+ID	Requirement	MoSCoW	Owner
+FR-INT-01	Route services, model providers, consoles, founder surfaces: voice, speech, text, inbox, outbox, events, memory, retrieval, communication	Must	Platform Integration Lead
+FR-INT-02	Map integration needs and verify solved	Must	Platform Integration Lead
+FR-INT-03	Seamless, unified, future-proof, monitored, tracked, founder-visible	Should	Platform Integration Lead
+FR-INT-04	Enforce estate founding principles across all builds	Must	Architecture Lead
+FR-INT-05	Named surfaces: AI Studio (confirmed), Claude web, Gemini web, Kimi web, desktop services	Should	Platform Integration Lead
+FR-INT-06	Enforced architectural and engineering standards for every build	Must	Engineering Standards Lead
+7.8 Agent behavior and creative problem solving
+
+
+ID	Requirement	MoSCoW	Owner
+FR-AGT-01	Formalized creative problem solving when stuck, under estate guidelines	Could	Agent Governance Lead
+FR-AGT-02	Creativity reduces founder friction while remaining governed, logged, verifiable	Should	Agent Governance Lead
+FR-AGT-03	Creative solutions still require machine-verified proof/yield before founder-facing claims	Must	Proof & Verification Lead
+7.9 Audit and standards
+
+
+ID	Requirement	MoSCoW	Owner
+FR-AUD-01	Self-audit estate and agents; snapshot of current state	Must	Reliability & Replay Lead
+FR-AUD-02	Clarify architectural standards with engineering standards	Must	Architecture Lead + Engineering Standards Lead
+FR-AUD-03	Standards enforceable, monitored, founder-visible	Should	Engineering Standards Lead
+7.10 Engineering and scalability
+
+
+ID	Requirement	MoSCoW	Owner
+NFR-ENG-01	Constraint-based first engineering under tight resource constraints	Must	Architecture Lead
+NFR-ENG-02	Scale/expand only once yield is proven	Must	Architecture Lead + Yield & Outcome Lead
+NFR-ENG-03	Efficiency as standard architectural and engineering requirement	Must	Architecture Lead + Engineering Standards Lead
+NFR-ENG-04	World-class capabilities for any yielding knowledge work given instructions	Should	Architecture Lead + Research Lead
+7.11 Protocol research and commercial potential
+
+
+ID	Requirement	MoSCoW	Owner
+FR-PROT-01	Estate suggests and delivers new protocols: formalized approaches to problem classes, building on founding principles	Should	Research Lead
+FR-PROT-02	Use history as example but adapt protocols to any environment and dataset	Could	Research Lead
+FR-PROT-03	Generate agent protocols for problem classes	Should	Research Lead + Agent Governance Lead
+FR-PROT-04	Treat protocol generation as commercially valuable	Could	Research Lead + Commercial Lead
+7.12 Proof, yield, anti-hallucination
+
+
+ID	Requirement	MoSCoW	Owner
+FR-PROOF-01	No founder response without machine-verified proof	Must	Proof & Verification Lead
+FR-PROOF-02	Gather intelligence as proof/yield: code issues, bottlenecks, researched remediations, improvement suggestions	Must	Proof & Verification Lead + Research Lead
+FR-PROOF-03	Use proof/yield gathering to counter hallucination from the start	Must	Proof & Verification Lead
+FR-PROOF-04	Yield loop: instruction → work → proof → outcome	Must	Yield & Outcome Lead
+7.13 Token efficiency (from the previous architecture)
+
+
+ID	Requirement	MoSCoW	Owner
+TE-01	Deterministic gate before every metered model call	Must	Token Efficiency Lead
+TE-02	Jev fast layer as default bounded-decision resolver	Must	Token Efficiency Lead + Decision Systems Lead
+TE-03	Exact-match cache and provider prompt-cache discipline	Must	Token Efficiency Lead
+TE-04	Gateway hard caps with strict/advisory budget semantics	Must	Token Efficiency Lead + Platform Integration Lead
+TE-05	ET regression gates on every model/prompt/cache/router change	Must	Token Efficiency Lead + Engineering Standards Lead
+TE-06	Semantic cache and lossy compression behind calibrated flags	Should	Token Efficiency Lead
+TE-07	Probabilistic retry bound 4/δ integrated into budget algebra	Should	Token Efficiency Lead
+TE-08	Monte Carlo budget simulation and outlier detection	Could	Token Efficiency Lead + Research Lead
+TE-09	Founder override: scoped, TTL-bound, logged, cannot bypass proof	Must	Agent Governance Lead + Founder Office
+8. Updated open questions after this round
+Only two questions remain genuinely unresolved; both are design decisions rather than missing definitions:
+1. Which verifier class is acceptable as “machine-verified proof” for different task domains? The register now defines three classes (deterministic pass, calibrated Jev judgment, human attestation), but the estate must decide which domains require deterministic proof and which can rely on calibrated Jev proof. Proposed resolution: deterministic proof for engineering and code; calibrated Jev proof for judgment and classification; human attestation only as a logged override.
+2. What is the default threshold for Jev escalation? Jev’s calibrated confidence makes thresholding possible, but the estate must set the default auto-act/escalate boundary per task class. Proposed default: auto-act at ≥0.90 for low-risk decisions, ≥0.95 for irreversible actions, and escalate below 0.75 to a generative model or human.
+Everything else in the Clarify document now has a resolved definition, a MoSCoW priority, and an owner. The Jev fast layer is not an add-on to the architecture; it is the default first gate that operationalizes the deterministic-first, proof-first, token-efficient estate.
+
+ntify strengths, gaps, synergies, tensions, and strategic recommendations. I'll structure the response with an executive summary, strengths of the architecture, gaps and risks, strategic tensions, integration with the broader estate, recommended roadmap, and a conclusion. I'll cite the sources I've opened.
+
+Your token-efficiency file is not a standalone optimization document; it is the economic engine of the entire estate. Viewed as a whole, it makes a coherent and forceful argument: efficiency is a control-plane problem, not a prompting problem. However, when placed alongside the proof, yield, and decision-making requirements from your broader architecture, several gaps and tensions become visible. The most consequential is that the document's crown jewel—Jev—is no longer a stable foundation; it is the opening move in a commodity race. The architecture needs to be decision-model-agnostic to survive what comes next.
+
+✅ What the Whole Picture Gets Right
+The document's core insight is correct and well-supported. The deterministic gate—"anything that can be machine-done must be done before using a model that costs money"—is not a heuristic; it is a control-plane primitive. KORA, a deterministic-first execution layer, demonstrates that a pre-inference control layer can avoid 80 of 100 model invocations on a deterministic-heavy benchmark with zero mismatches in the deterministic subset. The local-decider project proves the same principle in a tool-using agent context: "anything decidable by a rule is decided by a rule," with a measured 0-leak record on a 112-case safety probe. This is the strongest single lever in the entire document, and it is correctly positioned as the first gate, not an afterthought.
+The budget algebra is also structurally sound. Defining B_T = B_det + B_cache + B_model_in + B_model_out + B_verify + B_retry and enforcing tokens_billed(t) ≤ B_T or BudgetExhausted gives the estate a checkable invariant, not a policy aspiration. This is exactly the discipline that production cost-governance gateways are now enforcing: costhelm projects every call at worst-case cost and admits it against a hard budget before any provider is contacted, returning an HTTP 402 with the arithmetic in the body and costing $0 because nothing was sent. Toka SDK provides hierarchical hard/soft limits across request, task, session, day, and month dimensions with explainable routing and zero silent degradation. CostGuard adds trajectory-level governance with a graduated compress-and-downgrade-then-terminate mitigation policy, achieving 33–82% savings over baselines with zero budget violations across tested ceilings—at the cost of a 16–21% quality reduction. The document's budget algebra is aligned with where the market is actually converging.
+The distinction between strict and advisory budget semantics is also correct and necessary. A cumulative token cap can fall inside a derivation, forcing a choice between stopping at the cap and letting the current attempt finish; the two produce different costs and candidate pools, and budget curves must jointly state the cap, realized cost, stopping rule, and selector information. The document's insistence on explicit strict/advisory semantics, rather than silent truncation, is the right call.
+
+⚠️ The Central Gap: Jev Is a Commodity, Not a Moat
+The document treats Jev as "the default fast layer" and assigns it a Must priority as the bounded-decision resolver. That was defensible in September 2026. It is no longer defensible as a architectural assumption. Within weeks of Jev's launch, the decision-model category became a multi-player race: OpenAI launched a Decisions API with the Luna model, Cloudflare released Clef and Clef Flash (priced at $0.24 per million tokens), AWS open-sourced Strands Decider 2B, and Microsoft unveiled Microsoft-Decision-1. Cloudflare claims Clef is smarter and faster than Jev, with Clef Flash at roughly 39 ms median latency. Jev's own adoption is real—it reached nearly 13% of paid teams on Vercel's AI Gateway within 24 hours and became the default evaluation model for Vercel's agent framework—but the existence of multiple viable substitutes means Jev is not a durable architectural dependency.
+More importantly, the evidence on Jev's reliability is mixed. TypeSafe's "0 per cent hallucination rate" claim refers to schema conformity, not decision correctness; independent experiments showed Jev's routing decisions could be influenced by misleading text, and confidence scores provided "some warning, but not a reliable safeguard against incorrect choices". Enterprise deployment requires labelled historical data, meaningful thresholds, and a clear understanding of false-positive versus false-negative costs—exactly the kind of validation data that most organizations lack. The document's own proof architecture acknowledges that a model cannot verify its own output as proof, yet Jev is positioned as a proof layer for bounded claims. That is a tension that needs to be resolved: Jev can be a routing signal and a first-pass judge, but it cannot be the terminal verifier for consequential founder-facing claims without an independent check.
+Recommendation: Reframe Jev as one interchangeable implementation of a FastDecisionProvider interface, not as "the default fast layer." The estate should support Jev, Clef, Luna, Strands Decider, and local models behind the same contract. The local-decider project already demonstrates that the decider can be swapped by configuration rather than code, with the same HTTP contract across hosted Jev and a local model. This makes the estate decision-model-agnostic and future-proof against the commoditization of the fast-decision layer.
+
+🧩 Missing Pieces in the Whole Picture
+1. No distinction between "efficiency" and "effectiveness" at the task level. The document optimizes tokens per task, but the estate's yield requirement defines yield as verified outcome per resource consumed. A 33–82% cost saving with a 16–21% quality reduction (as CostGuard reports) may be a yield loss, not a gain, if the quality reduction crosses the verification threshold. The budget algebra needs a yield floor: a task is not "efficient" if it consumes fewer tokens but fails verification or requires rework. Efficiency must be measured per verified outcome, not per model call.
+2. The deterministic gate is under-specified as an organizational artifact. The document describes the gate's logic but not its ownership and evolution. Who maintains the registry of deterministic handlers? How does a handler get promoted from "experimental" to "default"? What happens when a handler's output distribution drifts and it silently becomes non-deterministic? The document's own open question acknowledges this: "How does the estate detect that a 'deterministic' handler has silently become non-deterministic?" That question needs an operational answer—replay tests, output hashing, and a promotion pipeline—before the gate can be trusted at scale.
+3. Proof artifacts are described but not standardized. The document specifies a proof record format, but the broader ecosystem is converging on standardized evidence frameworks: the Standardized Evidence Framework (SEF) provides a machine-readable, cryptographically verifiable JSON schema for auditable AI events; Veridict provides an append-only, hash-chained evidence ledger with signed certificates that anyone can verify offline, with a tiered evidence ladder where machine-checkable evidence outranks statistical evidence and jury belief. The estate should adopt or align with an existing standard rather than inventing a proprietary proof format. A proprietary format creates interoperability friction; an aligned standard makes the estate's proofs portable and independently verifiable, which is precisely what the founder-facing proof requirement demands.
+4. Calibration under distribution shift is acknowledged as an open problem but not operationalized. The document correctly notes that calibration under distribution shift remains an open problem. The research landscape offers concrete mechanisms: Adaptive Conformal Inference (ACI) dynamically adjusts routing thresholds while maintaining formal risk bounds under distribution shift; RACER uses conformal risk control and "learn-then-test" calibration to provide finite-sample guarantees on selective risk, achieving 26–45% compute savings at matched error rates and stable with calibration set sizes of n ≥ 150. The estate should not treat calibration as a one-time setup; it should treat it as a continuous control loop with conformal guarantees where the task class permits.
+5. The semantic cache's regret bound is cited but not integrated into the budget algebra. The continuous semantic caching framework proves a sublinear regret bound against an optimal oracle in continuous query space, which is a genuine mathematical guarantee. But the document does not specify how this bound is monitored, what happens when empirical regret exceeds the theoretical bound, or how cache switching costs interact with the budget. The cache is treated as a savings mechanism, not as a risk-bearing component with its own failure modes and guarantees. It needs a cache governance policy: threshold calibration to a maximum error rate, regret monitoring, and automatic invalidation when the bound is violated.
+
+⚡ Tensions Between the Token-Efficiency Architecture and the Broader Estate
+Tension 1: Proof vs. efficiency. The estate's first principle is "no founder response without machine-verified proof." Token efficiency's first principle is "do not call a model unless deterministic options are exhausted." These are aligned in spirit—both refuse to pay for unverified output—but they collide in practice when verification itself is expensive. Formal verification can be token-expensive; the document acknowledges Anthropic's formal-verification run reportedly xaexceeding 100 million tokens. The budget algebra includes B_verify, but the document does not specify how to trade verification cost against model-call savings. A task that skips a model call but requires an expensive formal proof may be less efficient per verified outcome than a task that calls a cheap model and passes a lightweight check. The efficiency metric needs to include verification cost in the denominator, not treat it as an externality.
+Tension 2: Jev's speed vs. the proof requirement. Jev resolves bounded decisions in ~102 ms at $0.042 per million input tokens. That makes it an attractive gate—a fast filter that escalates ambiguous cases to slower, more expensive verification. But the document also assigns Jev a role in the proof layer: "Jev is the fast proof layer for bounded claims." These two roles are not the same. A gate can be wrong occasionally if its errors are caught downstream; a proof cannot be wrong. If Jev is used as a proof layer without an independent verifier, the proof architecture is compromised. The resolution is to separate Jev-as-gate (fast, permissive, escalates uncertainty) from Jev-as-evidence (one signal among several, never the sole verifier for consequential claims).
+Tension 3: Founder override vs. mathematical enforcement. The document's override design is thoughtful—scoped, TTL-bound, logged, cannot bypass proof—but it sits uneasily with the mathematical enforcement claim. A hard budget is only hard if it cannot be overridden arbitrarily. If the founder can raise ε, extend a TTL, or switch a task class to advisory mode, the "mathematical guarantee" is conditional on the founder's restraint. That is not necessarily a flaw—founders must be able to override—but the document should be precise about what is mathematically guaranteed (the gateway enforces tokens_billed ≤ B_T when no override is active) versus what is policy-guaranteed (the override is time-bound and logged). The distinction matters for external audit: an auditor will ask what happens when the founder is wrong.
+
+🗺️ Integration: Where Token Efficiency Sits in the Full Estate
+The token-efficiency architecture is the resource governor for three other estate systems:
+
+
+Estate system	How token efficiency integrates
+Decision-as-a-Service	The deterministic gate and Jev (or a substitute fast-decision provider) are the first stage of every decision pipeline. Only decisions that survive the gate and the fast layer reach a generative model. This is the practical implementation of "map → reduce": map the decision to a deterministic or fast-decision handler, reduce to a model call only when necessary.
+Proof and yield	B_verify is a first-class budget line. Yield is measured as verified outcomes per total resource consumed, including verification. A task that saves tokens but fails verification has negative yield, not positive efficiency. Proof artifacts should align with SEF or Veridict-style standards so they are independently verifiable and portable.
+Living memory and learning	Every gate decision, cache hit, escalation, override, and budget exhaustion is a learning signal. The estate should track which deterministic handlers resolve which task classes, which Jev-style provider performs best per class, which compression fidelity floors hold, and where calibration drifts. This is the "learn what not to do" requirement applied to the efficiency stack itself.
+🚀 Recommended Roadmap Adjustment
+The document's four-phase implementation sequence is reasonable, but it needs three corrections to survive the whole picture:
+Phase 1 (corrected): Deterministic gate + provider-agnostic fast layer + standardized proof artifact.
+* Build the deterministic handler registry and pre-model gate, with replay-based drift detection for handlers.
+* Define a FastDecisionProvider interface and implement at least two backends (Jev and one alternative: Clef, a local model, or Strands Decider) from day one. Do not hard-code Jev.
+* Adopt or align with an existing proof artifact standard (SEF or Veridict) rather than inventing a proprietary format.
+Phase 2 (corrected): Efficiency per verified outcome, not per call.
+* Extend the ET metric to include B_verify and rework cost. A task is only "efficient" if it passes verification within its total budget.
+* Implement cache governance with regret monitoring and automatic invalidation.
+* Operationalize calibration as a continuous loop with conformal risk control where applicable.
+Phase 3 (corrected): Conditional guarantees and override accounting.
+* Separate the mathematical guarantee (gateway-enforced cap when no override is active) from the policy guarantee (override is time-bound and logged). Expose this distinction to auditors.
+* Implement founder override as a budgeted action: every override consumes an override budget, and repeated overrides trigger a review rather than silently becoming permanent.
+Phase 4: Future-proofing through modularity and protocol generation.
+* Treat the fast-decision layer, router, verifier, compressor, and cache as replaceable modules with versioned contracts. Re-benchmark on every model, tokenizer, or provider change.
+* Generate efficiency protocols per problem class that specify which deterministic handlers exist, which fast-decision provider is approved, which cache thresholds apply, and which fidelity floor is allowed. These protocols become part of the estate's living memory and are subject to the same regression gates as code.
+
+The whole picture is a control-plane architecture for economical, provable work. Its weakest point is not the budget algebra or the deterministic gate—those are sound and well-supported. Its weakest point is the assumption that Jev is the stable center of the fast layer. The decision-model market is moving faster than any single provider can be trusted as a permanent dependency. The estate should own the gate, the proof, and the governance—and treat the decision model itself as a replaceable component behind a stable interface. That is the architecture that survives the commodity race.

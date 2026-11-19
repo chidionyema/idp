@@ -1,0 +1,6 @@
+{
+  "name": "PennyD Dagster Gateway",
+  "description": "Dagster-orchestrated LLM router control plane with atomic key management, WAL receipts, competitor benchmarks, and chaos resilience testing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

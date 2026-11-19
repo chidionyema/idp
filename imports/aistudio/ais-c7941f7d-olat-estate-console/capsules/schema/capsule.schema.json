@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genesis.olat.estate/schemas/capsule.schema.json",
+  "title": "GenesisPolyglotCapabilityCapsuleManifest",
+  "description": "Enterprise Commercial Elite SLSA Level 3 Capability Capsule Contract (REQ-33)",
+  "type": "object",
+  "required": ["package", "runtime", "contract", "attestation"],
+  "properties": {
+    "package": {
+      "type": "object",
+      "required": ["name", "version", "merkle_root", "effect", "oracle_pass_cost", "promotion_stage"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+$" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "merkle_root": { "type": "string", "pattern": "^blake3:[0-9a-f]{64}$" },
+        "effect": { "enum": ["Pure", "ReadOracle", "MutateIdempotent", "MutateDestructive"] },
+        "oracle_pass_cost": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "promotion_stage": {
+          "enum": [
+            "STAGE_1_CANDIDATE_SANDBOX",
+            "STAGE_2_SHADOW_CANARY",
+            "STAGE_3_COMMERCIAL_STABLE",
+            "QUARANTINED_CIRCUIT_BROKEN"
+          ]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["flake", "wasi_sandbox", "timeout_ms"],
+      "properties": {
+        "flake": { "type": "string" },
+        "wasi_sandbox": { "type": "string" },
+        "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 60000 }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "required": ["input", "output"],
+      "properties": {
+        "input": { "type": "object" },
+        "output": { "type": "object" }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "source_tickets",
+        "source_repos",
+        "mdl_compression_ratio",
+        "max_literal_entropy_bits",
+        "double_execution_idempotent",
+        "cif_receipt_signatures"
+      ],
+      "properties": {
+        "source_tickets": { "type": "array", "minItems": 3, "items": { "type": "string" } },
+        "source_repos": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "mdl_compression_ratio": { "type": "number", "minimum": 0.3 },
+        "max_literal_entropy_bits": { "type": "number", "maximum": 4.5 },
+        "double_execution_idempotent": { "const": true },
+        "cif_receipt_signatures": { "type": "array", "minItems": 3, "items": { "type": "string" } }
+      }
+    }
+  }
+}

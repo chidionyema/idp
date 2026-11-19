@@ -1,0 +1,28 @@
+# Canonical Genesis Polyglot Capability Capsule Manifest (SLSA Level 3)
+# Replaces ~/.pi/agent/skills/*/SKILL.md and ~/.agents/skills/*/SKILL.md
+[package]
+name = "genesis/k8s-externalsecret-verify"
+version = "1.4.0"
+merkle_root = "blake3:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
+effect = "ReadOracle"
+oracle_pass_cost = 1
+promotion_stage = "STAGE_3_COMMERCIAL_STABLE"
+
+[runtime]
+flake = "nix:nixpkgs/24.05#python312,kubectl_1_31,jq"
+wasi_sandbox = "seccomp-readonly-rootfs"
+timeout_ms = 15000
+
+[contract.input]
+schema = { type = "object", required = ["namespace", "secret_name"], properties = { namespace = { type = "string" }, secret_name = { type = "string" } } }
+
+[contract.output]
+schema = { type = "object", required = ["synced", "resource_version", "cif_receipt"], properties = { synced = { type = "boolean" }, resource_version = { type = "string" }, cif_receipt = { type = "string" } } }
+
+[attestation]
+source_tickets = ["TICKET-401", "TICKET-419", "TICKET-452"]
+source_repos = ["idp", "prospector", "battation"]
+mdl_compression_ratio = 0.684
+max_literal_entropy_bits = 3.12
+double_execution_idempotent = true
+cif_receipt_signatures = ["hmac-sha256:9a8b7c01", "hmac-sha256:3c4d8e12", "hmac-sha256:1f2e5a99"]

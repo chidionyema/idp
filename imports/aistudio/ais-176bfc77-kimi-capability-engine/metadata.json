@@ -1,0 +1,6 @@
+{
+  "name": "Kimi Capability-First Estate Engine",
+  "description": "Authoritative capability-first instruction resolution, evidence-backed readiness classification, and verified reuse across IDP and Argon Genesis estate.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

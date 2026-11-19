@@ -1,0 +1,42 @@
+name: Operation Phoenix Daily Cold-Boot & Round Table
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Daily 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      probe_mode:
+        description: 'Probe mode (LIVE_ESTATE or CLEANROOM_REHEARSAL)'
+        required: false
+        default: 'LIVE_ESTATE'
+
+jobs:
+  phoenix-cold-boot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean-Room Source Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fresh Clean Dependency Install
+        run: npm ci
+
+      - name: Clean-Room Typecheck & Governance Verification Suite
+        run: |
+          npm run lint
+          npm run test
+          npm run build
+
+      - name: Execute Operation Phoenix Cold-Boot & 10/10 Closed-Loop FSM Drill
+        run: |
+          if [ "${{ github.event.inputs.probe_mode }}" = "CLEANROOM_REHEARSAL" ]; then
+            npx tsx scripts/phoenix-daily-drill.ts --rehearsal
+          else
+            npx tsx scripts/phoenix-daily-drill.ts
+          fi

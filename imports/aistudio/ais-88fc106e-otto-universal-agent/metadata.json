@@ -1,0 +1,6 @@
+{
+  "name": "Otto - The Universal Agent with Hands",
+  "description": "Founder's autonomous agent operating across computers, phones, watches, glasses, and robotics with peer bus orchestration, strict evals, and luxury trust handovers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

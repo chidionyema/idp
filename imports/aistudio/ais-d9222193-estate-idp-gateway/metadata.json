@@ -1,0 +1,6 @@
+{
+  "name": "Estate IDP Gateway & Protocol Cockpit",
+  "description": "Canonical Internal Developer Platform (IDP) gateway protocol, admission broker, verified contract rules, and cross-surface delivery friction analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

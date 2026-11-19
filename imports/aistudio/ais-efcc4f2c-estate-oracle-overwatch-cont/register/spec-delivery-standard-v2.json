@@ -1,0 +1,118 @@
+{
+  "standardId": "ESTATE-SPEC-STD-V2",
+  "version": "2.0.0",
+  "enforcedAt": "2026-10-31T18:10:00Z",
+  "title": "Estate Mandatory Spec & Closed-Loop Delivery Standard (Zero-Loophole Contract)",
+  "summary": "Enforces a strict 6-gate specification and delivery template across Argon, DeepSeek, Claude, and MiniMax so no work enters or exits the estate without machine-checkable BDD predicates, 3-tries tool bounds, an Inbox->Consulting->Outbox receipt chain, and a verified artifact manifest.",
+  "mandatoryGates": [
+    {
+      "gateId": "G1_BDD_MACHINE_PREDICATE",
+      "name": "Machine-Checkable BDD Given/When/Then",
+      "rule": "Every spec must declare given/when/then where `then` includes at least one executable verifier (`exit_code == 0`, `file_exists:<path>`, `grep_match:<pattern>`, `probe:<cmd>`, `http_status == 200`, `test_pass:<suite>`).",
+      "loopholeClosed": "Eliminates prose-only 'looks good / should work' specs from Claude and MiniMax branches."
+    },
+    {
+      "gateId": "G2_THREE_TRIES_FENCE",
+      "name": "3-Tries Canonical (tool, args) Fence & Reset Contract",
+      "rule": "Every execution plan locks `max_attempts: 3` per canonical `(tool, args)` key and requires explicit `declare_plan` or `revise_plan` to reset counters.",
+      "loopholeClosed": "Prevents runaway bash/edit loops and colliding worktree thrashing across #7680 and #7692."
+    },
+    {
+      "gateId": "G3_CONSULTING_INBOX_OUTBOX_LOOP",
+      "name": "Bidirectional Private-Repo Inbox -> Consulting Poller -> Outbox Chain",
+      "rule": "All cross-repo deliverables and MiniMax M2.7 big-ticket dispatches must enter `relay/inbox/` (chidionyema/estate-inbox), pass Consulting Lane audit (`bin/estate-inbox-poll`), and emit a CIF-HMAC signed receipt in `relay/outbox/` (chidionyema/estate-outbox).",
+      "loopholeClosed": "Closes the broken return loop where push/outbox existed partially but inbound requests and MiniMax big tickets bypassed consulting review."
+    },
+    {
+      "gateId": "G4_ARTIFACT_CATALOG_MANIFEST",
+      "name": "Machine-Generated Repo Catalog & SHA-256 Artifact Manifest",
+      "rule": "Every delivery must register its exact file paths, executable CLI probes, and exportable bundle/tarball coordinates in `register/machine-repo-catalog.json`.",
+      "loopholeClosed": "Surfaces hidden repo capabilities (like whole-repo export and Claude's machine-generated catalog) directly to the Founder UI."
+    },
+    {
+      "gateId": "G5_QUANTITATIVE_SLO_CRITERIA",
+      "name": "Quantitative Latency, Token Compaction & Budget SLOs",
+      "rule": "Must specify explicit `latency_p99_ms`, `auto_compaction_token_cap` (<= 4096), and `max_budget_usd` (<= $0.50 per hypothesis run).",
+      "loopholeClosed": "Prevents silent context-window blowups and unbudgeted token burn."
+    },
+    {
+      "gateId": "G6_DETERMINISTIC_ROLLBACK",
+      "name": "Single-Command Deterministic Rollback",
+      "rule": "Every spec must include a verified 1-line rollback command (`git checkout main -- <paths>` or worktree prune) triggered automatically on post-flight probe failure.",
+      "loopholeClosed": "Prevents half-merged worktrees (e.g., behind 349 commits) from lingering when an agent halts."
+    },
+    {
+      "gateId": "G7_SELF_CONTAINED_INSTRUCTIONS_AND_PUSH",
+      "name": "Self-Contained Project Instructions & Private Repo Push",
+      "rule": "Every project, sub-project, catalog entry, and Outbox receipt must include a verified quickstart command (`quickstartCmd`), step-by-step runbook (`README.md` + `INSTRUCTIONS.md`), and be committed/packaged via `bin/estate-push-instructions` before private repo push or export.",
+      "loopholeClosed": "Eliminates undocumented repos or mystery artifacts—every project pushed to private GitHub or exported via .tar.gz/.bundle comes with runnable 30-second instructions."
+    }
+  ],
+  "claudePrivateRepoReRefinedItems": [
+    {
+      "itemId": "CLAUDE-REPO-01",
+      "originalTitle": "Machine-Generated Repository Catalog (claude-private-repo/catalog-v1)",
+      "createdDate": "2026-10-31",
+      "previousLoopholes": [
+        "Founder was never surfaced the catalog or whole-repo export in the command UI",
+        "Missing G1 machine-checkable probe (`file_exists:register/machine-repo-catalog.json`)",
+        "No linked Outbox receipt closing the delivery loop back to Founder"
+      ],
+      "reSpecStatus": "RE_REFINED_AND_ENFORCED",
+      "bddContract": {
+        "given": "Claude's machine-generated catalog draft in today's private repo",
+        "when": "bin/estate-catalog-export --verify && bin/estate-spec-enforce run",
+        "then": "exit_code == 0 && file_exists:register/machine-repo-catalog.json && grep_match:WHOLE_REPO_EXPORT_READY"
+      },
+      "outboxReceiptId": "OUTBOX-2026-1031-001"
+    },
+    {
+      "itemId": "CLAUDE-REPO-02",
+      "originalTitle": "Dual Private-Repo Push & Inbound Sync Workflow",
+      "createdDate": "2026-10-31",
+      "previousLoopholes": [
+        "Push/Outbox lane worked one-way, but Inbox polling on the Consulting Lane was unimplemented",
+        "No timer daemon polling `relay/inbox/` for new Founder, Claude, or MiniMax envelopes"
+      ],
+      "reSpecStatus": "RE_REFINED_AND_ENFORCED",
+      "bddContract": {
+        "given": "Dual private repos configured as chidionyema/estate-inbox and chidionyema/estate-outbox",
+        "when": "bin/estate-inbox-poll --once executes on the Consulting Lane timer",
+        "then": "exit_code == 0 && file_exists:relay/outbox/OUTBOX-2026-1031-001.json && http_status == 200"
+      },
+      "outboxReceiptId": "OUTBOX-2026-1031-002"
+    },
+    {
+      "itemId": "CLAUDE-REPO-03",
+      "originalTitle": "MiniMax M2.7 Big-Ticket Execution Protocol",
+      "createdDate": "2026-10-31",
+      "previousLoopholes": [
+        "MiniMax was either completely blocked from big tickets or created unreviewed branch chaos",
+        "Lacked mandatory Consulting Lane Inbox -> Spec Audit -> Outbox promotion gate"
+      ],
+      "reSpecStatus": "RE_REFINED_AND_ENFORCED",
+      "bddContract": {
+        "given": "MiniMax M2.7 assigned to Big Ticket #7704 (Multi-Surface Telemetry & Catalog Sync)",
+        "when": "Rust router intercepts big-ticket payload and routes through relay/inbox/INBOX-002-minimax-big-ticket-7704.json",
+        "then": "exit_code == 0 && test_pass:minimax_consulting_inbox_gate && file_exists:relay/outbox/OUTBOX-2026-1031-002.json"
+      },
+      "outboxReceiptId": "OUTBOX-2026-1031-002"
+    },
+    {
+      "itemId": "CLAUDE-REPO-04",
+      "originalTitle": "ProtocolKit #7680 (TS) + #7692 (Python) Spec Alignment",
+      "createdDate": "2026-10-31",
+      "previousLoopholes": [
+        "Split across 6 worktrees with prose-only acceptance criteria in legacy branches",
+        "Missing unified 6-gate ESTATE-SPEC-STD-V2 header and deterministic rollback"
+      ],
+      "reSpecStatus": "RE_REFINED_AND_ENFORCED",
+      "bddContract": {
+        "given": "Unified main branch with shared extensions/pi-plan-lock/cases.json",
+        "when": "bin/estate-plan --json && bin/estate-spec-enforce --json execute",
+        "then": "exit_code == 0 && file_exists:extensions/pi-plan-lock/cases.json && test_pass:4_of_4_falsifiers"
+      },
+      "outboxReceiptId": "OUTBOX-2026-1031-003"
+    }
+  ]
+}

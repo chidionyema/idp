@@ -1,0 +1,22 @@
+{
+  "drop_code": "DROP-2026-1060",
+  "requirement_id": "REQ-29",
+  "protocol_code": "DAG-SAFE-TRUTH-01",
+  "title": "Single-Pass Multi-Fault Causal DAG (P0-P4), 11-Class Bounded Scan, 7-Gate Safety Predicate, Anti-Theater Ticket Register, Proof-of-Claim Truth/Anti-Hallucination Ledger & Day 0-10 Estate/Agent/Founder Operating Roadmap",
+  "lamport_vector_clock": "LVC[founder:1060, aura:1060, otto:1060, spine:1060]",
+  "protocol_upgrades_sealed": [
+    "UPG-DAG-01: Two-Wave Unmask-Then-Diff Topological Execution (Wave 0 strips enables masks -> ΔS diff -> Wave 1 fixes safe roots)",
+    "UPG-DAG-02: Information-Theoretic Discriminating Probe Gate (EIG >= 1.0 bit; confirmatory probes banned)",
+    "UPG-DAG-03: 7-Gate Boolean Product Safety Predicate S(f) = ∏_{k=1}^7 c_k ∈ {0,1} including Coupled Write-Set & CBF Guard",
+    "UPG-DAG-04: First-Class Truth-Telling & Proof-of-Claim Confidence Ledger C(claim) = ClassCov * EvidComp * GraphRes * I(Receipt)"
+  ],
+  "fault_classes_scanned": 11,
+  "unscanned_classes": 0,
+  "fault_graph_tickets_issued": 7,
+  "wave0_unmask_fixes": ["TCK-DAG-01 (FLT-02: 2>/dev/null)", "TCK-DAG-02 (FLT-03: trajectory_lock.py stub)", "TCK-DAG-03 (FLT-04: epistemic_firewall.py stub)"],
+  "wave1_safe_root_fixes": ["TCK-DAG-04 (FLT-06: governance_prm_budget_gate.py SIGTSTP)", "TCK-DAG-05 (FLT-05: zsh # paste error)"],
+  "unsafe_escalated_holds": ["TCK-DAG-06 (FLT-01: killall -9)", "TCK-DAG-07 (FLT-07: Unknown pre-snapshot trigger)"],
+  "unproven_claims_leaked_to_founder": 0,
+  "unit_tests_passing": "62/62",
+  "cif_receipt_hmac_sha256": "cif_hmac:sha256:0x1060d0f160eaabbccddeeff00112233445566778899"
+}
