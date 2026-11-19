@@ -247,8 +247,10 @@ def test_a_red_candidate_is_a_major_error_on_a_lane(monkeypatch, policy):
     monkeypatch.setattr(incident_loop, "run_gh", lambda args: (0, json.dumps(runs), ""))
     incidents = incident_loop.sense_ci("chidionyema/idp", policy)
     by_id = {incident["id"]: incident for incident in incidents}
-    candidate = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "1")]
-    push = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "2")]
+    candidate = by_id[
+        incident_loop.fingerprint("ci", "chidionyema/idp", "ci@queue/b4507")
+    ]
+    push = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "ci@some-branch")]
     assert candidate["severity"] == "major", candidate
     assert candidate["blast"] == "lane", candidate
     assert push["severity"] == "minor", push
@@ -270,7 +272,6 @@ def test_the_sensor_asks_the_api_for_the_window_it_reads(monkeypatch, policy):
     assert "per_page=100" in seen["url"], seen["url"]
 
 
-
 def test_ci_sensor_finds_main_p0_beyond_first_hundred_runs(monkeypatch, policy):
     """A busy Greenlane cannot bury a main failure past a single GitHub page."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -278,9 +279,13 @@ def test_ci_sensor_finds_main_p0_beyond_first_hundred_runs(monkeypatch, policy):
 
     def event(n, conclusion="failure", branch="queue/b4806"):
         return {
-            "id": n, "name": "ci" if n != 1 else "recovery-data",
-            "head_branch": branch, "conclusion": conclusion, "event": "push",
-            "created_at": now, "html_url": f"https://example.invalid/{n}",
+            "id": n,
+            "name": "ci" if n != 1 else "recovery-data",
+            "head_branch": branch,
+            "conclusion": conclusion,
+            "event": "push",
+            "created_at": now,
+            "html_url": f"https://example.invalid/{n}",
             "run_attempt": 1,
         }
 
@@ -316,14 +321,20 @@ def test_ci_sensor_does_not_silently_truncate_overflow(monkeypatch, policy):
         page = int(url.split("page=")[-1])
         return (
             0,
-            json.dumps([
-                {
-                    "id": page * 100 + i, "name": "ci", "head_branch": "main",
-                    "conclusion": "failure", "event": "push", "created_at": now,
-                    "html_url": "https://example.invalid/ci",
-                }
-                for i in range(100)
-            ]),
+            json.dumps(
+                [
+                    {
+                        "id": page * 100 + i,
+                        "name": "ci",
+                        "head_branch": "main",
+                        "conclusion": "failure",
+                        "event": "push",
+                        "created_at": now,
+                        "html_url": "https://example.invalid/ci",
+                    }
+                    for i in range(100)
+                ]
+            ),
             "",
         )
 

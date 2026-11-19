@@ -7,7 +7,7 @@
     "layer": 312,
     "service": 122,
     "tool": 521,
-    "workflow": 106
+    "workflow": 108
   },
   "records": [
     {
@@ -2751,6 +2751,7 @@
       ],
       "known_issues": [],
       "mirrors": [
+        ".github/workflows/incident-loop.yml",
         "platform/estate/libexec/incident-loop.py"
       ]
     },
@@ -63169,7 +63170,8 @@
       "consumers": [
         "cap:workflow/gha-build-multiarch",
         "cap:workflow/gha-ci",
-        "cap:workflow/gha-portal-app"
+        "cap:workflow/gha-portal-app",
+        "cap:workflow/gha-submit-gate"
       ],
       "cost": {
         "estimate": null,
@@ -64067,6 +64069,62 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/image-update-pr.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-incident-loop",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "incident-loop -- the GitHub Actions workflow incident-loop.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/incident-loop.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -66159,6 +66217,66 @@
         {
           "id": "cap:tool/idp-shadow-bundle",
           "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-submit-gate",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "submit-gate -- the GitHub Actions workflow submit-gate.yml.",
+      "contract": {
+        "inputs": [
+          "push"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "./.github/workflows/fast-gate.yml",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/submit-gate.yml",
+      "depends_on": [
+        {
+          "id": "cap:workflow/gha-fast-gate",
+          "edge": "calls"
         }
       ],
       "metrics": [],
