@@ -16,3 +16,7 @@ Candidate queue refs now schedule missing exact-prefix checks before the batch i
 ## Adversarial falsifiers
 
 The source suite now checks malformed verifier rosters and path scope, mutable callback evidence, order-independent survivor handling, weak runner refusal and independent JSON observations (expected values never sent to the candidate). `verify_json_cases` is a bounded pure-function oracle adapter, not an attestation authority. It defaults to the isolated Docker runner and refuses direct rlimits fallback. Local subprocess fixtures are not evidence of prod sandbox isolation. The existing synthetic Greenlane test backend now represents remote refs where the admission path reads them.
+
+## Executable acceptance coverage
+
+`features/assurance/frontier-core.feature` is bound via `sovereign/tests/bdd/test_frontier_assurance_bdd.py` to the component predicates and actual subprocess observations. The broader spec still includes unimplemented live authority/custody/concurrent promotion scenarios; this feature does not waive them. Local extraction harness: 67 passed in 3.69s, exercising revised core predicates and real subprocess fixtures, not the complete repository. The environment cannot resolve GitHub for checkout and lacks pytest-bdd and ruff; canonical BDD and complete source CI are unexecuted here.
