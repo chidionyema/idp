@@ -195,7 +195,6 @@ def chain(harness: str, model: str, failover: bool) -> list[tuple[str, str]]:
     return []  # claude-code proves its own provider live before running (bin/claude-anthropic)
 
 
-
 # Registry data, not the worker, selects provider and model.
 # Only OpenAI-compatible bearer routes are admitted by this adapter.
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -336,25 +335,82 @@ def auto_probe(route: dict, env: dict) -> dict:
     }
 
 
+# An exhausted account is not retried unchanged on the next run (founder, 2026-11-19 21:46,
+# #8283: "persist provider 429/cooldown across runs; do not retry an unchanged exhausted
+# account"). Seconds a provider stays cooling after each verdict; the workflow carries the
+# file between runs in the Actions cache.
+COOLDOWN_S = {"rate-limited": 3600, "funding": 86400, "authentication": 86400}
+
+
+def load_cooldown(path: Path | None, now: float) -> dict:
+    """{provider: until_epoch} still in force; an unreadable file is an empty one."""
+    if not path or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k): float(v)
+        for k, v in data.items()
+        if isinstance(v, (int, float)) and float(v) > now
+    }
+
+
+def save_cooldown(path: Path | None, cooldown: dict, now: float) -> None:
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    live = {k: v for k, v in sorted(cooldown.items()) if v > now}
+    path.write_text(json.dumps(live, sort_keys=True))
+
+
 def auto_select(
-    routes: list[dict], env: dict, probe_fn=auto_probe
+    routes: list[dict],
+    env: dict,
+    probe_fn=auto_probe,
+    cooldown: dict | None = None,
+    now: float | None = None,
 ) -> tuple[dict | None, list[dict]]:
+    """First route that proves capacity; providers still cooling are not probed at all.
+
+    `cooldown` is updated in place: a provider that answers rate-limited, funding or
+    authentication cools for COOLDOWN_S[verdict] seconds from `now`."""
     observations = []
     unavailable = set()
+    cooldown = {} if cooldown is None else cooldown
+    now = time.time() if now is None else now
     for route in routes:
-        if route["provider"] in unavailable:
+        provider = route["provider"]
+        if provider in unavailable:
+            continue
+        if cooldown.get(provider, 0) > now:
+            unavailable.add(provider)
+            observations.append(
+                {
+                    "provider": provider,
+                    "model": route["model"],
+                    "verdict": "cooling",
+                    "until": int(cooldown[provider]),
+                }
+            )
             continue
         result = probe_fn(route, env)
         observations.append(result)
         if result["verdict"] == "capacity":
+            cooldown.pop(provider, None)
             return route, observations
+        if result["verdict"] in COOLDOWN_S:
+            cooldown[provider] = now + COOLDOWN_S[result["verdict"]]
         if result["verdict"] in {
             "authentication",
             "funding",
             "rate-limited",
             "transport",
         }:
-            unavailable.add(route["provider"])
+            unavailable.add(provider)
     return None, observations
 
 
@@ -368,10 +424,9 @@ def auto_launch(
         directory, env
     ):
         raise ValueError("provider not admitted")
-    if (
-        selected["provider"] != env.get("ADMITTED_PROVIDER")
-        or selected["model"] != env.get("ADMITTED_MODEL")
-    ):
+    if selected["provider"] != env.get("ADMITTED_PROVIDER") or selected[
+        "model"
+    ] != env.get("ADMITTED_MODEL"):
         raise ValueError("provider admission mismatch")
     if (
         record.get("base")
@@ -454,6 +509,14 @@ def main() -> int:
     ap.add_argument(
         "--skip-capacity", action="store_true", help="scope only (tests, dry admission)"
     )
+    ap.add_argument(
+        "--cooldown-file",
+        type=Path,
+        default=Path(os.environ["LEGION_COOLDOWN_FILE"])
+        if os.environ.get("LEGION_COOLDOWN_FILE")
+        else None,
+        help="provider cooldown carried between runs ({provider: until_epoch})",
+    )
     args = ap.parse_args()
     registry = HERE.parent / "platform/llm/pennyd/providers"
     if args.launch_admitted:
@@ -494,20 +557,23 @@ def main() -> int:
 
     probes = []
     if args.harness == "auto" and not args.skip_capacity:
+        now = time.time()
+        cooldown = load_cooldown(args.cooldown_file, now)
         try:
             routes = auto_candidates(registry, dict(os.environ))
-            chosen, probes = auto_select(routes, dict(os.environ))
+            chosen, probes = auto_select(
+                routes, dict(os.environ), cooldown=cooldown, now=now
+            )
         except (ValueError, OSError, KeyError, TypeError):
             chosen, probes = None, []
+        save_cooldown(args.cooldown_file, cooldown, now)
         record["probes"] = probes
         if chosen is None:
             record["decision"] = "REFUSED_CAPACITY"
             (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
             print("::error::REFUSED: NO_ELIGIBLE_TOOL_CAPABLE_WORKER before inference")
             return EXIT_CAPACITY
-        record.update(
-            provider=chosen["provider"], model=chosen["model"], route=chosen
-        )
+        record.update(provider=chosen["provider"], model=chosen["model"], route=chosen)
     elif not args.skip_capacity:
         for lane, model in chain(args.harness, args.model, args.failover == "1"):
             p = probe(lane, model)
