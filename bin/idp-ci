@@ -27,13 +27,69 @@ case "${1:-}" in
     echo "           On success writes ~/.cache/idp-ci-verified/<HEAD-sha> so the pre-push"
     echo "           hook proceeds without re-running. Missing tool -> FAIL (not BLIND);"
     echo "           run bin/idp-install-deps to install."
+    echo ""
+    echo "  --fix    repair what a machine can repair, then exit: ruff format and"
+    echo "           ruff check --fix on the Python in the diff, and the committed"
+    echo "           capability snapshot regenerated. Prints every file it changed and"
+    echo "           exits 3, so the caller re-stages and runs the gate again."
     exit 0
     ;;
   --check) CHECK=1 ;;
   --full) FULL=1 ;;
+  --fix) FIX=1 ;;
 esac
+FIX=${FIX:-0}
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+pre_admit_fix() {
+  local n=0
+  local py
+  py=$(cd "$IDP" && git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+  [ -n "$py" ] || py=$(cd "$IDP" && git diff --name-only --diff-filter=ACMR -- '*.py')
+  [ -n "${IDP_CI_FIX_FILES:-}" ] && py="${IDP_CI_FIX_FILES// /$'\n'}"
+  local ruff=()
+  if command -v ruff >/dev/null 2>&1; then ruff=(ruff)
+  elif python3 -m ruff --version >/dev/null 2>&1; then ruff=(python3 -m ruff); fi
+  if [ -n "$py" ] && [ ${#ruff[@]} -gt 0 ]; then
+    local before after
+    before=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum)
+    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" format) >/dev/null 2>&1 || true
+    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" check --fix --quiet) >/dev/null 2>&1 || true
+    after=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum)
+    if [ "$before" != "$after" ]; then
+      printf 'fixed  ruff   %s\n' "$(printf '%s' "$py" | tr '\n' ' ')"
+      n=$((n + 1))
+    fi
+  fi
+  local snap=catalog/estate-capability-registry.json
+  local chg
+  chg=$(cd "$IDP" && git diff --cached --name-only --diff-filter=ACMR)
+  [ -n "$chg" ] || chg=$(cd "$IDP" && git diff --name-only --diff-filter=ACMR)
+
+  local h0 h1
+  h0=$(cd "$IDP" && [ -f "$snap" ] && shasum "$snap" | cut -d' ' -f1)
+  case "$chg" in
+    *catalog/*|*platform/estate/intents/*|bin/*) regen=1 ;;
+    *) regen=0 ;;
+  esac
+  [ "${IDP_CI_FIX_FILES:-}" ] && regen=0
+  if [ "$regen" = 1 ]; then
+    (cd "$IDP" && python3 bin/capability-index emit --write) >/dev/null 2>&1 || true
+    h1=$(cd "$IDP" && [ -f "$snap" ] && shasum "$snap" | cut -d' ' -f1)
+    if [ -n "$h1" ] && [ "$h0" != "$h1" ]; then
+      printf 'fixed  registry %s regenerated\n' "$snap"
+      n=$((n + 1))
+    fi
+  fi
+  return "$n"
+}
+if [ "$FIX" = 1 ]; then
+  pre_admit_fix; fixed=$?
+  printf 'fix    %s repair(s)\n' "$fixed"
+  [ "$fixed" -eq 0 ] && exit 0
+  exit 3
+fi
+
 fail=0
 # TOOLS_DIR is where `bin/idp-install-deps` puts every binary it downloads (yamllint, kubeconform,
 # kustomize, helm, flux, sops...). It was NEVER on PATH, so the gate that demands those tools could
