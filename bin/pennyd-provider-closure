@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""pennyd-provider-closure -- fail closed before a router that cannot start is merged.
+
+Pennyd refuses to start when a fallback chain names a provider it does not have mounted. The
+2 -> 6 defect (2026-11-19) is exactly that: `pennyd-providers` mounted zai and minimax while the
+chains also named deepseek, groq, openrouter and gemini, so the pod never booted and
+llm.mumchimp.com answered 530/525 with a healthy cluster.
+
+Two refusals, both mechanical:
+  UNMOUNTED_PROVIDER   a fallback names a provider whose toml is not in the ConfigMap
+  UNRESOLVED_MODEL     a fallback names a model no mounted provider defines
+
+Usage: bin/pennyd-provider-closure [--root DIR] [--self-test]
+Exit 1 on any refusal.
+"""
+from __future__ import annotations
+
+import argparse
+import pathlib
+import re
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - 3.10 and older
+    import tomli as tomllib  # type: ignore
+
+
+def mounted_providers(kustomization: pathlib.Path) -> set[str]:
+    text = kustomization.read_text()
+    block = re.search(r"name:\s*pennyd-providers\s*\n\s*files:\s*\n((?:\s*-\s*\S+\n)+)", text)
+    if not block:
+        return set()
+    return {
+        pathlib.Path(line.strip().lstrip("-").strip()).stem
+        for line in block.group(1).splitlines()
+        if line.strip().startswith("-")
+    }
+
+
+def provider_refs(providers_dir: pathlib.Path) -> tuple[set[str], set[tuple[str, str]]]:
+    models: set[str] = set()
+    refs: set[tuple[str, str]] = set()
+    for toml in sorted(providers_dir.glob("*.toml")):
+        data = tomllib.loads(toml.read_text())
+        pid = data.get("id") or toml.stem
+        for model in data.get("models") or []:
+            models.add(f"{pid}/{model['id']}")
+            for ref in model.get("fallbacks") or []:
+                provider, _, model_id = ref.partition("/")
+                refs.add((provider, model_id))
+    return models, refs
+
+
+def audit(root: pathlib.Path) -> list[str]:
+    kust = root / "platform/llm/pennyd/kustomization.yaml"
+    pdir = root / "platform/llm/pennyd/providers"
+    if not kust.exists() or not pdir.is_dir():
+        return [f"BLIND {root}: pennyd config not found"]
+    mounted = mounted_providers(kust)
+    models, refs = provider_refs(pdir)
+    findings = []
+    for provider in sorted({p for p, _ in refs} - mounted):
+        findings.append(f"UNMOUNTED_PROVIDER {provider}: named by a fallback, absent from pennyd-providers")
+    for provider, model in sorted(refs):
+        if provider in mounted and f"{provider}/{model}" not in models:
+            findings.append(f"UNRESOLVED_MODEL {provider}/{model}: no such model in a mounted provider")
+    return findings
+
+
+def self_test() -> int:
+    import tempfile
+
+    ok = True
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        (root / "platform/llm/pennyd/providers").mkdir(parents=True)
+        (root / "platform/llm/pennyd/kustomization.yaml").write_text(
+            "configMapGenerator:\n  - name: pennyd-providers\n    files:\n      - providers/a.toml\n"
+        )
+        (root / "platform/llm/pennyd/providers/a.toml").write_text(
+            'id = "a"\n[[models]]\nid = "m"\nfallbacks = ["b/m2"]\n'
+        )
+        (root / "platform/llm/pennyd/providers/b.toml").write_text(
+            'id = "b"\n[[models]]\nid = "m2"\nfallbacks = []\n'
+        )
+        bad = audit(root)
+        ok &= any(f.startswith("UNMOUNTED_PROVIDER b") for f in bad)
+        print("unmounted provider ->", "REFUSED" if bad else "MISSED")
+
+        (root / "platform/llm/pennyd/kustomization.yaml").write_text(
+            "configMapGenerator:\n  - name: pennyd-providers\n    files:\n"
+            "      - providers/a.toml\n      - providers/b.toml\n"
+        )
+        good = audit(root)
+        ok &= good == []
+        print("closed set         ->", "accepted" if not good else f"WRONGLY REFUSED {good}")
+
+        (root / "platform/llm/pennyd/providers/a.toml").write_text(
+            'id = "a"\n[[models]]\nid = "m"\nfallbacks = ["b/nope"]\n'
+        )
+        unresolved = audit(root)
+        ok &= any(f.startswith("UNRESOLVED_MODEL b/nope") for f in unresolved)
+        print("unresolved model   ->", "REFUSED" if unresolved else "MISSED")
+    print("ok pennyd-provider-closure --self-test" if ok else "FAIL self-test")
+    return 0 if ok else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", default=".")
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    findings = audit(pathlib.Path(args.root))
+    for line in findings:
+        print(line, file=sys.stderr)
+    if findings:
+        print(f"REFUSED: {len(findings)} provider-closure defect(s)", file=sys.stderr)
+        return 1
+    print("ok: every fallback target is mounted and defined")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
