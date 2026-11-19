@@ -1,6 +1,14 @@
 use anyhow::{anyhow, Result};
 use genesis_ground_truth::{PrerequisiteGateRequest, PrerequisiteGateVerdict};
 use serde_json::Value;
+use std::time::{SystemTime,UNIX_EPOCH};
+fn nonce()->String {
+    use std::sync::atomic::{AtomicU64,Ordering};
+    static COUNT:AtomicU64=AtomicU64::new(0);
+    let n=COUNT.fetch_add(1,Ordering::SeqCst);
+    let t=SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    genesis_ground_truth::web::hash(format!("{}:{t}:{n}",std::process::id()).as_bytes())
+}
 
 /// Universal zero-friction prerequisite CLI for ANY agent surface (Claude Code, OpenCode, Codex, agent-sandbox.yml).
 /// Usage:
@@ -29,11 +37,20 @@ async fn main() -> Result<()> {
         .cloned()
         .collect();
 
-    let client = reqwest::Client::new();
+    let ticket=std::env::var("GENESIS_INSTRUCTION_ID").map_err(|_|anyhow!("NO_BOUND_INSTRUCTION"))?;
+    let token=std::env::var("GENESIS_SESSION_TOKEN").map_err(|_|anyhow!("NO_AUTHENTICATED_SESSION"))?;
+    if ticket.trim().is_empty()||token.len()!=64{return Err(anyhow!("INVALID_SESSION_BINDING"));}
+    let base=reqwest::Url::parse(base_url)?;
+    if base.scheme()!="https" && !(base.scheme()=="http" && matches!(base.host_str(),Some("127.0.0.1"|"localhost"|"::1"))){
+        return Err(anyhow!("SESSION_REQUIRES_TLS"));
+    }
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(20)).build()?;
 
     // Step 1: Fetch live ground-truth fence
     let live: Value = client
         .get(format!("{base_url}/api/truth/live"))
+        .bearer_auth(&token).header("x-estate-ticket",&ticket).header("x-estate-nonce",nonce())
         .send()
         .await?
         .error_for_status()?
@@ -58,7 +75,8 @@ async fn main() -> Result<()> {
 
     let resp = client
         .post(format!("{base_url}/api/truth/admit"))
-        .json(&req)
+        .bearer_auth(&token).header("x-estate-ticket",&ticket).header("x-estate-nonce",nonce())
+        .header("x-genesis-fence",fence.to_string()).json(&req)
         .send()
         .await?;
     let status = resp.status();

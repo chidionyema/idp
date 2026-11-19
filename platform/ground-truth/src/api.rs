@@ -366,11 +366,13 @@ async fn ws_truth_handler(
     ws: WebSocketUpgrade,
     Query(query): Query<StreamQuery>,
     State(engine): State<Arc<GroundTruthEngine>>,
+    Extension(bound): Extension<Bound>,
 ) -> impl IntoResponse {
     let since_seq = query.since_seq.unwrap_or(0);
     ws.on_upgrade(move |mut socket: WebSocket| async move {
         if let Ok(missed) = engine.fetch_replay_since(since_seq, 500) {
             for frame in missed {
+                if !web::stream_live(&engine,&bound) { return; }
                 if let Ok(txt) = serde_json::to_string(&frame) {
                     if socket.send(Message::Text(txt)).await.is_err() {
                         return;
@@ -383,6 +385,7 @@ async fn ws_truth_handler(
         loop {
             tokio::select! {
                 Ok(env) = rx.recv() => {
+                    if !web::stream_live(&engine,&bound) { break; }
                     if env.seq_id > since_seq {
                         if let Ok(txt) = serde_json::to_string(&env) {
                             if socket.send(Message::Text(txt)).await.is_err() {
@@ -392,6 +395,7 @@ async fn ws_truth_handler(
                     }
                 }
                 _ = ping.tick() => {
+                    if !web::stream_live(&engine,&bound) { break; }
                     if socket.send(Message::Ping(Vec::new())).await.is_err() {
                         break;
                     }
@@ -406,17 +410,20 @@ async fn ws_truth_handler(
 async fn sse_truth_handler(
     Query(query): Query<StreamQuery>,
     State(engine): State<Arc<GroundTruthEngine>>,
+    Extension(bound): Extension<Bound>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let since_seq = query.since_seq.unwrap_or(0);
     let replay = engine.fetch_replay_since(since_seq, 500).unwrap_or_default();
-    let replay_stream = tokio_stream::iter(
-        replay
-            .into_iter()
-            .filter_map(|env| serde_json::to_string(&env).ok())
-            .map(|json| Ok(Event::default().data(json))),
-    );
-    let live_stream = BroadcastStream::new(engine.tx.subscribe()).filter_map(move |res| match res {
-        Ok(env) if env.seq_id > since_seq => serde_json::to_string(&env)
+    let replay_engine=engine.clone();
+    let replay_bound=bound.clone();
+    let replay_stream = tokio_stream::iter(replay)
+        .filter_map(move |env| {
+            if !web::stream_live(&replay_engine,&replay_bound){return None;}
+            serde_json::to_string(&env).ok().map(|json|Ok(Event::default().data(json)))
+        });
+    let receiver=engine.tx.subscribe();
+    let live_stream = BroadcastStream::new(receiver).filter_map(move |res| match res {
+        Ok(env) if env.seq_id > since_seq && web::stream_live(&engine,&bound) => serde_json::to_string(&env)
             .ok()
             .map(|json| Ok(Event::default().data(json))),
         _ => None,
@@ -437,6 +444,7 @@ pub fn ground_truth_router(engine: Arc<GroundTruthEngine>) -> Router {
         .route("/api/truth/flow", post(web::flow))
         .route("/api/truth/yield/status", post(web::status))
         .route("/api/truth/yield", post(web::render_yield))
+        .route("/v1/role/chat", post(web::chat))
         .route("/api/realtime/ws", get(ws_truth_handler))
         .route("/api/realtime/sse", get(sse_truth_handler))
         .route_layer(middleware::from_fn_with_state(engine.clone(),web::gate));

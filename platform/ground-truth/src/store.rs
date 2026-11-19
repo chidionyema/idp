@@ -742,7 +742,8 @@ impl GroundTruthEngine {
 
     /// Reads the complete real-time 6-block GroundTruthProjection directly from SQLite WAL.
     pub fn read_live_projection(&self) -> Result<GroundTruthProjection> {
-        let conn = Connection::open(&self.db_path)?;
+        let mut reader = Connection::open(&self.db_path)?;
+        let conn=reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
         let ts = now_ns();
 
         let (fencing_token, merkle_root): (u64, String) = conn
@@ -750,8 +751,7 @@ impl GroundTruthEngine {
                 "SELECT authoritative_token, last_merkle_root FROM kernel_fence_state WHERE singleton_id = 1",
                 [],
                 |r| Ok((r.get::<_, i64>(0)? as u64, r.get(1)?)),
-            )
-            .unwrap_or_else(|_| (self.current_fencing_token(), "0".repeat(64)));
+            )?;
 
         let seq_id: i64 = conn
             .query_row(
@@ -1053,7 +1053,7 @@ impl GroundTruthEngine {
             "# MERIDIAN LIVE GROUND TRUTH (FENCE #{} · SEQ #{} · MERKLE {})\n\n",
             proj.fencing_token,
             proj.seq_id,
-            &proj.merkle_root[..12.min(proj.merkle_root.len())]
+            &proj.merkle_root
         ));
         out.push_str(&format!(
             "## 1. Fleet KPIs\n- argon CI failing: {:.1}% ({} runs) | gemini-sync failing: {:.1}% ({} runs)\n- Open PRs red: {}/{} | argon stranded branches: {}/{} ({} unique blobs)\n",
@@ -1297,10 +1297,11 @@ impl GroundTruthEngine {
         let ttl = req.ttl_seconds.unwrap_or(300).min(600) as i64;
         let exp = now_sec() + ttl;
 
-        let conn = self
+        let mut conn = self
             .write_conn
             .lock()
             .map_err(|_| anyhow!("SQLite write mutex poisoned"))?;
+        let conn=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let persisted: i64 = conn.query_row(
             "SELECT authoritative_token FROM kernel_fence_state WHERE singleton_id=1",[],|r|r.get(0))?;
         if persisted < 0 || persisted as u64 != proj.fencing_token {
@@ -1329,6 +1330,7 @@ impl GroundTruthEngine {
             ],
         )?;
 
+        conn.commit()?;
         Ok(PrerequisiteGateVerdict {
             admitted: true,
             reason: "ADMITTED_WITH_LIVE_FENCE".into(),

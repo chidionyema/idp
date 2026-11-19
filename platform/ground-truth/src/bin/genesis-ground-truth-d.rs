@@ -29,6 +29,11 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // One private, pre-provisioned mirror; credentials live behind the deployed
+    // workload identity, never in the consumer browser or in the source tree.
+    if let (Ok(id),Ok(token_file))=(std::env::var("GENESIS_DRIVE_MIRROR_FILE_ID"),std::env::var("GENESIS_DRIVE_TOKEN_FILE")){
+        tokio::spawn(genesis_ground_truth::web::drive_mirror(engine.clone(),id,PathBuf::from(token_file)));
+    }
     let app = ground_truth_router(engine);
     let addr: SocketAddr = std::env::var("GENESIS_BIND_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:4001".into())
