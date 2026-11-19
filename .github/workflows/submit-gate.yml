@@ -23,6 +23,35 @@ jobs:
   gate:
     uses: ./.github/workflows/fast-gate.yml
 
+  # QUAD phase 1 (idp#8336): every commit in the push is checked for an issued, signed
+  # identity. Side by side: the verdict is reported, nothing is refused yet (phase 2 refuses).
+  identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify each commit's QUAD identity
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -n "$PEM_B64" ]; then
+            printf %s "$PEM_B64" | base64 -d | openssl rsa -pubout > "$RUNNER_TEMP/issuer.pub.pem" 2>/dev/null
+          fi
+          base=$(git merge-base origin/main "$SHA")
+          echo "| commit | verdict | agent | reason |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for c in $(git rev-list --reverse "$base..$SHA"); do
+            python3 bin/quad verify "$c" --issuer "$RUNNER_TEMP/issuer.pub.pem" \
+              | jq -r '"| \(.commit[0:9]) | \(.verdict) | \(.agent // "-") | \(.reason) |"' \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+
   promote:
     needs: gate
     runs-on: ubuntu-24.04
