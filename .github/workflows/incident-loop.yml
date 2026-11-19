@@ -1,0 +1,125 @@
+# button: Run the estate incident loop now
+# founder 2026-11-19: anything that fails in the estate gets an appropriate response.
+#
+# The loop (platform/estate/libexec/incident-loop.py, R-14) already turns a red run into one
+# ranked ticket. Its only scheduler was launchd on the Mac and it sensed one repo, so argon-sync's
+# drive bridge went 47/47 red, gemini-sync's AI Studio recovery 12/12 and argon's canonical IO
+# 11/11 with no ticket and no alert (idp#8301). This runs the same loop from the cloud over every
+# repo in catalog/incident-policy.json cloud_repos. The ledger lives on refs/incidents/state, so
+# one failing workflow stays one ticket across runners; a newly raised ticket reaches Telegram.
+name: incident-loop
+on:
+  schedule:
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: write   # refs/incidents/state only
+concurrency:
+  group: incident-loop
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ESTATE_HOME: ${{ runner.temp }}/estate
+      ESTATE_INCIDENT_DISPATCH: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   incident-loop  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Name the repos the loop senses
+        id: repos
+        run: |
+          set -euo pipefail
+          names=$(jq -r '.cloud_repos | map(split("/")[1]) | join(",")' catalog/incident-policy.json)
+          [ -n "$names" ] || { echo "BLIND   incident-loop  catalog/incident-policy.json has no cloud_repos"; exit 2; }
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.repos.outputs.names }}
+          permission-actions: read
+          permission-contents: read
+          permission-issues: write
+
+      - name: Restore the ledger from refs/incidents/state
+        run: |
+          set -euo pipefail
+          mkdir -p "$ESTATE_HOME/state"
+          if git fetch -q --depth=1 origin +refs/incidents/state:refs/incidents/state 2>/dev/null; then
+            git archive refs/incidents/state | tar -x -C "$ESTATE_HOME/state"
+            echo "ledger restored from $(git rev-parse --short refs/incidents/state)"
+          else
+            echo "no refs/incidents/state yet: the first tick starts the ledger"
+          fi
+
+      - name: Tick every estate repo
+        id: tick
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -uo pipefail
+          rc=0; : > "$RUNNER_TEMP/opened.txt"
+          for repo in $(jq -r '.cloud_repos[]' catalog/incident-policy.json); do
+            if out=$(timeout 90 python3 platform/estate/libexec/incident-loop.py tick --repo "$repo" --json 2>&1); then
+              echo "$out" | jq -c --arg r "$repo" '{repo:$r, sensed, opened, notes}' || echo "$out"
+              echo "$out" | jq -r --arg r "$repo" '.notes[] | select(startswith("ticket #")) | "\($r) \(.)"' >> "$RUNNER_TEMP/opened.txt" || true
+            else
+              echo "BLIND   incident-loop  $repo: $(printf '%s' "$out" | tail -3)"; rc=1
+            fi
+          done
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Save the ledger to refs/incidents/state
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f "$ESTATE_HOME/state/incidents.db" ] || { echo "no ledger written"; exit 0; }
+          # The ledger only. clock-skew.json is a per-host monotonic sample: carried to another
+          # runner's kernel it would read as a clock jump (platform/estate/libexec/clock-guard.py).
+          keep="$RUNNER_TEMP/ledger"; mkdir -p "$keep"; cp "$ESTATE_HOME/state/incidents.db" "$keep/"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/incidents.index"
+          git --work-tree="$keep" add -A -f .
+          tree=$(git write-tree)
+          commit=$(git -c user.name=incident-loop -c user.email=actions@github.com commit-tree "$tree" -m "incident ledger run ${GITHUB_RUN_ID}")
+          git push -q -f origin "$commit:refs/incidents/state"
+          echo "ledger saved at ${commit:0:12}"
+
+      - name: Tell the founder what was newly raised
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+          RC: ${{ steps.tick.outputs.rc }}
+        run: |
+          set -euo pipefail
+          lines=$(head -20 "$RUNNER_TEMP/opened.txt" 2>/dev/null || true)
+          if [ "${RC:-1}" != "0" ]; then lines="${lines}${lines:+
+          }incident loop BLIND on at least one repo: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"; fi
+          [ -n "$lines" ] || { echo "nothing new to raise"; exit 0; }
+          [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT:-}" ] || { echo "BLIND   incident-loop  Telegram secrets not set"; exit 1; }
+          text=$(printf 'Estate incidents raised:\n%s\nhttps://github.com/%s/issues?q=is:open+label:P0,P1' "$lines" "$GITHUB_REPOSITORY")
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
+          [ "$code" = "200" ] || { echo "Telegram answered HTTP $code"; exit 1; }
+
+      - name: Verdict
+        if: always()
+        run: '[ "${{ steps.tick.outputs.rc }}" = "0" ] || { echo "the loop was BLIND on at least one repo"; exit 1; }'
