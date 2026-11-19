@@ -195,6 +195,78 @@
    "recurrence_checks": [
     "2026-11-18"
    ]
+  },
+  {
+   "class": "FC_PROOF_FORMAT_WITHOUT_FALSIFICATION",
+   "first_seen": "2026-11-19",
+   "gap": "the proof gate matched a 'N passed' line from any suite, bound to no path",
+   "compensating_action": "bin/idp-differential-falsifier: path binding + base != 0 + head == 0 + mutation killed",
+   "falsifier": "tests/test_i8107_zero_divergence_certification.py::test_non_falsifying_proof_is_refused",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
+  },
+  {
+   "class": "FC_ZONE_A_DARWIN_REGRESSION",
+   "first_seen": "2026-11-19",
+   "gap": "launchd/Zone A code could re-enter the repo through a diff",
+   "compensating_action": "pre-push-wall darwin-thin-client refuses added launchctl/LaunchAgents/plistlib lines",
+   "falsifier": "tests/test_i8107_zero_divergence_certification.py::test_darwin_launchctl_regression_is_refused",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
+  },
+  {
+   "class": "FC_UNGROUNDED_CLAIM_WITHOUT_3_PROOFS",
+   "first_seen": "2026-11-19",
+   "gap": "operational claims were accepted without independent evidence",
+   "compensating_action": "aei_observer.verify_operational_claim requires 3 distinct authority domains",
+   "falsifier": "tests/test_i8107_zero_divergence_certification.py::test_epistemic_gate_requires_three_independent_proofs",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
+  },
+  {
+   "class": "FC_DUPLICATE_COMPONENT_PROPOSAL",
+   "first_seen": "2026-11-19",
+   "gap": "a component could be proposed without checking the estate already has it",
+   "compensating_action": "aei_observer.verify_operational_claim refuses existing_assets_checked=false",
+   "falsifier": "same test as above",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
+  },
+  {
+   "class": "FC_GOVERNANCE_WITHOUT_EXECUTION_YIELD",
+   "first_seen": "2026-11-19",
+   "gap": "governance-only changes shipped while the deploy pipeline was red",
+   "compensating_action": "pre-push-wall yield-first-moratorium blocks cage/docs/catalog while deploy is red",
+   "falsifier": "tests/test_i8107_zero_divergence_certification.py::test_moratorium_blocks_governance_only_change_while_deploy_is_red",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
+  },
+  {
+   "class": "FC_BROKEN_CUSTODY_ACK_AS_COMPLETION",
+   "first_seen": "2026-11-19",
+   "gap": "a session could ack completion with no authenticated custody",
+   "compensating_action": "cage/i8096/src/accountability.rs refuses completion without Y^C^V and split authority",
+   "falsifier": "cage/i8096 cargo test --lib accountability (4 mutation kills)",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
   }
  ]
 }
