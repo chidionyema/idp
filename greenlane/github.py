@@ -67,6 +67,11 @@ def _bodies(comments: list) -> list:
 GREEN_CONCLUSIONS = {"success", "skipped", "neutral"}
 _URL = re.compile(r"\s?https?://\S+")
 _JOB_URL = re.compile(r"https://github\.com/[^\s/]+/[^\s/]+/actions/runs/\d+/job/\d+")
+# The lane's owner, as every lane commit already names it (AGENTS.md section 5).
+_CLAIM = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
+_AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+VERDICT_MARK = "<!-- greenlane-verdict"
+
 RED_CONCLUSIONS = {
     "failure",
     "cancelled",
@@ -1502,6 +1507,44 @@ class GitHubBackend:
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
 
+    def _lane_pr(self, lane: str) -> Optional[dict]:
+        """The open pull request that carries `lane`: the engine's own, else the adopted one.
+
+        2026-11-19, the dominant land refusal: 85 of the last 200 batch verdicts carried one
+        fingerprint, `fast-gate / fast-gate failure`, and the run behind it read
+        `bddproof pull request #8221: the proof names 3f3515e10b56, but the head is
+        69e2bd2f4e8c`. An adopted pull request's branch is the author's (`fix/zip-cve`), not the
+        lane (`lane/fix/zip-cve`), so a lookup by `head=<lane>` found nothing, the proof was
+        never rewritten, and `_land`'s push onto the author's branch started a fast-gate run
+        that read the author's day-old block. Every retry repeated it: #8221, #8224 and #8230
+        were each refused at land time again and again with the work proven green.
+        """
+        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        if found:
+            return found[0]
+        for pr in self.adopted_prs():
+            if pr["lane"] == lane:
+                return self.gh(f"pulls/{pr['number']}") or None
+        return None
+
+    @staticmethod
+    def _adopted_proof_body(body: str, landing: str) -> str:
+        """The author's body with the lander's proof block first and every stale block gone.
+
+        bin/idp-bdd-proof-gate grades the FIRST `BDD-PROOF ... END-BDD-PROOF` in the body, so
+        the lander's block goes directly under the adoption line, ahead of any prose that might
+        mention the words. Stale blocks the author pasted are removed, not left beside a fresh
+        one: two proofs naming two heads is exactly the ambiguity the gate refuses.
+        """
+        block = landing[landing.index("BDD-PROOF\n") :]
+        rest = re.sub(
+            r"^BDD-PROOF[ \t]*\n.*?^END-BDD-PROOF[ \t]*\n?", "", body, flags=re.M | re.S
+        )
+        first, sep, tail = rest.partition("\n")
+        if not first.startswith(ADOPTED):
+            return f"{block}\n{rest}"
+        return f"{first}\n\n{block}{sep}{tail.lstrip(chr(10))}"
+
     def _write_proof_body(self, lane: str, head: str, rebased: str, tip: str) -> None:
         """Rewrite the open PR's proof to name `rebased` BEFORE the push that grades it.
 
@@ -1514,12 +1557,15 @@ class GitHubBackend:
         this body, but it runs AFTER the push, so it repaired the next attempt and never the one
         being graded. Write it first; `_ensure_pr` then has nothing left to change.
         """
-        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
-        if not found:
+        pr = self._lane_pr(lane)
+        if not pr:
             return
+        current = pr.get("body") or ""
         body = self._proof_body(lane, head, rebased, tip)
-        if (found[0].get("body") or "") != body:
-            self.gh(f"pulls/{found[0]['number']}", "PATCH", {"body": body})
+        if ADOPTED in current:
+            body = self._adopted_proof_body(current, body)
+        if current != body:
+            self.gh(f"pulls/{pr['number']}", "PATCH", {"body": body})
 
     def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
         existing = (
@@ -1736,8 +1782,82 @@ class GitHubBackend:
                 file=sys.stderr,
             )
         self._announce(lane, head, status, text or status)
+        self._route_to_owner(lane, head, status, reason or status)
 
     _announced: set = set()
+
+    def _route_to_owner(self, lane: str, head: str, status: str, reason: str) -> None:
+        """Put a red or conflict verdict where the lane's owner reads it: its claim issue.
+
+        idp#8303. The verdict used to go to two places nobody reads: the head's commit status
+        and NATS at 127.0.0.1:4222, which from a GitHub runner is nothing (_announce warns and
+        moves on). Measured 2026-11-19: lane/seal-only and lane/no-mac-home-clean parked red after
+        3 attempts, their owner (Agent: opencode-deepseek-seal, claim #8273) told nothing. Every
+        lane commit names its claim and agent, so the verdict goes to that issue, once per
+        (lane, head, status); a final RED also labels it lane-red + P1 so it is owned, not lost.
+        A failure here is said and never fails the tick: the verdict itself lives in the state.
+        """
+        if status not in (RED, CONFLICT):
+            return
+        try:
+            commit = self.gh(f"commits/{head}") or {}
+            message = str((commit.get("commit") or {}).get("message") or "")
+            claims = _CLAIM.findall(message)
+            if not claims:
+                print(
+                    f"WARN    greenlane  {lane} {status} has no Claim: trailer; no owner to tell",
+                    file=sys.stderr,
+                )
+                return
+            claim_repo, number = claims[-1]
+            claim_repo = claim_repo or self.repo
+            agents = _AGENT.findall(message)
+            agent = agents[-1] if agents else "unknown"
+            marker = f"{VERDICT_MARK} lane={lane} head={head} status={status} -->"
+            base = f"repos/{claim_repo}/issues/{number}"
+            seen = json.loads(
+                _run("gh", "api", f"{base}/comments?per_page=100") or "[]"
+            )
+            if any(marker in str(c.get("body") or "") for c in seen):
+                return
+            jobs = _JOB_URL.findall(reason)
+            what = (
+                "rebase the lane onto main and push the same lane again"
+                if status == CONFLICT
+                else "fix the cause on the lane and push the same lane again; a new head re-arms it"
+            )
+            body = "\n".join(
+                [
+                    marker,
+                    f"**Greenlane verdict: `{lane}` is {status.upper()}** -- owner `{agent}`.",
+                    "",
+                    f"- head: `{head}`",
+                    f"- failing log: {jobs[-1] if jobs else (self.run_url or '(none)')}",
+                    f"- reason: {_URL.sub('', reason).strip()[:600]}",
+                    f"- next: {what}.",
+                    "",
+                    "This lane does not land until a new head is green. If the owner cannot "
+                    "take it, the label below hands it to the next agent.",
+                ]
+            )
+            _run("gh", "api", f"{base}/comments", "-X", "POST", "-f", f"body={body}")
+            if status == RED:
+                _run(
+                    "gh",
+                    "api",
+                    f"{base}/labels",
+                    "-X",
+                    "POST",
+                    "-f",
+                    "labels[]=lane-red",
+                    "-f",
+                    "labels[]=P1",
+                )
+        except (RuntimeError, ValueError, OSError) as e:
+            print(
+                f"WARN    greenlane  verdict for {lane} not routed to its owner: {e}",
+                file=sys.stderr,
+            )
 
     def _announce(self, lane: str, head: str, status: str, reason: str) -> None:
         """Publish the lane's verdict to the bus, so a waiting agent wakes instead of polling.
