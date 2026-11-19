@@ -247,8 +247,8 @@ def test_a_red_candidate_is_a_major_error_on_a_lane(monkeypatch, policy):
     monkeypatch.setattr(incident_loop, "run_gh", lambda args: (0, json.dumps(runs), ""))
     incidents = incident_loop.sense_ci("chidionyema/idp", policy)
     by_id = {incident["id"]: incident for incident in incidents}
-    candidate = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "1")]
-    push = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "2")]
+    candidate = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "ci@queue/b4507")]
+    push = by_id[incident_loop.fingerprint("ci", "chidionyema/idp", "ci@some-branch")]
     assert candidate["severity"] == "major", candidate
     assert candidate["blast"] == "lane", candidate
     assert push["severity"] == "minor", push
