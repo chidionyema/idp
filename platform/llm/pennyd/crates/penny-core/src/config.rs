@@ -148,7 +148,7 @@ default_daily_usd = 1.0
 
 [shaping]
 cache_control = true
-max_tokens_cap = 1024
+max_tokens_cap = 8192
 tool_result_max_chars = 2000
 
 [router]
@@ -200,7 +200,7 @@ default_daily_usd = 1.0
 
 [shaping]
 cache_control = true
-max_tokens_cap = 1024
+max_tokens_cap = 8192
 tool_result_max_chars = 2000
 
 [router]
