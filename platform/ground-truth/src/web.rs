@@ -255,8 +255,8 @@ pub fn bind_lease(e:&GroundTruthEngine,b:&Bound,id:&str)->WebResult<()> {
 }
 pub fn verify_lease(e:&GroundTruthEngine,b:&Bound,req:&crate::types::VerifyFenceRequest)->WebResult<()> {
     still_live(e,b)?;
-    if b.grant.read_only || Some(req.presented_fencing_token)!=b.fence ||
-       req.touched_paths.is_empty() || req.touched_paths.iter().any(|p|!b.grant.paths.contains(p)) {
+    if Some(req.presented_fencing_token)!=b.fence {return Err(conflict("STALE_FENCING_TOKEN"));}
+    if b.grant.read_only || req.touched_paths.is_empty() || req.touched_paths.iter().any(|p|!b.grant.paths.contains(p)) {
         return Err(forbidden("UNADMITTED_SCOPE"));
     }
     let c=e.write_conn.lock().map_err(|_|unavailable())?;
@@ -353,8 +353,8 @@ fn record_artifact(e:&GroundTruthEngine,b:&Bound,a:&FlowArtifact)->WebResult<ser
     // No yield/status field is writable by the model.
     Ok(serde_json::json!({"accepted_artifact_id":id,"instruction_id":b.grant.instruction_id}))
 }
-pub async fn flow(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<Bound>,Json(a):Json<FlowArtifact>)->WebResult<Json<serde_json::Value>>{
-    Ok(Json(record_artifact(&e,&b,&a)?))
+pub async fn flow(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<Bound>,Json(a):Json<FlowArtifact>)->WebResult<Response>{
+    Ok((StatusCode::ACCEPTED,Json(record_artifact(&e,&b,&a)?)).into_response())
 }
 #[derive(Debug,Clone,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -414,10 +414,14 @@ fn projection(e:&GroundTruthEngine,b:&Bound,id:&str)->WebResult<serde_json::Valu
     let tx=c.transaction_with_behavior(TransactionBehavior::Immediate)?;
     live_on(&tx,b,true)?;
     let (digest,a)=acceptance(&tx,&b.grant.instruction_id)?;
-    let row:Option<String>=tx.query_row("SELECT artifact_json FROM gt_flow_artifacts WHERE instruction_id=?1 AND artifact_id=?2",
-        params![b.grant.instruction_id,id],|r|r.get(0)).optional()?;
-    let artifact:FlowArtifact=serde_json::from_str(&row.ok_or_else(||invalid("ARTIFACT_NOT_FOUND"))?)?;
-    if artifact.contract_sha256!=digest{return Err(invalid("ACCEPTANCE_MISMATCH"));}
+    let row:Option<(String,String,i64)>=tx.query_row("SELECT artifact_json,producer,submitted_at FROM gt_flow_artifacts WHERE instruction_id=?1 AND artifact_id=?2",
+        params![b.grant.instruction_id,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    let (raw,producer,submitted_at)=row.ok_or_else(||invalid("ARTIFACT_NOT_FOUND"))?;
+    let artifact:FlowArtifact=serde_json::from_str(&raw)?;
+    if producer!=a.producer_principal||artifact.contract_sha256!=digest||
+       hash(&serde_json::to_vec(&(&a.instruction_id,&producer,&artifact))?)!=id {
+        return Err(invalid("ACCEPTANCE_MISMATCH"));
+    }
     let mut hashes=Vec::new();
     let mut until=i64::MAX;
     for criterion in &a.criteria{
@@ -432,7 +436,8 @@ fn projection(e:&GroundTruthEngine,b:&Bound,id:&str)->WebResult<serde_json::Valu
                o.expected_outcome_digest!=a.expected_outcome_digest||o.artifact_id!=id||
                o.release_sha!=artifact.release_sha||o.criterion_id!=criterion.criterion_id||
                o.predicate_sha256!=criterion.predicate_sha256||o.verifier_principal!=criterion.verifier_principal||
-               o.producer_principal!=a.producer_principal||o.verifier_principal==o.producer_principal {
+               o.producer_principal!=a.producer_principal||o.verifier_principal==o.producer_principal||
+               o.observed_at<submitted_at||o.observed_at<a.accepted_at||o.observed_at>now() {
                 return Err(unavailable());
             }
             if o.verdict=="PASS" && o.valid_until>now(){hashes.push(h);until=until.min(o.valid_until);}
@@ -482,6 +487,7 @@ enum ModelOutput {
 struct Lane {
     alias:String,
     actual_models:Vec<String>,
+    lane_names:Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -497,7 +503,7 @@ fn configured_url()->WebResult<reqwest::Url>{
     }
     url.join("v1/chat/completions").map_err(|_|unavailable())
 }
-pub async fn chat(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<Bound>,Json(input):Json<ChatInput>)->WebResult<Json<serde_json::Value>>{
+pub async fn chat(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<Bound>,Json(input):Json<ChatInput>)->WebResult<Response>{
     if input.message.is_empty()||input.message.len()>32_768{return Err(invalid("INVALID_MESSAGE_SIZE"));}
     let fence=b.fence.ok_or_else(||conflict("FENCE_REQUIRED"))?;
     still_live(&e,&b)?;
@@ -521,7 +527,7 @@ pub async fn chat(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<
     }).collect::<Vec<_>>();
     let provider=available.first().ok_or_else(||err(StatusCode::SERVICE_UNAVAILABLE,"NO_FRESH_PROVIDER_CAPACITY"))?;
     let lane=route.providers.get(provider.as_str()).ok_or_else(unavailable)?;
-    if lane.alias.is_empty()||lane.actual_models.is_empty(){return Err(unavailable());}
+    if lane.alias.is_empty()||lane.actual_models.is_empty()||lane.lane_names.is_empty(){return Err(unavailable());}
     let req=crate::types::PrerequisiteGateRequest{agent_surface:b.grant.principal.clone(),
         role_id:b.grant.role_id.clone(),repo_full_name:b.grant.repo_full_name.clone(),seen_fencing_token:fence,
         planned_paths:b.grant.paths.clone(),is_atomic_ic_bundle:false,read_only_recon:b.grant.read_only,
@@ -554,18 +560,19 @@ pub async fn chat(State(e):State<Arc<GroundTruthEngine>>,Extension(b):Extension<
     }
     let value:serde_json::Value=serde_json::from_slice(&bytes)?;
     let actual=value.get("model").and_then(|v|v.as_str()).ok_or_else(||invalid("UNVERIFIED_ACTUAL_MODEL"))?;
-    if !available.iter().any(|p|route.providers.get(p.as_str()).map(|l|l.actual_models.iter().any(|m|m==actual)).unwrap_or(false)){
+    let actual_lane=value.get("penny_lane").and_then(|v|v.as_str()).ok_or_else(||invalid("UNVERIFIED_ACTUAL_LANE"))?;
+    if !available.iter().any(|p|route.providers.get(p.as_str()).map(|l|
+        l.actual_models.iter().any(|m|m==actual)&&l.lane_names.iter().any(|n|n==actual_lane)).unwrap_or(false)){
         return Err(forbidden("MODEL_OUTSIDE_ADMITTED_POOL"));
     }
     let content=value.pointer("/choices/0/message/content").and_then(|v|v.as_str()).ok_or_else(||invalid("MODEL_OUTPUT_NOT_TYPED"))?;
     let output:ModelOutput=serde_json::from_str(content).map_err(|_|invalid("MODEL_OUTPUT_NOT_TYPED"))?;
     // Recheck after inference: a stale answer may not be displayed as yield.
     still_live(&e,&b)?;
-    let result=match output {
-        ModelOutput::Flow{artifact}=>record_artifact(&e,&b,&artifact)?,
-        ModelOutput::Yield{artifact_id,yield_receipt_id}=>report(&e,&b,&ReportRequest{artifact_id,yield_receipt_id})?,
-    };
-    Ok(Json(result))
+    match output {
+        ModelOutput::Flow{artifact}=>Ok((StatusCode::ACCEPTED,Json(record_artifact(&e,&b,&artifact)?)).into_response()),
+        ModelOutput::Yield{artifact_id,yield_receipt_id}=>Ok(Json(report(&e,&b,&ReportRequest{artifact_id,yield_receipt_id})?).into_response()),
+    }
 }
 
 // The mirror is a private read projection, never authority. Only one fixed,
@@ -576,24 +583,25 @@ pub async fn drive_mirror(e:Arc<GroundTruthEngine>,file_id:String,token_file:std
     let client=match reqwest::Client::builder().redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(30)).build(){Ok(c)=>c,Err(_)=>return};
     let mut rx=e.tx.subscribe();
-    let mut wanted_seq=0i64;
     let mut delay=1u64;
     loop {
+        // Wait for the writer lock; read only committed SQLite snapshot data.
+        match e.write_conn.lock(){Ok(c)=>drop(c),Err(_)=>return}
         let projection=e.read_live_projection();
         let result=match projection {
-            Ok(p) if p.seq_id>=wanted_seq=>mirror_once(&e,&client,&file_id,&token_file,&p).await,
+            Ok(p)=>mirror_once(&e,&client,&file_id,&token_file,&p).await,
             _=>Err(unavailable()),
         };
         if result.is_ok(){
             delay=1;
             match rx.recv().await {
-                Ok(env)=>wanted_seq=wanted_seq.max(env.seq_id),
+                Ok(_)=>{},
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>{},
                 Err(tokio::sync::broadcast::error::RecvError::Closed)=>return
             }
             // Coalesce bursts; always read a fresh committed snapshot.
             loop{match rx.try_recv(){
-                Ok(env)=>wanted_seq=wanted_seq.max(env.seq_id),
+                Ok(_)=>{},
                 Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))=>continue,
                 Err(_)=>break
             }}
@@ -601,7 +609,7 @@ pub async fn drive_mirror(e:Arc<GroundTruthEngine>,file_id:String,token_file:std
             tokio::select!{
                 _=tokio::time::sleep(std::time::Duration::from_secs(delay))=>{},
                 event=rx.recv()=>match event{
-                    Ok(env)=>wanted_seq=wanted_seq.max(env.seq_id),
+                    Ok(_)=>{},
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>return,
                     Err(_)=>{}
                 }
@@ -618,7 +626,7 @@ async fn mirror_once(e:&GroundTruthEngine,client:&reqwest::Client,id:&str,token_
         let previous:Option<(i64,i64,String)>=c.query_row("SELECT fence,seq,content_sha256 FROM gt_drive_mirror_state WHERE singleton_id=1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
         if let Some((f,s,h))=previous {
             if f>p.fencing_token as i64||s>p.seq_id{return Err(conflict("MIRROR_REVISION_REGRESSION"));}
-            if f==p.fencing_token as i64&&s==p.seq_id&&h==digest{return Ok(());}
+            let _=h; // remote readback, not a cached digest, is authoritative
         }
     }
     let token=tokio::fs::read_to_string(token_file).await.map_err(|_|unavailable())?;
@@ -634,25 +642,38 @@ async fn mirror_once(e:&GroundTruthEngine,client:&reqwest::Client,id:&str,token_
         return Err(forbidden("WRONG_DRIVE_MIRROR_FILE"));
     }
     // Never publish internal estate truth to a link-public or domain-wide file.
+    let allowed_raw=std::env::var("GENESIS_DRIVE_MIRROR_ALLOWED_EMAILS").map_err(|_|unavailable())?;
+    let allowed=allowed_raw.split(',').map(|s|s.trim().to_ascii_lowercase()).filter(|s|!s.is_empty()).collect::<HashSet<_>>();
+    if allowed.is_empty(){return Err(forbidden("DRIVE_ACL_NOT_PROVISIONED"));}
     let mut page=None::<String>;
     loop {
-        let mut q=client.get(format!("{url}/permissions")).query(&[("fields","nextPageToken,permissions(type)"),("pageSize","100")]);
+        let mut q=client.get(format!("{url}/permissions")).query(&[("fields","nextPageToken,permissions(type,emailAddress)"),("pageSize","100")]);
         if let Some(t)=page{q=q.query(&[("pageToken",t)]);}
         let v:serde_json::Value=q.bearer_auth(token).send().await.map_err(|_|unavailable())?.error_for_status().map_err(|_|unavailable())?.json().await.map_err(|_|unavailable())?;
         let entries=v["permissions"].as_array().ok_or_else(unavailable)?;
-        if entries.iter().any(|x|!matches!(x["type"].as_str(),Some("user"))){return Err(forbidden("DRIVE_MIRROR_NOT_PRIVATE"));}
+        if entries.is_empty()||entries.iter().any(|x|x["type"].as_str()!=Some("user")||
+            !x["emailAddress"].as_str().map(|s|allowed.contains(&s.to_ascii_lowercase())).unwrap_or(false)){
+            return Err(forbidden("DRIVE_MIRROR_NOT_PRIVATE"));
+        }
         page=v["nextPageToken"].as_str().filter(|s|!s.is_empty()).map(str::to_owned);
         if page.is_none(){break;}
     }
     // Avoid overwriting a newer committed mirror with an older snapshot.
     let current=e.read_live_projection().map_err(|_|unavailable())?;
     if current.seq_id!=p.seq_id||current.fencing_token!=p.fencing_token{return Err(conflict("MIRROR_SUPERSEDED"));}
-    client.patch(format!("https://www.googleapis.com/upload/drive/v3/files/{id}?uploadType=media"))
-        .bearer_auth(token).header("content-type","text/markdown; charset=utf-8").body(content.clone())
-        .send().await.map_err(|_|unavailable())?.error_for_status().map_err(|_|unavailable())?;
-    let readback=client.get(&url).query(&[("alt","media")]).bearer_auth(token)
+    let before=client.get(&url).query(&[("alt","media")]).bearer_auth(token)
         .send().await.map_err(|_|unavailable())?.error_for_status().map_err(|_|unavailable())?
         .bytes().await.map_err(|_|unavailable())?;
+    let readback=if before.as_ref()==content.as_bytes(){before}else{
+        let latest=e.read_live_projection().map_err(|_|unavailable())?;
+        if latest.seq_id!=p.seq_id||latest.fencing_token!=p.fencing_token{return Err(conflict("MIRROR_SUPERSEDED"));}
+        client.patch(format!("https://www.googleapis.com/upload/drive/v3/files/{id}?uploadType=media"))
+            .bearer_auth(token).header("content-type","text/markdown; charset=utf-8").body(content.clone())
+            .send().await.map_err(|_|unavailable())?.error_for_status().map_err(|_|unavailable())?;
+        client.get(&url).query(&[("alt","media")]).bearer_auth(token)
+            .send().await.map_err(|_|unavailable())?.error_for_status().map_err(|_|unavailable())?
+            .bytes().await.map_err(|_|unavailable())?
+    };
     if readback.as_ref()!=content.as_bytes(){return Err(conflict("DRIVE_READBACK_MISMATCH"));}
     let c=e.write_conn.lock().map_err(|_|unavailable())?;
     c.execute("INSERT INTO gt_drive_mirror_state(singleton_id,fence,seq,content_sha256,verified_at) VALUES(1,?1,?2,?3,?4)

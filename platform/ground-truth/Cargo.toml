@@ -1,6 +1,6 @@
 [package]
 name = "genesis-ground-truth"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2021"
 description = "Real-time event-driven ground-truth projection, monotonic fencing gate, and universal agent prerequisite engine for Meridian / Genesis"
 
