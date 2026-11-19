@@ -736,4 +736,144 @@ mod tests {
             }
         ));
     }
+
+    /// FALSIFIER: a tampered receipt must not advance the obligation. Without this, an agent
+    /// could sign nothing and still reach IntermediateStepVerified.
+    #[test]
+    fn tampered_receipt_does_not_advance_the_obligation() {
+        let key = sample_enclave_key();
+        let mut receipt = CifStepRunReceipt::sign_in_enclave(
+            "I-8106", 1, "cargo test", 0, "====== 10 passed in 0.01s ======", "", &key,
+        )
+        .unwrap();
+        // Flip one character of the signed payload: the HMAC must no longer match.
+        receipt.stdout_payload = "====== 11 passed in 0.01s ======".to_string();
+
+        let rules = vec![ExpectedOutcomeRule {
+            metric_name: "tests_passed".to_string(),
+            anchor_suffix: "passed".to_string(),
+            operator: MetricOperator::GreaterOrEqual,
+            threshold: 10,
+        }];
+        assert!(verify_cif_receipt(&receipt, &rules, &key).is_err());
+
+        let verdict = evaluate_turn_accountability(
+            InteractionPlane::AcceptedOperationalObligation {
+                instruction_id: "I-8106".to_string(),
+                obligation_id: "#8244".to_string(),
+                origin_authority: OriginAuthority::AuthenticatedExecutionLease {
+                    lease_id: "lease-8244".to_string(),
+                    parent_instruction_id: "I-8106".to_string(),
+                    fencing_token: 40,
+                },
+                requires_causal_correction: true,
+                discourse_or_status_report: "tests pass".to_string(),
+                truthful_failure: None,
+                proposed_recovery: None,
+                step_receipt: Some(receipt),
+                completion_proof: None,
+            },
+            &rules,
+            &key,
+            5_000,
+            40,
+        );
+        assert!(
+            matches!(verdict, TurnAccountabilityVerdict::DurableRecoveryBound { .. }),
+            "a tampered receipt must bind recovery, got {:?}",
+            verdict
+        );
+    }
+
+    /// FALSIFIER: a stale or already-expired recovery plan must be replaced, not honoured.
+    /// Without this, custody could be bound to a deadline that has already passed.
+    #[test]
+    fn expired_recovery_plan_is_replaced_not_honoured() {
+        let key = sample_enclave_key();
+        let stale = AuthenticatedRecoveryPlan {
+            custody_holder: "someone-else".to_string(),
+            lease_fencing_token: 1,
+            executable_next_action: "echo noop".to_string(),
+            target_runner_label: "ubuntu-latest".to_string(),
+            recovery_deadline_epoch: 1_000, // already past when now = 9_000
+        };
+        let verdict = evaluate_turn_accountability(
+            InteractionPlane::AcceptedOperationalObligation {
+                instruction_id: "I-8106".to_string(),
+                obligation_id: "#8244".to_string(),
+                origin_authority: OriginAuthority::FounderAuthorizedIntent {
+                    founder_kid: "founder-ed25519-primary".to_string(),
+                    intent_sha256: sample_hex_64(),
+                },
+                requires_causal_correction: false,
+                discourse_or_status_report: "blocked".to_string(),
+                truthful_failure: Some(TruthfulFailureReport {
+                    disruption: DisruptionKind::ExecutionRefusalOrGateFailure,
+                    diagnostic_summary: "gate refused".to_string(),
+                    failed_at_epoch: 8_000,
+                }),
+                proposed_recovery: Some(stale),
+                step_receipt: None,
+                completion_proof: None,
+            },
+            &[],
+            &key,
+            9_000,
+            77,
+        );
+        match verdict {
+            TurnAccountabilityVerdict::DurableRecoveryBound {
+                recovery_plan,
+                auto_synthesized_by_reconciler,
+                ..
+            } => {
+                assert!(auto_synthesized_by_reconciler, "stale plan must be replaced");
+                assert_eq!(recovery_plan.lease_fencing_token, 77);
+                assert!(recovery_plan.recovery_deadline_epoch > 9_000);
+            }
+            other => panic!("expected recovery bound, got {:?}", other),
+        }
+    }
+
+    /// FALSIFIER: a completion proof whose executor and verifier are the same actor must NOT
+    /// complete. Without this, an agent can self-certify and reach yield=1.
+    #[test]
+    fn completion_requires_split_authority() {
+        let key = sample_enclave_key();
+        let self_certified = OperationalCompletionProof {
+            executor_id: "dsh-i8106-cage-20261119".to_string(),
+            independent_verifier_id: "dsh-i8106-cage-20261119".to_string(),
+            original_outcome_receipt_sha256: sample_hex_64(),
+            causal_correction_issue_class: Some("FC_SELF_CERTIFICATION".to_string()),
+            causal_correction_verified: true,
+            verified_on_original_target_path: true,
+        };
+        assert!(!self_certified.satisfies_y_c_v(true));
+
+        let verdict = evaluate_turn_accountability(
+            InteractionPlane::AcceptedOperationalObligation {
+                instruction_id: "I-8106".to_string(),
+                obligation_id: "#8244".to_string(),
+                origin_authority: OriginAuthority::FounderAuthorizedIntent {
+                    founder_kid: "founder-ed25519-primary".to_string(),
+                    intent_sha256: sample_hex_64(),
+                },
+                requires_causal_correction: true,
+                discourse_or_status_report: "done".to_string(),
+                truthful_failure: None,
+                proposed_recovery: None,
+                step_receipt: None,
+                completion_proof: Some(self_certified),
+            },
+            &[],
+            &key,
+            6_000,
+            50,
+        );
+        assert!(
+            !matches!(verdict, TurnAccountabilityVerdict::OperationallyCompleted { .. }),
+            "self-certification must not complete, got {:?}",
+            verdict
+        );
+    }
 }
