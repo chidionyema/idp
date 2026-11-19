@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""Admit a Legion mission before any model runs: its scope, then provider capacity.
+
+Trusted, pre-inference stage of agent-sandbox.yml (idp#8283). Every bound the
+submit lane enforces used to be discovered only after the model had been paid
+for: a 429 from every provider (#7838), seven files against a five-file limit
+(#8061), a patch to .github/ (#8165). This door moves both decisions in front
+of inference and reuses the submit lane's own predicate, so admission and
+delivery cannot classify a change differently.
+
+  scope     the mission names its exact files on a `Scope:` line (or a CLAIM-style
+            `paths=` token). They are validated by idp-agent-base-apply.admit(), the
+            same Proof 2 boundary the submit lane applies, at the exact commit the
+            agent will start from. No scope, or an inadmissible one: REFUSED, exit 2.
+  capacity  each provider lane the run may use is sent one 1-token request. The first
+            that answers 200 is selected. None: REFUSED, exit 75, in seconds.
+
+Writes into --out: scope.json (the exact bytes the submit lane verifies),
+scope.sha256, contract.txt (appended to the agent's task) and admission.json.
+Never prints a credential or the provider's response body.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+HERE = Path(__file__).resolve().parent
+EXIT_SCOPE = 2
+EXIT_CAPACITY = 75
+PROBE_TIMEOUT_S = float(os.environ.get("LEGION_PROBE_TIMEOUT_S", "15"))
+
+# Provider lanes, OpenAI-compatible, as the estate already calls them
+# (platform/llm/pennyd/providers/gemini.toml, platform/llm/config.local.yaml).
+LANES = {
+    "google": (
+        "LEGION_GOOGLE_BASE",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        "GEMINI_API_KEY",
+    ),
+    "minimax": ("LEGION_MINIMAX_BASE", "https://api.minimax.io/v1", "MINIMAX_API_KEY"),
+}
+
+SCOPE_LINE = re.compile(r"^\s*\**scope\**\s*:\s*\**\s*(.+?)\s*$", re.I | re.M)
+PATHS_TOKEN = re.compile(r"(?<![\w-])paths=(\S+)")
+
+
+def _applicator():
+    spec = importlib.util.spec_from_file_location(
+        "idp_agent_base_apply", HERE / "idp-agent-base-apply.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(HERE))
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def declared_scope(mission: str) -> list[str]:
+    """The exact files a mission declares. One declaration only: two is ambiguous."""
+    found = [m.group(1) for m in SCOPE_LINE.finditer(mission)]
+    found += [m.group(1) for m in PATHS_TOKEN.finditer(mission)]
+    if not found:
+        raise ValueError(
+            "REFUSED: SCOPE_UNDECLARED: the mission names no `Scope:` line; "
+            "an unscoped run is refused before inference"
+        )
+    if len(set(found)) > 1:
+        raise ValueError(
+            "REFUSED: SCOPE_AMBIGUOUS: the mission declares more than one scope"
+        )
+    paths = [
+        p.strip().strip("`'\"") for p in re.split(r"[,\s]+", found[0]) if p.strip()
+    ]
+    if not paths:
+        raise ValueError("REFUSED: SCOPE_UNDECLARED: the scope line is empty")
+    if any(c in p for p in paths for c in "*?[]{}"):
+        raise ValueError("REFUSED: SCOPE_NOT_EXACT: scope names exact files, not globs")
+    return paths
+
+
+def refuse_new_python(paths: list[str]) -> None:
+    """bin/language-gate refuses a new Python file without a Language-Exception trailer, and the
+    submit lane writes the commit message, not the agent: such a scope can never land. Say so
+    before inference (#7516/#8194 class: refused at the commit hook after the model ran)."""
+    new_py = [
+        p
+        for p in paths
+        if p.endswith(".py")
+        and not p.startswith("tests/")
+        and subprocess.run(
+            ["git", "cat-file", "-e", f"HEAD:{p}"], capture_output=True
+        ).returncode
+    ]
+    if new_py:
+        raise ValueError(
+            "REFUSED: LANGUAGE_GATE: new Python file(s) in scope cannot land through the submit "
+            "lane (bin/language-gate): " + ", ".join(new_py[:5])
+        )
+
+
+def admit_scope(mission: str) -> tuple[bytes, dict]:
+    app = _applicator()
+    paths = declared_scope(mission)
+    envelope = app.admit(paths)  # raises ValueError on any refusal
+    refuse_new_python(paths)
+    raw = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
+    return raw, envelope
+
+
+def contract(envelope: dict, limit: int) -> str:
+    files = "\n".join(f"  - {p}" for p in envelope["paths"])
+    return (
+        "\n\nLEGION ADMISSION (trusted, enforced at submit):\n"
+        f"You may change ONLY these files, at most {limit} of them, nothing under .github/ or .githooks/:\n"
+        f"{files}\n"
+        "A NEW file must not be Python (bin/language-gate refuses it at commit); tests/ excepted.\n"
+        "Any other change makes the whole patch refused. Base commit: "
+        f"{envelope['base']}\n"
+    )
+
+
+def probe(lane: str, model: str) -> dict:
+    env_base, default_base, key_env = LANES[lane]
+    key = os.environ.get(key_env, "")
+    if not key:
+        return {"lane": lane, "model": model, "verdict": "no-key"}
+    base = os.environ.get(env_base, default_base).rstrip("/")
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{base}/chat/completions",
+        data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    t0 = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as resp:  # noqa: S310 - fixed https lanes
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except (urllib.error.URLError, TimeoutError, OSError):
+        status = 0
+    ms = int((time.monotonic() - t0) * 1000)
+    verdict = {
+        200: "capacity",
+        429: "rate-limited",
+        401: "authentication",
+        403: "authentication",
+        404: "model-unavailable",
+        0: "transport",
+    }.get(
+        status,
+        "capacity"
+        if 200 <= status < 300
+        else ("unavailable" if status >= 500 else f"http-{status}"),
+    )
+    return {
+        "lane": lane,
+        "model": model,
+        "status": status,
+        "ms": ms,
+        "verdict": verdict,
+    }
+
+
+def chain(harness: str, model: str, failover: bool) -> list[tuple[str, str]]:
+    if harness == "gemini":
+        lanes = [("google", model or "gemini-3.5-flash")]
+        if failover:
+            lanes.append(("minimax", "MiniMax-M2.7"))
+        return lanes
+    if harness == "pi":
+        return [("minimax", model or "MiniMax-M2.7")]
+    return []  # claude-code proves its own provider live before running (bin/claude-anthropic)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="legion-admit")
+    ap.add_argument(
+        "--mission-env", default="TASK", help="env var holding the mission text"
+    )
+    ap.add_argument("--harness", default=os.environ.get("HARNESS", "gemini"))
+    ap.add_argument("--model", default=os.environ.get("MODEL", ""))
+    ap.add_argument("--failover", default=os.environ.get("LEGION_FAILOVER", "0"))
+    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--skip-capacity", action="store_true", help="scope only (tests, dry admission)"
+    )
+    args = ap.parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
+    record: dict = {"harness": args.harness}
+    try:
+        raw, envelope = admit_scope(os.environ.get(args.mission_env, ""))
+    except (ValueError, OSError) as exc:
+        record["decision"] = "REFUSED_SCOPE"
+        record["reason"] = str(exc)[:400]
+        (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
+        print(f"::error::{record['reason']}")
+        return EXIT_SCOPE
+    digest = hashlib.sha256(raw).hexdigest()
+    (args.out / "scope.json").write_bytes(raw)
+    (args.out / "scope.sha256").write_text(digest + "\n")
+    import verify_three_proofs  # on sys.path via _applicator(); the one source of the limit
+
+    (args.out / "contract.txt").write_text(
+        contract(envelope, verify_three_proofs.MAX_FILES_PER_CHANGE)
+    )
+    record.update(
+        {"scope_sha256": digest, "paths": envelope["paths"], "base": envelope["base"]}
+    )
+
+    probes = []
+    if not args.skip_capacity:
+        for lane, model in chain(args.harness, args.model, args.failover == "1"):
+            p = probe(lane, model)
+            probes.append(p)
+            if p["verdict"] == "capacity":
+                record["provider"] = lane
+                record["model"] = model
+                break
+        record["probes"] = probes
+        if probes and "provider" not in record:
+            record["decision"] = "REFUSED_CAPACITY"
+            (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
+            summary = ", ".join(f"{p['lane']}={p['verdict']}" for p in probes)
+            print(f"::error::REFUSED: CAPACITY_EXHAUSTED before inference: {summary}")
+            return EXIT_CAPACITY
+    record["decision"] = "ADMITTED"
+    (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
+    line = f"ADMITTED scope={digest[:12]} files={len(envelope['paths'])}"
+    if "provider" in record:
+        line += f" provider={record['provider']}"
+    print(line)
+    gh_out = os.environ.get("GITHUB_OUTPUT")
+    if gh_out:
+        with open(gh_out, "a", encoding="utf-8") as fh:
+            fh.write(f"scope_sha256={digest}\n")
+            fh.write(f"scope_json={raw.decode()}\n")
+            fh.write(f"provider={record.get('provider', '')}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

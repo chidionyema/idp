@@ -8,8 +8,10 @@ real git repository.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -120,6 +122,13 @@ def _repo(tmp_path: Path) -> Path:
     (r / "app.py").write_text("x = 1\n")
     git("add", "-A")
     git("commit", "-q", "-m", "base")
+    # The steps call the trusted main's own bin/ (the applicator, language-gate, the hooks'
+    # helpers). Give the disposable repo that bin/ without making it part of any diff: the
+    # applicator refuses a dirty checkout, and a patch must not carry it.
+    (r / "bin").symlink_to(ROOT / "bin")
+    with open(r / ".git/info/exclude", "a") as fh:
+        fh.write("/bin\n")
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
     return r
 
 
@@ -137,20 +146,57 @@ def _patch(r: Path, change) -> str:
     return p
 
 
-def _refusal_step(r: Path, patch: str, tmp_path: Path) -> subprocess.CompletedProcess:
+def _refusal_step(
+    r: Path, patch: str, tmp_path: Path, scope_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     """Run the step's own shell after its decrypt lines, with the patch already in place."""
     run = _step("submit-lane", "Apply the patch")["run"]
     tail = run[run.index('[ -s "$work/patch" ]') :]
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
     (work / "patch").write_text(patch)
+    head = subprocess.run(
+        ["git", "-C", str(r), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (work / "base").write_text(head + "\n")
+    env = dict(
+        os.environ,
+        **(scope_env if scope_env is not None else _admitted(r, tmp_path, "app.py")),
+    )
     return subprocess.run(
         ["bash", "-c", f'set -euo pipefail\nwork="{work}"\n{tail}'],
         cwd=r,
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
     )
+
+
+def _admitted(r: Path, tmp_path: Path, scope: str) -> dict[str, str]:
+    """What the agent job's admission step hands the submit lane, made by the real door."""
+    out = tmp_path / "admission"
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "bin/legion-admit"),
+            "--out",
+            str(out),
+            "--skip-capacity",
+        ],
+        cwd=r,
+        env=dict(os.environ, TASK=f"Scope: {scope}"),
+        capture_output=True,
+        text=True,
+    )
+    assert p.returncode == 0, p.stdout + p.stderr
+    return {
+        "SCOPE_JSON": (out / "scope.json").read_text(),
+        "SCOPE_SHA256": (out / "scope.sha256").read_text().strip(),
+    }
 
 
 @pytest.mark.parametrize(
@@ -193,7 +239,10 @@ FAKE = {
 
 
 def _agent_step(
-    tmp_path: Path, harness: str, fake: str | None, overrides: dict[str, str] | None = None
+    tmp_path: Path,
+    harness: str,
+    fake: str | None,
+    overrides: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess, Path]:
     r = _repo(tmp_path)
     (r / "a.txt").write_text("hi\n")
@@ -208,6 +257,18 @@ def _agent_step(
     temp, home = tmp_path / "runner", tmp_path / "home"
     temp.mkdir()
     home.mkdir()
+    # What the admission step leaves for the run step (idp#8283).
+    (temp / "admission").mkdir()
+    (temp / "admission" / "contract.txt").write_text(
+        "\n\nLEGION ADMISSION: a.txt only\n"
+    )
+    # The claude-native launcher is main's bin/claude-anthropic; stand it in, never call Anthropic.
+    (r / "bin").unlink()
+    (r / "bin").mkdir()
+    (r / "bin" / "claude-anthropic").write_text(
+        '#!/bin/bash\n[ "$1" = --verify-live ] && { echo receipt; exit 0; }\nshift; exec claude "$@"\n'
+    )
+    (r / "bin" / "claude-anthropic").chmod(0o755)
     env = {
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
@@ -217,6 +278,7 @@ def _agent_step(
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
         "MINIMAX_API_KEY": "x",
         "GEMINI_API_KEY": "x",
+        "ADMITTED_PROVIDER": "",
     }
     env.update(overrides or {})
     run = _step("agent", "Run the agent")["run"]
@@ -321,7 +383,10 @@ def _submit(tmp_path: Path, issue: str):
     subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(r), "commit", "-qm", "hooks"], check=True)
     (r / "app.py").write_text("x = 2\n")
-    (r / "app.py").rename(r / "lib.py")
+    # A rename to a non-Python file: a NEW Python file needs a Language-Exception trailer
+    # (bin/language-gate), which the submit lane cannot write, and legion-admit refuses such a
+    # scope before inference (tests/test_legion_admit.py).
+    (r / "app.py").rename(r / "lib.rs")
     subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
     bin_ = tmp_path / "bin"
     bin_.mkdir()
@@ -366,7 +431,7 @@ def test_the_lane_carries_a_claim_the_gate_accepts_and_the_hooks_stamp(tmp_path,
     assert m and m["agent"] == "gemini"
     assert set(m["paths"].split(",")) == {
         "app.py",
-        "lib.py",
+        "lib.rs",
     }  # both sides of the rename
     msg = subprocess.run(
         [
@@ -407,9 +472,7 @@ fi
 echo '{"provider":"minimax","status":"success"}' > "$d/minimax.jsonl"
 echo 'SECOND_PROVIDER_EDIT' >> a.txt
 """
-    result, out = _agent_step(
-        tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"}
-    )
+    result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "fallback=minimax exit=0" in result.stdout
     assert "private-authentication-secret-sentinel" not in result.stdout
@@ -418,13 +481,18 @@ echo 'SECOND_PROVIDER_EDIT' >> a.txt
     assert "SECOND_PROVIDER_EDIT" in (out / "patch").read_text()
     assert '"provider":"minimax"' in (out / "transcript.jsonl").read_text()
     assert '"provider":"google"' in (out / "google.failed.transcript.jsonl").read_text()
-    assert "private-authentication-secret-sentinel" in (out / "google.failed.stdout").read_text()
+    assert (
+        "private-authentication-secret-sentinel"
+        in (out / "google.failed.stdout").read_text()
+    )
 
 
 def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
-    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\nexit 1\n'
     result, out = _agent_step(
-        tmp_path, "gemini", body,
+        tmp_path,
+        "gemini",
+        body,
         {"LEGION_FAILOVER": "1", "MINIMAX_API_KEY": ""},
     )
     assert result.returncode == 1
@@ -435,7 +503,7 @@ def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
 
 
 def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
-    body = FAKE["pi"] + 'echo "private-no-failover"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-no-failover"\nexit 1\n'
     result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "0"})
     assert result.returncode == 1
     assert "fallback=minimax" not in result.stdout
@@ -445,7 +513,9 @@ def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
 
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
     step = _step("agent", "Run the agent")
-    assert "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
+    assert (
+        "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
+    )
     assert JOBS["agent"]["permissions"] == {"contents": "read"}
     # The firewall is still mandatory after the cloud provider switch.
     assert "firewall" in JOBS["submit-lane"]["needs"]

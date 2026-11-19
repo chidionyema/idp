@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 303,
+    "layer": 312,
     "service": 122,
-    "tool": 515,
+    "tool": 519,
     "workflow": 106
   },
   "records": [
@@ -8076,7 +8076,10 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:layer/platform-ground-truth-src-api",
+        "cap:layer/platform-ground-truth-src-reconciler"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -8484,6 +8487,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
             "edge": "imports"
           },
           {
@@ -14429,6 +14436,524 @@
       "mirrors": []
     },
     {
+      "id": "cap:layer/platform-ground-truth-src-api",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use crate::crypto::{verify_github_webhook_hmac, AuthError};",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-store",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-crypto",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-store",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/api.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-bin-genesis-ground-truth-d",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use genesis_ground_truth::crypto::FounderVerifier;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/bin/genesis-ground-truth-d.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-bin-genesis-truth-boot",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use anyhow::{anyhow, Result};",
+      "contract": {
+        "inputs": [
+          "--atomic-ic",
+          "--read-only"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/bin/genesis-truth-boot.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-classifier",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use crate::types::CounterexampleUpsertRequest;",
+      "contract": {
+        "inputs": [
+          "--admit-paths-json",
+          "--scope-file",
+          "--scope-sha256"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-ground-truth-src-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/classifier.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-crypto",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use anyhow::{anyhow, Result};",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-ground-truth-src-api",
+        "cap:layer/platform-ground-truth-src-store"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/crypto.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-lib",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "pub mod api;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/lib.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-reconciler",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use crate::store::GroundTruthEngine;",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-store",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-store",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/reconciler.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-store",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use crate::classifier::{classify_ci_failure, is_guarded_path, is_zone_a_forbidden_path};",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-ground-truth-src-classifier",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-crypto",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-ground-truth-src-api",
+        "cap:layer/platform-ground-truth-src-reconciler"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/store.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-ground-truth-src-types",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "use serde::{Deserialize, Serialize};",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-governance-checks",
+        "cap:layer/platform-ground-truth-src-api",
+        "cap:layer/platform-ground-truth-src-classifier",
+        "cap:layer/platform-ground-truth-src-reconciler",
+        "cap:layer/platform-ground-truth-src-store",
+        "cap:layer/platform-mcp-idp_server"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/ground-truth/src/types.rs",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:layer/platform-healthchecks-enrol",
       "schema_version": 1,
       "kind": "layer",
@@ -17587,6 +18112,10 @@
             "edge": "imports"
           },
           {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-llm-spire-key-broker-server",
             "edge": "imports"
           },
@@ -19006,6 +19535,10 @@
       },
       "consumers": [
         "cap:layer/platform-estate-governance-checks",
+        "cap:layer/platform-ground-truth-src-api",
+        "cap:layer/platform-ground-truth-src-classifier",
+        "cap:layer/platform-ground-truth-src-reconciler",
+        "cap:layer/platform-ground-truth-src-store",
         "cap:layer/platform-mcp-idp_server"
       ],
       "cost": {
@@ -23613,6 +24146,7 @@
       ],
       "known_issues": [],
       "mirrors": [
+        "platform/image-automation/pennyd.yaml",
         "platform/llm/pennyd/deploy/recovery/pennyd.toml",
         "platform/llm/pennyd/deploy/systemd/pennyd.service"
       ]
@@ -29020,6 +29554,53 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/agent-sleep-guard",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/agent-sleep-guard",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/agent-timebox",
       "schema_version": 1,
       "kind": "tool",
@@ -30482,6 +31063,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/legion-admit",
         "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
@@ -31250,6 +31832,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-ci",
         "cap:tool/idp-epistemic",
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
@@ -37265,6 +37848,8 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-ci",
+        "cap:tool/legion-admit",
         "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
@@ -38133,10 +38718,13 @@
       "summary": "No pull request without BDD proof, across all agent sessions.",
       "contract": {
         "inputs": [
+          "--count",
           "--help",
           "--is-ancestor",
           "--jq",
           "--live",
+          "--no-merges",
+          "--not",
           "--self-test"
         ],
         "outputs": [
@@ -39332,6 +39920,10 @@
       "path": "bin/idp-ci",
       "depends_on": [
         {
+          "id": "cap:tool/agent-sandbox-age",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/capability-index",
           "edge": "invokes"
         },
@@ -39357,6 +39949,10 @@
         },
         {
           "id": "cap:tool/diagnosis-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/epistemic_firewall.py",
           "edge": "invokes"
         },
         {
@@ -39401,6 +39997,10 @@
         },
         {
           "id": "cap:tool/face-licence-known-blockers",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-agent-base-apply.py",
           "edge": "invokes"
         },
         {
@@ -39516,6 +40116,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/legion-admit",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/litellm-local",
           "edge": "invokes"
         },
@@ -39573,6 +40177,10 @@
         },
         {
           "id": "cap:tool/timeout-budget.baseline",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/verify_three_proofs.py",
           "edge": "invokes"
         }
       ],
@@ -41151,6 +41759,55 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-differential-falsifier",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-differential-falsifier -- I-8107: proof must be able to fail.",
+      "contract": {
+        "inputs": [
+          "--name-only"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-differential-falsifier",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -47406,6 +48063,56 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-messaging-demo",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-model-lane-lint",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-model-lane-lint -- refuse a deprecated model id, and a lane with no fallback.",
+      "contract": {
+        "inputs": [
+          "--root",
+          "--self-test"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-model-lane-lint",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -54869,6 +55576,7 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
+        "cap:tool/legion-admit",
         "cap:workflow/gha-greenlane-efficiency-preflight"
       ],
       "cost": {
@@ -54952,6 +55660,79 @@
         },
         {
           "id": "cap:tool/spec-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/legion-admit",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Admit a Legion mission before any model runs: its scope, then provider capacity.",
+      "contract": {
+        "inputs": [
+          "--failover",
+          "--harness",
+          "--mission-env",
+          "--model",
+          "--out",
+          "--skip-capacity"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/legion-admit",
+      "depends_on": [
+        {
+          "id": "cap:tool/claude-anthropic",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-agent-base-apply.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/language-gate",
           "edge": "invokes"
         },
         {
@@ -58629,6 +59410,7 @@
         "cap:tool/idp-wip-gate",
         "cap:tool/langfuse-up",
         "cap:tool/law32-gate",
+        "cap:tool/legion-admit",
         "cap:tool/litellm-local",
         "cap:tool/litellm-up",
         "cap:tool/mcp-up",
@@ -59533,7 +60315,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-agent-base-apply.py"
+        "cap:tool/idp-agent-base-apply.py",
+        "cap:tool/idp-ci"
       ],
       "cost": {
         "estimate": null,

@@ -27,3 +27,9 @@ resources:
   - efda.yaml
   - spine.yaml
   - aei.yaml
+  # idp#8067: the ImagePolicy existed (#8285) but no Kustomization applied it, so no build could ever
+  # reach the pennyd deployment.
+  - pennyd.yaml
+  # Same class, found by tests/test_every_image_policy_and_router_reaches_flux.py: the ACG
+  # ImagePolicy was written but never applied, so platform/acg/workload.yaml's marker never moved.
+  - acg.yaml
