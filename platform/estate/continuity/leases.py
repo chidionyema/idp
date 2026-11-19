@@ -1,14 +1,7 @@
-"""Lease acquisition with compare-and-swap and monotonically increasing
-fencing epochs (ESTATE-P0 INV-02, WP-02).
-
-acquire_lease runs under BEGIN IMMEDIATE: of N simultaneous claimants exactly
-one inserts the next attempt and advances the epoch; the rest raise
-LeaseNotAcquired. A lease may be taken over when the holder's lease expired
-or its attempt was fenced by recovery.
-"""
-
+"""Lease acquisition with compare-and-swap and monotonically increasing fencing epochs."""
 from __future__ import annotations
 
+import math
 import time
 import uuid
 
@@ -18,115 +11,32 @@ CLAIMABLE_STATES = ("READY", "REASSIGNING")
 
 
 class LeaseMixin:
-    def acquire_lease(
-        self,
-        mission_id: str,
-        worker: dict,
-        lease_seconds: float = 300.0,
-        now: float | None = None,
-    ) -> dict:
+    def acquire_lease(self, mission_id: str, worker: dict, lease_seconds: float = 300.0, now: float | None = None, *, expected_authority: tuple[int, int, int] | None = None) -> dict:
         t = time.time() if now is None else now
-        for field in (
-            "agent_adapter",
-            "provider",
-            "model",
-            "execution_host",
-            "failure_domain",
-            "worktree_id",
-            "base_sha",
-        ):
+        if not math.isfinite(t) or not math.isfinite(lease_seconds) or lease_seconds <= 0:
+            raise LeaseNotAcquired("invalid lease clock or duration")
+        for field in ("agent_adapter", "provider", "model", "execution_host", "failure_domain", "worktree_id", "base_sha"):
             if not worker.get(field):
                 raise LeaseNotAcquired(f"worker record missing {field}")
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
-            m = cur.execute(
-                "SELECT state, current_attempt_id, current_lease_epoch,"
-                " retry_budget_remaining FROM missions WHERE mission_id=?",
-                (mission_id,),
-            ).fetchone()
+            m = cur.execute("SELECT state, current_attempt_id, current_lease_epoch, retry_budget_remaining, mandate_version, revocation_epoch FROM missions WHERE mission_id=?", (mission_id,)).fetchone()
             if m is None:
-                cur.execute("ROLLBACK")
                 raise LeaseNotAcquired(f"unknown mission {mission_id}")
-            if m["state"] in CLAIMABLE_STATES:
-                pass
-            elif m["state"] == "LEASED":
-                holder = cur.execute(
-                    "SELECT lease_expires_at, state FROM mission_attempts"
-                    " WHERE attempt_id=?",
-                    (m["current_attempt_id"],),
-                ).fetchone()
-                if (
-                    holder is None
-                    or holder["state"] != "RUNNING"
-                    or holder["lease_expires_at"] > t
-                ):
-                    cur.execute("ROLLBACK")
-                    raise LeaseNotAcquired(f"lease held by {m['current_attempt_id']}")
-            else:
-                cur.execute("ROLLBACK")
-                raise LeaseNotAcquired(
-                    f"mission in state {m['state']} is not claimable"
-                )
+            if m["state"] not in CLAIMABLE_STATES:
+                # Expiry is an observation, not authorization to create a new
+                # writer. All takeovers go through the fenced recovery path.
+                raise LeaseNotAcquired(f"mission in state {m['state']} is not claimable; reconcile recovery first")
+            if expected_authority is not None and expected_authority != (m["mandate_version"], m["revocation_epoch"], m["current_lease_epoch"]):
+                raise LeaseNotAcquired("mission authority changed")
+            recovering = m["state"] == "REASSIGNING"
+            if recovering and m["retry_budget_remaining"] <= 0:
+                raise LeaseNotAcquired("retry budget exhausted; obligation remains REASSIGNING")
+            if m["current_attempt_id"] is not None:
+                raise LeaseNotAcquired("claimable mission still has an active attempt; reconcile custody")
             attempt_id = f"a-{uuid.uuid4()}"
             epoch = m["current_lease_epoch"] + 1
-            if m["state"] == "REASSIGNING" or m["state"] == "LEASED":
-                if m["current_attempt_id"]:
-                    cur.execute(
-                        "UPDATE mission_attempts SET state='SUPERSEDED'"
-                        " WHERE attempt_id=? AND state='RUNNING'",
-                        (m["current_attempt_id"],),
-                    )
-            cur.execute(
-                "INSERT INTO mission_attempts (attempt_id, mission_id,"
-                " agent_adapter, provider, model, execution_host,"
-                " failure_domain, worktree_id, base_sha, started_at,"
-                " lease_epoch, lease_expires_at, last_heartbeat_at,"
-                " last_progress_at, state)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    attempt_id,
-                    mission_id,
-                    worker["agent_adapter"],
-                    worker["provider"],
-                    worker["model"],
-                    worker["execution_host"],
-                    worker["failure_domain"],
-                    worker["worktree_id"],
-                    worker["base_sha"],
-                    t,
-                    epoch,
-                    t + lease_seconds,
-                    t,
-                    t,
-                    "RUNNING",
-                ),
-            )
-            cur.execute(
-                "UPDATE missions SET state='LEASED', current_attempt_id=?,"
-                " current_lease_epoch=?, retry_budget_remaining=?"
-                " WHERE mission_id=?",
-                (
-                    attempt_id,
-                    epoch,
-                    max(0, m["retry_budget_remaining"] - 1)
-                    if m["state"] == "REASSIGNING"
-                    else m["retry_budget_remaining"],
-                    mission_id,
-                ),
-            )
-            self._event(
-                mission_id,
-                "LEASED",
-                worker["agent_adapter"],
-                "lease acquired",
-                f"epoch={epoch} attempt={attempt_id}",
-                attempt_id=attempt_id,
-                lease_epoch=epoch,
-                from_state=m["state"],
-                cur=cur,
-            )
-            return {
-                "attempt_id": attempt_id,
-                "lease_epoch": epoch,
-                "lease_expires_at": t + lease_seconds,
-            }
+            cur.execute("INSERT INTO mission_attempts (attempt_id, mission_id, agent_adapter, provider, model, execution_host, failure_domain, worktree_id, base_sha, started_at, lease_epoch, lease_expires_at, last_heartbeat_at, last_progress_at, state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (attempt_id, mission_id, worker["agent_adapter"], worker["provider"], worker["model"], worker["execution_host"], worker["failure_domain"], worker["worktree_id"], worker["base_sha"], t, epoch, t + lease_seconds, t, t, "RUNNING"))
+            cur.execute("UPDATE missions SET state='LEASED', current_attempt_id=?, current_lease_epoch=?, retry_budget_remaining=? WHERE mission_id=?", (attempt_id, epoch, m["retry_budget_remaining"] - int(recovering), mission_id))
+            self._event(mission_id, "LEASED", worker["agent_adapter"], "lease acquired", f"epoch={epoch} attempt={attempt_id}", attempt_id=attempt_id, lease_epoch=epoch, from_state=m["state"], cur=cur)
+            return {"attempt_id": attempt_id, "lease_epoch": epoch, "lease_expires_at": t + lease_seconds}
