@@ -7,6 +7,6 @@ psycopg-pool==3.2.8
 # 1.45.1: 1.29.0 carries CVE-2026-114603 (unbounded tracestate parsing). The three move together --
 # opentelemetry-sdk 1.45.1 pins opentelemetry-api==1.45.1 exactly, so bumping the api alone does
 # not resolve.
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
 opentelemetry-sdk==1.45.1
 opentelemetry-exporter-otlp-proto-grpc==1.45.1
