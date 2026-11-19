@@ -165,6 +165,15 @@ def looks_like_a_pass(block: str) -> bool:
 
 
 
+
+def _git_knows(rev: str) -> bool:
+    run = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", "cat-file", "-e", f"{rev}^{{commit}}"],  # noqa: S607
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    return run.returncode == 0
+
+
 def proved_is_ancestor(proved: str, head: str) -> bool:
     """A proof naming an ANCESTOR of the head is still a proof about this tree.
 
@@ -176,14 +185,35 @@ def proved_is_ancestor(proved: str, head: str) -> bool:
     """
     if not (proved and head and len(proved) >= 7 and len(head) >= 7):
         return False
+    # A shallow CI checkout often does not contain the proof commit at all: actions/checkout
+    # fetches the head and its immediate history, so merge-base cannot answer. Fetch the one
+    # object we need rather than refusing a proof that is simply not on disk.
+    if not _git_knows(proved):
+        subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "fetch", "-q", "--depth=64", "origin", proved],  # noqa: S607
+            capture_output=True, text=True, timeout=60, check=False,
+        )
     try:
         run = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             ["git", "merge-base", "--is-ancestor", proved, head],  # noqa: S607
             capture_output=True, text=True, timeout=20, check=False,
         )
+        if run.returncode != 0:
+            return False
+        # A proof only covers the code it was run against. Ancestry alone would let an agent
+        # append untested commits after an old proof sha and still pass. The commits between
+        # the proof and the head that are NOT merges must therefore already be on main:
+        # merging main into a lane is free, adding work the proof never saw is not.
+        extra = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "rev-list", "--no-merges", "--count",  # noqa: S607
+             f"{proved}..{head}", "--not", "origin/main"],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        if extra.returncode != 0:
+            return False
+        return extra.stdout.strip() == "0"
     except (OSError, subprocess.SubprocessError):
         return False
-    return run.returncode == 0
 
 
 def same_commit(head: str, proved: str) -> bool:
