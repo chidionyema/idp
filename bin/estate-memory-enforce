@@ -456,7 +456,12 @@ def pre(data: dict) -> int:
     if tool not in EDIT_TOOLS or not durable(path):
         return 0
     text = transcript_text(data)
-    if text is not None and not BRIEFED.search(text) and door_unreachable():
+    # An unreadable transcript is not evidence of a briefing: the door is checked either way.
+    # It used to be skipped when the transcript could not be read, so with the door unimportable
+    # the hook fell through to an 'unknown' allow (ledger 2026-11-19T22:45:31Z, session
+    # test-broken-door) and tests/test_estate_memory_required.py failed wherever the claim
+    # ledger was also unreadable.
+    if (text is None or not BRIEFED.search(text)) and door_unreachable():
         # FOUNDER ORDER, 2026-11-10: "no session may ever work again without memory, machine
         # enforced, unbreakable." This used to pass (fail open, idp#7351). It cannot: a memory
         # door that does not answer is the violation itself, not an excuse. On 2026-11-10 the
