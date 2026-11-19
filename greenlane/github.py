@@ -67,6 +67,11 @@ def _bodies(comments: list) -> list:
 GREEN_CONCLUSIONS = {"success", "skipped", "neutral"}
 _URL = re.compile(r"\s?https?://\S+")
 _JOB_URL = re.compile(r"https://github\.com/[^\s/]+/[^\s/]+/actions/runs/\d+/job/\d+")
+# The lane's owner, as every lane commit already names it (AGENTS.md section 5).
+_CLAIM = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
+_AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+VERDICT_MARK = "<!-- greenlane-verdict"
+
 RED_CONCLUSIONS = {
     "failure",
     "cancelled",
@@ -1777,8 +1782,82 @@ class GitHubBackend:
                 file=sys.stderr,
             )
         self._announce(lane, head, status, text or status)
+        self._route_to_owner(lane, head, status, reason or status)
 
     _announced: set = set()
+
+    def _route_to_owner(self, lane: str, head: str, status: str, reason: str) -> None:
+        """Put a red or conflict verdict where the lane's owner reads it: its claim issue.
+
+        idp#8303. The verdict used to go to two places nobody reads: the head's commit status
+        and NATS at 127.0.0.1:4222, which from a GitHub runner is nothing (_announce warns and
+        moves on). Measured 2026-11-19: lane/seal-only and lane/no-mac-home-clean parked red after
+        3 attempts, their owner (Agent: opencode-deepseek-seal, claim #8273) told nothing. Every
+        lane commit names its claim and agent, so the verdict goes to that issue, once per
+        (lane, head, status); a final RED also labels it lane-red + P1 so it is owned, not lost.
+        A failure here is said and never fails the tick: the verdict itself lives in the state.
+        """
+        if status not in (RED, CONFLICT):
+            return
+        try:
+            commit = self.gh(f"commits/{head}") or {}
+            message = str((commit.get("commit") or {}).get("message") or "")
+            claims = _CLAIM.findall(message)
+            if not claims:
+                print(
+                    f"WARN    greenlane  {lane} {status} has no Claim: trailer; no owner to tell",
+                    file=sys.stderr,
+                )
+                return
+            claim_repo, number = claims[-1]
+            claim_repo = claim_repo or self.repo
+            agents = _AGENT.findall(message)
+            agent = agents[-1] if agents else "unknown"
+            marker = f"{VERDICT_MARK} lane={lane} head={head} status={status} -->"
+            base = f"repos/{claim_repo}/issues/{number}"
+            seen = json.loads(
+                _run("gh", "api", f"{base}/comments?per_page=100") or "[]"
+            )
+            if any(marker in str(c.get("body") or "") for c in seen):
+                return
+            jobs = _JOB_URL.findall(reason)
+            what = (
+                "rebase the lane onto main and push the same lane again"
+                if status == CONFLICT
+                else "fix the cause on the lane and push the same lane again; a new head re-arms it"
+            )
+            body = "\n".join(
+                [
+                    marker,
+                    f"**Greenlane verdict: `{lane}` is {status.upper()}** -- owner `{agent}`.",
+                    "",
+                    f"- head: `{head}`",
+                    f"- failing log: {jobs[-1] if jobs else (self.run_url or '(none)')}",
+                    f"- reason: {_URL.sub('', reason).strip()[:600]}",
+                    f"- next: {what}.",
+                    "",
+                    "This lane does not land until a new head is green. If the owner cannot "
+                    "take it, the label below hands it to the next agent.",
+                ]
+            )
+            _run("gh", "api", f"{base}/comments", "-X", "POST", "-f", f"body={body}")
+            if status == RED:
+                _run(
+                    "gh",
+                    "api",
+                    f"{base}/labels",
+                    "-X",
+                    "POST",
+                    "-f",
+                    "labels[]=lane-red",
+                    "-f",
+                    "labels[]=P1",
+                )
+        except (RuntimeError, ValueError, OSError) as e:
+            print(
+                f"WARN    greenlane  verdict for {lane} not routed to its owner: {e}",
+                file=sys.stderr,
+            )
 
     def _announce(self, lane: str, head: str, status: str, reason: str) -> None:
         """Publish the lane's verdict to the bus, so a waiting agent wakes instead of polling.
