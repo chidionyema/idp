@@ -1,5 +1,6 @@
 use crate::crypto::{verify_github_webhook_hmac, AuthError};
 use crate::store::GroundTruthEngine;
+use crate::web::{self, Bound, WebError};
 use crate::types::{
     CounterexampleUpsertRequest, CustodyUpsertRequest, PrerequisiteGateRequest,
     ProviderEventRequest, RoleAllocationUpdateRequest, VerifyFenceRequest,
@@ -12,10 +13,10 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse,
+        IntoResponse, Response,
     },
     routing::{get, post},
-    Json, Router,
+    middleware, Extension, Json, Router,
 };
 use serde::Deserialize;
 use std::convert::Infallible;
@@ -330,48 +331,34 @@ async fn role_allocation_handler(
 
 async fn admit_turn_handler(
     State(engine): State<Arc<GroundTruthEngine>>,
-    Json(req): Json<PrerequisiteGateRequest>,
-) -> impl IntoResponse {
+    Extension(bound): Extension<Bound>,
+    Json(mut req): Json<PrerequisiteGateRequest>,
+) -> Result<Response, WebError> {
+    web::bind_admission(&bound,&mut req)?;
+    web::still_live(&engine,&bound)?;
     match engine.admit_agent_turn(&req) {
-        Ok(verdict) if verdict.admitted => (StatusCode::OK, Json(verdict)),
-        Ok(verdict) if verdict.reason.starts_with("STALE_FENCING_TOKEN") => {
-            (StatusCode::CONFLICT, Json(verdict))
+        Ok(verdict) if verdict.admitted => {
+            if let Some(id)=&verdict.lease_id { web::bind_lease(&engine,&bound,id)?; }
+            Ok((StatusCode::OK,Json(verdict)).into_response())
         }
-        Ok(verdict) => (StatusCode::PRECONDITION_FAILED, Json(verdict)),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(crate::types::PrerequisiteGateVerdict {
-                admitted: false,
-                reason: e.to_string(),
-                lease_id: None,
-                bound_seq_id: 0,
-                bound_fencing_token: engine.current_fencing_token(),
-                scope_sha256: None,
-                selected_provider_pool: vec![],
-                expires_at_sec: None,
-                live_markdown_brief: String::new(),
-            }),
-        ),
+        Ok(verdict) if verdict.reason.starts_with("STALE_FENCING_TOKEN") =>
+            Ok((StatusCode::CONFLICT,Json(verdict)).into_response()),
+        Ok(verdict) => Ok((StatusCode::PRECONDITION_FAILED,Json(verdict)).into_response()),
+        Err(_) => Ok((StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"ok":false,"error":"ADMISSION_UNAVAILABLE"}))).into_response()),
     }
 }
 
 async fn verify_fence_handler(
     State(engine): State<Arc<GroundTruthEngine>>,
+    Extension(bound): Extension<Bound>,
     Json(req): Json<VerifyFenceRequest>,
-) -> impl IntoResponse {
+) -> Result<Response, WebError> {
+    web::verify_lease(&engine,&bound,&req)?;
     match engine.verify_fence(&req) {
-        Ok(v) if v.valid => (StatusCode::OK, Json(v)),
-        Ok(v) if v.code == "STALE_FENCING_TOKEN" => (StatusCode::CONFLICT, Json(v)),
-        Ok(v) => (StatusCode::FORBIDDEN, Json(v)),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(crate::types::VerifyFenceVerdict {
-                valid: false,
-                code: "INTERNAL_ERROR".into(),
-                current_fencing_token: engine.current_fencing_token(),
-                detail: e.to_string(),
-            }),
-        ),
+        Ok(v) if v.valid => Ok((StatusCode::OK,Json(v)).into_response()),
+        Ok(v) if v.code=="STALE_FENCING_TOKEN" => Ok((StatusCode::CONFLICT,Json(v)).into_response()),
+        Ok(v) => Ok((StatusCode::FORBIDDEN,Json(v)).into_response()),
+        Err(_) => Ok((StatusCode::SERVICE_UNAVAILABLE,Json(serde_json::json!({"ok":false,"error":"FENCE_UNAVAILABLE"}))).into_response()),
     }
 }
 
@@ -442,18 +429,27 @@ async fn sse_truth_handler(
 }
 
 pub fn ground_truth_router(engine: Arc<GroundTruthEngine>) -> Router {
-    Router::new()
-        .route("/health/liveliness", get(health_handler))
+    let agent = Router::new()
         .route("/api/truth/live", get(live_json_handler))
         .route("/api/truth/live.md", get(live_markdown_handler))
         .route("/api/truth/admit", post(admit_turn_handler))
         .route("/api/truth/verify-fence", post(verify_fence_handler))
+        .route("/api/truth/flow", post(web::flow))
+        .route("/api/truth/yield/status", post(web::status))
+        .route("/api/truth/yield", post(web::render_yield))
+        .route("/api/realtime/ws", get(ws_truth_handler))
+        .route("/api/realtime/sse", get(sse_truth_handler))
+        .route_layer(middleware::from_fn_with_state(engine.clone(),web::gate));
+    let internal = Router::new()
+        .route("/health/liveliness", get(health_handler))
+        .route("/api/truth/session", post(web::register))
+        .route("/api/truth/session/revoke", post(web::revoke))
+        .route("/api/truth/acceptance", post(web::accept))
+        .route("/api/truth/observation", post(web::observe))
         .route("/api/truth/provider-event", post(provider_event_handler))
         .route("/api/truth/custody", post(custody_upsert_handler))
         .route("/api/truth/counterexamples", post(counterexamples_upsert_handler))
         .route("/api/truth/roles", post(role_allocation_handler))
-        .route("/api/webhooks/github", post(github_webhook_handler))
-        .route("/api/realtime/ws", get(ws_truth_handler))
-        .route("/api/realtime/sse", get(sse_truth_handler))
-        .with_state(engine)
+        .route("/api/webhooks/github", post(github_webhook_handler));
+    agent.merge(internal).with_state(engine)
 }

@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod reconciler;
 pub mod store;
 pub mod types;
+pub mod web;
 
 pub use api::ground_truth_router;
 pub use store::GroundTruthEngine;

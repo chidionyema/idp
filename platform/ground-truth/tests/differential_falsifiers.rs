@@ -318,3 +318,47 @@ fn falsifier_counterexample_scanner_catches_and_clears_all_5_terminus_defects() 
         "all 5 remediated checks must report CLEARED: {fixed:?}"
     );
 }
+
+
+#[tokio::test]
+async fn web_ingress_refuses_unauthenticated_truth_admission_and_completion() {
+    let (_tmp,_seed,engine)=setup_engine();
+    let app=ground_truth_router(engine);
+    for (method,path) in [
+        ("GET","/api/truth/live"),("GET","/api/truth/live.md"),
+        ("POST","/api/truth/admit"),("POST","/api/truth/verify-fence"),
+        ("POST","/api/truth/flow"),("POST","/api/truth/yield"),("POST","/api/truth/yield/status")
+    ] {
+        let req=Request::builder().method(method).uri(path)
+            .header("content-type","application/json").body(Body::from("{}")).unwrap();
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status(),StatusCode::UNAUTHORIZED,"{path}");
+    }
+}
+#[tokio::test]
+async fn web_ingress_consumes_nonce_and_refuses_wrong_ticket_stale_fence_and_fake_yield() {
+    use genesis_ground_truth::web::{Grant,hash};
+    let (_tmp,_seed,engine)=setup_engine();
+    let token="b".repeat(64);
+    let now=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let grant=Grant{session_id:"a".repeat(32),token_sha256:hash(token.as_bytes()),
+        principal:"quad:web:test".into(),instruction_id:"idp#8068".into(),role_id:"coder".into(),
+        repo_full_name:"chidionyema/idp".into(),paths:vec!["src/main.rs".into()],read_only:false,
+        expires_at:now+300,operations:vec!["live".into(),"admit".into(),"verify".into(),"yield".into(),"flow".into()]};
+    engine.write_conn.lock().unwrap().execute(
+        "INSERT INTO gt_web_sessions(session_id,token_hash,grant_json,expires) VALUES(?1,?2,?3,?4)",
+        rusqlite::params![grant.session_id,grant.token_sha256,serde_json::to_string(&grant).unwrap(),grant.expires_at]).unwrap();
+    let app=ground_truth_router(engine);
+    let call=|ticket:&str,fence:&str,nonce:&str,method:&str,path:&str,body:&str|{
+        Request::builder().method(method).uri(path).header("authorization",format!("Bearer {token}"))
+            .header("x-estate-ticket",ticket).header("x-genesis-fence",fence)
+            .header("x-estate-nonce",nonce).header("content-type","application/json").body(Body::from(body.to_owned())).unwrap()
+    };
+    assert_eq!(app.clone().oneshot(call("","10",&"1".repeat(32),"POST","/api/truth/yield","{}")).await.unwrap().status(),StatusCode::FORBIDDEN);
+    assert_eq!(app.clone().oneshot(call("idp#8068","9",&"2".repeat(32),"POST","/api/truth/yield","{}")).await.unwrap().status(),StatusCode::CONFLICT);
+    assert_eq!(app.clone().oneshot(call("idp#8068","10",&"3".repeat(32),"GET","/api/truth/live","")).await.unwrap().status(),StatusCode::OK);
+    assert_eq!(app.clone().oneshot(call("idp#8068","10",&"3".repeat(32),"GET","/api/truth/live","")).await.unwrap().status(),StatusCode::CONFLICT);
+    assert_eq!(app.clone().oneshot(call("idp#8068","10",&"4".repeat(32),"POST","/api/truth/yield",
+        r#"{"artifact_id":"a","yield_receipt_id":"made-up","verified_yield":1}"#)).await.unwrap().status(),StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(app.oneshot(call("idp#8068","10",&"5".repeat(32),"POST","/api/truth/yield",
+        r#"{"artifact_id":"a","yield_receipt_id":"made-up"}"#)).await.unwrap().status(),StatusCode::UNPROCESSABLE_ENTITY);
+}

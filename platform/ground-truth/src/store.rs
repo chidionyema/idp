@@ -68,6 +68,7 @@ impl GroundTruthEngine {
 
         let conn = Connection::open(&path_buf)?;
         conn.execute_batch(MIGRATION_SQL)?;
+        conn.execute_batch(crate::web::SQL)?;
         conn.execute(
             "INSERT OR IGNORE INTO kernel_fence_state (singleton_id, authoritative_token, last_merkle_root)
              VALUES (1, ?1, ?2)",
@@ -1292,7 +1293,7 @@ impl GroundTruthEngine {
 
         let scope_sha256 =
             compute_scope_sha256(&req.repo_full_name, proj.fencing_token, &req.planned_paths);
-        let lease_id = format!("LEASE-{}-{}", proj.fencing_token, &scope_sha256[..12]);
+        
         let ttl = req.ttl_seconds.unwrap_or(300).min(600) as i64;
         let exp = now_sec() + ttl;
 
@@ -1300,8 +1301,18 @@ impl GroundTruthEngine {
             .write_conn
             .lock()
             .map_err(|_| anyhow!("SQLite write mutex poisoned"))?;
+        let persisted: i64 = conn.query_row(
+            "SELECT authoritative_token FROM kernel_fence_state WHERE singleton_id=1",[],|r|r.get(0))?;
+        if persisted < 0 || persisted as u64 != proj.fencing_token {
+            return Ok(PrerequisiteGateVerdict {
+                admitted:false,reason:"STALE_FENCING_TOKEN: changed during admission".into(),
+                lease_id:None,bound_seq_id:proj.seq_id,bound_fencing_token:persisted.max(0) as u64,
+                scope_sha256:None,selected_provider_pool:vec![],expires_at_sec:None,live_markdown_brief:brief,
+            });
+        }
+        let lease_id: String = conn.query_row("SELECT 'LEASE-' || lower(hex(randomblob(16)))", [], |r|r.get(0))?;
         conn.execute(
-            "INSERT OR REPLACE INTO gt_agent_leases
+            "INSERT INTO gt_agent_leases
              (lease_id, agent_surface, role_id, repo_full_name, bound_seq_id, bound_fencing_token, admitted_paths_json, scope_sha256, expires_at_sec, status, created_at_ns)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'ACTIVE', ?10)",
             params![
@@ -1333,8 +1344,9 @@ impl GroundTruthEngine {
 
     /// Mandatory pre-submit fence & scope verifier called by submit-lane / pre-push / CI.
     pub fn verify_fence(&self, req: &VerifyFenceRequest) -> Result<VerifyFenceVerdict> {
-        let current_fence = self.current_fencing_token();
-        let conn = Connection::open(&self.db_path)?;
+        let conn = self.write_conn.lock().map_err(|_| anyhow!("SQLite write mutex poisoned"))?;
+        let current_fence: u64 = conn.query_row(
+            "SELECT authoritative_token FROM kernel_fence_state WHERE singleton_id=1",[],|r|Ok(r.get::<_,i64>(0)? as u64))?;
 
         let row: Option<(i64, String, String, i64, String)> = conn
             .query_row(
