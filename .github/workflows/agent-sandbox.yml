@@ -69,7 +69,7 @@ permissions:
   contents: read
 
 jobs:
-  agent:
+  admit:
     # Only the founder may label an issue they authored as a Legion mission.
     # claude-native selects genuine Claude Code with the same founder authorization,
     # sealed transcript firewall and patch-only submission boundaries.
@@ -81,13 +81,66 @@ jobs:
          (github.event.action == 'labeled' && (github.event.label.name == 'legion-run' || github.event.label.name == 'claude-native')))
       )
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      base: ${{ steps.admission.outputs.base }}
+      scope_json: ${{ steps.admission.outputs.scope_json }}
+      scope_sha256: ${{ steps.admission.outputs.scope_sha256 }}
+      provider: ${{ steps.admission.outputs.provider }}
+      fallback: ${{ steps.admission.outputs.fallback }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Admit exact scope and provider capacity
+        id: admission
+        env:
+          HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          # Only founder-issued Legion missions receive a bounded provider fallback.
+          LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/admission"
+          mkdir -p "$out"
+          case "$HARNESS" in gemini|pi|claude-code) ;; *) exit 2 ;; esac
+          # pi's execution model is fixed; probe that exact model.
+          if [ "$HARNESS" = pi ]; then export MODEL=MiniMax-M2.7; fi
+          python3 bin/legion-admit --out "$out"
+          printf 'base=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          provider=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("provider",""))' "$out/admission.json")
+          fallback=0
+          if [ "$HARNESS" = gemini ] && [ "$provider" = google ] && [ "$LEGION_FAILOVER" = 1 ]; then
+            # An admitted primary does not imply an admitted fallback.
+            if env -u GITHUB_OUTPUT python3 bin/legion-admit --harness pi --model MiniMax-M2.7 --out "$out/fallback"; then
+              fallback=1
+            fi
+          fi
+          printf 'fallback=%s\n' "$fallback" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: legion-admission
+          path: ${{ runner.temp }}/admission
+          retention-days: 5
+          if-no-files-found: error
+
+  agent:
+    needs: admit
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ needs.admit.outputs.base }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -109,6 +162,11 @@ jobs:
           esac
           bash bin/agent-sandbox-age
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: legion-admission
+          path: ${{ runner.temp }}/admission
+
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
           HARNESS: ${{ github.event_name == 'issues' && (github.event.label.name == 'claude-native' && 'claude-code' || 'gemini') || inputs.harness }}
@@ -119,10 +177,17 @@ jobs:
           MODEL: ${{ inputs.model }}
           # Only founder-issued Legion missions receive a bounded provider fallback.
           LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
+          ADMITTED_PROVIDER: ${{ needs.admit.outputs.provider }}
+          ADMITTED_FALLBACK: ${{ needs.admit.outputs.fallback }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
           git rev-parse HEAD > "$out/base"
+          TASK="$TASK$(cat "$RUNNER_TEMP/admission/contract.txt")"
+          case "$HARNESS:$ADMITTED_PROVIDER" in
+            gemini:google|gemini:minimax|pi:minimax|claude-code:) ;;
+            *) echo "::error::provider not admitted"; exit 2 ;;
+          esac
           # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
           # glob that matches nothing makes ls exit 2, pipefail carries it, and set -e ended the
           # step before it could say why (run 36317202633). stdin is closed: a harness that sees
@@ -143,14 +208,19 @@ jobs:
               rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
               transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
             gemini)
-              [ -n "$GEMINI_API_KEY" ] || { echo "::error::SEED_GEMINI_API_KEY is not set"; exit 1; }
-              rc=0; pi -p --provider google --model "${MODEL:-gemini-3.5-flash}" --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              if [ "$ADMITTED_PROVIDER" = minimax ]; then
+                [ -n "$MINIMAX_API_KEY" ] || exit 1
+                rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              else
+                [ -n "$GEMINI_API_KEY" ] || { echo "::error::SEED_GEMINI_API_KEY is not set"; exit 1; }
+                rc=0; pi -p --provider google --model "${MODEL:-gemini-3.5-flash}" --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              fi
               transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
           esac
           # An untrusted model can change the worktree before failing. A second
           # provider must NEVER inherit its edits: firewall sees only the
           # successful provider's transcript, so the patch must match it.
-          if [ "$HARNESS" = gemini ] && [ "${LEGION_FAILOVER:-0}" = 1 ] && [ "$rc" -ne 0 ]; then
+          if [ "$HARNESS" = gemini ] && [ "$ADMITTED_PROVIDER" = google ] && [ "${LEGION_FAILOVER:-0}" = 1 ] && [ "$rc" -ne 0 ]; then
             class=provider-failure-unclassified
             if grep -Eiq 'model.?not.?found|unknown model|unsupported model|model.*does not exist' "$out/stdout"; then
               class=model-unavailable
@@ -161,7 +231,7 @@ jobs:
             elif grep -Eiq 'timeout|timed out|ECONNRESET|ECONNREFUSED|network error' "$out/stdout"; then
               class=transport
             fi
-            if [ -n "${MINIMAX_API_KEY:-}" ]; then
+            if [ "${ADMITTED_FALLBACK:-0}" = 1 ] && [ -n "${MINIMAX_API_KEY:-}" ]; then
               # Preserve all failure details inside the age-encrypted artifact;
               # the public log gets only a fixed, low-entropy category.
               cp "$out/stdout" "$out/google.failed.stdout"
@@ -267,7 +337,7 @@ jobs:
           exit "$rc"
 
   submit-lane:
-    needs: [agent, firewall]
+    needs: [admit, agent, firewall]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -306,6 +376,8 @@ jobs:
       - name: Apply the patch to main, refusing what an agent may not change
         env:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
+          SCOPE_JSON: ${{ needs.admit.outputs.scope_json }}
+          SCOPE_SHA256: ${{ needs.admit.outputs.scope_sha256 }}
         run: |
           set -euo pipefail
           bash bin/agent-sandbox-age
@@ -318,7 +390,9 @@ jobs:
           # ancestry against current main. The agent's work must not disappear when
           # another lane advances main while the model is working.
           # The Greenlane, not this stage, rebases and independently proves promotion.
-          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
+          : "${SCOPE_JSON:?trusted scope required}" "${SCOPE_SHA256:?trusted digest required}"
+          printf %s "$SCOPE_JSON" > "$work/scope.json"
+          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch" --scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"
           # Read back what the index now holds, both sides of every rename included, rather than
           # parse the patch text.
           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
