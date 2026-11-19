@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 303,
     "service": 122,
-    "tool": 516,
+    "tool": 517,
     "workflow": 106
   },
   "records": [
@@ -30483,6 +30483,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/legion-admit",
         "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
@@ -31251,6 +31252,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-ci",
         "cap:tool/idp-epistemic",
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
@@ -37266,6 +37268,8 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-ci",
+        "cap:tool/legion-admit",
         "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
@@ -39336,6 +39340,10 @@
       "path": "bin/idp-ci",
       "depends_on": [
         {
+          "id": "cap:tool/agent-sandbox-age",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/capability-index",
           "edge": "invokes"
         },
@@ -39361,6 +39369,10 @@
         },
         {
           "id": "cap:tool/diagnosis-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/epistemic_firewall.py",
           "edge": "invokes"
         },
         {
@@ -39405,6 +39417,10 @@
         },
         {
           "id": "cap:tool/face-licence-known-blockers",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-agent-base-apply.py",
           "edge": "invokes"
         },
         {
@@ -39520,6 +39536,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/legion-admit",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/litellm-local",
           "edge": "invokes"
         },
@@ -39577,6 +39597,10 @@
         },
         {
           "id": "cap:tool/timeout-budget.baseline",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/verify_three_proofs.py",
           "edge": "invokes"
         }
       ],
@@ -54923,6 +54947,7 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
+        "cap:tool/legion-admit",
         "cap:workflow/gha-greenlane-efficiency-preflight"
       ],
       "cost": {
@@ -55006,6 +55031,79 @@
         },
         {
           "id": "cap:tool/spec-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/legion-admit",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Admit a Legion mission before any model runs: its scope, then provider capacity.",
+      "contract": {
+        "inputs": [
+          "--failover",
+          "--harness",
+          "--mission-env",
+          "--model",
+          "--out",
+          "--skip-capacity"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/legion-admit",
+      "depends_on": [
+        {
+          "id": "cap:tool/claude-anthropic",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-agent-base-apply.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/language-gate",
           "edge": "invokes"
         },
         {
@@ -58683,6 +58781,7 @@
         "cap:tool/idp-wip-gate",
         "cap:tool/langfuse-up",
         "cap:tool/law32-gate",
+        "cap:tool/legion-admit",
         "cap:tool/litellm-local",
         "cap:tool/litellm-up",
         "cap:tool/mcp-up",
@@ -59587,7 +59686,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-agent-base-apply.py"
+        "cap:tool/idp-agent-base-apply.py",
+        "cap:tool/idp-ci"
       ],
       "cost": {
         "estimate": null,
