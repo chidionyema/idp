@@ -145,7 +145,9 @@ def verify_proof_2_boundary_and_gate(
     subsystems = set()
     for path in changed_files:
         for guarded in GUARDED_PATHS:
-            if (path == guarded or path.startswith(guarded)) and not founder_seal_verified:
+            if (
+                path == guarded or path.startswith(guarded)
+            ) and not founder_seal_verified:
                 return False, {
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
@@ -217,9 +219,12 @@ def seal_verified(repo_root: str, commit_sha: str) -> bool:
     verifier = Path(__file__).resolve().with_name("idp-auth-verify")
     if not verifier.exists():
         return False
-    done = subprocess.run(
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [str(verifier), commit_sha],
-        cwd=repo_root, capture_output=True, text=True, check=False,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return done.returncode == 0
 
