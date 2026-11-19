@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# agent-sleep-guard -- enforce the P0 command cap where the command actually runs.
+#
+# FOUNDER LAW (AGENTS.md, P0 COMMAND CAP): no synchronous command over 20 seconds, no sleep
+# greater than 10, no polling. MEASURED 2026-11-19: those laws were enforced at the executor, the
+# git hooks and CI -- and an agent's own shell touches none of them. `sleep 280` in a chat shell
+# ran freely while every gate reported green, because the boundary never saw the command. This
+# guards PATH's `sleep`, which every agent shell inherits, so the cap binds the agent and not only
+# the pipeline.
+#
+#   agent-sleep-guard --install    link this into the front of PATH (~/.local/bin/sleep)
+#   agent-sleep-guard --status     show the boundary and the last refusals
+#   agent-sleep-guard N...         the guarded sleep itself (installed as `sleep`)
+#
+#   <= CAP seconds -> the real sleep
+#   >  CAP seconds -> refused, logged, exit 2
+set -uo pipefail
+CAP="${AGENT_SLEEP_CAP:-10}"
+LOG="${AGENT_SLEEP_LOG:-$HOME/.estate/log/agent-sleep-guard.log}"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+case "${1:-}" in
+  --install)
+    mkdir -p "$HOME/.local/bin" "$(dirname "$LOG")"
+    ln -sf "$SELF" "$HOME/.local/bin/sleep"
+    echo "installed: $HOME/.local/bin/sleep -> $SELF (cap ${CAP}s)"
+    echo "verify: sleep $((CAP + 20))   # must exit 2"
+    exit 0 ;;
+  --status)
+    echo "cap: ${CAP}s   log: $LOG"
+    command -v sleep
+    tail -3 "$LOG" 2>/dev/null || echo "no refusals recorded"
+    exit 0 ;;
+  --self-test)
+    "$SELF" 1 >/dev/null 2>&1 && echo "ok  1s allowed" || { echo "FAIL 1s refused"; exit 1; }
+    "$SELF" $((CAP + 20)) >/dev/null 2>&1 && { echo "FAIL ${CAP}+20s allowed"; exit 1; }
+    echo "ok  $((CAP + 20))s refused"
+    exit 0 ;;
+esac
+
+total=0
+for arg in "$@"; do
+  case "$arg" in
+    *[!0-9.]*) : ;;
+    *) n="${arg%[smhd]}"; mult=1
+       case "$arg" in *s) mult=1;; *m) mult=60;; *h) mult=3600;; *d) mult=86400;; esac
+       total=$(python3 -c "print($total + float('${n:-0}' or 0) * $mult)" 2>/dev/null || echo "$total") ;;
+  esac
+done
+if python3 -c "import sys; sys.exit(0 if float('${total:-0}') > $CAP else 1)" 2>/dev/null; then
+  mkdir -p "$(dirname "$LOG")"
+  printf '%s REFUSED sleep %s (cap %ss) cwd=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" "$CAP" "$PWD" >> "$LOG"
+  printf 'REFUSED: sleep %s exceeds the %ss command cap (P0), logged to %s\n' "$*" "$CAP" "$LOG" >&2
+  exit 2
+fi
+exec /bin/sleep "$@"
