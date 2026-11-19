@@ -48,6 +48,10 @@ DARWIN_FORBIDDEN = (
     r"~/\.estate/",
 )
 META_PREFIXES = ("cage/", "docs/", "catalog/")
+ADVISORY = re.compile(r"^\s*continue-on-error:\s*true\b")
+# An advisory is declared ONCE, in a file the gate owns, never by editing a guarded
+# workflow to add a marker. The count is printed, so it can be driven to zero.
+ALLOWLIST = pathlib.Path(".ci") / "advisory-allowlist.json"
 TELEMETRY = pathlib.Path(".ci") / "ci-microscope.jsonl"
 
 
@@ -84,15 +88,30 @@ def changed(repo: pathlib.Path, base: str) -> list[str]:
 
 def gate_zero_advisory(repo: pathlib.Path) -> str:
     wf = repo / ".github" / "workflows"
-    hits = []
+    hits, allowed = [], []
+    declared = json.loads((repo / ALLOWLIST).read_text()) if (
+        repo / ALLOWLIST
+    ).exists() else {}
+    declared = declared.get("caps", {})
     if wf.exists():
         for f in sorted(wf.glob("*.y*ml")):
             for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
-                if re.search(r"^\s*continue-on-error:\s*true\b", line):
-                    hits.append(f"{f.relative_to(repo)}:{n}")
+                if not ADVISORY.search(line):
+                    continue
+                ref = f"{f.relative_to(repo)}:{n}"
+                hits.append(ref)
+    for path, cap in sorted(declared.items()):
+        mine = [h for h in hits if h.split(":", 1)[0] == path]
+        if len(mine) > cap:
+            raise Refused(f"ADVISORY_GROWTH: {path} has {len(mine)}, declared {cap}")
+        for h in mine[:cap]:
+            hits.remove(h)
+            allowed.append(h)
     if hits:
         raise Refused(f"ADVISORY_GATE_FORBIDDEN: {', '.join(hits[:6])}")
-    return "0 advisory continue-on-error gates"
+    return "0 undeclared advisory gates" + (
+        f"; {len(allowed)} declared: {', '.join(allowed)}" if allowed else ""
+    )
 
 
 def gate_darwin(repo: pathlib.Path, base: str) -> str:
