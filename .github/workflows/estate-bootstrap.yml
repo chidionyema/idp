@@ -103,6 +103,13 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           SCOPE: ${{ inputs.scope }}
           REASON: ${{ inputs.reason }}
+          # The preflight must measure the road the live run takes (idp#8202). The live
+          # cloudflare job runs on road a -- the standing root token from the repository secret,
+          # no browser -- so the preflight gets the same token, and only for the cloudflare
+          # scope, so another scope's preflight is not coloured by a Cloudflare verdict.
+          # Without it the preflight fell to road b and probed a login-gated dashboard that
+          # answers 403 on the runner: a FAIL about a console the live run never opens.
+          CLOUDFLARE_ROOT_TOKEN: ${{ inputs.scope == 'cloudflare' && secrets.SEED_CLOUDFLARE_ROOT_TOKEN || '' }}
         # set +e is intentional: the orchestrator's exit code (0 ok, 1 FAIL, 2 BLIND) is the
         # verdict, not bash's. bash -e would mask it.
         run: |
