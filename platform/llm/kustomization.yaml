@@ -13,6 +13,11 @@ resources:
   - spend-breaker-digest.yaml
   - pull-secret.yaml
   - zeroedge.yaml
+  # pennyd, the estate's router (idp#8067). Named here or Flux never applies it: until 2026-11-19
+  # this list did not name it, so every pennyd fix merged to main (#8285, #8291, #8313) changed a
+  # directory nothing deployed. llm.mumchimp.com keeps routing to litellm (httproute.yaml) until
+  # pennyd answers in the cluster; the route moves in its own change.
+  - pennyd
 images:
   # chidionyema/zeroedge build-image.yml pushes ghcr.io/chidionyema/zeroedge:main-<run>-<sha> on
   # a multiarch manifest list, Trivy-scanned before the push and cosign-signed after it. The tag
