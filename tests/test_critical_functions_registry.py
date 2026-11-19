@@ -47,6 +47,12 @@ MANDATORY_FUNCTIONS = {
 # The runners the estate's session door accepts (platform/estate/intents, the bus's registry).
 VALID_RUNNERS = {"claude", "llm", "echo", "sleep", "ask"}
 
+# The homes in the placement ladder (ADR 0034), best first. A critical function must name
+# one, because an estate that cannot say where a function runs cannot answer the founder's
+# question of 2026-11-19: what stops when the laptop shuts down. `laptop` is legal only with
+# a declared replacement -- no dependencies on the mac.
+HOMES = ("actions", "cloudflare", "grafana-cloud", "cluster", "cloud", "laptop")
+
 
 def _load(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -128,6 +134,15 @@ def judge_registry(registry: dict) -> list:
             )
         if not remediation.get("budget"):
             findings.append("%s has no remediation budget" % fid)
+
+        # 4. it must name WHERE it runs. No dependencies on the mac (founder, 2026-11-19).
+        home = entry.get("home")
+        if home not in HOMES:
+            findings.append("%s declares no home in the placement ladder (%r)" % (fid, home))
+        elif home == "laptop" and not entry.get("replacement"):
+            findings.append(
+                "%s runs on the laptop and declares no replacement" % fid
+            )
 
         # 3. founder concerns first, and weighted: the order is the priority, the weight is
         #    how the one metric counts them.
@@ -315,3 +330,19 @@ def test_the_memory_plane_probe_fails_when_the_door_cannot_be_reached():
     )
     assert not healthy, "an unreachable door must not pass"
     assert "unreachable" in reason or "no MCP_GATEWAY_KEY" in reason, reason
+
+
+def test_the_judge_rejects_a_function_with_no_home():
+    """No dependencies on the mac: every function must say WHERE it runs."""
+    registry = json.loads(REGISTRY_PATH.read_text())
+    registry["functions"][0].pop("home", None)
+    findings = judge_registry(registry)
+    assert any("declares no home" in f for f in findings), findings
+
+
+def test_the_judge_rejects_a_laptop_function_with_no_replacement():
+    registry = json.loads(REGISTRY_PATH.read_text())
+    entry = [f for f in registry["functions"] if f.get("home") == "laptop"][0]
+    entry.pop("replacement", None)
+    findings = judge_registry(registry)
+    assert any("declares no replacement" in f for f in findings), findings
