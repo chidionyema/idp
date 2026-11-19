@@ -710,6 +710,19 @@ else
   fail=1
 fi
 
+# 1c.3 telegram: the founder's Telegram has one door (founder 2026-11-19: an ultra high net worth VIP
+#      experience, never another source of noise). The files that call the Bot API directly are a
+#      ratchet that only shrinks; a new direct sender is refused here, every push, in under a second.
+#      Proven by tests/test_one_telegram_door.py (a new caller fails; a retired one must leave the list).
+tg=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_one_telegram_door.py" 2>&1); tg_rc=$?
+if [ "$tg_rc" -eq 0 ]; then
+  say "ok    telegram one door to the founder; no new direct sender"
+else
+  say "FAIL  telegram a new direct Telegram sender (route it through the outbox)"
+  printf '%s\n' "$tg" | tail -8 | sed 's/^/      /'
+  fail=1
+fi
+
 # 1c.5 language: the founder's ruling (2026-10-30) made mechanical -- Rust over Python for new
 #      estate capability code, unless the reason is compelling and written down. bin/language-gate
 #      refuses a *new* Python file (anywhere, tests/ exempt -- a test mirrors the language already
