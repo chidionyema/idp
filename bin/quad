@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""bin/quad -- QUAD identity: issued by the estate, signed by the session, verified at the door.
+
+idp#8336 (QUAD phase 1). An agent's name was a hand-typed `Agent:` line: 0 of the last 100 idp
+main commits carried an identity anyone could check, and every agent acted under the founder's
+login. Here an identity is three things, none of them typed:
+
+  issue   the estate's App key signs a certificate binding (quad_id, agent, model, session,
+          session public key, expiry). .github/workflows/quad-issue.yml runs this; the agent
+          never holds the issuer key.
+  sign    the session's own Ed25519 key signs each commit: tree, parents and message. The
+          certificate and signature ride in the commit as trailers, so nothing else is needed
+          to verify it later.
+  verify  the door checks the certificate against the issuer public key and the commit
+          against the certificate. Verdicts: verified | unidentified | forged | expired.
+
+Phase 1 is side by side: the door reports the verdict and refuses nothing. Standard library
+only, so it runs in any sandbox and any runner with no install (Ed25519 per RFC 8032, RSA
+PKCS#1 v1.5 verification by modular exponentiation).
+
+Usage:
+  quad keygen --out FILE                         new session key; prints the public key (hex)
+  quad issue --agent A --model M --pubkey HEX --session S --hours H --key PEM
+                                                 prints a signed certificate (JSON)
+  quad sign-message FILE --key FILE --cert FILE  adds Quad-Id / Quad-Cert / Quad-Sig trailers
+                                                 to a commit message for the staged tree
+  quad verify COMMIT [--issuer PEM]              prints the verdict (JSON); exit 0 always
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+ISSUER_PUB = ROOT / "catalog" / "quad" / "issuer.pub.pem"
+TRAILERS = ("Quad-Id", "Quad-Cert", "Quad-Sig")
+
+# ---------------------------------------------------------------- Ed25519 (RFC 8032, 5.1)
+_P = 2**255 - 19
+_L = 2**252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+_I = pow(2, (_P - 1) // 4, _P)
+
+
+def _xrecover(y: int) -> int:
+    xx = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P)
+    x = pow(xx, (_P + 3) // 8, _P)
+    if (x * x - xx) % _P != 0:
+        x = x * _I % _P
+    if x % 2 != 0:
+        x = _P - x
+    return x
+
+
+_BY = 4 * pow(5, _P - 2, _P) % _P
+_B = (_xrecover(_BY), _BY, 1, _xrecover(_BY) * _BY % _P)
+
+
+def _add(p: tuple, q: tuple) -> tuple:
+    x1, y1, z1, t1 = p
+    x2, y2, z2, t2 = q
+    a = (y1 - x1) * (y2 - x2) % _P
+    b = (y1 + x1) * (y2 + x2) % _P
+    c = t1 * 2 * _D * t2 % _P
+    dd = z1 * 2 * z2 % _P
+    e, f, g, h = b - a, dd - c, dd + c, b + a
+    return (e * f % _P, g * h % _P, f * g % _P, e * h % _P)
+
+
+def _mul(s: int, p: tuple) -> tuple:
+    q = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            q = _add(q, p)
+        p = _add(p, p)
+        s >>= 1
+    return q
+
+
+def _enc(p: tuple) -> bytes:
+    x, y, z, _ = p
+    zi = pow(z, _P - 2, _P)
+    x, y = x * zi % _P, y * zi % _P
+    return int.to_bytes(y | ((x & 1) << 255), 32, "little")
+
+
+def _dec(s: bytes) -> tuple:
+    y = int.from_bytes(s, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    if y >= _P:
+        raise ValueError("point out of range")
+    x = _xrecover(y)
+    if (x & 1) != sign:
+        x = _P - x
+    p = (x, y, 1, x * y % _P)
+    if (-x * x + y * y - 1 - _D * x * x * y * y) % _P != 0:
+        raise ValueError("point not on curve")
+    return p
+
+
+def _h(m: bytes) -> int:
+    return int.from_bytes(hashlib.sha512(m).digest(), "little")
+
+
+def _secret(seed: bytes) -> tuple[int, bytes]:
+    h = hashlib.sha512(seed).digest()
+    a = int.from_bytes(h[:32], "little")
+    a &= (1 << 254) - 8
+    a |= 1 << 254
+    return a, h[32:]
+
+
+def ed_public(seed: bytes) -> bytes:
+    return _enc(_mul(_secret(seed)[0], _B))
+
+
+def ed_sign(seed: bytes, msg: bytes) -> bytes:
+    a, prefix = _secret(seed)
+    pub = _enc(_mul(a, _B))
+    r = _h(prefix + msg) % _L
+    big_r = _enc(_mul(r, _B))
+    s = (r + _h(big_r + pub + msg) * a) % _L
+    return big_r + int.to_bytes(s, 32, "little")
+
+
+def ed_verify(pub: bytes, msg: bytes, sig: bytes) -> bool:
+    if len(sig) != 64 or len(pub) != 32:
+        return False
+    try:
+        a = _dec(pub)
+        r = _dec(sig[:32])
+    except ValueError:
+        return False
+    s = int.from_bytes(sig[32:], "little")
+    if s >= _L:
+        return False
+    k = _h(sig[:32] + pub + msg) % _L
+    return _enc(_mul(s, _B)) == _enc(_add(r, _mul(k, a)))
+
+
+# ------------------------------------------------------- RSA PKCS#1 v1.5 SHA-256 verify
+_SHA256_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
+
+
+def _der_len(b: bytes, i: int) -> tuple[int, int]:
+    n = b[i]
+    if n < 0x80:
+        return n, i + 1
+    k = n & 0x7F
+    return int.from_bytes(b[i + 1 : i + 1 + k], "big"), i + 1 + k
+
+
+def _der_int(b: bytes, i: int) -> tuple[int, int]:
+    if b[i] != 0x02:
+        raise ValueError("expected INTEGER")
+    n, i = _der_len(b, i + 1)
+    return int.from_bytes(b[i : i + n], "big"), i + n
+
+
+def rsa_public_from_pem(pem: str) -> tuple[int, int]:
+    """(n, e) from a SubjectPublicKeyInfo PEM ('BEGIN PUBLIC KEY')."""
+    body = "".join(ln for ln in pem.strip().splitlines() if not ln.startswith("-----"))
+    der = base64.b64decode(body)
+    i = der.index(b"\x03", 2)  # BIT STRING holding RSAPublicKey
+    _, i = _der_len(der, i + 1)
+    i += 1  # unused-bits byte
+    if der[i] != 0x30:
+        raise ValueError("expected RSAPublicKey SEQUENCE")
+    _, i = _der_len(der, i + 1)
+    n, i = _der_int(der, i)
+    e, _ = _der_int(der, i)
+    return n, e
+
+
+def rsa_verify(pem: str, msg: bytes, sig: bytes) -> bool:
+    n, e = rsa_public_from_pem(pem)
+    k = (n.bit_length() + 7) // 8
+    if len(sig) != k:
+        return False
+    em = pow(int.from_bytes(sig, "big"), e, n).to_bytes(k, "big")
+    t = _SHA256_PREFIX + hashlib.sha256(msg).digest()
+    expected = b"\x00\x01" + b"\xff" * (k - len(t) - 3) + b"\x00" + t
+    return em == expected
+
+
+# ------------------------------------------------------------------------- certificates
+def _b64u(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _unb64u(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def canonical(obj: dict) -> bytes:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+
+
+def make_cert(
+    agent: str, model: str, pubkey_hex: str, session: str, hours: int
+) -> dict:
+    if len(bytes.fromhex(pubkey_hex)) != 32:
+        raise ValueError("pubkey must be a 32-byte Ed25519 key in hex")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    return {
+        "v": 1,
+        "quad_id": str(uuid.uuid4()),
+        "agent": agent,
+        "model": model or "UNKNOWN",
+        "session": session,
+        "pubkey": pubkey_hex,
+        "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "issuer": "estate-agents",
+    }
+
+
+def commit_payload(tree: str, parents: list[str], message: str) -> bytes:
+    """What a session signs: the tree, the parents and the subject line.
+
+    The tree binds every byte of content and the parents bind its place in history. The
+    trailer block is left out on purpose: the estate's commit-msg hook appends X-Idp-Signed
+    and strips vendor trailers after the session signs, and that must not break the proof.
+    """
+    subject = (message.strip().splitlines() or [""])[0].strip()
+    return f"tree {tree}\nparents {' '.join(parents)}\nsubject {subject}\n".encode()
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=True, cwd=os.getcwd()
+    ).stdout.strip()
+
+
+def verify_commit(sha: str, issuer_pem: str, now: datetime | None = None) -> dict:
+    message = _git("log", "-1", "--format=%B", sha)
+    tree = _git("rev-parse", f"{sha}^{{tree}}")
+    parents = _git("log", "-1", "--format=%P", sha).split()
+    when = _git("log", "-1", "--format=%cI", sha)
+    return verify_message(message, tree, parents, when, issuer_pem, sha=sha)
+
+
+def verify_message(
+    message: str,
+    tree: str,
+    parents: list[str],
+    when: str,
+    issuer_pem: str,
+    sha: str = "",
+) -> dict:
+    fields = {}
+    for ln in message.splitlines():
+        for key in TRAILERS:
+            if ln.startswith(f"{key}: "):
+                fields[key] = ln.split(": ", 1)[1].strip()
+    out = {"commit": sha, "verdict": "unidentified", "reason": "no Quad trailers"}
+    if not fields:
+        return out
+    if set(fields) != set(TRAILERS):
+        return {**out, "verdict": "forged", "reason": "incomplete Quad trailers"}
+    try:
+        packed = json.loads(_unb64u(fields["Quad-Cert"]))
+        cert, cert_sig = packed["cert"], _unb64u(packed["sig"])
+    except (ValueError, KeyError, TypeError):
+        return {**out, "verdict": "forged", "reason": "unreadable certificate"}
+    if not rsa_verify(issuer_pem, canonical(cert), cert_sig):
+        return {
+            **out,
+            "verdict": "forged",
+            "reason": "certificate not signed by the issuer",
+        }
+    if cert.get("quad_id") != fields["Quad-Id"]:
+        return {
+            **out,
+            "verdict": "forged",
+            "reason": "Quad-Id does not match the certificate",
+        }
+    signed_at = datetime.fromisoformat(when.replace("Z", "+00:00"))
+    expires = datetime.fromisoformat(cert["expires_at"].replace("Z", "+00:00"))
+    issued = datetime.fromisoformat(cert["issued_at"].replace("Z", "+00:00"))
+    ident = {k: cert[k] for k in ("quad_id", "agent", "model", "session")}
+    if not issued <= signed_at <= expires:
+        return {
+            **out,
+            **ident,
+            "verdict": "expired",
+            "reason": "committed outside the certificate",
+        }
+    ok = ed_verify(
+        bytes.fromhex(cert["pubkey"]),
+        commit_payload(tree, parents, message),
+        _unb64u(fields["Quad-Sig"]),
+    )
+    if not ok:
+        return {
+            **out,
+            **ident,
+            "verdict": "forged",
+            "reason": "commit not signed by the session",
+        }
+    return {
+        **out,
+        **ident,
+        "verdict": "verified",
+        "reason": "issued, signed and in date",
+    }
+
+
+def request(agent: str, model: str, session: str, home: Path, repo: str) -> int:
+    """Ask the estate for an identity: new session key, quad-issue.yml signs, cert fetched.
+
+    The private key never leaves this session's directory; the estate sees only the public
+    key. The certificate lands on refs/quad/by-key/<first 16 hex of the key>.
+    """
+    import time
+
+    home.mkdir(parents=True, exist_ok=True)
+    key = home / f"{session}.key"
+    seed = os.urandom(32)
+    key.write_text(seed.hex() + "\n")
+    os.chmod(key, 0o600)
+    pub = ed_public(seed).hex()
+    subprocess.run(
+        [
+            "gh",
+            "workflow",
+            "run",
+            "quad-issue.yml",
+            "-R",
+            repo,
+            "-f",
+            f"agent={agent}",
+            "-f",
+            f"model={model}",
+            "-f",
+            f"session={session}",
+            "-f",
+            f"pubkey={pub}",
+        ],
+        check=True,
+    )
+    ref = f"refs/quad/by-key/{pub[:16]}"
+    for _ in range(18):  # 90 s: the issue run is one short job
+        time.sleep(5)
+        line = subprocess.run(
+            ["git", "ls-remote", f"https://github.com/{repo}", ref],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        if line:
+            subprocess.run(
+                ["git", "fetch", "-q", f"https://github.com/{repo}", ref], check=True
+            )
+            cert = _git("show", "FETCH_HEAD:cert.json")
+            (home / f"{session}.cert.json").write_text(cert + "\n")
+            print(
+                json.dumps(
+                    {
+                        "key": str(key),
+                        "cert": str(home / f"{session}.cert.json"),
+                        "quad_id": json.loads(cert)["cert"]["quad_id"],
+                    }
+                )
+            )
+            return 0
+    print(f"BLIND   quad  no certificate on {ref} after 90 s", file=sys.stderr)
+    return 1
+
+
+# --------------------------------------------------------------------------------- CLI
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="quad")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    k = sub.add_parser("keygen")
+    k.add_argument("--out", required=True)
+    i = sub.add_parser("issue")
+    for flag in ("--agent", "--model", "--pubkey", "--session", "--key"):
+        i.add_argument(flag, required=flag != "--model", default="")
+    i.add_argument("--hours", type=int, default=12)
+    s = sub.add_parser("sign-message")
+    s.add_argument("file")
+    s.add_argument("--key", required=True)
+    s.add_argument("--cert", required=True)
+    r = sub.add_parser("request")
+    r.add_argument("--agent", required=True)
+    r.add_argument("--model", default="")
+    r.add_argument("--session", required=True)
+    r.add_argument("--dir", default=str(Path.home() / ".quad"))
+    r.add_argument("--repo", default="chidionyema/idp")
+    v = sub.add_parser("verify")
+    v.add_argument("commits", nargs="+")
+    v.add_argument("--issuer", default=str(ISSUER_PUB))
+    a = ap.parse_args(argv)
+
+    if a.cmd == "keygen":
+        seed = os.urandom(32)
+        Path(a.out).write_text(seed.hex() + "\n")
+        os.chmod(a.out, 0o600)
+        print(ed_public(seed).hex())
+        return 0
+    if a.cmd == "issue":
+        cert = make_cert(a.agent, a.model, a.pubkey, a.session, a.hours)
+        sig = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-sign", a.key],
+            input=canonical(cert),
+            capture_output=True,
+            check=True,
+        ).stdout
+        print(json.dumps({"cert": cert, "sig": _b64u(sig)}))
+        return 0
+    if a.cmd == "sign-message":
+        seed = bytes.fromhex(Path(a.key).read_text().strip())
+        packed = json.loads(Path(a.cert).read_text())
+        msg = Path(a.file).read_text()
+        tree = _git("write-tree")
+        head = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        parents = [head] if head else []
+        sig = ed_sign(seed, commit_payload(tree, parents, msg))
+        lines = [
+            ln for ln in msg.rstrip("\n").splitlines() if not ln.startswith(TRAILERS)
+        ]
+        lines += [
+            f"Quad-Id: {packed['cert']['quad_id']}",
+            f"Quad-Cert: {_b64u(canonical(packed))}",
+            f"Quad-Sig: {_b64u(sig)}",
+        ]
+        Path(a.file).write_text("\n".join(lines) + "\n")
+        return 0
+    if a.cmd == "request":
+        return request(a.agent, a.model, a.session, Path(a.dir), a.repo)
+    issuer = Path(a.issuer).read_text() if Path(a.issuer).exists() else ""
+    for sha in a.commits:
+        if not issuer:
+            print(
+                json.dumps(
+                    {
+                        "commit": sha,
+                        "verdict": "unidentified",
+                        "reason": "no issuer key",
+                    }
+                )
+            )
+            continue
+        print(json.dumps(verify_commit(sha, issuer)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
