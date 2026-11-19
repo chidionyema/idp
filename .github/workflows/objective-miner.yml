@@ -24,8 +24,6 @@ jobs:
       - id: app
         uses: ./.github/actions/github-app-token
         with:
-          seed_app_id: ${{ secrets.SEED_GITHUB_APP_ID }}
-          seed_pem_b64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
           oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}

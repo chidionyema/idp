@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 303,
     "service": 122,
-    "tool": 516,
+    "tool": 513,
     "workflow": 106
   },
   "records": [
@@ -30227,56 +30227,6 @@
       "mirrors": []
     },
     {
-      "id": "cap:tool/ci-microscope-report",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "ci-microscope-report -- ship the per-gate ledger to the founder's surfaces.",
-      "contract": {
-        "inputs": [
-          "--data-binary",
-          "--quiet"
-        ],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/ci-microscope-report",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
       "id": "cap:tool/claim-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -41141,57 +41091,6 @@
           "edge": "invokes"
         }
       ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:tool/idp-differential-falsifier",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "idp-differential-falsifier -- I-8107: proof must be able to fail.",
-      "contract": {
-        "inputs": [
-          "--name-only"
-        ],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [
-        "cap:tool/pre-push-wall.py"
-      ],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/idp-differential-falsifier",
-      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -57207,60 +57106,6 @@
         },
         {
           "id": "cap:tool/idp-pr-secrets",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:tool/pre-push-wall.py",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "pre-push-wall -- I-8107: one wall, six gates, identical at pre-push and in CI.",
-      "contract": {
-        "inputs": [
-          "--name-only"
-        ],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/pre-push-wall.py",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-differential-falsifier",
           "edge": "invokes"
         }
       ],

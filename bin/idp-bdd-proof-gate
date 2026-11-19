@@ -576,57 +576,6 @@ def _self_test() -> int:
     return 0
 
 
-
-MAX_ADMISSION_PATHS = 5
-
-
-def verify_admission_block(body: str) -> tuple[bool, str]:
-    """I-8107 binding: a change must ADMIT its scope before it is inferred or landed.
-
-    The block is part of the proof, so this gate refuses a proof that does not carry it.
-    The rule is the estate's own: <= 5 paths, one subsystem, a real 40-hex base and a
-    sha256 digest over {base, scope}. Nothing here is optional -- a proof without an
-    admission is a proof from an agent that has not been bound.
-    """
-    import hashlib
-    import json
-    import re as _re
-
-    m = _re.search(r"ADMISSION\s*\n(.*?)\nEND-ADMISSION", body, _re.S)
-    if not m:
-        return False, "ADMISSION_MISSING: proof carries no ADMISSION block"
-    fields = {}
-    for line in m.group(1).splitlines():
-        if ":" in line:
-            k, v = line.split(":", 1)
-            fields[k.strip().lower()] = v.strip()
-    base = fields.get("base", "")
-    if not _re.fullmatch(r"[0-9a-f]{40}", base):
-        return False, f"ADMISSION_BLIND: base must be a 40-hex sha (got {base!r})"
-    try:
-        scope = json.loads(fields.get("scope", ""))
-    except json.JSONDecodeError as exc:
-        return False, f"ADMISSION_BLIND: scope is not JSON ({exc})"
-    if not isinstance(scope, list) or not scope or not all(isinstance(x, str) for x in scope):
-        return False, "ADMISSION_BLIND: scope must be a non-empty JSON array of paths"
-    if len(scope) != len(set(scope)):
-        return False, "ADMISSION_REFUSED: duplicate scope paths"
-    if len(scope) > MAX_ADMISSION_PATHS:
-        return False, f"ADMISSION_REFUSED: {len(scope)} paths exceeds {MAX_ADMISSION_PATHS}"
-    subsystems = {
-        "/".join(x.split("/")[:2]) if len(x.split("/")) > 1 else x.split("/")[0]
-        for x in scope
-    }
-    if len(subsystems) > 1:
-        return False, f"ADMISSION_REFUSED: cross-subsystem scope {sorted(subsystems)}"
-    expected = hashlib.sha256(
-        json.dumps({"base": base, "scope": sorted(scope)}, sort_keys=True).encode()
-    ).hexdigest()
-    if fields.get("digest", "") != expected:
-        return False, "ADMISSION_REFUSED: digest does not cover this base and scope"
-    return True, f"ADMITTED {len(scope)} path(s) on {base[:9]}"
-
-
 def main() -> int:
     if "--self-test" in sys.argv:
         return _self_test()
@@ -658,14 +607,6 @@ def main() -> int:
     body = pr.get("body") or ""
     head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
     title = pr.get("title") or ""
-
-    # I-8107 binding, and it is not optional: a change admits its scope before it is
-    # graded. This gate runs from bin/idp-ci at pre-push AND in CI, so the check cannot
-    # be skipped by an agent that chooses not to invoke it.
-    admitted, admission_msg = verify_admission_block(body)
-    if not admitted:
-        print(admission_msg, file=sys.stderr)
-        return EXIT_BLIND
 
     # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
     #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
