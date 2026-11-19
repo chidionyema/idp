@@ -195,6 +195,30 @@ def evaluate_three_independent_proofs(
     }
 
 
+def founder_seal_verified(commit_sha: str, repo_root: str = ".") -> Tuple[bool, str]:
+    """PROOF_2's seal is a cryptographic fact, never a CLI boolean.
+
+    The bare `--founder-seal` flag was A09/G06: any caller flipped it and PROOF_2
+    passed with no founder identity, no signature and no replay protection, so the
+    guarded paths it protects were landable only by the forgery the guard exists to
+    prevent. The seal is now the verified X-Idp-Auth trailer on the commit.
+    """
+    verifier = os.path.join(repo_root, "bin", "idp-auth-verify")
+    if not os.path.isfile(verifier):
+        return False, "bin/idp-auth-verify is missing; the seal cannot be verified"
+    try:
+        result = subprocess.run(  # noqa: S603
+            [verifier, commit_sha], cwd=repo_root, capture_output=True,
+            text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, "the seal verifier could not run: {}".format(exc)
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout).strip().splitlines() or ["unsigned"]
+        return False, "no valid X-Idp-Auth seal on this commit: {}".format(lines[-1])
+    return True, "X-Idp-Auth verified"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Verify 3 Independent Machine Proofs Locally"
@@ -203,16 +227,16 @@ if __name__ == "__main__":
     parser.add_argument("--commit-sha", default="HEAD")
     parser.add_argument("--files", nargs="+", required=True)
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
-    parser.add_argument("--founder-seal", action="store_true")
     args = parser.parse_args()
 
+    SEAL = founder_seal_verified(args.commit_sha, args.repo_root)
     passed, report = evaluate_three_independent_proofs(
         repo_root=args.repo_root,
         commit_sha=args.commit_sha,
         changed_files=args.files,
         expected_hashes={},
         claimed_unix_ts=args.timestamp,
-        has_founder_seal=args.founder_seal,
+        has_founder_seal=SEAL[0],
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)
