@@ -124,6 +124,42 @@ def verify_proof_1_physical_reality(
     return True, {"proof_1_status": "PASS", "verified_file_sha256": verified_hashes}
 
 
+
+REPO_ROOT_GUESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def authorized_founder_seal(commit_sha: str, changed_files: List[str]) -> Tuple[bool, str]:
+    """A seal is a VERIFIED signature over this commit and these paths, never a flag.
+
+    MEASURED 2026-11-19: .githooks/pre-commit passed `--founder-seal` whenever the environment
+    said FOUNDER_DIRECT_SEAL=1, so any agent could lift the guarded-path, five-file and
+    single-subsystem limits with one export. The flag grants nothing now: authority is derived
+    from bin/idp-auth-verify against the commit's own trailers, and the sealed path list must
+    cover every changed file.
+    """
+    verifier = os.path.join(REPO_ROOT_GUESS, "bin", "idp-auth-verify")
+    if not os.path.isfile(verifier):
+        return False, "seal_verifier_absent"
+    # idp-auth-verify is a shell script: run it as one, never through the Python interpreter.
+    argv = [verifier, commit_sha] if os.access(verifier, os.X_OK) else ["bash", verifier, commit_sha]
+    run = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        argv, capture_output=True, text=True, check=False, timeout=60,
+    )
+    if run.returncode != 0:
+        return False, (run.stdout or run.stderr).strip()[:200]
+    sealed = ""
+    for line in subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", "log", "-1", "--format=%(trailers:key=X-Idp-Auth-Paths,valueonly)", commit_sha],  # noqa: S607
+        capture_output=True, text=True, check=False,
+    ).stdout.splitlines():
+        sealed = line.strip()
+    allowed = {p.strip() for p in sealed.split(",") if p.strip()}
+    uncovered = [f for f in changed_files if f not in allowed]
+    if uncovered:
+        return False, f"sealed paths do not cover {uncovered[:3]}"
+    return True, "seal verified over this commit and these paths"
+
+
 def verify_proof_2_boundary_and_gate(
     commit_sha: str, changed_files: List[str], has_founder_seal: bool = False
 ) -> Tuple[bool, Dict]:
@@ -135,6 +171,12 @@ def verify_proof_2_boundary_and_gate(
 
     if not changed_files:
         return False, {"error": "PROOF_2_FAILED: Empty file set"}
+
+    if has_founder_seal:
+        ok, why = authorized_founder_seal(commit_sha, changed_files)
+        has_founder_seal = ok
+        if not ok:
+            return False, {"error": f"PROOF_2_FAILED: founder seal not authorized ({why})"}
 
     if len(changed_files) > MAX_FILES_PER_CHANGE and not has_founder_seal:
         return False, {
