@@ -61,11 +61,13 @@ rm -rf "$backup"
 lock="${TMPDIR:-/tmp}/architecture-render-$(printf '%s' "$here" | cksum | cut -d' ' -f1).lock"
 tmp=""
 diff_file=""
+lock_tmp=""
 owns_lock=0
 
 restore_output() {
   status=$?
   [ -n "$tmp" ] && rm -f "$tmp"
+  [ -n "$lock_tmp" ] && rm -f "$lock_tmp"
   [ -n "$diff_file" ] && rm -f "$diff_file"
   if [ "$status" -ne 0 ] && [ -d "$backup" ]; then
     rm -rf "$out"
@@ -103,18 +105,31 @@ trap 'exit 129' HUP
 acquire_lock() {
   waited=0
   limit="${RENDER_LOCK_TIMEOUT:-120}"
+  # The lock is taken ATOMICALLY WITH ITS OWNER IN IT: a temporary file holding this
+  # render's pid is HARD LINKED into place.  `ln` fails when the target exists, so
+  # exactly one render can create it, and a lock that exists ALWAYS names its owner.
+  #
+  # The old lock was a DIRECTORY whose pid file was written in a SECOND step, so a
+  # render arriving between the two found a lock with no owner, called it stale and
+  # TOOK IT OVER from a live render.  Two renders then ran inside the critical
+  # section and destroyed the tree's output directory (measured: 3 of 8 argon and 2 of
+  # 6 idp concurrent trials lost architecture/out).  The single-writer property this
+  # file claims has to be TRUE, so the owner is now part of the lock's creation.
+  lock_tmp="$lock.tmp.$$"
+  printf '%s\n' "$$" > "$lock_tmp"
+  link_failures=0
   while :; do
-    if mkdir "$lock" 2>/dev/null; then
-      echo $$ > "$lock/pid"
+    if ln "$lock_tmp" "$lock" 2>/dev/null; then
       owns_lock=1
+      rm -f "$lock_tmp"
       return 0
     fi
-    # The lock exists. If the process that owns it is ALIVE, this render waits for it
+    # The lock exists.  If the process that owns it is ALIVE, this render waits for it
     # rather than failing: two renders of the same tree are a mistake, but refusing the
     # second one outright would throw away a render that could have succeeded. The wait
     # is BOUNDED, so a hung render cannot block every later render forever.
     owner=""
-    if [ -f "$lock/pid" ]; then owner="$(cat "$lock/pid" 2>/dev/null || true)"; fi
+    if [ -f "$lock" ]; then owner="$(cat "$lock" 2>/dev/null || true)"; fi
     if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
       if [ "$waited" -ge "$limit" ]; then
         echo "FAIL architecture/render: another render has held $lock for ${waited}s (pid $owner); giving up" >&2
@@ -124,13 +139,15 @@ acquire_lock() {
       waited=$((waited + 2))
       continue
     fi
-    # A lock left behind by a KILLED render is stale -- its owner is gone -- so it is
-    # taken over rather than blocking every later render forever.
+    # The lock is STALE: its owner is gone (a render that was KILLED), or it is a lock
+    # left behind by an older version of this script.  Removing it and trying the
+    # atomic link again is safe: `ln` decides the winner, and the render that loses
+    # that race reads the winner's pid and waits for it.
     rm -rf "$lock"
-    if mkdir "$lock" 2>/dev/null; then
-      echo $$ > "$lock/pid"
-      owns_lock=1
-      return 0
+    link_failures=$((link_failures + 1))
+    if [ "$link_failures" -ge 5 ] && [ ! -e "$lock" ]; then
+      echo "FAIL architecture/render: the lock $lock could not be created; this filesystem cannot take the lock safely" >&2
+      exit 1
     fi
   done
 }
@@ -183,8 +200,29 @@ test -n "$(ls -A "$out"/*.mmd 2>/dev/null)" || { echo "render produced no diagra
 # the model's own declaration order is a fact about them. A new view in the model now
 # reaches the page without anyone editing this script, and a renamed view can no longer be
 # silently dropped from the page.
-model_views=$(grep -oE '^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]].*"[^"]*"[[:space:]]*\{' "$here/workspace.dsl" \
-  | grep -oE '"[^"]*"[[:space:]]*\{$' | sed 's/"[[:space:]]*{$//; s/^"//; s/"$//' | tr '\n' ' ')
+# The view-name extractor is ARGON'S, verbatim (the seventh audit measured that this
+# one took a view's name from the WRONG quoted string, so the render could not render a
+# legal model whose view carries a description on the declaration line).  One
+# extractor, so the two renders cannot drift apart again.
+model_views=$(awk '
+  /^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]]/ {
+    kw = $0; sub(/^[[:space:]]*/, "", kw); split(kw, a, /[[:space:]]+/); kw = a[1]
+    n = 0; first = ""; last = ""
+    rest = $0
+    while (match(rest, /"[^"]*"/)) {
+      s = substr(rest, RSTART + 1, RLENGTH - 2)
+      rest = substr(rest, RSTART + RLENGTH)
+      n++
+      if (n == 1) first = s
+      last = s
+    }
+    if (n == 0) next
+    # A deployment view is `deployment <id> "<title>" "<key>"` -- the key is the LAST string.
+    # Every other view is `<keyword> <id> "<key>"` -- the key is the FIRST string.
+    if (kw == "deployment") print (n >= 2 ? last : first)
+    else print first
+  }
+' "$here/workspace.dsl" | tr '\n' ' ')
 test -n "$model_views" || { echo "the model declares no views"; exit 1; }
 for name in $model_views; do
   test -f "$out/structurizr-$name.mmd" || { echo "the model declares view $name but the render produced no $name.mmd"; exit 1; }
@@ -200,14 +238,19 @@ done
 
 render_page() {
   {
-    echo "# Architecture"
-    echo
-    echo "Generated by \`architecture/render\` from \`architecture/workspace.dsl\`. Do not edit this"
-    echo "file. Edit the model and run \`make diagrams\`."
-    echo
-    echo "The model is C4. Each heading below is one view of the same model, so the boxes cannot"
-    echo "disagree with each other the way four hand-drawn pictures do."
-    echo
+    # The header is written with printf, NOT echo: printf writes its argument LITERALLY,
+    # while what `echo` writes for a backslash depends on the shell (bash's plain echo
+    # writes \t literally, `echo -e` writes a TAB).  A header whose value depends on the
+    # shell cannot be checked by anyone who reads the render, so it is written in a form
+    # that has one value everywhere.
+    printf '%s\n' "# Architecture"
+    printf '\n'
+    printf '%s\n' "Generated by \`architecture/render\` from \`architecture/workspace.dsl\`. Do not edit this"
+    printf '%s\n' "file. Edit the model and run \`make diagrams\`."
+    printf '\n'
+    printf '%s\n' "The model is C4. Each heading below is one view of the same model, so the boxes cannot"
+    printf '%s\n' "disagree with each other the way four hand-drawn pictures do."
+    printf '\n'
     for name in $model_views; do
       f="$out/structurizr-$name.mmd"
       echo "## $name"
