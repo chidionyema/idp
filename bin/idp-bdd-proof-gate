@@ -211,9 +211,24 @@ def proved_is_ancestor(proved: str, head: str) -> bool:
         )
         if extra.returncode != 0:
             return False
-        return extra.stdout.strip() == "0"
+        if extra.stdout.strip() == "0":
+            return True
     except (OSError, subprocess.SubprocessError):
         return False
+    # A REBASE keeps the tree and moves the sha. The Greenlane rebases a lane onto main, which
+    # orphans the proof commit: ancestry then answers "no" for a proof that is still true about
+    # the exact bytes under test. MEASURED 2026-11-19: #8223 and #8224 were refused five times
+    # for this, not because their tests were wrong. A proof whose commit has the SAME TREE as
+    # the head is a proof about the same code, so compare trees before refusing.
+    def tree(rev: str) -> str:
+        run = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "rev-parse", f"{rev}^{{tree}}"],  # noqa: S607
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        return run.stdout.strip() if run.returncode == 0 else ""
+
+    proved_tree, head_tree = tree(proved), tree(head)
+    return bool(proved_tree) and proved_tree == head_tree
 
 
 def same_commit(head: str, proved: str) -> bool:
