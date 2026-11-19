@@ -5,8 +5,16 @@ resources:
 configMapGenerator:
   - name: pennyd-providers
     files:
+      # Every provider a fallback chain names must be mounted, or pennyd refuses to start with
+      # an unresolved fallback target. MEASURED 2026-11-19: only zai and minimax were mounted
+      # while the chains also named deepseek, gemini, groq and openrouter -- 4 unresolved
+      # providers, which is why the cloud router never came up.
       - providers/zai.toml
       - providers/minimax.toml
+      - providers/deepseek.toml
+      - providers/groq.toml
+      - providers/openrouter.toml
+      - providers/gemini.toml
   - name: pennyd-config
     files:
       - config.toml=deploy/config.toml

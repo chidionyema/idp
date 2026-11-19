@@ -21,6 +21,7 @@ import pathlib
 import time
 
 SESSION_DIR = pathlib.Path.home() / ".estate" / "web-sessions"
+LOG = pathlib.Path.home() / ".estate" / "log" / "web-door.jsonl"
 
 
 def _load(token: str) -> dict | None:
@@ -61,7 +62,40 @@ def spend_nonce(token: str, nonce: str) -> tuple[bool, str]:
     return True, "FRESH"
 
 
-def open_session(instruction_id: str, ttl_s: int = 3600) -> str:
+def record(token: str, method: str, path: str, user_agent: str) -> None:
+    """Who went through the door, and what they asked for. Written before the request is served."""
+    session = _load(token) or {}
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "agent": session.get("agent", "unknown"),
+                    "instruction_id": session.get("instruction_id", ""),
+                    "method": method,
+                    "path": path[:200],
+                    "user_agent": user_agent[:120],
+                }
+            )
+            + "\n"
+        )
+
+
+def recent(limit: int = 20) -> list[dict]:
+    """The last `limit` door crossings, newest last -- the view the founder can watch."""
+    if not LOG.exists():
+        return []
+    rows = []
+    for line in LOG.read_text().splitlines()[-limit:]:
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def open_session(instruction_id: str, ttl_s: int = 3600, agent: str = "") -> str:
     """Mint a session for one instruction. The id is random, not derived from the ticket."""
     import secrets
 
@@ -71,6 +105,7 @@ def open_session(instruction_id: str, ttl_s: int = 3600) -> str:
         json.dumps(
             {
                 "instruction_id": instruction_id,
+                "agent": agent or "unnamed-agent",
                 "issued_at": time.time(),
                 "expires_at": time.time() + ttl_s,
                 "digest": hashlib.sha256(token.encode()).hexdigest()[:16],

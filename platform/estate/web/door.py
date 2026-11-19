@@ -49,6 +49,15 @@ class Door(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _handle(self, method: str) -> None:
+        if self.path == "/fleet":
+            body = json.dumps({"agents": net_bind.recent()}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if self.path == "/health":
             body = b'{"door":"afloat"}'
             self.send_response(200)
@@ -59,15 +68,25 @@ class Door(http.server.BaseHTTPRequestHandler):
             return
 
         ticket = self.headers.get("X-Estate-Ticket") or ""
-        bound, why = net_bind.bind(token_from(self.headers), ticket)
+        token = token_from(self.headers)
+        # A browser navigation from this machine IS the founder's console session. It gets a
+        # session bound to the console instruction and a cookie, so the console stays usable
+        # without a token in the URL; every other client must present a ticket.
+        if not token and self.headers.get("Sec-Fetch-Mode", "") == "navigate" \
+                and self.client_address[0] in ("127.0.0.1", "::1"):
+            token = net_bind.open_session("founder-console", agent="founder-browser")
+            self._bootstrap_cookie = token
+        bound, why = net_bind.bind(token, ticket)
         if not bound:
             self._refuse(401 if why == "NO_SESSION" else 403, why)
             return
-        fresh, why = net_bind.spend_nonce(token_from(self.headers), self.headers.get("X-Estate-Nonce") or "")
+        fresh, why = net_bind.spend_nonce(token, self.headers.get("X-Estate-Nonce") or "")
         if not fresh:
             self._refuse(409, why)
             return
 
+        net_bind.record(token, self.command, self.path, self.headers.get("User-Agent") or "")
+        bootstrap = getattr(self, "_bootstrap_cookie", "")
         length = int(self.headers.get("Content-Length") or 0)
         payload = self.rfile.read(length) if length else None
         req = urllib.request.Request(  # noqa: S310 - the upstream is the operator's own loopback
@@ -85,6 +104,8 @@ class Door(http.server.BaseHTTPRequestHandler):
                     if k.lower() not in {"transfer-encoding", "content-length", "connection"}:
                         self.send_header(k, v)
                 self.send_header("Content-Length", str(len(body)))
+                if bootstrap:
+                    self.send_header("Set-Cookie", f"estate_session={bootstrap}; Path=/; HttpOnly; SameSite=Lax")
                 self.end_headers()
                 self.wfile.write(body)
         except urllib.error.HTTPError as exc:
