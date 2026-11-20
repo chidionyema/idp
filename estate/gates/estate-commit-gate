@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Commit/push gate: refuse without a valid, fresh, signed Proof of Yield.
+
+Mode pre-commit: verify the existing proof against the current worktree.
+Mode pre-push: regenerate the proof, then verify it.
+"""
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+STATE = os.path.join(HOME, ".estate/state")
+PROOF = os.path.join(STATE, "PROOF_OF_YIELD.json")
+KEY = os.path.join(STATE, "proof-key")
+LOG = os.path.join(STATE, "gate.log")
+ARGON = os.path.join(HOME, "Documents/code/argon")
+IDP = os.path.join(HOME, "Documents/code/idp")
+MAX_AGE = 86400
+
+
+def log(msg):
+    with open(LOG, "a") as fh:
+        fh.write(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + " " + msg + "\n")
+
+
+def fail(msg):
+    sys.stderr.write("ESTATE GATE: " + msg + "\n")
+    sys.stderr.write("Run: ~/.estate/bin/estate-proof\n")
+    log("BLOCK " + msg)
+    raise SystemExit(1)
+
+
+def _clean_env():
+    # Git exports GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE to hooks. Inheriting them would
+    # make `git status` in the canonical repo report the *worktree* that is committing,
+    # so a worktree commit could never match a proof taken of the canonical repo.
+    env = dict(os.environ)
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
+        env.pop(key, None)
+    return env
+
+
+def dirty(repo):
+    env = _clean_env()
+    out = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, env=env).stdout
+    diff = subprocess.run(["git", "diff"], cwd=repo, capture_output=True, text=True, env=env).stdout
+    return hashlib.sha256((out + diff).encode()).hexdigest()
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "pre-commit"
+    if mode == "pre-push":
+        rc = subprocess.run([os.path.join(HOME, ".estate/bin/estate-proof")]).returncode
+        if rc != 0:
+            fail("proof generation failed")
+        log("REGEN pre-push")
+    sess = subprocess.run([os.path.join(HOME, ".estate/bin/estate-session"), "--check"], capture_output=True, text=True)
+    if sess.returncode != 0:
+        fail("no session handshake (run estate-session)")
+    proto = subprocess.run([os.path.join(HOME, ".estate/bin/estate-protocol"), "check"], capture_output=True, text=True)
+    if proto.returncode != 0:
+        fail("no valid YIELD/1 report (run estate-protocol)")
+    fal = subprocess.run(
+        [sys.executable, os.path.join(HOME, ".estate/libexec/protocol-falsifier.py")],
+        capture_output=True, text=True, timeout=60,
+    )
+    if fal.returncode != 0:
+        t = (fal.stdout + fal.stderr).strip().splitlines()[-1:]
+        fail("yield gate falsifier failed: " + (t[0] if t else "no output"))
+    if not os.path.exists(PROOF):
+        fail("no proof")
+    body = json.load(open(PROOF))
+    key = open(KEY).read().strip()
+    receipt = body.pop("receipt", "")
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    if not hmac.compare_digest(receipt, hmac.new(key.encode(), canonical, hashlib.sha256).hexdigest()):
+        fail("proof receipt invalid")
+    if not body.get("ok"):
+        fail("proof status FAIL")
+    if time.time() - body.get("generated_at", 0) > MAX_AGE:
+        fail("proof older than 24h")
+    if body.get("argon_dirty_sha256") != dirty(ARGON):
+        fail("worktree changed since proof")
+    if body.get("idp_dirty_sha256") != dirty(IDP):
+        fail("idp worktree changed since proof")
+    log("PASS " + mode + " " + receipt[:12])
+    print("ESTATE GATE: PASS (" + mode + ")")
+
+
+if __name__ == "__main__":
+    main()
