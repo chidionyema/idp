@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""YIELD/1 — numeric protocol for agent work. Prose is not evidence.
+
+A report is valid only if it carries numbers, hashes, test counts and a deterministic verdict.
+Free text is capped and can never satisfy the gate.
+"""
+import json
+import math
+import os
+import re
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+LEDGER = os.path.join(HOME, ".estate/protocol/ledger.jsonl")
+LAST = os.path.join(HOME, ".estate/protocol/last.json")
+HEX64 = re.compile(r"^[a-f0-9]{64}$")
+REQUIRED = {"protocol", "agent", "action", "numbers", "evidence", "operating", "verdict"}
+OPERATING_KEYS = ("capability", "status", "command", "line", "observed_at", "proof_sha256")
+OPERATING_TTL_S = 6 * 3600
+NUM_KEYS = {"duration_ms", "tokens_in", "tokens_out", "cost_usd", "disk_free_mb", "tests_pass", "tests_fail"}
+
+
+def finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def validate(doc):
+    errors = []
+    missing = REQUIRED - set(doc)
+    if missing:
+        errors.append("missing:" + ",".join(sorted(missing)))
+    if doc.get("protocol") != "YIELD/1":
+        errors.append("protocol must be YIELD/1")
+    if not isinstance(doc.get("agent"), str) or not doc["agent"]:
+        errors.append("agent required")
+    action = doc.get("action") or {}
+    if not isinstance(action, dict) or not action.get("kind") or not action.get("target"):
+        errors.append("action.kind and action.target required")
+    nums = doc.get("numbers") or {}
+    for k in NUM_KEYS:
+        if k not in nums or not finite(nums[k]):
+            errors.append("numbers." + k + " must be finite")
+    if nums.get("duration_ms", 0) <= 0:
+        errors.append("duration_ms must be > 0")
+    if nums.get("tests_fail", 1) != 0:
+        errors.append("tests_fail must be 0")
+    if nums.get("disk_free_mb", 0) < 1500:
+        errors.append("disk_free_mb below 1500")
+    op = doc.get("operating")
+    if not isinstance(op, dict):
+        errors.append("operating: local tests are DECLARED, not proven; an operating receipt is required")
+    else:
+        for k in OPERATING_KEYS:
+            if k == "exit":
+                continue
+            if op.get(k) in (None, ""):
+                errors.append("operating." + k + " required")
+        if op.get("status") != "operating":
+            errors.append("operating.status must be 'operating'; declared is not a yield")
+        if op.get("exit") != 0:
+            errors.append("operating.exit must be 0")
+        try:
+            age = time.time() - float(op.get("observed_at", 0))
+            if age > OPERATING_TTL_S or age < -300:
+                errors.append("operating.observed_at must be within 6h of now")
+        except (TypeError, ValueError):
+            errors.append("operating.observed_at must be an epoch number")
+        if not HEX64.match(str(op.get("proof_sha256", ""))):
+            errors.append("operating.proof_sha256 must be the sha256 of the observed line")
+    ev = doc.get("evidence") or []
+    if not isinstance(ev, list) or not ev:
+        errors.append("evidence required")
+    else:
+        for h in ev:
+            if not isinstance(h, str) or not HEX64.match(h):
+                errors.append("evidence must be 64-hex sha256")
+                break
+    verdict = doc.get("verdict")
+    if verdict not in ("U", "E3", "E1"):
+        errors.append("verdict must be U, E3 or E1")
+    claim = doc.get("claim", "")
+    if len(str(claim)) > 140:
+        errors.append("claim exceeds 140 chars; prose is not evidence")
+    unknown = set(doc) - REQUIRED - {"claim", "created_at", "cmd", "exit", "operating_cmd"}
+    if unknown:
+        errors.append("unknown keys:" + ",".join(sorted(unknown)))
+    if errors:
+        return False, errors, 0.0
+    return True, [], 0.0
+
+
+def record(doc):
+    os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+    doc = dict(doc)
+    doc.setdefault("created_at", int(time.time()))
+    with open(LEDGER, "a") as fh:
+        fh.write(json.dumps(doc, sort_keys=True) + "\n")
+    open(LAST, "w").write(json.dumps(doc, indent=2) + "\n")
+
+
+def demo():
+    import hashlib as _h
+    prose = {"agent": "agent-x", "claim": "I fixed it, trust me"}
+    ok1, errs1, _ = validate(prose)
+    print("PROSE    valid=" + str(ok1) + " errors=" + str(len(errs1)))
+
+    numeric = {
+        "protocol": "YIELD/1", "agent": "agent-x",
+        "action": {"kind": "test-repair", "target": "argon/src/projector"},
+        "numbers": {"duration_ms": 4200, "tokens_in": 900, "tokens_out": 120,
+                    "cost_usd": 0.004, "disk_free_mb": 2100, "tests_pass": 19, "tests_fail": 0},
+        "evidence": ["a" * 64], "verdict": "E3", "claim": "projector 19/19",
+    }
+    ok2, errs2, _ = validate(numeric)
+    print("NUMERIC  valid=" + str(ok2) + " (tests alone are DECLARED)")
+
+    line = "ok"
+    proof = {
+        "protocol": "YIELD/1", "agent": "agent-x",
+        "action": {"kind": "probe", "target": "protocol/self-test"},
+        "numbers": {"duration_ms": 1, "tokens_in": 0, "tokens_out": 0,
+                    "cost_usd": 0.0, "disk_free_mb": measure_disk(),
+                    "tests_pass": 0, "tests_fail": 0},
+        "evidence": [_h.sha256((line + "\n").encode()).hexdigest()],
+        "verdict": "E3",
+        "cmd": ["sh", "-c", "printf 'ok\\n'"], "exit": 0,
+        "operating_cmd": "printf 'ok\\n'",
+        "operating": {"capability": "protocol.self-test", "status": "operating",
+                      "command": "printf 'ok\\n'", "exit": 0, "line": line,
+                      "observed_at": int(time.time()),
+                      "proof_sha256": _h.sha256(line.encode()).hexdigest()},
+        "claim": "protocol self-test observed",
+    }
+    ok3, errs3, _ = validate(proof)
+    print("OPERATING valid=" + str(ok3) + " errors=" + str(errs3))
+    if ok3:
+        record(proof)
+        print("PROTOCOL DEMO PASS")
+        return 0
+    print("PROTOCOL DEMO FAIL")
+    return 1
+
+
+def run_wrapped(argv):
+    import argparse
+    import hashlib
+    import shutil
+    import subprocess
+
+    ap = argparse.ArgumentParser(prog="estate-protocol run")
+    ap.add_argument("--agent", required=True)
+    ap.add_argument("--kind", required=True)
+    ap.add_argument("--target", required=True)
+    ap.add_argument("--tokens", type=int, default=0)
+    ap.add_argument("--cost", type=float, default=0.0)
+    ap.add_argument("--operating", default="", help="path to the operating receipt JSON")
+    ap.add_argument("cmd", nargs=argparse.REMAINDER)
+    a = ap.parse_args(argv)
+    cmd = a.cmd[1:] if a.cmd and a.cmd[0] == "--" else a.cmd
+    if not cmd:
+        print("no command")
+        return 2
+    t0 = time.time()
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    dur = (time.time() - t0) * 1000.0
+    out = p.stdout + p.stderr
+    tp, tf = parse_tests(out)
+    digest = hashlib.sha256(out.encode()).hexdigest()
+    op = {"capability": a.target, "status": "declared", "command": a.operating,
+          "line": "", "exit": 1, "observed": "", "observed_at": int(time.time()),
+          "proof_sha256": "0" * 64}
+    if a.operating:
+        import subprocess as _sp
+        q = _sp.run(["sh", "-c", a.operating], capture_output=True, text=True, timeout=600)
+        lines = [ln for ln in (q.stdout + q.stderr).splitlines() if ln.strip()]
+        observed = lines[-1] if lines else ""
+        op = {"capability": a.target,
+              "status": "operating" if (q.returncode == 0 and observed) else "declared",
+              "command": a.operating, "line": observed[:200], "observed": observed[:200],
+              "exit": q.returncode, "observed_at": int(time.time()),
+              "proof_sha256": hashlib.sha256(observed.encode()).hexdigest()}
+    doc = {
+        "protocol": "YIELD/1", "agent": a.agent,
+        "action": {"kind": a.kind, "target": a.target},
+        "numbers": {"duration_ms": int(dur), "tokens_in": a.tokens, "tokens_out": 0,
+                    "cost_usd": a.cost, "disk_free_mb": measure_disk(),
+                    "tests_pass": tp, "tests_fail": tf},
+        "evidence": [digest], "verdict": "E3", "operating": None,
+        "cmd": cmd, "exit": p.returncode, "operating": op,
+        "operating_cmd": a.operating,
+        "claim": (a.kind + " " + a.target)[:140],
+    }
+    ok, errs, y = validate(doc)
+    doc["verdict"] = "E3" if ok else "U"
+    record(doc)
+    print("YIELD " + str(round(y, 3)) + " agent=" + a.agent + " tests=" + str(tp) + "/" + str(tp + tf) + " exit=" + str(p.returncode) + " sha=" + digest)
+    if errs:
+        print("errors=" + str(errs))
+    return 0 if ok and p.returncode == 0 else 1
+
+
+def parse_tests(text):
+    pass_n = max([int(m) for m in re.findall(r"(\d+)\s+passed", text)] or [0])
+    fail_n = max([int(m) for m in re.findall(r"(\d+)\s+failed", text)] or [0])
+    return pass_n, fail_n
+
+
+def measure_disk():
+    import shutil
+    return int(shutil.disk_usage("/System/Volumes/Data").free // (1024 * 1024))
+
+
+def verify_record(doc, timeout=600):
+    """Re-run the recorded command and prove every number. Refuse on any mismatch."""
+    import hashlib
+    import subprocess
+    cmd = doc.get("cmd")
+    if not isinstance(cmd, list) or not cmd:
+        return False, "UNPROVEN: record has no re-runnable cmd"
+    want = (doc.get("evidence") or [None])[0]
+    if not isinstance(want, str) or not HEX64.match(want):
+        return False, "UNPROVEN: no sha256 evidence"
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return False, "RERUN-FAILED: " + type(e).__name__
+    out = p.stdout + p.stderr
+    got = hashlib.sha256(out.encode()).hexdigest()
+    if got != want:
+        return False, "FALSE-EVIDENCE: sha256 " + got[:12] + " != claimed " + want[:12]
+    if p.returncode != doc.get("exit"):
+        return False, "EXIT-DRIFT: now " + str(p.returncode) + " claimed " + str(doc.get("exit"))
+    if p.returncode != 0:
+        return False, "COMMAND-FAILED: exit " + str(p.returncode)
+    tp, tf = parse_tests(out)
+    nums = doc.get("numbers") or {}
+    if tp != nums.get("tests_pass") or tf != nums.get("tests_fail"):
+        return False, "FAKE-NUMBERS: tests now " + str(tp) + "/" + str(tf) + " claimed " + str(nums.get("tests_pass")) + "/" + str(nums.get("tests_fail"))
+    if nums.get("tests_fail", 1) != 0:
+        return False, "FAILING-TESTS: " + str(nums.get("tests_fail"))
+    op = doc.get("operating") or {}
+    if op.get("status") != "operating":
+        return False, "NOT-OPERATING: " + str(op.get("status"))
+    opcmd = doc.get("operating_cmd") or ""
+    if not opcmd:
+        return False, "UNPROVEN: no re-runnable operating probe"
+    try:
+        q = subprocess.run(["sh", "-c", opcmd], capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        return False, "OPERATING-RERUN-FAILED: " + type(e).__name__
+    ql = [ln for ln in (q.stdout + q.stderr).splitlines() if ln.strip()]
+    qline = ql[-1] if ql else ""
+    import hashlib as _h
+    if q.returncode != 0 or _h.sha256(qline.encode()).hexdigest() != op.get("proof_sha256"):
+        return False, "FALSE-RECEIPT: production probe now exits " + str(q.returncode)
+    disk = measure_disk()
+    if disk < 1500:
+        return False, "DISK-LOW: " + str(disk)
+    ok, errs, _ = validate(doc)
+    if not ok:
+        return False, "INVALID: " + ",".join(errs)
+    return True, "VERIFIED sha256=" + got
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "demo"
+    if cmd == "run":
+        return run_wrapped(sys.argv[2:])
+    if cmd == "demo":
+        return demo()
+    if cmd == "validate":
+        doc = json.load(open(sys.argv[2]))
+        ok, errs, y = validate(doc)
+        print(json.dumps({"valid": ok, "yield": round(y, 3), "errors": errs}, indent=2))
+        return 0 if ok else 1
+    if cmd == "verify":
+        doc = json.load(open(sys.argv[2]))
+        proven, why = verify_record(doc)
+        print(("VERIFIED " if proven else "REFUSED ") + why)
+        return 0 if proven else 1
+    if cmd == "check":
+        if not os.path.exists(LAST):
+            print("PROTOCOL: MISSING")
+            return 1
+        doc = json.load(open(LAST))
+        ok, errs, y = validate(doc)
+        if time.time() - doc.get("created_at", 0) > 86400:
+            print("PROTOCOL: STALE")
+            return 1
+        proven, why = verify_record(doc)
+        if not proven:
+            print("PROTOCOL: UNPROVEN " + why)
+            return 1
+        print("PROTOCOL: VERIFIED " + str((doc.get("operating") or {}).get("capability", "?")) + " " + why)
+        return 0 if (ok and proven) else 1
+    if cmd == "ledger":
+        if os.path.exists(LEDGER):
+            for line in open(LEDGER).read().splitlines()[-20:]:
+                print(line)
+        return 0
+    print("usage: estate-protocol demo|validate <file>|check|ledger|run")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

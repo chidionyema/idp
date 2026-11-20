@@ -1,0 +1,6 @@
+{
+  "name": "opencode-plugin-estate-zero-worktree",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./index.ts" }
+}
