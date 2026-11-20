@@ -412,6 +412,7 @@ OPTIMUS = re.compile(
 )
 CLASSES_FILE = ROOT / "catalog" / "issue-classes.json"
 PACKS_FILE = ROOT / "docs" / "debugging-packs.json"
+METRICS_FILE = ROOT / "catalog" / "optimus-metrics.json"
 
 
 def _known(path: Path, list_key: str, id_key: str) -> set[str]:
@@ -459,6 +460,18 @@ def contract_problems(where: str, texts: list[str]) -> list[str]:
         out.append(
             f"{where} SHIP-CONTRACT optimus needs `<metric> baseline=<n|UNKNOWN> target=<n>`"
         )
+    else:
+        registered = _known(METRICS_FILE, "metrics", "name")
+        unknown = [
+            OPTIMUS.match(m).group("name")
+            for m in metrics
+            if OPTIMUS.match(m).group("name") not in registered
+        ]
+        if unknown:
+            out.append(
+                f"{where} SHIP-CONTRACT optimus names unregistered metric(s) "
+                f"{', '.join(unknown[:5])}: register a measure in catalog/optimus-metrics.json"
+            )
     classes = [x.strip() for x in c.get("failure-classes", "").split(",") if x.strip()]
     known = _known(CLASSES_FILE, "classes", "class")
     missing = [x for x in classes if x not in known]
@@ -768,7 +781,41 @@ def repo_slug() -> str:
     return slug
 
 
+def optimus_reading(now: datetime) -> str:
+    """claims.ship_contract_enforced: 1 when this gate refuses a live claim that declares no
+    ship contract and admits the same claim once a valid one is declared; else 0. Judged on
+    the registered classes and packs in this tree, never on a stub."""
+    hb = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    claim = {"body": f"CLAIM agent=optimus paths=bin/x heartbeat={hb}"}
+    text = "Claim: o/r#1\nAgent: optimus\n"
+    classes = sorted(_known(CLASSES_FILE, "classes", "class"))
+    packs = sorted(_known(PACKS_FILE, "packs", "id"))
+    metrics = sorted(_known(METRICS_FILE, "metrics", "name"))
+    if not classes or not packs or not metrics:
+        return "optimus.claims.ship_contract_enforced=0"
+    contract = (
+        "SHIP-CONTRACT\naccept: GET https://x.example.test/ expect 200 within 30m\n"
+        f"optimus: {metrics[0]} baseline=UNKNOWN target=0\n"
+        f"failure-classes: {classes[0]}\ndebug-pack: {packs[0]}"
+    )
+    bare = verdict(
+        text, ["bin/x"], "o/r", lambda r, n: ({"state": "open"}, [claim]), now
+    )
+    full = verdict(
+        text,
+        ["bin/x"],
+        "o/r",
+        lambda r, n: ({"state": "open", "body": contract}, [claim]),
+        now,
+    )
+    enforced = any("SHIP-CONTRACT" in p for p in bare) and full == []
+    return f"optimus.claims.ship_contract_enforced={1 if enforced else 0}"
+
+
 def main(argv: list[str]) -> int:
+    if argv[1:] == ["--optimus"]:
+        print(optimus_reading(datetime.now(timezone.utc)))
+        return 0
     base, head = argv[1], argv[2]
     repo = repo_slug()
     num, author = pr_context(repo, head)

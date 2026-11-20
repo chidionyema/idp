@@ -302,24 +302,8 @@ def workload_key(row) -> str:
     return f"{row['namespace']}/{row['kind'].lower()}/{row['name']}"
 
 
-def inventory():
-    applied = estate_flux_rows()
-    rows, blind = [], []
-    # The render is the slow part of this tool: one `kustomize build` per applied path. They
-    # are independent, so they go in parallel; the estate's execution ceiling is 100 seconds
-    # and a serial render of 60 paths does not fit in it.
-    paths = sorted(applied)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        rendered = list(pool.map(lambda p: (p, kustomize(p)), paths))
-    for path, (docs, err) in rendered:
-        if err:
-            blind.append({"source": path, "error": err, "files": applied[path]})
-            continue
-        for doc in docs:
-            if doc.get("kind") in KINDS:
-                row = row_for(doc, path)
-                row["applied"] = True
-                rows.append(row)
+def declared_only_dirs(applied) -> list[str]:
+    """Kustomize directories nothing in the Flux graph applies (no render needed)."""
     declared_dirs = sorted(
         {
             os.path.dirname(p)
@@ -349,6 +333,28 @@ def inventory():
         and not d.startswith("platform/oci/")
         and not covered(d)
     ]
+    return declared_only
+
+
+def inventory():
+    applied = estate_flux_rows()
+    rows, blind = [], []
+    # The render is the slow part of this tool: one `kustomize build` per applied path. They
+    # are independent, so they go in parallel; the estate's execution ceiling is 100 seconds
+    # and a serial render of 60 paths does not fit in it.
+    paths = sorted(applied)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        rendered = list(pool.map(lambda p: (p, kustomize(p)), paths))
+    for path, (docs, err) in rendered:
+        if err:
+            blind.append({"source": path, "error": err, "files": applied[path]})
+            continue
+        for doc in docs:
+            if doc.get("kind") in KINDS:
+                row = row_for(doc, path)
+                row["applied"] = True
+                rows.append(row)
+    declared_only = declared_only_dirs(applied)
     return {
         "rows": rows,
         "blind": blind,
@@ -727,7 +733,18 @@ def main(argv=None) -> int:
     ap.add_argument("--gate", action="store_true", default=True,
                     help="exit 1 on any finding (the default)")
     ap.add_argument("--no-gate", action="store_true", help="report only, never exit 1")
+    ap.add_argument(
+        "--optimus",
+        action="store_true",
+        help="print the Optimus reading this tool owns (catalog/optimus-metrics.json) and exit",
+    )
     args = ap.parse_args(argv)
+
+    if args.optimus:
+        # Measured from the Flux graph alone, so it needs no kustomize and no cluster.
+        never = declared_only_dirs(estate_flux_rows())
+        print(f"optimus.estate.platform_dirs_never_applied={len(never)}")
+        return 0
 
     inv = inventory()
     budget, budget_err = load_budget()
