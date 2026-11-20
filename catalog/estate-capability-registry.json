@@ -55779,11 +55779,15 @@
       "summary": "Admit a Legion mission before any model runs: its scope, then provider capacity.",
       "contract": {
         "inputs": [
+          "--cooldown-file",
           "--failover",
           "--harness",
+          "--launch-admitted",
           "--mission-env",
           "--model",
           "--out",
+          "--provider",
+          "--session-dir",
           "--skip-capacity"
         ],
         "outputs": [
@@ -55809,7 +55813,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
         "estimate": null,
@@ -61129,6 +61134,10 @@
         },
         {
           "id": "cap:tool/idp-agent-base-apply.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/legion-admit",
           "edge": "invokes"
         }
       ],

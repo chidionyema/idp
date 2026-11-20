@@ -26,14 +26,17 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
 
@@ -192,6 +195,306 @@ def chain(harness: str, model: str, failover: bool) -> list[tuple[str, str]]:
     return []  # claude-code proves its own provider live before running (bin/claude-anthropic)
 
 
+# Registry data, not the worker, selects provider and model.
+# Only OpenAI-compatible bearer routes are admitted by this adapter.
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def auto_candidates(directory: Path, env: dict) -> list[dict]:
+    paid = set(env.get("LEGION_PAID_PROVIDERS", "").split(",")) - {""}
+    disabled = set(env.get("LEGION_DISABLED_PROVIDERS", "").split(",")) - {""}
+    routes = []
+    for path in sorted(directory.glob("*.toml")):
+        spec = tomllib.loads(path.read_text())
+        provider = spec["id"]
+        if provider != path.stem:
+            raise ValueError("provider registry identity mismatch")
+        if provider in disabled or spec["dialect"] != "openai":
+            continue
+        auth = spec["auth"]
+        key = auth.get("key_env", "")
+        path_suffix = spec["request_path"]
+        base = spec["base_url"].rstrip("/") + path_suffix.removesuffix(
+            "/chat/completions"
+        )
+        url = urlsplit(base)
+        if (
+            auth["kind"] != "bearer"
+            or not re.fullmatch(r"[A-Z][A-Z0-9_]*_API_KEY", key)
+            or not env.get(key)
+            or url.scheme != "https"
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or not path_suffix.endswith("/chat/completions")
+            or not path_suffix.startswith("/")
+        ):
+            continue
+        for model in spec["models"]:
+            cls = model["class"]
+            if cls != "free" and (cls != "paid" or provider not in paid):
+                continue
+            context = model["context_window"]
+            cost_in = model["price_in_per_mtok"]
+            cost_out = model["price_out_per_mtok"]
+            if (
+                context < 65536
+                or not all(math.isfinite(v) and v >= 0 for v in (cost_in, cost_out))
+                or (cls == "free" and (cost_in or cost_out))
+            ):
+                continue
+            routes.append(
+                {
+                    "provider": provider,
+                    "model": model["id"],
+                    "base": base,
+                    "key_env": key,
+                    "context": context,
+                    "class": cls,
+                    "price_in": cost_in,
+                    "price_out": cost_out,
+                    "probe_tokens": max(256, model.get("min_output_tokens", 0)),
+                }
+            )
+    return sorted(
+        routes,
+        key=lambda r: (
+            r["class"] != "free",
+            r["price_in"] + r["price_out"],
+            r["provider"],
+            r["model"],
+        ),
+    )
+
+
+def auto_probe(route: dict, env: dict) -> dict:
+    payload = {
+        "model": route["model"],
+        "messages": [
+            {"role": "user", "content": 'Call legion_ready with {"ready":true}.'}
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "legion_ready",
+                    "description": "Readiness proof",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"ready": {"type": "boolean"}},
+                        "required": ["ready"],
+                    },
+                },
+            }
+        ],
+        "tool_choice": "required",
+        "max_tokens": route["probe_tokens"],
+    }
+    req = urllib.request.Request(
+        route["base"] + "/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": "Bearer " + env[route["key_env"]],
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    verdict = "transport"
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(
+            req, timeout=PROBE_TIMEOUT_S
+        ) as resp:
+            reply = json.loads(resp.read(1024 * 1024))
+        matching = reply.get("model") == route["model"]
+        calls = reply["choices"][0]["message"].get("tool_calls", [])
+        valid = any(
+            c["function"]["name"] == "legion_ready"
+            and json.loads(c["function"]["arguments"]) == {"ready": True}
+            for c in calls
+        )
+        verdict = "capacity" if matching and valid else "tool-or-model-unverified"
+    except urllib.error.HTTPError as exc:
+        verdict = {
+            401: "authentication",
+            403: "authentication",
+            402: "funding",
+            429: "rate-limited",
+        }.get(exc.code, f"http-{exc.code}")
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        verdict = "invalid-response"
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass
+    return {
+        "provider": route["provider"],
+        "model": route["model"],
+        "verdict": verdict,
+    }
+
+
+# An exhausted account is not retried unchanged on the next run (founder, 2026-11-19 21:46,
+# #8283: "persist provider 429/cooldown across runs; do not retry an unchanged exhausted
+# account"). Seconds a provider stays cooling after each verdict; the workflow carries the
+# file between runs in the Actions cache.
+COOLDOWN_S = {"rate-limited": 3600, "funding": 86400, "authentication": 86400}
+
+
+def load_cooldown(path: Path | None, now: float) -> dict:
+    """{provider: until_epoch} still in force; an unreadable file is an empty one."""
+    if not path or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k): float(v)
+        for k, v in data.items()
+        if isinstance(v, (int, float)) and float(v) > now
+    }
+
+
+def save_cooldown(path: Path | None, cooldown: dict, now: float) -> None:
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    live = {k: v for k, v in sorted(cooldown.items()) if v > now}
+    path.write_text(json.dumps(live, sort_keys=True))
+
+
+def auto_select(
+    routes: list[dict],
+    env: dict,
+    probe_fn=auto_probe,
+    cooldown: dict | None = None,
+    now: float | None = None,
+) -> tuple[dict | None, list[dict]]:
+    """First route that proves capacity; providers still cooling are not probed at all.
+
+    `cooldown` is updated in place: a provider that answers rate-limited, funding or
+    authentication cools for COOLDOWN_S[verdict] seconds from `now`."""
+    observations = []
+    unavailable = set()
+    cooldown = {} if cooldown is None else cooldown
+    now = time.time() if now is None else now
+    for route in routes:
+        provider = route["provider"]
+        if provider in unavailable:
+            continue
+        if cooldown.get(provider, 0) > now:
+            unavailable.add(provider)
+            observations.append(
+                {
+                    "provider": provider,
+                    "model": route["model"],
+                    "verdict": "cooling",
+                    "until": int(cooldown[provider]),
+                }
+            )
+            continue
+        result = probe_fn(route, env)
+        observations.append(result)
+        if result["verdict"] == "capacity":
+            cooldown.pop(provider, None)
+            return route, observations
+        if result["verdict"] in COOLDOWN_S:
+            cooldown[provider] = now + COOLDOWN_S[result["verdict"]]
+        if result["verdict"] in {
+            "authentication",
+            "funding",
+            "rate-limited",
+            "transport",
+        }:
+            unavailable.add(provider)
+    return None, observations
+
+
+def auto_launch(
+    directory: Path, record: dict, task: str, session_dir: Path, env: dict
+) -> int:
+    selected = record.get("route")
+    env = dict(env)
+    env[env.get("ADMITTED_KEY_ENV", "")] = env.get("LEGION_SELECTED_KEY", "")
+    if record.get("decision") != "ADMITTED" or selected not in auto_candidates(
+        directory, env
+    ):
+        raise ValueError("provider not admitted")
+    if selected["provider"] != env.get("ADMITTED_PROVIDER") or selected[
+        "model"
+    ] != env.get("ADMITTED_MODEL"):
+        raise ValueError("provider admission mismatch")
+    if (
+        record.get("base")
+        != subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    ):
+        raise ValueError("provider admission base mismatch")
+    # Only the selected credential reaches the untrusted harness.
+    child = {
+        k: v
+        for k, v in env.items()
+        if k
+        in {
+            "PATH",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "LANG",
+            "LC_ALL",
+            "TERM",
+            "TMPDIR",
+            "RUNNER_TEMP",
+        }
+    }
+    child["LEGION_SELECTED_KEY"] = env[selected["key_env"]]
+    config = Path(child["RUNNER_TEMP"]) / "legion-pi"
+    config.mkdir(mode=0o700, exist_ok=False)
+    child["PI_CODING_AGENT_DIR"] = str(config)
+    (config / "models.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "estate-admitted": {
+                        "baseUrl": selected["base"],
+                        "api": "openai-completions",
+                        "apiKey": "$LEGION_SELECTED_KEY",
+                        "models": [
+                            {
+                                "id": selected["model"],
+                                "name": selected["model"],
+                                "contextWindow": selected["context"],
+                                "maxTokens": 8192,
+                                "input": ["text"],
+                                "reasoning": False,
+                            }
+                        ],
+                    }
+                }
+            }
+        )
+    )
+    return subprocess.run(
+        [
+            "pi",
+            "-p",
+            "--provider",
+            "estate-admitted",
+            "--model",
+            selected["model"],
+            "--session-dir",
+            str(session_dir),
+            task,
+        ],
+        env=child,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    ).returncode
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="legion-admit")
     ap.add_argument(
@@ -201,10 +504,35 @@ def main() -> int:
     ap.add_argument("--model", default=os.environ.get("MODEL", ""))
     ap.add_argument("--failover", default=os.environ.get("LEGION_FAILOVER", "0"))
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--launch-admitted", type=Path)
+    ap.add_argument("--session-dir", type=Path)
     ap.add_argument(
         "--skip-capacity", action="store_true", help="scope only (tests, dry admission)"
     )
+    ap.add_argument(
+        "--cooldown-file",
+        type=Path,
+        default=Path(os.environ["LEGION_COOLDOWN_FILE"])
+        if os.environ.get("LEGION_COOLDOWN_FILE")
+        else None,
+        help="provider cooldown carried between runs ({provider: until_epoch})",
+    )
     args = ap.parse_args()
+    registry = HERE.parent / "platform/llm/pennyd/providers"
+    if args.launch_admitted:
+        if not args.session_dir:
+            return EXIT_SCOPE
+        try:
+            return auto_launch(
+                registry,
+                json.loads(args.launch_admitted.read_text()),
+                os.environ.get(args.mission_env, ""),
+                args.session_dir,
+                dict(os.environ),
+            )
+        except (ValueError, OSError, KeyError, TypeError):
+            print("REFUSED: provider admission invalid")
+            return EXIT_SCOPE
     args.out.mkdir(parents=True, exist_ok=True)
     record: dict = {"harness": args.harness}
     try:
@@ -228,7 +556,25 @@ def main() -> int:
     )
 
     probes = []
-    if not args.skip_capacity:
+    if args.harness == "auto" and not args.skip_capacity:
+        now = time.time()
+        cooldown = load_cooldown(args.cooldown_file, now)
+        try:
+            routes = auto_candidates(registry, dict(os.environ))
+            chosen, probes = auto_select(
+                routes, dict(os.environ), cooldown=cooldown, now=now
+            )
+        except (ValueError, OSError, KeyError, TypeError):
+            chosen, probes = None, []
+        save_cooldown(args.cooldown_file, cooldown, now)
+        record["probes"] = probes
+        if chosen is None:
+            record["decision"] = "REFUSED_CAPACITY"
+            (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
+            print("::error::REFUSED: NO_ELIGIBLE_TOOL_CAPABLE_WORKER before inference")
+            return EXIT_CAPACITY
+        record.update(provider=chosen["provider"], model=chosen["model"], route=chosen)
+    elif not args.skip_capacity:
         for lane, model in chain(args.harness, args.model, args.failover == "1"):
             p = probe(lane, model)
             probes.append(p)
@@ -255,6 +601,10 @@ def main() -> int:
             fh.write(f"scope_sha256={digest}\n")
             fh.write(f"scope_json={raw.decode()}\n")
             fh.write(f"provider={record.get('provider', '')}\n")
+            fh.write(f"model={record.get('model', '')}\n")
+            key_env = record.get("route", {}).get("key_env", "")
+            fh.write(f"key_env={key_env}\n")
+            fh.write(f"key_secret={'SEED_' + key_env if key_env else ''}\n")
     return 0
 
 
