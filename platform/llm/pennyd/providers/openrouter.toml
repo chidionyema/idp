@@ -14,5 +14,5 @@ class = "free"
 price_in_per_mtok = 0
 price_out_per_mtok = 0
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = ["openrouter", "claude-haiku-free"]
