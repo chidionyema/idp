@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Investors — Research-led intelligence and the future of work",
+  title: "Investors — Research-led intelligence for a better working day",
   description: "Meridian researches what is possible, tests ideas carefully and turns promising discoveries into useful products and businesses. Explore our vision and request a private investor briefing.",
 };
 
@@ -62,8 +62,8 @@ export default function InvestorsPage() {
     </div></section>
     <section className="mi-close mi-investor-close" aria-labelledby="investor-close"><div className="mi-shell mi-close-inner">
       <span className="mi-eyebrow">05 / LET&apos;S MEET</span>
-      <h2 id="investor-close">THE FUTURE OF WORK<br/><em>STARTS WITH PEOPLE.</em></h2>
-      <div className="mi-close-bottom"><p>We&apos;d welcome a thoughtful conversation about the research, products and businesses we&apos;re building—and what the next chapter could become.</p>
+      <h2 id="investor-close">BETTER WORK<br/><em>STARTS WITH PEOPLE.</em></h2>
+      <div className="mi-close-bottom"><p>We&apos;d welcome a thoughtful conversation about the research, products and businesses we&apos;re building and what we hope to achieve next.</p>
         <Link href="/contact?topic=investor" className="mi-button mi-button-gold">Start the conversation <span aria-hidden="true">→</span></Link>
       </div>
       <p className="mi-investor-disclosure">This page introduces our business and research. It is not an offer to invest or a solicitation to purchase securities. Confidential materials are available only through separately approved, time-limited access.</p>
