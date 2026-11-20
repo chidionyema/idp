@@ -55,6 +55,7 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -556,6 +557,96 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
 def _since(hours: int) -> str:
     stamp = wall_now() - timedelta(hours=hours)
     return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_AGENT_LINE = re.compile(r"^(?:Agent:\s*|CLAIM agent=)(\S+)", re.M)
+
+
+def sense_identity(repo: str, policy: dict) -> list[dict]:
+    """An agent acting under the founder's login is a P0, every tick, for ever (idp#8334).
+
+    QUAD law: agents never operate under the founder's account. Measured 2026-11-19: 37 of
+    the last 100 commits on idp main and 10 agent-declared PRs carried the founder's login,
+    every agent sharing his credential, so nothing an agent did was attributable or caged.
+    This sensor is the watch half of the cutover: each (repo, agent) acting as the founder
+    is one incident; a newer action after it closes reopens it (record_incident recurrence).
+    It reads commits and pull requests only; it blocks nothing.
+    """
+    ident = policy.get("identity") or {}
+    founder = ident.get("founder_login")
+    if not founder:
+        return []
+    cutoff = _since(int(policy["sense"]["window_hours"]))
+    seen: dict[str, dict] = {}
+
+    def note(agent: str, ref: str, at: str) -> None:
+        hit = seen.setdefault(agent, {"count": 0, "refs": [], "newest": ""})
+        hit["count"] += 1
+        if len(hit["refs"]) < 5:
+            hit["refs"].append(ref)
+        hit["newest"] = max(hit["newest"], at)
+
+    code, out, err = run_gh(
+        [
+            "api",
+            f"repos/{repo}/commits?author={founder}&since={cutoff}&per_page=100",
+            "--jq",
+            "[.[] | {sha, message: .commit.message, at: .commit.committer.date}]",
+        ]
+    )
+    if code != 0:
+        raise LoopError(f"gh api commits by {founder} failed: {err.strip()[:200]}")
+    for c in json.loads(out or "[]"):
+        for agent in set(_AGENT_LINE.findall(c.get("message") or "")):
+            note(agent, str(c.get("sha", ""))[:9], c.get("at") or "")
+    code, out, err = run_gh(
+        [
+            "api",
+            f"repos/{repo}/pulls?state=all&sort=created&direction=desc&per_page=50",
+            "--jq",
+            "[.[] | {number, login: .user.login, body, at: .created_at}]",
+        ]
+    )
+    if code != 0:
+        raise LoopError(f"gh api pulls failed: {err.strip()[:200]}")
+    for pr in json.loads(out or "[]"):
+        if pr.get("login") != founder or (pr.get("at") or "") < cutoff:
+            continue
+        for agent in set(_AGENT_LINE.findall(pr.get("body") or "")):
+            note(agent, f"#{pr.get('number')}", pr.get("at") or "")
+    incidents = []
+    for agent, hit in sorted(seen.items()):
+        newest = hit["newest"]
+        try:
+            stamp = int(
+                datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ")
+                .replace(tzinfo=timezone.utc)
+                .timestamp()
+            )
+        except ValueError:
+            stamp = 0
+        incidents.append(
+            {
+                "id": fingerprint("identity", repo, agent),
+                "source": "identity",
+                "repo": repo,
+                "severity": "critical",
+                "blast": "main",
+                "title": (
+                    f"{repo.split('/')[-1]}: agent `{agent}` acted under the founder's "
+                    f"login ({hit['count']} actions in {policy['sense']['window_hours']}h)"
+                ),
+                "url": f"https://github.com/{repo}/commits?author={founder}",
+                "detail": {
+                    "agent": agent,
+                    "count": hit["count"],
+                    "examples": hit["refs"],
+                    "created_at": newest,
+                    "run_id": stamp,
+                },
+            }
+        )
+    return incidents
 
 
 def sense_doors(policy: dict) -> list[dict]:
@@ -1384,6 +1475,7 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
         )
     try:
         sensed.extend(sense_ci(repo, policy))
+        sensed.extend(sense_identity(repo, policy))
         sensed.extend(sense_doors(policy))
     except LoopError as exc:
         summary["notes"].append(f"sensor: {exc}")
