@@ -447,6 +447,8 @@ pub fn ground_truth_router(engine: Arc<GroundTruthEngine>) -> Router {
         .route("/api/truth/live", get(live_json_handler))
         .route("/api/truth/live.md", get(live_markdown_handler))
         .route("/api/truth/admit", post(admit_turn_handler))
+        .route("/api/truth/ingress", post(ingress_handler))
+        .route("/v1/role/chat", post(role_chat_handler))
         .route("/api/truth/verify-fence", post(verify_fence_handler))
         .route("/api/truth/provider-event", post(provider_event_handler))
         .route("/api/truth/custody", post(custody_upsert_handler))
@@ -456,4 +458,63 @@ pub fn ground_truth_router(engine: Arc<GroundTruthEngine>) -> Router {
         .route("/api/realtime/ws", get(ws_truth_handler))
         .route("/api/realtime/sse", get(sse_truth_handler))
         .with_state(engine)
+}
+
+async fn ingress_handler(
+    State(engine): State<Arc<GroundTruthEngine>>,
+    Json(t): Json<crate::ingress::IngressTicket>,
+) -> impl IntoResponse {
+    match engine.check_ingress(&t) {
+        Ok(crate::ingress::IngressDecision::Open) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "door": "open" })),
+        )
+            .into_response(),
+        Ok(crate::ingress::IngressDecision::Shut(r)) => (
+            r.status(),
+            Json(serde_json::json!({ "ok": false, "error": r.code() })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn role_chat_handler(
+    State(engine): State<Arc<GroundTruthEngine>>,
+    Json(req): Json<crate::role_chat::RoleChatRequest>,
+) -> impl IntoResponse {
+    let Some(cfg) = crate::role_chat::ChatConfig::from_env() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "ok": false, "error": "CHAT_ENDPOINT_NOT_CONFIGURED" })),
+        )
+            .into_response();
+    };
+    match crate::role_chat::handle(&engine, &cfg, &req).await {
+        Ok(crate::role_chat::ChatOutcome::Answer(a)) => (StatusCode::OK, Json(a)).into_response(),
+        Ok(crate::role_chat::ChatOutcome::Refused(r)) => (
+            r.status(),
+            Json(serde_json::json!({ "ok": false, "error": r.code() })),
+        )
+            .into_response(),
+        Ok(crate::role_chat::ChatOutcome::FenceMoved { seen, live }) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "ok": false, "error": "FENCE_MOVED", "seen": seen, "live": live })),
+        )
+            .into_response(),
+        Ok(crate::role_chat::ChatOutcome::BadRequest(m)) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "ok": false, "error": m })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
