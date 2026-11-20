@@ -30917,6 +30917,7 @@
           "--name-only",
           "--no-commit-id",
           "--no-tags",
+          "--optimus",
           "--paginate",
           "--reverse",
           "--slurp"
@@ -45595,6 +45596,7 @@
           "--gate",
           "--json",
           "--no-gate",
+          "--optimus",
           "--out",
           "--show-toplevel"
         ],
