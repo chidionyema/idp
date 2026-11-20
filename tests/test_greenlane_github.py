@@ -193,10 +193,11 @@ def test_a_hand_raised_pull_request_is_adopted_never_closed(repo):
     assert b.writes[0][2]["body"].startswith(f"{ADOPTED} lane/feat/x\n")
     assert "original body" in b.writes[0][2]["body"]
     assert (
-        "stays open" in b.writes[1][2]["body"]
+        "its own pull request" in b.writes[1][2]["body"]
         and "lane/feat/x" in b.writes[1][2]["body"]
     )
-    assert not any(w[2].get("state") for w in b.writes)  # never closed
+    # relane adopts and says where the work goes; retire_adopted_prs closes the PR (idp#8331)
+    assert not any(w[2].get("state") for w in b.writes)
     pushed.clear()
     b.relane(
         {"number": 8, "lane": BOT_LANE, "head": "cafe", "user": "github-actions[bot]"}
