@@ -10,14 +10,9 @@ if [ ${#STAGED_FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
-SEAL_FLAG=""
-if [ "${FOUNDER_DIRECT_SEAL:-0}" = "1" ]; then
-  SEAL_FLAG="--founder-seal"
-fi
-
 python3 "${REPO_ROOT}/bin/verify_three_proofs.py" \
   --repo-root "${REPO_ROOT}" \
   --commit-sha "HEAD" \
   --timestamp "$(date +%s)" \
-  ${SEAL_FLAG} \
+  --staged \
   --files "${STAGED_FILES[@]}"
