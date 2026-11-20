@@ -723,6 +723,13 @@ if touched .github/workflows/agent-sandbox.yml bin/legion-admit bin/idp-agent-ba
     bin/agent-sandbox-age .githooks/commit-msg tests/test_legion_admit.py \
     tests/test_agent_sandbox_workflow.py tests/test_agent_sandbox_claude_native.py \
     tests/test_2026_11_11_agent_base_apply.py; then
+  # The worker step formats changed Python with ruff before sealing (agent-sandbox.yml pins
+  # ruff==0.15.18), and this rung runs that step, so it needs the same ruff. offline-gate's host
+  # had none: exit 127, "command not found", on queue/b6177. Same pin as fast-gate.yml.
+  if ! command -v ruff >/dev/null 2>&1; then
+    "$MPY" -m pip install -q --disable-pip-version-check ruff==0.15.18 >/dev/null 2>&1 || true
+    PATH="$("$MPY" -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
+  fi
   lgn=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_legion_admit.py" \
     "$IDP/tests/test_agent_sandbox_workflow.py" "$IDP/tests/test_agent_sandbox_claude_native.py" \
     "$IDP/tests/test_2026_11_11_agent_base_apply.py" 2>&1); lgn_rc=$?
