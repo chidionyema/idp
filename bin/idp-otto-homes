@@ -87,6 +87,8 @@ SECRETS = [
                         ("litellm-upstream", "GEMINI_API_KEY")]),
     ("OPENROUTER_API_KEY", [("human-openrouter", "OPENROUTER_API_KEY"),
                             ("litellm-upstream", "OPENROUTER_API_KEY")]),
+    ("FOUNDER_SEAL_TOKEN", [("otto-lifeboat", "FOUNDER_SEAL_TOKEN")]),
+    ("FOUNDER_SEAL_KEY_PEM", [("otto-lifeboat", "FOUNDER_SEAL_KEY_PEM")]),
     ("AI_STUDIO_INGEST_SECRET", [("otto-lifeboat", "AI_STUDIO_INGEST_SECRET")]),
     ("OMNIFLOW_GH_TOKEN", [("otto-lifeboat", "OMNIFLOW_GH_TOKEN")]),
 ]
