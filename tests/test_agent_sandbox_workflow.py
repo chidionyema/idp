@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -38,7 +39,7 @@ def test_the_agent_job_can_only_read():
     assert JOBS["agent"]["permissions"] == {"contents": "read"}
 
 
-@pytest.mark.parametrize("job", ["agent", "firewall"])
+@pytest.mark.parametrize("job", ["admit", "agent", "firewall"])
 def test_no_credential_is_left_in_git_where_untrusted_or_graded_work_runs(job):
     checkouts = [
         s for s in _steps(job) if s.get("uses", "").startswith("actions/checkout@")
@@ -102,9 +103,11 @@ def test_every_action_is_pinned_to_a_commit():
     for job in JOBS:
         for s in _steps(job):
             if "uses" in s:
-                assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", s["uses"]), s[
-                    "uses"
-                ]
+                # owner/repo[/sub-action]@<40-hex commit>: a sub-action (actions/cache/save)
+                # is pinned exactly like its parent.
+                assert re.fullmatch(
+                    r"[\w.-]+/[\w.-]+(?:/[\w.-]+)*@[0-9a-f]{40}", s["uses"]
+                ), s["uses"]
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -254,13 +257,16 @@ def _agent_step(
         f = bin_ / name
         f.write_text("#!/bin/bash\n" + (fake if fake is not None else body))
         f.chmod(0o755)
+    ruff = shutil.which("ruff")
+    if ruff:
+        (bin_ / "ruff").symlink_to(ruff)
     temp, home = tmp_path / "runner", tmp_path / "home"
     temp.mkdir()
     home.mkdir()
     # What the admission step leaves for the run step (idp#8283).
     (temp / "admission").mkdir()
     (temp / "admission" / "contract.txt").write_text(
-        "\n\nLEGION ADMISSION: a.txt only\n"
+        "\n\nLEGION ADMISSION: a.txt, app.py only\n"
     )
     # The claude-native launcher is main's bin/claude-anthropic; stand it in, never call Anthropic.
     (r / "bin").unlink()
@@ -269,6 +275,7 @@ def _agent_step(
         '#!/bin/bash\n[ "$1" = --verify-live ] && { echo receipt; exit 0; }\nshift; exec claude "$@"\n'
     )
     (r / "bin" / "claude-anthropic").chmod(0o755)
+    admitted_provider = {"gemini": "google", "pi": "minimax", "claude-code": ""}
     env = {
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
@@ -278,7 +285,8 @@ def _agent_step(
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
         "MINIMAX_API_KEY": "x",
         "GEMINI_API_KEY": "x",
-        "ADMITTED_PROVIDER": "",
+        "ADMITTED_PROVIDER": admitted_provider[harness],
+        "ADMITTED_FALLBACK": "1",
     }
     env.update(overrides or {})
     run = _step("agent", "Run the agent")["run"]
@@ -304,7 +312,8 @@ def test_the_agent_step_hands_on_a_transcript_and_the_patch(tmp_path, harness):
 def test_a_harness_that_leaves_no_transcript_says_why(tmp_path):
     p, _ = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
     assert p.returncode == 1
-    assert "harness exit 1" in p.stdout and "no API key for minimax" in p.stdout
+    assert "harness exit 1" in p.stdout and "private diagnostic retained" in p.stdout
+    assert "no API key for minimax" not in p.stdout
 
 
 def test_a_harness_that_fails_stops_the_run_with_the_providers_reason(tmp_path):
@@ -326,7 +335,7 @@ def test_gemini_runs_in_pi_on_googles_api_with_its_own_key(tmp_path):
     args = (tmp_path / "home" / "args").read_text()
     assert "--provider google" in args and "--model gemini-3.5-flash" in args
     run = _step("agent", "Run the agent")
-    assert run["env"]["GEMINI_API_KEY"] == "${{ secrets.SEED_GEMINI_API_KEY }}"  # noqa: S105
+    assert "secrets.SEED_GEMINI_API_KEY" in run["env"]["GEMINI_API_KEY"]
 
 
 def test_failed_gemini_preserves_its_private_transcript(tmp_path):
@@ -522,3 +531,101 @@ def test_legion_failover_disabled_for_manual_workflow_dispatch():
     assert "git reset --hard" in step["run"] and "git clean -fd" in step["run"]
     encrypted = _step("agent", "Encrypt what leaves")["run"]
     assert "google.failed.transcript.jsonl" in encrypted
+
+
+def test_admission_is_an_independent_trusted_job_and_binds_the_patch():
+    assert JOBS["agent"]["needs"] == "admit"
+    assert JOBS["admit"]["permissions"] == {"contents": "read"}
+    assert "bin/legion-admit" in _step("admit", "Admit exact scope")["run"]
+    checkout = next(
+        s for s in _steps("agent") if s.get("uses", "").startswith("actions/checkout@")
+    )
+    assert checkout["with"]["ref"] == "${{ needs.admit.outputs.base }}"
+    submit = _step("submit-lane", "Apply the patch")
+    assert "admit" in JOBS["submit-lane"]["needs"]
+    assert submit["env"]["SCOPE_JSON"] == "${{ needs.admit.outputs.scope_json }}"
+    assert submit["env"]["SCOPE_SHA256"] == "${{ needs.admit.outputs.scope_sha256 }}"
+    scope_args = '--scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"'
+    assert scope_args in submit["run"]
+
+
+def test_outside_admitted_scope_is_refused_even_if_otherwise_legal(tmp_path):
+    r = _repo(tmp_path)
+    p = _refusal_step(
+        r, _patch(r, lambda repo: (repo / "other.txt").write_text("no")), tmp_path
+    )
+    assert p.returncode != 0 and "exceeds admitted scope" in p.stderr
+
+
+def test_missing_trusted_scope_is_refused(tmp_path):
+    r = _repo(tmp_path)
+    p = _refusal_step(
+        r,
+        _patch(r, lambda repo: (repo / "app.py").write_text("x = 2\n")),
+        tmp_path,
+        {"SCOPE_JSON": "", "SCOPE_SHA256": ""},
+    )
+    assert p.returncode != 0 and "trusted scope required" in p.stderr
+
+
+def test_admitted_minimax_runs_without_trying_google(tmp_path):
+    p, out = _agent_step(
+        tmp_path,
+        "gemini",
+        'echo "$@" > "$HOME/args"\n' + FAKE["pi"],
+        {"ADMITTED_PROVIDER": "minimax", "GEMINI_API_KEY": ""},
+    )
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--provider minimax" in (tmp_path / "home" / "args").read_text()
+    assert (out / "patch").exists()
+
+
+def test_refused_fallback_does_not_run_second_model(tmp_path):
+    p, out = _agent_step(
+        tmp_path,
+        "gemini",
+        FAKE["pi"] + "exit 1\n",
+        {"LEGION_FAILOVER": "1", "ADMITTED_FALLBACK": "0"},
+    )
+    assert p.returncode != 0 and "fallback=unavailable" in p.stdout
+    assert not (out / "google.failed.stdout").exists()
+
+
+def test_unadmitted_provider_never_invokes_worker(tmp_path):
+    overrides = {"ADMITTED_PROVIDER": ""}
+    p, out = _agent_step(tmp_path, "gemini", FAKE["pi"], overrides)
+    assert p.returncode == 2 and "provider not admitted" in p.stdout
+    assert not (out / "transcript.jsonl").exists()
+
+
+def test_worker_normalizes_python_before_sealing(tmp_path):
+    body = FAKE["pi"] + 'printf "x=  2\\n" > app.py\n'
+    p, out = _agent_step(tmp_path, "pi", body)
+    assert p.returncode == 0, p.stdout + p.stderr
+    patch = (out / "patch").read_text()
+    assert "+x = 2\n" in patch
+    assert "+x=  2\n" not in patch
+
+
+def test_worker_installs_the_pinned_formatter():
+    step = _step("agent", "Install the harness")
+    assert "ruff==0.15.18" in step["run"]
+    assert "format.stdout" in _step("agent", "Encrypt what leaves")["run"]
+
+
+def test_automatic_missions_use_discovery_and_only_the_selected_secret():
+    admit = _step("admit", "Admit exact scope")
+    run = _step("agent", "Run the agent")
+    assert "'claude-code' || 'auto'" in admit["env"]["HARNESS"]
+    assert "'claude-code' || 'auto'" in run["env"]["HARNESS"]
+    assert "--launch-admitted" in run["run"]
+    assert (
+        "secrets[needs.admit.outputs.key_secret]" in run["env"]["LEGION_SELECTED_KEY"]
+    )
+    assert "ZAI_API_KEY" not in run["env"]
+    assert "DEEPSEEK_API_KEY" not in run["env"]
+    assert "GROQ_API_KEY" not in run["env"]
+    assert "OPENROUTER_API_KEY" not in run["env"]
+    assert "LEGION_PAID_PROVIDERS" in admit["env"]
+    assert "LEGION_DISABLED_PROVIDERS" in admit["env"]
+    assert "firewall" in JOBS["submit-lane"]["needs"]
