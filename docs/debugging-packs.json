@@ -373,6 +373,16 @@
       "remedy": "Never rebuild a commit message by filtering lines and re-appending one class of trailer. Rebuild it from the ORIGINAL hook output, or append the new trailers to the message as it stands and verify the full count with `git log -1 --format=%(trailers)` before pushing. Prefer letting the commit-msg hook run; when you must pass --no-verify because the hook mis-stamps a peer's claim, that is the signal to fix the hook (the hook writing another agent's claim is itself a defect) and to verify every trailer class by hand in the same breath.",
       "status": "diagnosed",
       "law": "AGENTS.md section 9 R7 (duplicated contracts drift) and R2 (a gate with no falsifier lets the defect through -- the local rung passed, the remote rung refused)"
+    },
+    {
+      "id": "DBG-038",
+      "title": "Landed was reported as done: nothing between a Greenlane landing and the live estate checked that the change operated",
+      "symptom": "2026-11-19/20: PRs #8285, #8291, #8300 and #8313 landed pennyd fixes into platform/llm/pennyd, which no Flux Kustomization applied, and their authors reported the router fixed while llm.mumchimp.com kept answering 530. Legion was released with 70 consecutive failed runs. Optimus showed 'estate data feed remains unverified' while changes shipped claiming improvement.",
+      "cause": "MEASURED: greenlane/engine.py marked a lane LANDED and its role ended; bin/estate-proof, critical-probe.py and bin/idp-karma-observe all exist and none was wired to a landing. bin/claim-gate admitted any change on a live claim without asking what operational would mean for it, which Optimus metrics it moves, which failure classes it touches or which debugging pack covers it. Success was therefore whatever the authoring agent said.",
+      "falsifier": "tests/test_greenlane_landed_is_not_operational.py (a landed lane waits in State.verifying; a probe that does not answer, or a declared Optimus metric with no reading from the instrument, never passes; a reading posted by the author certifies nothing) and tests/test_claim_gate.py (no SHIP-CONTRACT, or any malformed field, is refused).",
+      "remedy": "bin/claim-gate requires a SHIP-CONTRACT on the claim (accept probe, optimus metrics, failure-classes, debug-pack). Greenlane holds every landed lane in State.verifying, probes it on later full ticks, and posts OPERATIONAL or NOT OPERATIONAL with the evidence to the claim issue; bin/idp-greenlane re-arms while anything is verifying, bounded by the contract deadline.",
+      "law": "AGENTS.md section 3: done means operational, proven by the system, not by its author (KARMA: ImproverCannotSelfCertify).",
+      "status": "diagnosed"
     }
   ]
 }
