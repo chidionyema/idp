@@ -118,3 +118,32 @@ All hashes below were read from GitHub branch heads in this handover, except thi
 6. Return fleet receipt: root instruction / existing issue; worker+runtime+claim/admission identity; exact source and test receipt; landed SHA; deployed revision and independent effect; unresolved risks and accepted recovery custody. If nothing has landed, do not report completion or handback as success.
 
 **This manifest is the transfer of available work and instructions, not worker acceptance, CI evidence, release or proof that historical source has been fully recovered.**
+
+
+## 20 November continuation — bounded deterministic release replay and Argon ancestry
+
+The public release extractor at `docs/recovery/2026-11-20-chatgpt-fleet-handover/recover_meridian.py` validates actual Git objects, original five-path scope, ancestry and regular-file modes. It emits only unapplied changes if the admitted target's matching paths still equal the original base, or emits an empty patch when all are already landed. Independent updates, extra paths, symlinks and missing objects are refused. It does not apply, commit, sign, dispatch or promote. Run the adjacent unittest file in its directory (8 tests passed in 0.829s on isolated real Git fixtures; exact blobs listed in JSON). The actual estate repo was not cloned in this environment. An authorized worker must obtain the reviewed commits with existing fetch/claim machinery, pin latest main, run the extractor with `--target <exact main SHA>` to a temporary file outside checkout; check nonempty patch using `git apply --check --index`, apply only in the claimed clean checkout, rerun scope and preflight, real web build/visual tests, then use signed lane-submit. Empty patch is not release proof. The script is a recovery aid, not a new gate or signer.
+
+Argon #100 at b8e78a8976d24b0cfea4245f2ee40d1b2bff37ba is 190 commits ahead and 48 behind observed main a284029c46110c09534bbbc1efcb9f468fac3813 (134 files in comparison). Twelve of thirteen stated imported PR heads are ancestors of #100; **#50 currently diverges, not an ancestor**, and four previously omitted PRs remain diverged. Head ancestry is not proof conflict resolutions preserved every semantic change. Compare the bounded original PR scope; the updated #50 head includes unrelated later changes. Do not replay an entire divergent history.
+
+| Argon PR | Head | Classification | Recovery |
+|---|---|---|---|
+| [#50](https://github.com/chidionyema/argon/pull/50) | `4bc3e4f3ab5a` | DIVERGED_RECONCILE | FLOW watchdog (#47); 48 commits ahead of takeover, 190 behind. Not fully in the takeover ancestry; current head also contains newer unrelated material. Recover reviewed original FLOW delta only, with file-level reconciliation. |
+| [#66](https://github.com/chidionyema/argon/pull/66) | `0608e1361609` | ANCESTOR | Native recovery identity; protected approval, real cloud execution. |
+| [#72](https://github.com/chidionyema/argon/pull/72) | `9e52d973b207` | OMITTED_DIVERGED | OTTO Private Office; 3 paths, App shell conflict. Preserve premium surface and actual authenticated brain readback; no investor controls. |
+| [#75](https://github.com/chidionyema/argon/pull/75) | `696354355705` | OMITTED_DIVERGED | Founder voice navigation, evidence freshness and browser quality; 15 paths; overlaps #76, reconcile combined scope. |
+| [#76](https://github.com/chidionyema/argon/pull/76) | `e53dfd0e4ca3` | OMITTED_DIVERGED | Lazy entry and bundle budgets; 17 paths. Existing main already has GenesisEntry; preserve it, compare performance and test gaps only. |
+| [#77](https://github.com/chidionyema/argon/pull/77) | `8bb3948f1fec` | ANCESTOR | Chesed/Geburah estate research doctrine; verify actual adoption. |
+| [#78](https://github.com/chidionyema/argon/pull/78) | `479b0fd685e8` | ANCESTOR | HELM evidence surface; real fresh evidence; correct canonical brand Meridian. |
+| [#79](https://github.com/chidionyema/argon/pull/79) | `baf8879ff152` | ANCESTOR | Private HELM import and provenance; no new public exposure. |
+| [#81](https://github.com/chidionyema/argon/pull/81) | `b935d1d54dd9` | ANCESTOR | Private Sovereign Codex and reusable antibodies; publication separate from machine memory. |
+| [#83](https://github.com/chidionyema/argon/pull/83) | `a277f75b09df` | ANCESTOR | Company operating calendar; Chronos exclusively owns schedules. |
+| [#84](https://github.com/chidionyema/argon/pull/84) | `d6fcc55cfb25` | OMITTED_DIVERGED | Calendar live view and alerts; 16 paths. Reuse existing Chronos/OTTO pin; do not activate legacy independent cron as second scheduler. |
+| [#88](https://github.com/chidionyema/argon/pull/88) | `95f4c58bcb17` | ANCESTOR | Real staging build integration tests; never skip typecheck. |
+| [#91](https://github.com/chidionyema/argon/pull/91) | `85d50c4d2886` | ANCESTOR | Authenticated Gemini bridge; original private AI Studio intake remains separate. |
+| [#95](https://github.com/chidionyema/argon/pull/95) | `c09d899c868c` | ANCESTOR | Investor/Chronos/IO delivery evidence; no unproved live state. |
+| [#96](https://github.com/chidionyema/argon/pull/96) | `0dd9f2e98c35` | ANCESTOR | Spider, Beast, IO convergence; preserve capability, reject false connected state. |
+| [#97](https://github.com/chidionyema/argon/pull/97) | `cec569a11415` | ANCESTOR | Optimus/KARMA readback and authenticated command; verify real live actions. |
+| [#99](https://github.com/chidionyema/argon/pull/99) | `e78ef635b59b` | ANCESTOR | I10 machine-first; protected gate cannot be adopted solely from source. |
+
+Private source stays in Argon/private intake. No new PR was raised. Reconcile #100's actual owner and current main before any mutation; protect unrelated and newer work.

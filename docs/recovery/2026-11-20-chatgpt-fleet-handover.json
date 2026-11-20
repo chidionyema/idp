@@ -305,7 +305,115 @@
     "issue": 98,
     "pr": 100,
     "head": "b8e78a8976d24b0cfea4245f2ee40d1b2bff37ba",
-    "status": "OPEN"
+    "status": "OPEN",
+    "verified_branch_ancestry": [
+      {
+        "pr": 50,
+        "sha": "4bc3e4f3ab5a981e066c4517d9d00cabdf93e75c",
+        "status": "DIVERGED_RECONCILE",
+        "instruction": "FLOW watchdog (#47); 48 commits ahead of takeover, 190 behind. Not fully in the takeover ancestry; current head also contains newer unrelated material. Recover reviewed original FLOW delta only, with file-level reconciliation."
+      },
+      {
+        "pr": 66,
+        "sha": "0608e1361609ce18fba142e883e12193e13ef5a6",
+        "status": "ANCESTOR",
+        "instruction": "Native recovery identity; protected approval, real cloud execution."
+      },
+      {
+        "pr": 72,
+        "sha": "9e52d973b2073abd6da9f3bb295d2bd9885d1599",
+        "status": "OMITTED_DIVERGED",
+        "instruction": "OTTO Private Office; 3 paths, App shell conflict. Preserve premium surface and actual authenticated brain readback; no investor controls."
+      },
+      {
+        "pr": 75,
+        "sha": "696354355705ef7e4c3af426ff5a09f5e142c2fc",
+        "status": "OMITTED_DIVERGED",
+        "instruction": "Founder voice navigation, evidence freshness and browser quality; 15 paths; overlaps #76, reconcile combined scope."
+      },
+      {
+        "pr": 76,
+        "sha": "e53dfd0e4ca3f5fea2061ce2936822537ab22fe9",
+        "status": "OMITTED_DIVERGED",
+        "instruction": "Lazy entry and bundle budgets; 17 paths. Existing main already has GenesisEntry; preserve it, compare performance and test gaps only."
+      },
+      {
+        "pr": 77,
+        "sha": "8bb3948f1fec295f5c7b8442bed04d0abad1e1ff",
+        "status": "ANCESTOR",
+        "instruction": "Chesed/Geburah estate research doctrine; verify actual adoption."
+      },
+      {
+        "pr": 78,
+        "sha": "479b0fd685e838340bac2a0b3e1718743026b942",
+        "status": "ANCESTOR",
+        "instruction": "HELM evidence surface; real fresh evidence; correct canonical brand Meridian."
+      },
+      {
+        "pr": 79,
+        "sha": "baf8879ff152e01e85ba9b71897e33bf5b0b0c6e",
+        "status": "ANCESTOR",
+        "instruction": "Private HELM import and provenance; no new public exposure."
+      },
+      {
+        "pr": 81,
+        "sha": "b935d1d54dd91589251a769b3eacacdccd5a8b49",
+        "status": "ANCESTOR",
+        "instruction": "Private Sovereign Codex and reusable antibodies; publication separate from machine memory."
+      },
+      {
+        "pr": 83,
+        "sha": "a277f75b09df422e5a273ae22453d4c20fec2fd9",
+        "status": "ANCESTOR",
+        "instruction": "Company operating calendar; Chronos exclusively owns schedules."
+      },
+      {
+        "pr": 84,
+        "sha": "d6fcc55cfb256b927114da530504a8482be80f65",
+        "status": "OMITTED_DIVERGED",
+        "instruction": "Calendar live view and alerts; 16 paths. Reuse existing Chronos/OTTO pin; do not activate legacy independent cron as second scheduler."
+      },
+      {
+        "pr": 88,
+        "sha": "95f4c58bcb17d35e19d873f2269a71a8220f01ff",
+        "status": "ANCESTOR",
+        "instruction": "Real staging build integration tests; never skip typecheck."
+      },
+      {
+        "pr": 91,
+        "sha": "85d50c4d288653336eff2b09e2f5e07b38bf6a38",
+        "status": "ANCESTOR",
+        "instruction": "Authenticated Gemini bridge; original private AI Studio intake remains separate."
+      },
+      {
+        "pr": 95,
+        "sha": "c09d899c868c45ee6f8f220212bfb995d60f9856",
+        "status": "ANCESTOR",
+        "instruction": "Investor/Chronos/IO delivery evidence; no unproved live state."
+      },
+      {
+        "pr": 96,
+        "sha": "0dd9f2e98c35485e4e127642e54a92615f64d539",
+        "status": "ANCESTOR",
+        "instruction": "Spider, Beast, IO convergence; preserve capability, reject false connected state."
+      },
+      {
+        "pr": 97,
+        "sha": "cec569a11415c9ad689e22fc5b14cdf3ad193654",
+        "status": "ANCESTOR",
+        "instruction": "Optimus/KARMA readback and authenticated command; verify real live actions."
+      },
+      {
+        "pr": 99,
+        "sha": "e78ef635b59bb02d9eac20df5ead440fbd1e5561",
+        "status": "ANCESTOR",
+        "instruction": "I10 machine-first; protected gate cannot be adopted solely from source."
+      }
+    ],
+    "comparison_main": "a284029c46110c09534bbbc1efcb9f468fac3813",
+    "ahead": 190,
+    "behind": 48,
+    "changed_files": 134
   },
   "coverage": "Reachable refs and retrieved history; private sources and runtime custody not fully observed",
   "required_completion": [
@@ -317,5 +425,13 @@
     "deployed_revision",
     "independent_operational_effect",
     "causal_class_settlement"
-  ]
+  ],
+  "recovery_extractor": {
+    "path": "docs/recovery/2026-11-20-chatgpt-fleet-handover/recover_meridian.py",
+    "blob": "0d2992e36d2726feec3ba790d5bb8f764826e840",
+    "test_path": "docs/recovery/2026-11-20-chatgpt-fleet-handover/test_recover_meridian.py",
+    "test_blob": "959f754134610599ff5f651565dd29c660fbcb17",
+    "result": "8 local Git fixture tests PASS",
+    "limitations": "Not executed against full remote repository; no signed admission, web CI or deployment"
+  }
 }
