@@ -4892,3 +4892,7 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:37:28Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
+
+### 2026-11-19T23:37:18Z - agent
+
+2026-11-19 idp#8336 QUAD phase 1: bin/quad (stdlib) issues certs with the App RSA key, the session signs tree+parents+subject with Ed25519, the door verifies issuer->cert->commit (verified|unidentified|forged|expired). quad-issue.yml publishes on refs/quad/*; submit-gate identity job reports warn-only. Door run 44637534901 success on a009b103; lane/quad-phase1 queued. #8301 incident loop landed b6168. Gotcha: cloud sessions have no growmos on PATH; the estate fork chidionyema/growmos is zero-dependency and runs from source (PYTHONPATH=src python3 -m growmos).

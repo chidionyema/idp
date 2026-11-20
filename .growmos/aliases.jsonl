@@ -48,6 +48,7 @@
 {"alias": "pi-dynamic-context-pruning", "entity": "component/pi-dynamic-context-pruning", "type": "COMPONENT"}
 {"alias": "pi-mcp-adapter", "entity": "component/pi-mcp-adapter", "type": "COMPONENT"}
 {"alias": "pi-token-killer", "entity": "component/pi-token-killer", "type": "COMPONENT"}
+{"alias": "QUAD identity", "entity": "component/quad-identity", "type": "COMPONENT"}
 {"alias": "Red Team Layer", "entity": "component/red-team-layer", "type": "COMPONENT"}
 {"alias": "Snapshotter", "entity": "component/snapshotter", "type": "COMPONENT"}
 {"alias": "SoL-Pi", "entity": "component/sol-pi", "type": "COMPONENT"}
@@ -65,6 +66,7 @@
 {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
+{"alias": "submit-gate", "entity": "concept/submit-gate", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
 {"alias": "ui.review", "entity": "concept/ui-review", "type": "CONCEPT"}
 {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
