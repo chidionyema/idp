@@ -608,3 +608,49 @@ def test_an_optimus_metric_nobody_can_measure_is_refused():
 def test_the_gate_measures_its_own_enforcement():
     g = _gate()
     assert g.optimus_reading(NOW) == "optimus.claims.ship_contract_enforced=1"
+
+
+# --- the metric a change registers (idp#8381) ---------------------------------------------
+# The gate reads catalog/optimus-metrics.json from the checkout it runs in, and the Greenlane
+# checks that out at `ref: main`. So the lane that ADDS a metric could not cite it: measured
+# 2026-11-20, lane/i8251-wall-gate registering `gates.unmarked_inner_bounds` was refused
+# "optimus names unregistered metric(s)" by the gate that asks for the metric. The head's own
+# entry is admitted only when it names a measure, and the reading is still taken from main after
+# landing -- so nothing an author types becomes a reading.
+
+
+def _registry(name, measure):
+    entry = {"name": name}
+    if measure is not None:
+        entry["measure"] = measure
+    return json.dumps({"metrics": [entry]})
+
+
+def test_a_metric_the_change_registers_is_admitted(monkeypatch):
+    g = _gate()
+    monkeypatch.setattr(
+        g, "git", lambda *a: _registry("made.up_metric", ["python3", "bin/x"])
+    )
+    contract = CONTRACT.replace("claims.ship_contract_enforced", "made.up_metric")
+    assert g.contract_problems("o/r#1", [contract]) != []
+    assert g.contract_problems("o/r#1", [contract], "headsha") == []
+
+
+def test_a_registration_with_no_measure_is_still_refused(monkeypatch):
+    g = _gate()
+    monkeypatch.setattr(g, "git", lambda *a: _registry("made.up_metric", None))
+    contract = CONTRACT.replace("claims.ship_contract_enforced", "made.up_metric")
+    out = g.contract_problems("o/r#1", [contract], "headsha")
+    assert any("unregistered metric(s) made.up_metric" in p for p in out), out
+
+
+def test_a_head_the_gate_cannot_read_is_refused(monkeypatch):
+    g = _gate()
+
+    def boom(*a):
+        raise g.subprocess.CalledProcessError(1, "git")
+
+    monkeypatch.setattr(g, "git", boom)
+    contract = CONTRACT.replace("claims.ship_contract_enforced", "made.up_metric")
+    out = g.contract_problems("o/r#1", [contract], "headsha")
+    assert any("unregistered metric(s) made.up_metric" in p for p in out), out
