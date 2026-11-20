@@ -180,3 +180,14 @@ def test_the_estate_issues_and_the_door_checks_without_refusing_yet():
     assert door["jobs"]["promote"]["needs"] == "gate", (
         "identity does not gate promotion yet"
     )
+
+
+def test_an_agent_asks_for_its_identity_over_the_rest_api_only():
+    src = QUAD.read_text()
+    body = src[
+        src.index("def request(") : src.index("# ---", src.index("def request("))
+    ]
+    assert "/actions/workflows/quad-issue.yml/dispatches" in body and "ref=main" in body
+    assert '"workflow",' not in body, (
+        "gh workflow run needs GraphQL, which sandboxes cannot reach"
+    )
