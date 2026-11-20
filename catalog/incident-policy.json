@@ -1,6 +1,7 @@
 {
   "version": 1,
   "cloud_repos": ["chidionyema/idp", "chidionyema/argon", "chidionyema/argon-sync", "chidionyema/gemini-sync", "chidionyema/geaistudio"],
+  "identity": {"founder_login": "chidionyema", "why": "idp#8334: QUAD law -- an agent never acts under the founder's login. incident-loop.py sense_identity raises one critical incident per (repo, agent) found acting as him, every tick, for ever; a new action after closure reopens it."},
   "cloud_repos_why": "idp#8301: the repos .github/workflows/incident-loop.yml senses every 15 minutes from the cloud. A red workflow in any of them is one ticket in idp and one Telegram line, whether or not a laptop is awake. A repo not listed here fails with no response, so a new estate repo is added here first.",
   "why": "One place decides how bad an error is and who takes it. The estate master epic's R-14 asks for one priority function, not four conventions; platform/queue/dispatcher.py's tasks table had no priority column at all. Read by platform/estate/libexec/incident-loop.py and by nothing else.",
   "severities": {
