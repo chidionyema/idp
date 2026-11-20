@@ -82,7 +82,8 @@ def test_every_sandbox_agent_boots_with_the_proved_growmos_and_no_token():
     assert tools["if"] == agent["if"], (
         "the token is minted only for a run that starts an agent"
     )
-    assert agent["needs"] == "tools"
+    needs = [agent["needs"]] if isinstance(agent["needs"], str) else agent["needs"]
+    assert "tools" in needs, "the agent job waits for the proved growmos"
     agent_text = yaml.safe_dump(agent)
     assert "SEED_GITHUB_APP" not in agent_text and "steps.app" not in agent_text
     names = [s.get("name", "") for s in agent["steps"]]
