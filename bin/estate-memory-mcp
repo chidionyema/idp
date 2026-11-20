@@ -350,7 +350,7 @@ def refuse(mid, why: str) -> dict:
 def main() -> int:
     # V2 callers use the explicit per-request identity, never publish a shared PID
     # pointer at process startup. Legacy harnesses keep their existing bridge.
-    bridge = Bridge(require_session_metadata="--opencode-v2" in sys.argv[1:])
+    bridge = Bridge(require_session_metadata=os.environ.get("ESTATE_OPENCODE_V2") == "1")
     if not bridge.require_session_metadata:
         bridge._publish()
     for line in sys.stdin:

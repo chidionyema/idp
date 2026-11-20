@@ -1,4 +1,5 @@
 """OpenCode V2 may reuse one MCP transport for multiple sessions."""
+
 import importlib.machinery
 import importlib.util
 from pathlib import Path
@@ -31,7 +32,9 @@ def call(b, name, args, sid=None):
     params = {"name": name, "arguments": args}
     if sid is not None:
         params["_meta"] = {"ai.opencode/sessionID": sid}
-    return b.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params})["result"]
+    return b.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
+    )["result"]
 
 
 def test_interleaved_sessions_and_restart(bridge):
