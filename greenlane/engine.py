@@ -841,7 +841,8 @@ class Engine:
         attempted: set[str] = set()
         while True:
             policy_receipt: dict = {"mode": "fixed", "size": self.batch_size}
-            if self.s.queued:
+            from_queue = bool(self.s.queued)
+            if from_queue:
                 names = self.s.queued.pop(
                     0
                 )  # bisection halves were admitted with their batch
@@ -889,7 +890,7 @@ class Engine:
                 and self.s.lanes[n].status == PENDING
             ]
             if not names:
-                if self.s.queued:
+                if from_queue:
                     continue
                 return
             attempted.update(names)
