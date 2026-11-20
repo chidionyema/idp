@@ -75,7 +75,11 @@ def _http_get(url: str, timeout: float = 20.0) -> tuple[int, str]:
     import urllib.error
     import urllib.request
 
-    req = urllib.request.Request(url, headers={"User-Agent": "greenlane-operational/1"})
+    if not url.startswith("https://"):
+        return 0, "refused: only https:// probes are run"
+    req = urllib.request.Request(  # noqa: S310 - https only, checked above and by ACCEPT
+        url, headers={"User-Agent": "greenlane-operational/1"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - https only, by ACCEPT
             return r.status, r.read(65536).decode("utf-8", "replace")
