@@ -30432,6 +30432,10 @@
         {
           "id": "cap:tool/start",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/verify_three_proofs.py",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -59572,7 +59576,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/claim-open"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
