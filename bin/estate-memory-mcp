@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import types
@@ -87,7 +88,8 @@ def _fresh_door():
 
 
 class Bridge:
-    def __init__(self):
+    def __init__(self, require_session_metadata=False):
+        self.require_session_metadata = require_session_metadata
         self.secret = None
         self.plan = None
         # THIS SESSION'S IDENTITY. The bridge is one process per runtime session, so it is the
@@ -176,6 +178,29 @@ class Bridge:
         except Exception:  # noqa: BLE001 - a missing pointer must not break the session
             pass
 
+    def session_plan_call(self, mid, name: str, args, meta) -> dict:
+        """V2 shares MCP processes across sessions. Never replay another session's plan.
+
+        The transport-provided OpenCode ID is a correlation key, not authentication.
+        This mode is for the local stdio bridge, not a public effect door.
+        """
+        sid = meta.get("ai.opencode/sessionID") if isinstance(meta, dict) else None
+        if not isinstance(sid, str) or not re.fullmatch(r"ses_[A-Za-z0-9_-]{1,120}", sid):
+            return refuse(mid, "missing or invalid OpenCode session metadata")
+        if not isinstance(args, dict):
+            return refuse(mid, "plan arguments must be an object")
+        # The ledger is authoritative, not a process-wide mutable plan or parent PID.
+        try:
+            current = plan.ledger_plan(sid)
+            result = plan.apply(current, name, args)
+            if not result["ok"]:
+                return refuse(mid, f"Refused: {result['reason']}")
+            if not plan.record_plan_call(sid, name, args):
+                return refuse(mid, "plan declaration was not persisted")
+        except Exception as exc:
+            return refuse(mid, f"plan ledger unavailable: {type(exc).__name__}")
+        return ok(mid, {"content": [{"type": "text", "text": result["message"]}]})
+
     def plan_call(self, mid, name: str, args) -> dict:
         r = plan.apply(self.plan, name, args)
         if not r["ok"]:
@@ -228,6 +253,12 @@ class Bridge:
             }
         params = msg.get("params") or {}
         if method == "tools/call" and params.get("name") in plan.PLAN_TOOLS:
+            meta = params.get("_meta")
+            explicit = isinstance(meta, dict) and "ai.opencode/sessionID" in meta
+            if self.require_session_metadata or explicit:
+                return self.session_plan_call(
+                    mid, params["name"], params.get("arguments", {}), meta
+                )
             return self.plan_call(mid, params["name"], params.get("arguments") or {})
         if method == "tools/call" and params.get("name") not in TOOLS:
             return refuse(
@@ -317,8 +348,11 @@ def refuse(mid, why: str) -> dict:
 
 
 def main() -> int:
-    bridge = Bridge()
-    bridge._publish()
+    # V2 callers use the explicit per-request identity, never publish a shared PID
+    # pointer at process startup. Legacy harnesses keep their existing bridge.
+    bridge = Bridge(require_session_metadata=os.environ.get("ESTATE_OPENCODE_V2") == "1")
+    if not bridge.require_session_metadata:
+        bridge._publish()
     for line in sys.stdin:
         if not line.strip():
             continue
