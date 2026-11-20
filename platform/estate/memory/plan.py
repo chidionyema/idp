@@ -59,6 +59,8 @@ PLAN_TOOLS = (
 # the human, a todo list -- is not work.
 NEVER_BLOCKED = frozenset({*PLAN_TOOLS, "escalate"})
 MEMORY_READS = frozenset({"brief", "recall", "remember"})
+# Native observation tools, not arbitrary shell commands or caller-supplied tool aliases.
+NATIVE_READS = frozenset({"read", "glob", "grep", "list", "websearch", "webfetch"})
 HOUSEKEEPING = frozenset(
     {
         "toolsearch",
@@ -142,7 +144,13 @@ def as_plan_call(tool: str, args) -> list | None:
     """The plan-tool call a tool call makes, if any: the tool itself, or a shell estate-plan."""
     if bare(tool) in PLAN_TOOLS:
         return [tool, args]
-    if tool.lower() == "bash" and isinstance(args, dict):
+    if tool.lower() in {"bash", "shell", "execute"} and isinstance(args, dict):
+        # A generic execution wrapper is not a plan tool just because its input says so.
+        # Only the existing single-command estate-plan parser can admit this bootstrap.
+        if tool.lower() == "execute" and set(args) - {
+            "command", "description", "timeout", "workdir"
+        }:
+            return None
         return shell_plan_call(args.get("command"))
     return None
 
@@ -339,7 +347,12 @@ def replay(calls) -> dict | None:
 
 def authorize(tool: str, plan: dict | None, args=None) -> dict:
     name = bare(tool)
-    if name in NEVER_BLOCKED or name in MEMORY_READS or name.lower() in HOUSEKEEPING:
+    if (
+        name in NEVER_BLOCKED
+        or name in MEMORY_READS
+        or name.lower() in HOUSEKEEPING
+        or tool.lower() in NATIVE_READS
+    ):
         return {"ok": True}
     call = as_plan_call(tool, args)
     if call and bare(call[0]) == bare(tool):
@@ -1402,23 +1415,21 @@ def main(argv: list) -> int:
         print(__doc__.split("\n\n")[-1], file=sys.stderr)
         return 2
     try:
-        calls = json.load(sys.stdin)
+        raw = sys.stdin.read()
+        calls = json.loads(raw) if raw.strip() else []
+        if not isinstance(calls, list) or any(
+            not isinstance(call, list)
+            or len(call) != 2
+            or not isinstance(call[0], str)
+            or not isinstance(call[1], dict)
+            for call in calls
+        ):
+            raise ValueError("invalid plan call history")
         args = json.loads(argv[2]) if len(argv) == 3 else None
-        print(
-            json.dumps(
-                authorize(
-                    argv[1], replay(calls if isinstance(calls, list) else []), args
-                )
-            )
-        )
-    except (
-        Exception
-    ) as e:  # fail open: a broken rule must not take a session down (R38)
-        print(
-            json.dumps(
-                {"ok": True, "reason": f"plan check failed open: {type(e).__name__}"}
-            )
-        )
+        print(json.dumps(authorize(argv[1], replay(calls), args)))
+    except Exception as exc:
+        # Corrupt input is not permission. Empty input above is the normal bootstrap state.
+        print(json.dumps(_refuse(f"plan check failed: {type(exc).__name__}")))
     return 0
 
 
