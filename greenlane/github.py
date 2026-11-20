@@ -53,8 +53,6 @@ _OPTIMUS_READING = re.compile(
     r"^optimus\.([a-z][a-z0-9_.]{2,80})=(-?\d+(?:\.\d+)?)\s*$", re.M
 )
 _CLAIM_GATE = None
-# Identities whose `optimus.<metric>=<value>` lines are readings; everyone else is an author.
-OPTIMUS_INSTRUMENTS = frozenset({"estate-agents[bot]"})
 
 
 def _claim_gate_module():
@@ -1879,39 +1877,72 @@ class GitHubBackend:
                 "pending",
                 f"GET {m.group('url')} -> {code} (want {want}{', containing ' + repr(needle) if needle else ''})",
             )
-        readings = self._optimus_readings(claim_repo, number)
-        missing = []
-        for spec in [
-            x.strip() for x in contract.get("optimus", "").split(";") if x.strip()
-        ]:
-            om = gate.OPTIMUS.match(spec)
-            if not om or om.group("name") not in readings:
-                missing.append(om.group("name") if om else spec)
-        if missing:
-            return (
-                "pending",
-                f"probe ok ({code}); no Optimus reading for {', '.join(missing)}",
-            )
-        return (
-            "pass",
-            f"GET {m.group('url')} -> {code}; Optimus read {', '.join(sorted(readings))}",
-        )
+        specs = [
+            gate.OPTIMUS.match(x.strip())
+            for x in contract.get("optimus", "").split(";")
+            if x.strip()
+        ]
+        if not specs or not all(specs):
+            return "failed", "SHIP-CONTRACT optimus is malformed"
+        readings = self._optimus_readings([sp.group("name") for sp in specs])
+        short = []
+        for sp in specs:
+            name, target = sp.group("name"), float(sp.group("target"))
+            base = sp.group("base")
+            lower = base != "UNKNOWN" and target < float(base)
+            value = readings.get(name)
+            if value is None:
+                short.append(f"{name}=UNKNOWN")
+            elif (value > target) if lower else (value < target):
+                short.append(f"{name}={value:g} (target {target:g})")
+        read = ", ".join(f"{k}={v:g}" for k, v in sorted(readings.items()))
+        if short:
+            return "pending", f"probe ok ({code}); Optimus short: {', '.join(short)}"
+        return "pass", f"GET {m.group('url')} -> {code}; Optimus {read}"
 
-    def _optimus_readings(self, claim_repo: str, number: str) -> dict[str, str]:
-        comments = json.loads(
-            _run(
-                "gh", "api", f"repos/{claim_repo}/issues/{number}/comments?per_page=100"
-            )
-            or "[]"
-        )
-        out: dict[str, str] = {}
-        for c in comments:
-            # A reading counts only from the instrument, never from the author: an agent that
-            # posts its own metric is certifying itself (KARMA, ImproverCannotSelfCertify).
-            if str((c.get("user") or {}).get("login") or "") not in OPTIMUS_INSTRUMENTS:
+    def _optimus_readings(self, names: list[str]) -> dict[str, float]:
+        """Each declared metric's reading, measured now by its registered measure.
+
+        The argv comes from catalog/optimus-metrics.json on main -- reviewed code, never the
+        claim's text -- and runs in this checkout, bounded to 60 seconds. No measure, a failed
+        measure, or output that is not `optimus.<name>=<n>`: no reading. UNKNOWN never passes,
+        and nothing an author posts is a reading (KARMA, ImproverCannotSelfCertify).
+        """
+        root = Path(__file__).resolve().parents[1]
+        try:
+            reg = json.loads((root / "catalog" / "optimus-metrics.json").read_text())
+        except (OSError, ValueError):
+            return {}
+        measures = {
+            m.get("name"): m.get("measure")
+            for m in reg.get("metrics", [])
+            if isinstance(m, dict)
+        }
+        out: dict[str, float] = {}
+        for name in names:
+            argv = measures.get(name)
+            if not (
+                isinstance(argv, list)
+                and argv
+                and all(isinstance(a, str) for a in argv)
+            ):
                 continue
-            for mm in _OPTIMUS_READING.finditer(str(c.get("body") or "")):
-                out[mm.group(1)] = mm.group(2)
+            try:
+                done = subprocess.run(  # noqa: S603 - argv from the reviewed catalog on main
+                    argv,
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if done.returncode != 0:
+                continue
+            for mm in _OPTIMUS_READING.finditer(done.stdout or ""):
+                if mm.group(1) == name:
+                    out[name] = float(mm.group(2))
         return out
 
     def report_operational(
