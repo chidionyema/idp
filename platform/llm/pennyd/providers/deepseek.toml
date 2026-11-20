@@ -14,7 +14,7 @@ class = "paid"
 price_in_per_mtok = 0.30
 price_out_per_mtok = 1.20
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = [
     "cheap-chat",
     "deepseek",
@@ -31,6 +31,6 @@ class = "paid"
 price_in_per_mtok = 1.32
 price_out_per_mtok = 3.96
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = ["deepseek-v4-pro", "claude-opus-primary"]
 fallbacks = ["deepseek/deepseek-flash", "zai/glm-5.3-flash", "groq/openai/gpt-oss-120b"]
