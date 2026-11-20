@@ -835,143 +835,158 @@ class Engine:
         # will fail the rebase check against the current main even though it could land
         # cleanly. Re-computing the effective HEAD fixes this.
         self._refresh_stale_lanes(base)
-        policy_receipt: dict = {"mode": "fixed", "size": self.batch_size}
-        if self.s.queued:
-            names = self.s.queued.pop(
-                0
-            )  # bisection halves were admitted with their batch
-            policy_receipt = {"mode": "bisect", "size": len(names)}
-        else:
-            pend = sorted(
-                (l for l in self.s.lanes.values() if l.status == PENDING),
-                key=lambda l: l.seq,
-            )
-            names = []
-            capacity = self.batch_size
-            if self.batch_policy in ("adaptive", "adaptive-speed"):
-                overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
-                choice = choose_batch_size(
-                    self.s.history, len(pend), capacity, overhead
+        # A lane that cannot form a candidate releases its slot for this tick only.
+        # Each nonempty pass excludes at least one more lane; empty passes drain queued groups.
+        # Never recurse, refresh stale lanes twice, or discard a pending lane from custody.
+        attempted: set[str] = set()
+        while True:
+            policy_receipt: dict = {"mode": "fixed", "size": self.batch_size}
+            if self.s.queued:
+                names = self.s.queued.pop(
+                    0
+                )  # bisection halves were admitted with their batch
+                policy_receipt = {"mode": "bisect", "size": len(names)}
+            else:
+                pend = sorted(
+                    (
+                        l for l in self.s.lanes.values()
+                        if l.status == PENDING and l.name not in attempted
+                    ),
+                    key=lambda l: l.seq,
                 )
-                capacity = choice.size
-                policy_receipt = choice.receipt()
-                policy_receipt["mode"] = self.batch_policy
-                policy_receipt["overhead_weight"] = overhead
-            for l in pend:
-                if len(names) == capacity:
-                    break
-                # A SUSPECT RUNS ALONE (2026-11-06). A lane with `attempts` has already gone
-                # red as a batch of one on this very head (a new head is a new Lane with zero
-                # attempts). Stacked with fresh lanes it turns their candidate red, the batch
-                # is bisected, and every member pays log2(n) extra cycles to rediscover what
-                # the state already knew. So a suspect never joins a batch of others: at the
-                # head of the line it is tested on its own, anywhere else it waits for that
-                # turn. Simulated (20 seeds x 500 lanes, with the retry-to-the-back rule in
-                # _judge_batch): candidates -27%, ticks to drain -23%, every invariant held.
-                if l.attempts and names:
-                    continue
-                if not self._held(l, base):
-                    names.append(l.name)
-                    if l.attempts:
+                names = []
+                capacity = self.batch_size
+                if self.batch_policy in ("adaptive", "adaptive-speed"):
+                    overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
+                    choice = choose_batch_size(
+                        self.s.history, len(pend), capacity, overhead
+                    )
+                    capacity = choice.size
+                    policy_receipt = choice.receipt()
+                    policy_receipt["mode"] = self.batch_policy
+                    policy_receipt["overhead_weight"] = overhead
+                for l in pend:
+                    if len(names) == capacity:
                         break
-        names = [
-            n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
-        ]
-        if not names:
-            return
-        tip, members = base, []
-        for n in names:
-            lane = self.s.lanes[n]
-            # First: does this lane apply to MAIN? That is the only question CONFLICT may answer.
-            #
-            # This loop used to ask `rebase(lane.head, tip)` FIRST, with tip accumulating every
-            # batch-mate accepted before it, and brand the lane CONFLICT when that returned None.
-            # A lane that rebases perfectly onto main but overlaps a sibling in the SAME batch
-            # was therefore called "does not rebase onto {tip}" -- the batch-mate's sha, which no
-            # human or engine recognises as main -- and `judged_on` was set to `base`, so
-            # _observe_lanes believed it had been judged against main and would only retry when
-            # main moved. Parked, permanently, at REJUDGE_LIMIT=1. Measured on
-            # refs/greenlane/state 2026-10-05: 18 of 30 lanes sat exactly there, holding proven
-            # work main never received; the mic fix 51eca9766 was one of them and landed only
-            # after a hand rebase. The reason string read like staleness, which is why it was
-            # misdiagnosed as "main moved" for so long: by the time anyone read the sha, it was
-            # an ancestor of a later main.
-            #
-            # So the two questions are asked separately, and answered honestly:
-            #   rebase(head, base) is None -> the lane does not apply to main. CONFLICT, judged
-            #                                 against main, exactly as judged_on says.
-            #   rebase(head, tip)  is None -> it applies to main but not alongside the batch-mate
-            #                                 already ahead of it. That is a batch-order collision,
-            #                                 not a conflict with main: leave it PENDING so it gets
-            #                                 its own batch, and it lands on the next tick.
-            #
-            # The lane's NAME goes with the head, because the name carries the class: a
-            # generated flux/* lane is projected onto main from its image tags (idp#7140), and
-            # a lane whose history carries anything else would otherwise never apply at all.
-            try:
-                on_main = self.b.rebase(lane.head, base, n)
-            except UnavailableLaneObject as exc:
-                # Isolate incomplete runner state to this one lane, not all of Greenlane.
-                lane.reason = f"waiting for exact Git object: {exc}"
-                self.b.report(n, lane.head, TESTING, lane.reason)
-                self.log.append(f"deferred {n}: {exc}")
-                continue
-            if on_main is None:
-                # Genuine conflict with main. Charge the retry HERE, where the grade actually
-                # failed, so the count is consecutive failures against successive mains and not
-                # merely the number of times main happened to move past the lane.
-                lane.rejudged += 1
-                lane.status, lane.reason = (
-                    CONFLICT,
-                    f"does not rebase onto main {base[:12]}",
-                )
-                lane.judged_on = base
-                self.b.report(n, lane.head, CONFLICT, lane.reason)
-                # counted, not recorded: no candidate ran, and a lane re-judged on every main
-                # move would fill the ring (167 of 200 records in a 500-lane simulation)
-                self.s.conflicts += 1
-                continue
-            # Ferrari / #7738: the existing trusted-base DoF gate can prove this
-            # exact on-main candidate CANNOT pass before expensive CI begins.
-            # No model inference or untrusted candidate script decides admission.
-            # An unreadable preflight is UNKNOWN and goes through full CI.
-            preflight = getattr(self.b, "preflight", None)
-            if preflight is not None:
-                admitted, why = preflight(base, on_main)
-                if not admitted:
-                    lane.status, lane.reason = RED, why
-                    lane.judged_on = base
-                    self.b.report(n, lane.head, RED, why)
-                    self.log.append(f"preflight held {n} against {base[:12]}: {why}")
+                    # A SUSPECT RUNS ALONE (2026-11-06). A lane with `attempts` has already gone
+                    # red as a batch of one on this very head (a new head is a new Lane with zero
+                    # attempts). Stacked with fresh lanes it turns their candidate red, the batch
+                    # is bisected, and every member pays log2(n) extra cycles to rediscover what
+                    # the state already knew. So a suspect never joins a batch of others: at the
+                    # head of the line it is tested on its own, anywhere else it waits for that
+                    # turn. Simulated (20 seeds x 500 lanes, with the retry-to-the-back rule in
+                    # _judge_batch): candidates -27%, ticks to drain -23%, every invariant held.
+                    if l.attempts and names:
+                        continue
+                    if not self._held(l, base):
+                        names.append(l.name)
+                        if l.attempts:
+                            break
+            names = [
+                n for n in names
+                if n not in attempted
+                and n in self.s.lanes
+                and self.s.lanes[n].status == PENDING
+            ]
+            if not names:
+                if self.s.queued:
                     continue
-            try:
-                new = self.b.rebase(lane.head, tip, n)
-            except UnavailableLaneObject as exc:
-                lane.reason = f"waiting for exact Git object: {exc}"
-                self.b.report(n, lane.head, TESTING, lane.reason)
-                self.log.append(f"deferred {n}: {exc}")
+                return
+            attempted.update(names)
+            tip, members = base, []
+            for n in names:
+                lane = self.s.lanes[n]
+                # First: does this lane apply to MAIN? That is the only question CONFLICT may answer.
+                #
+                # This loop used to ask `rebase(lane.head, tip)` FIRST, with tip accumulating every
+                # batch-mate accepted before it, and brand the lane CONFLICT when that returned None.
+                # A lane that rebases perfectly onto main but overlaps a sibling in the SAME batch
+                # was therefore called "does not rebase onto {tip}" -- the batch-mate's sha, which no
+                # human or engine recognises as main -- and `judged_on` was set to `base`, so
+                # _observe_lanes believed it had been judged against main and would only retry when
+                # main moved. Parked, permanently, at REJUDGE_LIMIT=1. Measured on
+                # refs/greenlane/state 2026-10-05: 18 of 30 lanes sat exactly there, holding proven
+                # work main never received; the mic fix 51eca9766 was one of them and landed only
+                # after a hand rebase. The reason string read like staleness, which is why it was
+                # misdiagnosed as "main moved" for so long: by the time anyone read the sha, it was
+                # an ancestor of a later main.
+                #
+                # So the two questions are asked separately, and answered honestly:
+                #   rebase(head, base) is None -> the lane does not apply to main. CONFLICT, judged
+                #                                 against main, exactly as judged_on says.
+                #   rebase(head, tip)  is None -> it applies to main but not alongside the batch-mate
+                #                                 already ahead of it. That is a batch-order collision,
+                #                                 not a conflict with main: leave it PENDING so it gets
+                #                                 its own batch, and it lands on the next tick.
+                #
+                # The lane's NAME goes with the head, because the name carries the class: a
+                # generated flux/* lane is projected onto main from its image tags (idp#7140), and
+                # a lane whose history carries anything else would otherwise never apply at all.
+                try:
+                    on_main = self.b.rebase(lane.head, base, n)
+                except UnavailableLaneObject as exc:
+                    # Isolate incomplete runner state to this one lane, not all of Greenlane.
+                    lane.reason = f"waiting for exact Git object: {exc}"
+                    self.b.report(n, lane.head, TESTING, lane.reason)
+                    self.log.append(f"deferred {n}: {exc}")
+                    continue
+                if on_main is None:
+                    # Genuine conflict with main. Charge the retry HERE, where the grade actually
+                    # failed, so the count is consecutive failures against successive mains and not
+                    # merely the number of times main happened to move past the lane.
+                    lane.rejudged += 1
+                    lane.status, lane.reason = (
+                        CONFLICT,
+                        f"does not rebase onto main {base[:12]}",
+                    )
+                    lane.judged_on = base
+                    self.b.report(n, lane.head, CONFLICT, lane.reason)
+                    # counted, not recorded: no candidate ran, and a lane re-judged on every main
+                    # move would fill the ring (167 of 200 records in a 500-lane simulation)
+                    self.s.conflicts += 1
+                    continue
+                # Ferrari / #7738: the existing trusted-base DoF gate can prove this
+                # exact on-main candidate CANNOT pass before expensive CI begins.
+                # No model inference or untrusted candidate script decides admission.
+                # An unreadable preflight is UNKNOWN and goes through full CI.
+                preflight = getattr(self.b, "preflight", None)
+                if preflight is not None:
+                    admitted, why = preflight(base, on_main)
+                    if not admitted:
+                        lane.status, lane.reason = RED, why
+                        lane.judged_on = base
+                        self.b.report(n, lane.head, RED, why)
+                        self.log.append(f"preflight held {n} against {base[:12]}: {why}")
+                        continue
+                try:
+                    new = self.b.rebase(lane.head, tip, n)
+                except UnavailableLaneObject as exc:
+                    lane.reason = f"waiting for exact Git object: {exc}"
+                    self.b.report(n, lane.head, TESTING, lane.reason)
+                    self.log.append(f"deferred {n}: {exc}")
+                    continue
+                if new is None:
+                    # batch-order collision: main would take it, a batch-mate would not. Not a
+                    # conflict -- it stays PENDING and is tried again, on its own if need be.
+                    self.log.append(
+                        f"batch: {n} applies to main {base[:12]} but not after {tip[:12]}; "
+                        "deferring to its own batch"
+                    )
+                    continue
+                members.append((n, lane.head, new))
+                tip = new
+            if not members:
                 continue
-            if new is None:
-                # batch-order collision: main would take it, a batch-mate would not. Not a
-                # conflict -- it stays PENDING and is tried again, on its own if need be.
-                self.log.append(
-                    f"batch: {n} applies to main {base[:12]} but not after {tip[:12]}; "
-                    "deferring to its own batch"
-                )
-                continue
-            members.append((n, lane.head, new))
-            tip = new
-        if not members:
+            self.s.candidates += 1
+            bid = f"b{self.s.candidates}"
+            self.b.push_candidate(bid, tip)
+            for n, head, _ in members:
+                self.s.lanes[n].status = TESTING
+                self.s.lanes[n].reason = f"testing in {bid}"
+                self.b.report(n, head, TESTING, f"testing in {bid} at {tip[:12]}")
+            self.s.batch = Batch(bid, base, tip, members, self.b.now(), policy_receipt)
+            self.log.append(
+                f"batch {bid}: {len(members)} lane(s) on {base[:12]} -> candidate {tip[:12]} "
+                f"policy={policy_receipt}"
+            )
             return
-        self.s.candidates += 1
-        bid = f"b{self.s.candidates}"
-        self.b.push_candidate(bid, tip)
-        for n, head, _ in members:
-            self.s.lanes[n].status = TESTING
-            self.s.lanes[n].reason = f"testing in {bid}"
-            self.b.report(n, head, TESTING, f"testing in {bid} at {tip[:12]}")
-        self.s.batch = Batch(bid, base, tip, members, self.b.now(), policy_receipt)
-        self.log.append(
-            f"batch {bid}: {len(members)} lane(s) on {base[:12]} -> candidate {tip[:12]} "
-            f"policy={policy_receipt}"
-        )
