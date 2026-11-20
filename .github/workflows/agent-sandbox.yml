@@ -69,7 +69,69 @@ permissions:
   contents: read
 
 jobs:
+  # idp#8342: every sandbox agent boots with growmos on PATH, at a pinned commit of the estate fork,
+  # proved to write ASCII only (bin/growmos-pin). Trusted job: the App token reads the private fork
+  # here and never reaches the agent job, which only downloads the proved source tree.
+  tools:
+    # Same founder-only condition as the agent job: the App token is minted only for a run that
+    # will actually start an agent.
+    if: >-
+      github.event_name != 'issues' || (
+        github.actor == vars.ESTATE_FOUNDER_LOGIN &&
+        github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
+        ((github.event.action == 'opened' && startsWith(github.event.issue.title, '[LEGION] ')) ||
+         (github.event.action == 'labeled' && (github.event.label.name == 'legion-run' || github.event.label.name == 'claude-native')))
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GROWMOS_SHA: 07d003422f870ebad22b2c05accb91c268d9b9a4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "::error::SEED_GITHUB_APP_PEM_B64 is not set"; exit 1; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          owner: ${{ github.repository_owner }}
+          repositories: growmos
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/growmos
+          ref: ${{ env.GROWMOS_SHA }}
+          token: ${{ steps.app.outputs.token }}
+          path: growmos
+          persist-credentials: false
+      - name: Pin growmos and prove it writes ASCII only
+        run: |
+          set -euo pipefail
+          [ "$(git -C growmos rev-parse HEAD)" = "$GROWMOS_SHA" ] || { echo "::error::growmos is not at the pin"; exit 1; }
+          bin/growmos-pin "$PWD/growmos"
+          rm -rf growmos/.git
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: growmos-pinned
+          path: growmos/src
+          retention-days: 1
+
   agent:
+    needs: tools
     # Only the founder may label an issue they authored as a Legion mission.
     # claude-native selects genuine Claude Code with the same founder authorization,
     # sealed transcript firewall and patch-only submission boundaries.
@@ -108,6 +170,20 @@ jobs:
             *)           echo "::error::unknown harness"; exit 1 ;;
           esac
           bash bin/agent-sandbox-age
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: growmos-pinned
+          path: ${{ runner.temp }}/growmos/src
+
+      - name: Put the pinned growmos on PATH
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nPYTHONPATH="%s/growmos/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m growmos "$@"\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/bin/growmos"
+          chmod +x "$RUNNER_TEMP/bin/growmos"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/growmos" --version
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
