@@ -43,5 +43,5 @@ spec:
             kind: Middleware
             name: edge-headers
       backendRefs:
-        - name: pennyd
+        - name: litellm
           port: 4000
