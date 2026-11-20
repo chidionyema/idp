@@ -222,6 +222,12 @@ admission:
   justification: the router's answer cache, which is what keeps the estate off paid lanes; its measured
     request (25m/64Mi) fits the one-node budget and it has no free-tier home
   rung: '7'
+- workload: llm/deployment/pennyd
+  cpu: 50m
+  memory: 64Mi
+  justification: 'the estate router (idp#8067) that replaces litellm on the cloud route; its declared
+    request (50m/64Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
 - workload: llm/deployment/router-event-publisher
   cpu: 20m
   memory: 64Mi
@@ -602,15 +608,6 @@ refused:
   destination: the product's own deployment path (GitHub Actions), with the product
   rung: '2'
 orphans:
-- path: backstage/founder
-  decision: reserved
-  reason: the founder's catalogue, rendered by bin/catalog-gen and read by /fleet
-- path: backstage/org
-  decision: reserved
-  reason: the organisation catalogue, rendered by bin/catalog-gen
-- path: backstage/platform
-  decision: reserved
-  reason: the platform catalogue, rendered by bin/catalog-platform
 - path: platform/acg
   decision: cut
   reason: a second context and graph layer; the estate's memory is the estate context broker and growmos,
@@ -624,12 +621,6 @@ orphans:
 - path: platform/alerts-secret
   decision: reserved
   reason: the secret the alert delivery path reads
-- path: platform/backstage/base
-  decision: reserved
-  reason: the Backstage base the laptop developer portal builds from
-- path: platform/backstage/namespace/base
-  decision: reserved
-  reason: the Backstage namespace base
 - path: platform/backstage/overlays/local
   decision: reserved
   reason: the laptop overlay of the developer portal

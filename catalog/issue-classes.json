@@ -267,6 +267,26 @@
    "recurrence_checks": [
     "bin/pre-push-wall.py pre-push origin/main"
    ]
+  },
+  {
+   "class": "landed-reported-as-operational",
+   "first_seen": "2026-11-19",
+   "instances": [
+    "pennyd fixes #8285 #8291 #8300 #8313 landed into a directory Flux never applied while llm.mumchimp.com answered 530",
+    "Legion released with 70 consecutive failed runs",
+    "agents announced success on a push or a landing"
+   ],
+   "gap": "nothing between a Greenlane landing and the live estate proved the change operated; admission never asked what operational meant",
+   "compensating_action": "bin/claim-gate refuses a claim with no SHIP-CONTRACT; Greenlane holds landed lanes in State.verifying and posts OPERATIONAL / NOT OPERATIONAL with evidence (DBG-038)",
+   "falsifier": "tests/test_greenlane_landed_is_not_operational.py; tests/test_claim_gate.py contract cases",
+   "owner": "greenlane",
+   "surfaces": [
+    "ci",
+    "greenlane",
+    "claims"
+   ],
+   "status": "open",
+   "recurrence_checks": []
   }
  ]
 }
