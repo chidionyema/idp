@@ -287,6 +287,22 @@
    ],
    "status": "open",
    "recurrence_checks": []
+  },
+  {
+   "class": "FC_PRECOMMIT_CERTIFIES_WRONG_BYTES",
+   "first_seen": "2026-11-20",
+   "gap": "a flag bought a boundary exemption, and the working tree was hashed while HEAD was stamped, so an unstaged edit was certified as the commit",
+   "compensating_action": ".githooks/pre-commit has no FOUNDER_DIRECT_SEAL path and passes --staged; bin/verify_three_proofs.py --staged certifies git cat-file blob :<path>",
+   "falsifier": "tests/test_precommit_verifies_staged_blobs.py",
+   "owner": "genesis-certifier",
+   "status": "closed",
+   "instances": [
+    "idp#8273",
+    "idp#8274"
+   ],
+   "recurrence_checks": [
+    "bin/pre-push-wall.py pre-push origin/main"
+   ]
   }
  ]
 }
