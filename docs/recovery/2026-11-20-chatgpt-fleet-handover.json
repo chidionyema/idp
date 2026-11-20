@@ -1,0 +1,321 @@
+{
+  "schema": "estate.source-handover.inventory/1",
+  "date": "2026-11-20",
+  "root": "chidionyema/idp#7771",
+  "commercial_priority": "chidionyema/idp#7838",
+  "status": "SOURCE_INDEXED_NOT_ACCEPTED",
+  "source_candidates": [
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7838",
+      "branch": "preview/meridian-public-20261117",
+      "sha": "f51343804d17e37c6ea47a51d34d52e83392b7b9",
+      "instruction": "Public investor and Chronos five-path release. Recover exact diff against 7b9e95520eb75b85b4b8b0e9a62c538d3c832bcd; latest observed main d7311e5204f36f64dd97077923a2568627806eee had no intervening web changes. Signed admission, browser tests and deployment outstanding.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7523",
+      "branch": "research/7523-frontier-assurance",
+      "sha": "9ea5a2b555073ba69f8a8dcd7999ef238f98cb6a",
+      "instruction": "NSVEE, signed receipt predicate, Greenlane prefix checks, mutation, binary judge calibration/fixed horizon, 19 executable BDD scenarios. 67 local extracted component tests reported, not assembled source CI. Finish independent receipt/nonce/fence effect integration, exact-source tests, Ruff, BDD, positive/negative canary.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7790",
+      "branch": "research/7790-autonomous-recovery-20261119",
+      "sha": "3f0b8deb5e782e4408205fa5772cdee825b10561",
+      "instruction": "Bounded BASE_RED/failed-domain independent recovery and fenced takeover; production adapters, independent proof and signed delivery outstanding.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7790",
+      "branch": "research/7790-atomic-recovery-20261118",
+      "sha": "4ebcdae079ce1db8cb0a0dc8f56a62d2705c4da2",
+      "instruction": "Atomic stalled-mission recheck, 600-second boundary, fresh lease/progress races, concurrent wakeup SQLite falsifiers. Compare with later candidate and landed code; integrate only still-missing delta.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#8061",
+      "branch": "research/8061-router-cloud-only-20261119",
+      "sha": "71db48066af8acd8a9876c38ec21d79107232e24",
+      "instruction": "Cloud-only router and falsifiers for founder-host route reintroduction; remove Mac dependency even in DR; test actual off-host authenticated worker/route rather than local service.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#8062",
+      "branch": "research/8062-pennyd-mount-closure-20261119",
+      "sha": "f0d228f71b6372087a80ced4dc2148f764bed520",
+      "instruction": "Mounted DeepSeek provider required by PennyD config; reconcile with #8067/#8277, actual secret mount, pod Ready, live off-host inference and controlled traffic cutover.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#8283",
+      "branch": "research/8283-legion-route-admission-20261119",
+      "sha": "34ec962c85aa22dd21cbb25dae93688eb4e11995",
+      "instruction": "Dynamic worker/provider admission with persisted exhausted-account exclusion. 23 local tests reported, including 4 differential regressions; no live admission. Recover missing functionality from this and #8296 (closed unmerged), not failed Gemini/MiniMax fixed loop.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7561",
+      "branch": "research/7561-admission-helper-20261117",
+      "sha": "c00913cfe0bbdae0303f2c1e18c176885867cc52",
+      "instruction": "Canonical Proof 2 patch scope predicate. Reconcile against existing landed helper, no duplicate implementation.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#7561",
+      "branch": "research/7561-scoped-admission-20261117",
+      "sha": "fb864efe35d2c9acbf2fd12ae20c8ccbbde0e335",
+      "instruction": "Pre-inference scope envelope and trusted submit readiness; related #8256/#8257/#8283; verify actual workflow and protected-path authorization.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P0",
+      "issue": "chidionyema/idp#8154",
+      "branch": "research/8154-producer-preparation-20261119",
+      "sha": "adbc3d4d11cfc88d94af0a7a1c967bcba7006a9c",
+      "instruction": "Fail-closed producer formatting and registry preparation (#8304); verify canonical hook/CI behavior and don't create known-red PRs.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#3525",
+      "branch": "research/3525-budget-boundary-20261118",
+      "sha": "b5499a8f199462bfc60ce1891f4e38ae32472c3c",
+      "instruction": "Idempotent Battalion budget/debit/refill operation and replay receipt; 14 SQLite cases reported, including 24 concurrent duplicates and receipt insertion failure. Temporal integration and real budget reconciliation outstanding.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#8102",
+      "branch": "research/8102-pennyd-durable-reservations-20261118",
+      "sha": "221b61b5a652f8f381da6143f96fda5dc5dbd2f8",
+      "instruction": "Durable reservation/admission and conservative restart holds; eight regression cases added; Rust compile not independently run in ChatGPT environment. Reconcile merged PennyD budget work before applying anything.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#8211",
+      "branch": "research/8211-github-app-clock-20261118",
+      "sha": "a456388c077813b5a90a4438f390a70cae621f4f",
+      "instruction": "Clock parsing candidate, 14 synthetic shell cases reported. #8238 merged equivalent whole Date correction; do not duplicate without semantic comparison; mint actual least-scope App token and prove callers.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7771",
+      "branch": "research/reconcile-chatgpt-today-20261116",
+      "sha": "3385425ceb5d714b23655e7a504f549765e14dd4",
+      "instruction": "Combined TRIAD, passkey, observer and gate acceptance harness; inspect delta and existing merged #8216 assurance. Protected workflow is research-only; no automatic promotion.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7908",
+      "branch": "research/helm-exocortex-20261111",
+      "sha": "824bb85bef059543f3b117d8a8bd015a777efdbb",
+      "instruction": "HELM research analysis; zero usable causal pairs explicitly recorded. Obtain real data and preregister matched experiments; do not claim effect.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7908",
+      "branch": "research/helm-shot-control-20261111",
+      "sha": "729e54682adbd6d46bfe71d12c02b604999ffc26",
+      "instruction": "HELM shot control branch; inspect experiment history, exact diff and evidence before integration.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7838",
+      "branch": "research/merian-group-website-20261109",
+      "sha": "a42b8a862e459031d9c338931dde4f6d7a103c03",
+      "instruction": "Historical site research acceptance workflow; superseded by later public candidate for launch. Preserve useful tests only.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7771",
+      "branch": "research/passkey-cryptographic-verifier-20261116",
+      "sha": "928fe522620e3f277e4290133e842fb12c51c864",
+      "instruction": "Worker relay/crypto signature falsifiers; compare canonical passkey verification, QUAD and deployed authorization; never self-certify.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#8134",
+      "branch": "research/triad-transfer-pilot-20261116",
+      "sha": "fd03dd8482a3157de5db82a37b900969f8e412c1",
+      "instruction": "Academy adaptive studio / transfer pilot, offline browser evidence and independent research acceptance; prototype only pending governed integration and live QA.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7927",
+      "branch": "lane/legion-decision-ins-00011-20261111",
+      "sha": "c6c1f3cfab8917728b30a0be104789fb96b3755c",
+      "instruction": "INS-00011 eight workforce formations and founder surface. Adoption and actual execution/evidence, not merely documentation.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#7972",
+      "branch": "lane/legion-age-bootstrap-pin-20261111",
+      "sha": "bee19a4ab5397fa1bd1edf44724b53381c70cf2b",
+      "instruction": "Historical pinned age bootstrap; reconcile landed main before repair; prove actual cloud worker via supported capacity.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    },
+    {
+      "priority": "P1",
+      "issue": "chidionyema/idp#8165",
+      "branch": "lane/estate-assurance-20261115",
+      "sha": "6a963b34c2cb75050d89a0ac5205810b5aacc615",
+      "instruction": "Assurance/credential handling candidate; PR #8161 closed unmerged; #8216 rebased merged; compare remainder, do not revive obsolete branch wholesale.",
+      "status": "RECONCILE_BEFORE_PROMOTION"
+    }
+  ],
+  "workstreams": [
+    {
+      "priority": "P0 commercial delivery",
+      "anchors": "7838, 7847, 8202, 8134, 7998, 8010, 7890; Argon #94/#98",
+      "instruction": "Ship existing five-file candidate via signed claim/Greenlane; explicitly exercise investor and Chronos routes at 320/375/768/1440, walkthrough interaction, error states, keyboard and mobile nav; verify exact SHA, apex/www TLS, approved contact sink and synthetic recipient receipt. In separate bounded slices add JANUS (#7838 comment 7013910184), sitemap, portfolio/Academy/Fieldbooks, not a new site. Private investor room remains withheld until Argon independent review and real MFA/grants/revocation tests."
+    },
+    {
+      "priority": "P0 pre-PR assurance and producer admission",
+      "anchors": "7523, 8076, 7734, 8103, 6061, 7932, 8256, 8257, 8154, 8304",
+      "instruction": "Use existing NSVEE/QUAD/Greenlane; actual independent verifier, exact candidate+base+scope+policy+contract+environment, trusted issuer, evidence freshness, negative controls, atomic nonce/fence, safe recovery. Run canonical formatting/registry/lint/BDD before raising PRs; no skipped/neutral required proof. Test malicious early exits, forged receipts, stale base, mutation survival, missing test inventory, verifier outage, real authorised repair. Supervisor/judge/redteam calibration must be empirical, not a synthetic metric. Do not enforce new gate broadly until real canary and valid recovery path are measured."
+    },
+    {
+      "priority": "P0 autonomous repair and no handback",
+      "anchors": "7771, 7790, 8232, 8277, 8061, 7412, 7819, 7798, 8188",
+      "instruction": "Retire LiteLLM only with verified desired/live inventory and dependency-safe prune; restore PennyD; separate BASE_RED from candidate regressions and admit bounded independently proven repairs. Detect failed database/DNS endpoints/Flux/CI; recover independently of the failed domain, preserve same-root obligations and fence stale worker. Compound fault exercise: cluster or Greenlane unavailable, worker death, stale/replayed fence, verifier outage, actual repair plus causal class closure. 600s real stagnation, not meaningless heartbeat."
+    },
+    {
+      "priority": "P0 cloud workers and routing",
+      "anchors": "8061, 8067, 8062, 8283, 7561, 7794, 7927, 7972, 8256, 8257",
+      "instruction": "No Mac execution, including DR. Dynamic provider capacity and budget/scope admission, no hardcoded or exhausted account retry, persisted cooldown, independent firewall, trusted submit, canary real worker. Preserve authorized identity boundaries, no founder impersonation. Activate OpenCode and Legion formations; leave model/vendor selection to observed capability, cost, availability and independence; never conflate one-token probe with full task reservation."
+    },
+    {
+      "priority": "P0 source custody and Genesis",
+      "anchors": "7760, 7819, 8184, 8164, 7481, 8133; Argon #20/#98/#100",
+      "instruction": "Recover complete producer source from Gemini Web and AI Studio as separate origins; actual original bytes/history + dirty/untracked inventory, hashes, private custody, inspect all branches and artifact provenance. Do not regenerate missing source or leak private snippets. Merge reconciled Argon changes without loss, real browser/device founder surface with authenticated controls, live IO/OTTO/Legion, read-after-write and exact causal proof. No control via public investor access."
+    },
+    {
+      "priority": "P1 research and institutional learning",
+      "anchors": "7452, 8188, 8261, 8262, 8030, 8137, 8014, 7536, 7800, 7799, 8169, 8183, 8184, 8187, 3525",
+      "instruction": "RIB as shared primitive: independent split authority, authenticated scope/invariant admission, authoritative projections from certified commits and conserved obligations, dual operational/causal closure; FRCE/RFCE inheritance. KARMA event census/corrective class ledger, Optimus experimental method/measurements, Chronos sole scheduler/delivered cadence, Genesis/Face visible actual data, QUAD full payload/root binding. Keep DoF scope-bound and authorized; no unilateral global freeze, no premature mandate. JANUS reciprocal-loop research, HELM causal pairs, TRIAD transfer, adversarial designs; real preregistered experiments with known null/negative findings, no invented study results."
+    },
+    {
+      "priority": "P1 investor demonstration and commercial roadmap",
+      "anchors": "8134, 7998, 7838, 7901; Argon #94/#98",
+      "instruction": "15-minute command board: human problem, research-to-engineering-to-commercial thesis, one genuine instruction-to-verified-outcome demonstration, research differentiation, clearly labeled Academy prototype, actual commercial milestones and approved investor ask. No invented raise, valuation, traction, revenue, client outcomes or secure access. Ensure real URLs, provenance, user-facing acceptance and verified Telegram pin only through authorized OTTO."
+    }
+  ],
+  "merged": [
+    {
+      "issue": "8192",
+      "sha": "1ca6023698ab49ca3d519ca045b4b6b0a6a3545c",
+      "description": "PennyD recovered daemon",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8193",
+      "sha": "7786be91881b0dd930b650de58d451279d2e45d1",
+      "description": "SEED App",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8164",
+      "sha": "d8640f4ab94d582c5e7c14328635962252488c55",
+      "description": "Gemini forensics inventory",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8216",
+      "sha": "4f0af5e5be4f0b93aebc2c34f94be0454e5ab0c8",
+      "description": "rebased assurance",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8235",
+      "sha": "adb1fecc7551d4a1868a3ad39613d8a21caea1f7",
+      "description": "port declarations",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8238",
+      "sha": "481dded3e696b93681402b37df6a08850387c7e0",
+      "description": "whole Date JWT",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    },
+    {
+      "issue": "8255",
+      "sha": "912135becbced7c7e6e014aeb70fcc47173804d0",
+      "description": "SEED callers",
+      "status": "MERGED_EFFECT_UNVERIFIED"
+    }
+  ],
+  "closed_unmerged": [
+    {
+      "issue": "8212",
+      "sha": "2a45a500847ffc020af66623adc20e1fc625c0db",
+      "description": "retired OCI exchange",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    },
+    {
+      "issue": "8224",
+      "sha": "5dacd92a8d288564abd67d988267eed029dd020b",
+      "description": "four-vendor fallbacks",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    },
+    {
+      "issue": "8230",
+      "sha": "2ee1f2bab5a3a816cff8f57c6f4ef7ed8669790b",
+      "description": "shadow crash capture",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    },
+    {
+      "issue": "8234",
+      "sha": "aa911bf0c514cc8f7664d39875a9e8c6d90dd54c",
+      "description": "Date parsing, equivalent landed #8238",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    },
+    {
+      "issue": "8296",
+      "sha": "98b490f0c769ca345e214d0fa87481aa8d2a322e",
+      "description": "Legion wiring; not on current main workflow",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    },
+    {
+      "issue": "8161",
+      "sha": "6a963b34c2cb75050d89a0ac5205810b5aacc615",
+      "description": "assurance; rebased #8216 landed",
+      "status": "CLOSED_UNMERGED_RECONCILE"
+    }
+  ],
+  "argon": {
+    "issue": 98,
+    "pr": 100,
+    "head": "b8e78a8976d24b0cfea4245f2ee40d1b2bff37ba",
+    "status": "OPEN"
+  },
+  "coverage": "Reachable refs and retrieved history; private sources and runtime custody not fully observed",
+  "required_completion": [
+    "authenticated_acceptance",
+    "exact_scope_base_and_candidate",
+    "independent_tests",
+    "signed_admission",
+    "landed_sha",
+    "deployed_revision",
+    "independent_operational_effect",
+    "causal_class_settlement"
+  ]
+}
