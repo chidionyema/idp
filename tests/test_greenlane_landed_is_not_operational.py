@@ -116,7 +116,8 @@ def test_a_backend_without_the_verifier_changes_nothing():
     assert "lane/a" in st.verifying
 
 
-# -- the GitHub backend's half: the contract is read from the claim, the probe is a GET -------
+# -- the GitHub backend's half: the contract is read from the claim, the probe is a GET, and an
+# Optimus metric is read by running its registered measure, never from what anyone posts ------
 
 import json  # noqa: E402
 
@@ -125,13 +126,13 @@ from greenlane import github as G  # noqa: E402
 CONTRACT = (
     "SHIP-CONTRACT\n"
     "accept: GET https://x.example.test/health expect 200 within 30m\n"
-    "optimus: x.pass_rate baseline=UNKNOWN target=1\n"
+    "optimus: estate.platform_dirs_never_applied baseline=47 target=44\n"
     "failure-classes: gate-blocks-its-own-repair\n"
     "debug-pack: DBG-001"
 )
 
 
-def _backend(monkeypatch, comments, code):
+def _backend(monkeypatch, code, readings, comments=()):
     be = G.GitHubBackend.__new__(G.GitHubBackend)
     be.repo = "o/r"
     monkeypatch.setattr(
@@ -142,45 +143,64 @@ def _backend(monkeypatch, comments, code):
     )
 
     def run(*argv, **k):
-        path = argv[2]
-        if path.endswith("/comments?per_page=100"):
-            return json.dumps(comments)
+        if argv[2].endswith("/comments?per_page=100"):
+            return json.dumps(list(comments))
         return json.dumps({"body": CONTRACT})
 
     monkeypatch.setattr(G, "_run", run)
     monkeypatch.setattr(G, "_http_get", lambda url, timeout=20.0: (code, "ok"))
+    monkeypatch.setattr(
+        be, "_optimus_readings", lambda names: dict(readings), raising=False
+    )
     return be
 
 
 def test_the_probe_failing_keeps_it_pending(monkeypatch):
-    be = _backend(monkeypatch, [], 530)
+    be = _backend(monkeypatch, 530, {"estate.platform_dirs_never_applied": 42})
     verdict, why = be.verify_operational("lane/a", {"head": "h"})
     assert verdict == "pending" and "-> 530" in why
 
 
-def test_an_answering_probe_without_an_optimus_reading_is_not_a_pass(monkeypatch):
-    be = _backend(monkeypatch, [], 200)
+def test_an_unmeasured_metric_is_unknown_and_never_a_pass(monkeypatch):
+    be = _backend(monkeypatch, 200, {})
     verdict, why = be.verify_operational("lane/a", {"head": "h"})
-    assert verdict == "pending" and "no Optimus reading for x.pass_rate" in why
+    assert verdict == "pending" and "estate.platform_dirs_never_applied=UNKNOWN" in why
 
 
-def test_probe_and_optimus_reading_together_pass(monkeypatch):
-    be = _backend(
-        monkeypatch,
-        [{"body": "optimus.x.pass_rate=0.97", "user": {"login": "estate-agents[bot]"}}],
-        200,
-    )
+def test_a_reading_short_of_its_target_is_not_a_pass(monkeypatch):
+    be = _backend(monkeypatch, 200, {"estate.platform_dirs_never_applied": 46})
+    verdict, why = be.verify_operational("lane/a", {"head": "h"})
+    assert verdict == "pending" and "=46 (target 44)" in why
+
+
+def test_probe_and_a_reading_at_target_pass(monkeypatch):
+    be = _backend(monkeypatch, 200, {"estate.platform_dirs_never_applied": 42})
     rec = {"head": "h"}
     verdict, why = be.verify_operational("lane/a", rec)
     assert verdict == "pass", why
     assert rec["claim"] == "o/r#7" and rec["deadline_min"] == 30.0
 
 
-def test_an_author_posting_its_own_optimus_reading_certifies_nothing(monkeypatch):
+def test_a_number_posted_on_the_claim_is_not_a_reading(monkeypatch):
     be = _backend(
         monkeypatch,
-        [{"body": "optimus.x.pass_rate=0.99", "user": {"login": "some-agent"}}],
         200,
+        {},
+        comments=[{"body": "optimus.estate.platform_dirs_never_applied=1"}],
     )
-    verdict, why = be.verify_operational("lane/a", {"head": "h"})
-    assert verdict == "pending" and "no Optimus reading" in why
+    verdict, _ = be.verify_operational("lane/a", {"head": "h"})
+    assert verdict == "pending"
+
+
+def test_the_registered_measures_really_measure(monkeypatch):
+    be = G.GitHubBackend.__new__(G.GitHubBackend)
+    got = be._optimus_readings(
+        [
+            "estate.platform_dirs_never_applied",
+            "claims.ship_contract_enforced",
+            "no.such",
+        ]
+    )
+    assert got.get("claims.ship_contract_enforced") == 1.0
+    assert isinstance(got.get("estate.platform_dirs_never_applied"), float)
+    assert "no.such" not in got

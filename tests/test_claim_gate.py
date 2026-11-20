@@ -27,7 +27,7 @@ def _gate():
 CONTRACT = (
     "SHIP-CONTRACT\n"
     "accept: GET https://voice.example.test/health expect 200 within 30m\n"
-    "optimus: voice.doctor.pass_rate baseline=UNKNOWN target=0.99\n"
+    "optimus: claims.ship_contract_enforced baseline=UNKNOWN target=1\n"
     "failure-classes: gate-blocks-its-own-repair\n"
     "debug-pack: DBG-001"
 )
@@ -584,7 +584,7 @@ def test_each_contract_field_is_judged():
         "accept": CONTRACT.replace(
             "https://voice.example.test/health", "http://x/health"
         ),
-        "optimus": CONTRACT.replace("target=0.99", "target=high"),
+        "optimus": CONTRACT.replace("target=1", "target=high"),
         "failure-classes": CONTRACT.replace(
             "gate-blocks-its-own-repair", "no-such-class"
         ),
@@ -597,3 +597,14 @@ def test_each_contract_field_is_judged():
 
 def test_a_complete_contract_admits_the_change():
     assert run() == []
+
+
+def test_an_optimus_metric_nobody_can_measure_is_refused():
+    contract = CONTRACT.replace("claims.ship_contract_enforced", "made.up_metric")
+    out = run(issue=_issue(claim=_claim(), contract=contract))
+    assert any("unregistered metric(s) made.up_metric" in p for p in out), out
+
+
+def test_the_gate_measures_its_own_enforcement():
+    g = _gate()
+    assert g.optimus_reading(NOW) == "optimus.claims.ship_contract_enforced=1"

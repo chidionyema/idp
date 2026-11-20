@@ -348,3 +348,32 @@ def test_a_subdirectory_its_applied_parent_names_is_applied(tmp_path):
     out = run(root)
     assert out.returncode == 0, out.stdout + out.stderr
     assert "platform/app/router" not in out.stdout
+
+
+def test_the_optimus_reading_counts_the_never_applied_directories(tmp_path):
+    root = build_repo(tmp_path / "repo", clean_budget())
+    sub = root / "platform" / "app" / "router"
+    sub.mkdir()
+    (sub / "kustomization.yaml").write_text("resources:\n  - orphan.yaml\n")
+    (sub / "orphan.yaml").write_text(ORPHAN.replace("orphan", "router"))
+    subprocess.run(
+        ["git", "-C", str(root), "add", "-A"], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "router"],
+        check=True,
+        capture_output=True,
+    )
+    before = run(root, "--optimus").stdout.strip()
+    (root / "platform" / "app" / "kustomization.yaml").write_text(
+        "resources:\n  - app.yaml\n  - router\n"
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qam", "named"],
+        check=True,
+        capture_output=True,
+    )
+    after = run(root, "--optimus").stdout.strip()
+    n_before = int(before.split("=")[1])
+    assert before.startswith("optimus.estate.platform_dirs_never_applied=")
+    assert int(after.split("=")[1]) == n_before - 1
