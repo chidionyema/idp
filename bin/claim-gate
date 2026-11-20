@@ -424,6 +424,48 @@ def _known(path: Path, list_key: str, id_key: str) -> set[str]:
     return {str(i.get(id_key)) for i in items if isinstance(i, dict) and i.get(id_key)}
 
 
+def _head_registers(
+    head: str, path: Path, list_key: str, id_key: str, with_measure: bool = False
+) -> set[str]:
+    """What the change ITSELF registers in one estate registry, judged the way main will.
+
+    A lane that ADDS a registry entry could not cite it: this gate reads the registries in the
+    checkout it runs in, and the Greenlane checks that out at `ref: main`
+    (.github/workflows/greenlane.yml), so the entry the lane is adding is not there yet.
+    Measured 2026-11-20: lane/i8251-wall-gate registered `gates.unmarked_inner_bounds` and was
+    refused "optimus names unregistered metric(s)" by the gate that asks for the metric.
+    idp#8381.
+
+    Admitting the head's own entry does not let an author's text become a reading: for a metric
+    the reading is taken from main AFTER landing (greenlane/github.py verify_operational ->
+    _optimus_readings runs the registered argv in the main checkout) and only an entry carrying
+    a `measure` argv counts here, so a name with nothing behind it still refuses. For classes and
+    debugging packs the entry is a record reviewed like any other line of the change.
+    """
+    if not head:
+        return set()
+    rel = path.relative_to(ROOT).as_posix()
+    try:
+        data = json.loads(git("show", f"{head}:{rel}"))
+    except (subprocess.CalledProcessError, OSError, ValueError):
+        return set()
+    items = data.get(list_key, []) if isinstance(data, dict) else data
+    out: set[str] = set()
+    for i in items:
+        if not isinstance(i, dict) or not i.get(id_key):
+            continue
+        if with_measure:
+            measure = i.get("measure")
+            if not (
+                isinstance(measure, list)
+                and measure
+                and all(isinstance(a, str) for a in measure)
+            ):
+                continue
+        out.add(str(i[id_key]))
+    return out
+
+
 def ship_contract(texts: list[str]) -> dict | None:
     """The newest SHIP-CONTRACT block across the claim issue's body and comments."""
     block = None
@@ -439,7 +481,7 @@ def ship_contract(texts: list[str]) -> dict | None:
     return fields
 
 
-def contract_problems(where: str, texts: list[str]) -> list[str]:
+def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]:
     """Why the claim's ship contract does not admit the change; empty means it does."""
     c = ship_contract(texts)
     how = (
@@ -461,7 +503,9 @@ def contract_problems(where: str, texts: list[str]) -> list[str]:
             f"{where} SHIP-CONTRACT optimus needs `<metric> baseline=<n|UNKNOWN> target=<n>`"
         )
     else:
-        registered = _known(METRICS_FILE, "metrics", "name")
+        registered = _known(METRICS_FILE, "metrics", "name") | _head_registers(
+            head, METRICS_FILE, "metrics", "name", with_measure=True
+        )
         unknown = [
             OPTIMUS.match(m).group("name")
             for m in metrics
@@ -473,7 +517,9 @@ def contract_problems(where: str, texts: list[str]) -> list[str]:
                 f"{', '.join(unknown[:5])}: register a measure in catalog/optimus-metrics.json"
             )
     classes = [x.strip() for x in c.get("failure-classes", "").split(",") if x.strip()]
-    known = _known(CLASSES_FILE, "classes", "class")
+    known = _known(CLASSES_FILE, "classes", "class") | _head_registers(
+        head, CLASSES_FILE, "classes", "class"
+    )
     missing = [x for x in classes if x not in known]
     if not classes or missing:
         out.append(
@@ -481,14 +527,19 @@ def contract_problems(where: str, texts: list[str]) -> list[str]:
             + (f" (unknown: {', '.join(missing[:5])})" if missing else "")
         )
     pack = c.get("debug-pack", "")
-    if pack not in _known(PACKS_FILE, "packs", "id"):
+    if pack not in (
+        _known(PACKS_FILE, "packs", "id")
+        | _head_registers(head, PACKS_FILE, "packs", "id")
+    ):
         out.append(
             f"{where} SHIP-CONTRACT debug-pack {pack or '<none>'!r} is not in docs/debugging-packs.json"
         )
     return out
 
 
-def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> list[str]:
+def verdict(
+    text: str, files: list[str], repo: str, fetch, now: datetime, head: str = ""
+) -> list[str]:
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
     (issue dict, comments list)."""
     refs = CLAIM_REF.findall(text)
@@ -568,7 +619,9 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
         problems += contract_problems(
-            where, [issue.get("body") or ""] + [x.get("body", "") for x in comments]
+            where,
+            [issue.get("body") or ""] + [x.get("body", "") for x in comments],
+            head,
         )
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
@@ -640,7 +693,7 @@ def judge(
             text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
             problems += [
                 f"lane {lane_head[:9]}: {p}"
-                for p in verdict(text, files, repo, fetch, now)
+                for p in verdict(text, files, repo, fetch, now, head)
             ]
         return problems
     diff = git("diff", f"{base}...{head}")
@@ -652,7 +705,7 @@ def judge(
     if dependency_pin_only(files, diff):
         return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
-    return verdict(text, files, repo, fetch, now)
+    return verdict(text, files, repo, fetch, now, head)
 
 
 def pr_of_head(repo: str, head: str) -> tuple[str, str]:
