@@ -49,6 +49,42 @@ DEPENDABOT = (
 )
 AGENT_DECLARATION = re.compile(r"^(Claim|Agent):", re.M)
 AGENT_TRAILER = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+_OPTIMUS_READING = re.compile(
+    r"^optimus\.([a-z][a-z0-9_.]{2,80})=(-?\d+(?:\.\d+)?)\s*$", re.M
+)
+_CLAIM_GATE = None
+# Identities whose `optimus.<metric>=<value>` lines are readings; everyone else is an author.
+OPTIMUS_INSTRUMENTS = frozenset({"estate-agents[bot]"})
+
+
+def _claim_gate_module():
+    """bin/claim-gate, the one parser of the ship contract (no second copy)."""
+    global _CLAIM_GATE
+    if _CLAIM_GATE is None:
+        path = Path(__file__).resolve().parents[1] / "bin" / "claim-gate"
+        loader = importlib.machinery.SourceFileLoader("claim_gate_contract", str(path))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        _CLAIM_GATE = mod
+    return _CLAIM_GATE
+
+
+def _http_get(url: str, timeout: float = 20.0) -> tuple[int, str]:
+    """One bounded GET; (status, first 64 KiB). A transport failure is status 0."""
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "greenlane-operational/1"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - https only, by ACCEPT
+            return r.status, r.read(65536).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+    except (urllib.error.URLError, OSError, ValueError):
+        return 0, ""
+
+
 CLAIM_REF = re.compile(r"^Claim:\s*(?:[\w.-]+/[\w.-]+)?#(\d+)\s*$", re.M)
 CLAIM_LINE = re.compile(
     r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=(?P<model>\S+)\s+)?paths=(?P<paths>\S+)\s+"
@@ -1783,6 +1819,144 @@ class GitHubBackend:
             )
         self._announce(lane, head, status, text or status)
         self._route_to_owner(lane, head, status, reason or status)
+
+    # -- landed is not operational (founder, 2026-11-20) -----------------------------------
+    def _claim_of(self, head: str) -> tuple[str, str]:
+        commit = self.gh(f"commits/{head}") or {}
+        message = str((commit.get("commit") or {}).get("message") or "")
+        claims = _CLAIM.findall(message)
+        if not claims:
+            return "", ""
+        claim_repo, number = claims[-1]
+        return claim_repo or self.repo, number
+
+    def _contract(self, claim_repo: str, number: str) -> Optional[dict]:
+        gate = _claim_gate_module()
+        issue = json.loads(
+            _run("gh", "api", f"repos/{claim_repo}/issues/{number}") or "{}"
+        )
+        comments = json.loads(
+            _run(
+                "gh", "api", f"repos/{claim_repo}/issues/{number}/comments?per_page=100"
+            )
+            or "[]"
+        )
+        return gate.ship_contract(
+            [issue.get("body") or ""] + [str(c.get("body") or "") for c in comments]
+        )
+
+    def verify_operational(self, lane: str, rec: dict) -> tuple[str, str]:
+        """(pass | pending | failed, evidence) for one landed lane, against the live estate.
+
+        The acceptance probe is a declarative GET (claim-gate.ACCEPT), never a command: this
+        runs with the App token. Each declared Optimus metric must have a reading, published as
+        an `optimus.<metric>` line in the claim issue by the instrument; UNKNOWN is not a pass.
+        """
+        claim_repo, number = self._claim_of(rec.get("head", ""))
+        if not number:
+            return (
+                "failed",
+                "landed with no Claim: trailer; nothing names what operational means",
+            )
+        contract = self._contract(claim_repo, number)
+        if not contract:
+            return "failed", f"{claim_repo}#{number} has no SHIP-CONTRACT"
+        rec.setdefault("claim", f"{claim_repo}#{number}")
+        gate = _claim_gate_module()
+        m = gate.ACCEPT.match(contract.get("accept", ""))
+        if not m:
+            return "failed", "SHIP-CONTRACT accept is malformed"
+        rec["deadline_min"] = float(m.group("mins"))
+        code, body = _http_get(m.group("url"))
+        want = int(m.group("code"))
+        needle = m.group("needle")
+        if code != want or (needle and needle not in body):
+            return (
+                "pending",
+                f"GET {m.group('url')} -> {code} (want {want}{', containing ' + repr(needle) if needle else ''})",
+            )
+        readings = self._optimus_readings(claim_repo, number)
+        missing = []
+        for spec in [
+            x.strip() for x in contract.get("optimus", "").split(";") if x.strip()
+        ]:
+            om = gate.OPTIMUS.match(spec)
+            if not om or om.group("name") not in readings:
+                missing.append(om.group("name") if om else spec)
+        if missing:
+            return (
+                "pending",
+                f"probe ok ({code}); no Optimus reading for {', '.join(missing)}",
+            )
+        return (
+            "pass",
+            f"GET {m.group('url')} -> {code}; Optimus read {', '.join(sorted(readings))}",
+        )
+
+    def _optimus_readings(self, claim_repo: str, number: str) -> dict[str, str]:
+        comments = json.loads(
+            _run(
+                "gh", "api", f"repos/{claim_repo}/issues/{number}/comments?per_page=100"
+            )
+            or "[]"
+        )
+        out: dict[str, str] = {}
+        for c in comments:
+            # A reading counts only from the instrument, never from the author: an agent that
+            # posts its own metric is certifying itself (KARMA, ImproverCannotSelfCertify).
+            if str((c.get("user") or {}).get("login") or "") not in OPTIMUS_INSTRUMENTS:
+                continue
+            for mm in _OPTIMUS_READING.finditer(str(c.get("body") or "")):
+                out[mm.group(1)] = mm.group(2)
+        return out
+
+    def report_operational(
+        self, lane: str, rec: dict, verdict: str, evidence: str
+    ) -> None:
+        """Post the operational verdict where the claim lives; a failure reopens the owner."""
+        claim = rec.get("claim") or "/".join(
+            self._claim_of(rec.get("head", ""))
+        ).replace("/", "#", 1)
+        if "#" not in str(claim):
+            print(
+                f"WARN    greenlane  {lane} {verdict}: no claim to tell",
+                file=sys.stderr,
+            )
+            return
+        claim_repo, number = str(claim).rsplit("#", 1)
+        head = "OPERATIONAL" if verdict == "pass" else "NOT OPERATIONAL"
+        body = (
+            f"{head} -- {lane} landed in {rec.get('batch')} as {str(rec.get('tip'))[:12]}\n\n"
+            f"{evidence}\n\nJudged by Greenlane against the ship contract, not by the author."
+        )
+        try:
+            self.gh_issue_comment(claim_repo, number, body)
+            if verdict != "pass":
+                _run(
+                    "gh",
+                    "api",
+                    f"repos/{claim_repo}/issues/{number}/labels",
+                    "-X",
+                    "POST",
+                    "-f",
+                    "labels[]=not-operational",
+                )
+        except RuntimeError as e:
+            print(
+                f"WARN    greenlane  operational verdict for {lane} not posted: {e}",
+                file=sys.stderr,
+            )
+
+    def gh_issue_comment(self, claim_repo: str, number: str, body: str) -> None:
+        _run(
+            "gh",
+            "api",
+            f"repos/{claim_repo}/issues/{number}/comments",
+            "-X",
+            "POST",
+            "-f",
+            f"body={body}",
+        )
 
     _announced: set = set()
 
