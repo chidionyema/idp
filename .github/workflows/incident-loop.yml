@@ -22,12 +22,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      ESTATE_HOME: ${{ runner.temp }}/estate
       ESTATE_INCIDENT_DISPATCH: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+
+      # runner context is unavailable in job-level env. Initialize after allocation.
+      - name: Name the ledger home
+        run: echo "ESTATE_HOME=$RUNNER_TEMP/estate" >> "$GITHUB_ENV"
 
       - name: Decode the App key
         id: pem
