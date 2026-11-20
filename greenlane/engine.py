@@ -271,6 +271,15 @@ class Engine:
             self.log.append(
                 f"refused hand-raised PR #{pr.get('number')} -> lane {pr.get('lane')}"
             )
+        # idp#8331: an adopted hand-raised PR stayed open, red on its own bddproof rung until
+        # landing, so every agent PR reached the founder red for the same reason. The lane
+        # carries the work and landing opens its own proven PR; the adopted one is closed.
+        retire = getattr(self.b, "retire_adopted_prs", None)
+        if retire is not None:
+            for number in retire():
+                self.log.append(
+                    f"closed adopted PR #{number}: its lane carries the work"
+                )
         self._observe_lanes()
         self._retire_stale_lanes()
         if self.s.batch is not None:
