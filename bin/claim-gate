@@ -666,7 +666,7 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
     # Resolve a ref name to a sha before asking GitHub (GitHub needs a sha).
     resolved = (
         subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-            ["git", "rev-parse", head],
+            ["git", "rev-parse", head],  # noqa: S607 - git on PATH, fixed argv
             capture_output=True,
             text=True,
         ).stdout.strip()
@@ -678,7 +678,7 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
         _PRS[key] = ("", "")
         try:
             p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-                ["gh", "api", f"repos/{repo}/commits/{resolved}/pulls"],
+                ["gh", "api", f"repos/{repo}/commits/{resolved}/pulls"],  # noqa: S607 - gh on PATH, fixed argv
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -733,7 +733,7 @@ def live_body(repo: str, num: str = "") -> str:
     if not num:
         return os.environ.get("PR_BODY", "")
     p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-        ["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", ".body"],
+        ["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", ".body"],  # noqa: S607 - gh on PATH, fixed argv
         capture_output=True,
         text=True,
         timeout=30,
