@@ -14,7 +14,7 @@ class = "paid"
 price_in_per_mtok = 0.15
 price_out_per_mtok = 0.60
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = ["reliable-chat", "minimax_m31f", "claude-haiku-tertiary", "gemini", "vision", "gemini-3.5-flash"]
 fallbacks = ["deepseek/deepseek-flash", "zai/glm-5.3-flash", "groq/openai/gpt-oss-120b"]
 
@@ -24,7 +24,7 @@ class = "paid"
 price_in_per_mtok = 0.30
 price_out_per_mtok = 1.20
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = ["default", "minimax", "minimax_m3", "claude-sonnet-quaternary"]
 fallbacks = ["minimax/MiniMax-M3.1-Flash", "deepseek/deepseek-flash", "zai/glm-5.3-flash", "groq/openai/gpt-oss-120b"]
 
@@ -34,6 +34,6 @@ class = "paid"
 price_in_per_mtok = 0.15
 price_out_per_mtok = 0.60
 context_window = 1000000
-min_output_tokens = 256
+min_output_tokens = 8192
 aliases = ["minimax_m27", "claude-haiku-legacy"]
 fallbacks = ["minimax/MiniMax-M3.1-Flash", "deepseek/deepseek-flash", "zai/glm-5.3-flash", "groq/openai/gpt-oss-120b"]
