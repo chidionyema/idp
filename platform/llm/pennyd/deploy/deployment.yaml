@@ -33,6 +33,8 @@ spec:
             - {name: zai-key, mountPath: /run/secrets/pennyd/zai, readOnly: true}
             - {name: minimax-key, mountPath: /run/secrets/pennyd/minimax, readOnly: true}
             - {name: deepseek-key, mountPath: /run/secrets/pennyd/deepseek, readOnly: true}
+            - {name: groq-key, mountPath: /run/secrets/pennyd/groq, readOnly: true}
+            - {name: openrouter-key, mountPath: /run/secrets/pennyd/openrouter, readOnly: true}
             - {name: log, mountPath: /var/lib/pennyd}
           readinessProbe:
             httpGet: {path: /health, port: 4000}
@@ -59,3 +61,13 @@ spec:
           secret: {secretName: human-minimax, optional: true}
         - name: deepseek-key
           secret: {secretName: human-deepseek, optional: true}
+        - name: groq-key
+          secret:
+            secretName: human-groq
+            optional: true
+            items: [{key: GROQ_API_KEY, path: GROQ_API_KEY}]
+        - name: openrouter-key
+          secret:
+            secretName: human-openrouter
+            optional: true
+            items: [{key: OPENROUTER_API_KEY, path: OPENROUTER_API_KEY}]
