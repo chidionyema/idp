@@ -18,7 +18,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 GUARDED_PATHS = (
     "catalog/dof-registry.json",
@@ -89,18 +89,40 @@ def _introduced_lines(repo_root: str, rel_path: str) -> str:
         return ""
 
 
+def staged_blob(repo_root: str, rel_path: str) -> Optional[bytes]:
+    """The exact bytes the next commit will contain for this path."""
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["git", "cat-file", "blob", f":{rel_path}"],
+        cwd=repo_root,
+        capture_output=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        return None
+    return done.stdout
+
+
 def verify_proof_1_physical_reality(
-    repo_root: str, changed_files: List[str], expected_hashes: Dict[str, str]
+    repo_root: str,
+    changed_files: List[str],
+    expected_hashes: Dict[str, str],
+    staged: bool = False,
 ) -> Tuple[bool, Dict]:
     verified_hashes = {}
     for rel_path in changed_files:
         abs_path = os.path.join(repo_root, rel_path)
-        if not os.path.isfile(abs_path):
+        raw = staged_blob(repo_root, rel_path) if staged else None
+        if staged and raw is None:
+            return False, {
+                "error": f"PROOF_1_FAILED: File '{rel_path}' is not in the index"
+            }
+        if not staged and not os.path.isfile(abs_path):
             return False, {
                 "error": f"PROOF_1_FAILED: File '{rel_path}' does not exist on disk"
             }
-        with open(abs_path, "rb") as f:
-            raw = f.read()
+        if not staged:
+            with open(abs_path, "rb") as f:
+                raw = f.read()
         # Three fixes, one rule: the ghost that must be refused is a line this change
         # INTRODUCES, not a historical mention inside a file that happens to be edited
         # (AGENTS.md 3a: history is evidence), and not a generator-owned artifact that
@@ -193,8 +215,11 @@ def evaluate_three_independent_proofs(
     claimed_unix_ts: int,
     founder_seal_verified: bool = False,
     real_system_ts: int = None,
+    staged: bool = False,
 ) -> Tuple[bool, Dict]:
-    ok1, p1 = verify_proof_1_physical_reality(repo_root, changed_files, expected_hashes)
+    ok1, p1 = verify_proof_1_physical_reality(
+        repo_root, changed_files, expected_hashes, staged
+    )
     ok2, p2 = verify_proof_2_boundary_and_gate(
         commit_sha, changed_files, founder_seal_verified
     )
@@ -238,6 +263,11 @@ if __name__ == "__main__":
     parser.add_argument("--files", nargs="+")
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
     parser.add_argument("--contract", action="store_true")
+    parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="certify the index bytes a commit will contain, not the working tree",
+    )
     args = parser.parse_args()
 
     if args.contract:
@@ -252,6 +282,7 @@ if __name__ == "__main__":
         expected_hashes={},
         claimed_unix_ts=args.timestamp,
         founder_seal_verified=seal_verified(args.repo_root, args.commit_sha),
+        staged=args.staged,
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)
