@@ -144,13 +144,9 @@ def as_plan_call(tool: str, args) -> list | None:
     """The plan-tool call a tool call makes, if any: the tool itself, or a shell estate-plan."""
     if bare(tool) in PLAN_TOOLS:
         return [tool, args]
-    if tool.lower() in {"bash", "shell", "execute"} and isinstance(args, dict):
-        # A generic execution wrapper is not a plan tool just because its input says so.
-        # Only the existing single-command estate-plan parser can admit this bootstrap.
-        if tool.lower() == "execute" and set(args) - {
-            "command", "description", "timeout", "workdir"
-        }:
-            return None
+    if tool.lower() in {"bash", "shell"} and isinstance(args, dict):
+        # OpenCode V2 execute is a JavaScript runtime, not a shell alias. Its HTTP
+        # effects cannot be inferred from a command string; use native plan tools.
         return shell_plan_call(args.get("command"))
     return None
 

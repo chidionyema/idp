@@ -45,7 +45,7 @@ def test_empty_input_is_bootstrap_not_permission(history):
     assert not verdict("shell", {"command": "touch a"}, history)["ok"]
 
 
-@pytest.mark.parametrize("tool", ["Bash", "shell", "execute"])
+@pytest.mark.parametrize("tool", ["Bash", "shell"])
 def test_shell_wrappers_admit_only_the_exact_plan_command(tool):
     args = {"command": command("declare_plan", GOAL)}
     assert verdict(tool, args, "[]")["ok"]
@@ -74,3 +74,8 @@ def test_wrapper_cannot_hide_an_extra_invocation():
         "execute",
         {"command": command("declare_plan", GOAL), "tool": "write"},
     )["ok"]
+
+
+def test_code_mode_is_not_an_empty_state_shell_alias():
+    assert not verdict("execute", {"command": command("declare_plan", GOAL)})["ok"]
+    assert not verdict("execute", {"code": "await tools.read({})"})["ok"]
