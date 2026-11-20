@@ -64,6 +64,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(hours=2)
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
@@ -396,6 +397,97 @@ def runner_pin_only(diff: str) -> bool:
     return True
 
 
+# The ship contract (founder, 2026-11-20 07:36-07:41): nothing lands without its acceptance
+# probe, its Optimus metrics, the failure classes it touches and its debugging pack. It is
+# declared once on the claim issue (body or any comment; the newest block wins) and judged here,
+# so CI (ci-success) and the Greenlane admission (greenlane.github.unclaimed) refuse it alike.
+SHIP_CONTRACT = re.compile(r"^SHIP-CONTRACT\s*$(?P<body>(?:\n[a-z-]+:.*$)+)", re.M)
+ACCEPT = re.compile(
+    r"^GET (?P<url>https://[\w.-]+(?::\d+)?/\S*) expect (?P<code>[1-5]\d\d)"
+    r"(?: contains \"(?P<needle>[^\"]+)\")? within (?P<mins>\d{1,4})m$"
+)
+OPTIMUS = re.compile(
+    r"^(?P<name>[a-z][a-z0-9_.]{2,80}) baseline=(?P<base>-?\d+(?:\.\d+)?|UNKNOWN) "
+    r"target=(?P<target>-?\d+(?:\.\d+)?)$"
+)
+CLASSES_FILE = ROOT / "catalog" / "issue-classes.json"
+PACKS_FILE = ROOT / "docs" / "debugging-packs.json"
+METRICS_FILE = ROOT / "catalog" / "optimus-metrics.json"
+
+
+def _known(path: Path, list_key: str, id_key: str) -> set[str]:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return set()
+    items = data.get(list_key, []) if isinstance(data, dict) else data
+    return {str(i.get(id_key)) for i in items if isinstance(i, dict) and i.get(id_key)}
+
+
+def ship_contract(texts: list[str]) -> dict | None:
+    """The newest SHIP-CONTRACT block across the claim issue's body and comments."""
+    block = None
+    for t in texts:
+        for m in SHIP_CONTRACT.finditer(t or ""):
+            block = m.group("body")
+    if block is None:
+        return None
+    fields: dict[str, str] = {}
+    for line in block.strip().splitlines():
+        key, _, value = line.partition(":")
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def contract_problems(where: str, texts: list[str]) -> list[str]:
+    """Why the claim's ship contract does not admit the change; empty means it does."""
+    c = ship_contract(texts)
+    how = (
+        "post on the claim issue:\nSHIP-CONTRACT\naccept: GET https://<host>/<path> expect 200 "
+        "within 30m\noptimus: <metric> baseline=<n|UNKNOWN> target=<n>[; ...]\n"
+        "failure-classes: <class>[, ...]  (catalog/issue-classes.json)\n"
+        "debug-pack: DBG-<n>  (docs/debugging-packs.json)"
+    )
+    if c is None:
+        return [f"{where} has no SHIP-CONTRACT: {how}"]
+    out: list[str] = []
+    if not ACCEPT.match(c.get("accept", "")):
+        out.append(
+            f"{where} SHIP-CONTRACT accept is not `GET https://... expect NNN within Nm`"
+        )
+    metrics = [m.strip() for m in c.get("optimus", "").split(";") if m.strip()]
+    if not metrics or not all(OPTIMUS.match(m) for m in metrics):
+        out.append(
+            f"{where} SHIP-CONTRACT optimus needs `<metric> baseline=<n|UNKNOWN> target=<n>`"
+        )
+    else:
+        registered = _known(METRICS_FILE, "metrics", "name")
+        unknown = [
+            OPTIMUS.match(m).group("name")
+            for m in metrics
+            if OPTIMUS.match(m).group("name") not in registered
+        ]
+        if unknown:
+            out.append(
+                f"{where} SHIP-CONTRACT optimus names unregistered metric(s) "
+                f"{', '.join(unknown[:5])}: register a measure in catalog/optimus-metrics.json"
+            )
+    classes = [x.strip() for x in c.get("failure-classes", "").split(",") if x.strip()]
+    known = _known(CLASSES_FILE, "classes", "class")
+    missing = [x for x in classes if x not in known]
+    if not classes or missing:
+        out.append(
+            f"{where} SHIP-CONTRACT failure-classes must name registered classes"
+            + (f" (unknown: {', '.join(missing[:5])})" if missing else "")
+        )
+    pack = c.get("debug-pack", "")
+    if pack not in _known(PACKS_FILE, "packs", "id"):
+        out.append(
+            f"{where} SHIP-CONTRACT debug-pack {pack or '<none>'!r} is not in docs/debugging-packs.json"
+        )
+    return out
+
+
 def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> list[str]:
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
     (issue dict, comments list)."""
@@ -475,6 +567,9 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
             continue
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
+        problems += contract_problems(
+            where, [issue.get("body") or ""] + [x.get("body", "") for x in comments]
+        )
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
     # claim. Like runner-pins they require no claim: they are the platform's own housekeeping.
@@ -584,7 +679,7 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
     # Resolve a ref name to a sha before asking GitHub (GitHub needs a sha).
     resolved = (
         subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-            ["git", "rev-parse", head],
+            ["git", "rev-parse", head],  # noqa: S607 - git on PATH, fixed argv
             capture_output=True,
             text=True,
         ).stdout.strip()
@@ -596,7 +691,7 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
         _PRS[key] = ("", "")
         try:
             p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-                ["gh", "api", f"repos/{repo}/commits/{resolved}/pulls"],
+                ["gh", "api", f"repos/{repo}/commits/{resolved}/pulls"],  # noqa: S607 - gh on PATH, fixed argv
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -651,7 +746,7 @@ def live_body(repo: str, num: str = "") -> str:
     if not num:
         return os.environ.get("PR_BODY", "")
     p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-        ["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", ".body"],
+        ["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", ".body"],  # noqa: S607 - gh on PATH, fixed argv
         capture_output=True,
         text=True,
         timeout=30,
@@ -686,7 +781,41 @@ def repo_slug() -> str:
     return slug
 
 
+def optimus_reading(now: datetime) -> str:
+    """claims.ship_contract_enforced: 1 when this gate refuses a live claim that declares no
+    ship contract and admits the same claim once a valid one is declared; else 0. Judged on
+    the registered classes and packs in this tree, never on a stub."""
+    hb = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    claim = {"body": f"CLAIM agent=optimus paths=bin/x heartbeat={hb}"}
+    text = "Claim: o/r#1\nAgent: optimus\n"
+    classes = sorted(_known(CLASSES_FILE, "classes", "class"))
+    packs = sorted(_known(PACKS_FILE, "packs", "id"))
+    metrics = sorted(_known(METRICS_FILE, "metrics", "name"))
+    if not classes or not packs or not metrics:
+        return "optimus.claims.ship_contract_enforced=0"
+    contract = (
+        "SHIP-CONTRACT\naccept: GET https://x.example.test/ expect 200 within 30m\n"
+        f"optimus: {metrics[0]} baseline=UNKNOWN target=0\n"
+        f"failure-classes: {classes[0]}\ndebug-pack: {packs[0]}"
+    )
+    bare = verdict(
+        text, ["bin/x"], "o/r", lambda r, n: ({"state": "open"}, [claim]), now
+    )
+    full = verdict(
+        text,
+        ["bin/x"],
+        "o/r",
+        lambda r, n: ({"state": "open", "body": contract}, [claim]),
+        now,
+    )
+    enforced = any("SHIP-CONTRACT" in p for p in bare) and full == []
+    return f"optimus.claims.ship_contract_enforced={1 if enforced else 0}"
+
+
 def main(argv: list[str]) -> int:
+    if argv[1:] == ["--optimus"]:
+        print(optimus_reading(datetime.now(timezone.utc)))
+        return 0
     base, head = argv[1], argv[2]
     repo = repo_slug()
     num, author = pr_context(repo, head)

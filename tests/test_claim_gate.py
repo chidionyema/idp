@@ -24,9 +24,19 @@ def _gate():
     return mod
 
 
-def _issue(state="open", labels=("in-progress",), claim=None):
+CONTRACT = (
+    "SHIP-CONTRACT\n"
+    "accept: GET https://voice.example.test/health expect 200 within 30m\n"
+    "optimus: claims.ship_contract_enforced baseline=UNKNOWN target=1\n"
+    "failure-classes: gate-blocks-its-own-repair\n"
+    "debug-pack: DBG-001"
+)
+
+
+def _issue(state="open", labels=("in-progress",), claim=None, contract=CONTRACT):
     comments = [{"body": claim}] if claim else []
-    return {"state": state, "labels": [{"name": n} for n in labels]}, comments
+    issue = {"state": state, "labels": [{"name": n} for n in labels], "body": contract}
+    return issue, comments
 
 
 def _claim(
@@ -549,3 +559,52 @@ def test_the_contract_in_this_repo_is_well_formed():
     for path, wanted in contract["paths"].items():
         for pid in wanted:
             assert pid in ids, "%s names an unknown predicate %s" % (path, pid)
+
+
+# The ship contract (founder 2026-11-20): acceptance probe, Optimus metrics, failure classes and
+# debugging pack, declared on the claim issue, or nothing lands.
+
+
+def test_a_claim_with_no_ship_contract_is_refused():
+    out = run(issue=_issue(claim=_claim(), contract=""))
+    assert any("has no SHIP-CONTRACT" in p for p in out), out
+
+
+def test_a_ship_contract_in_a_later_comment_is_honoured_and_the_newest_wins():
+    iss, comments = _issue(claim=_claim(), contract="")
+    comments.append({"body": CONTRACT.replace("DBG-001", "DBG-NOPE")})
+    comments.append({"body": CONTRACT})
+    assert run(issue=(iss, comments)) == []
+    comments.append({"body": CONTRACT.replace("DBG-001", "DBG-NOPE")})
+    assert any("debug-pack" in p for p in run(issue=(iss, comments)))
+
+
+def test_each_contract_field_is_judged():
+    bad = {
+        "accept": CONTRACT.replace(
+            "https://voice.example.test/health", "http://x/health"
+        ),
+        "optimus": CONTRACT.replace("target=1", "target=high"),
+        "failure-classes": CONTRACT.replace(
+            "gate-blocks-its-own-repair", "no-such-class"
+        ),
+        "debug-pack": CONTRACT.replace("DBG-001", "DBG-0"),
+    }
+    for field, contract in bad.items():
+        out = run(issue=_issue(claim=_claim(), contract=contract))
+        assert any(f"SHIP-CONTRACT {field}" in p for p in out), (field, out)
+
+
+def test_a_complete_contract_admits_the_change():
+    assert run() == []
+
+
+def test_an_optimus_metric_nobody_can_measure_is_refused():
+    contract = CONTRACT.replace("claims.ship_contract_enforced", "made.up_metric")
+    out = run(issue=_issue(claim=_claim(), contract=contract))
+    assert any("unregistered metric(s) made.up_metric" in p for p in out), out
+
+
+def test_the_gate_measures_its_own_enforcement():
+    g = _gate()
+    assert g.optimus_reading(NOW) == "optimus.claims.ship_contract_enforced=1"
