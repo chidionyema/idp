@@ -38524,7 +38524,8 @@
       },
       "consumers": [
         "cap:tool/idp-auth",
-        "cap:tool/idp-ci-guarded-paths"
+        "cap:tool/idp-ci-guarded-paths",
+        "cap:tool/verify_three_proofs.py"
       ],
       "cost": {
         "estimate": null,
@@ -60391,7 +60392,6 @@
           "--commit-sha",
           "--contract",
           "--files",
-          "--founder-seal",
           "--no-color",
           "--repo-root",
           "--timestamp"
@@ -60429,7 +60429,12 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/verify_three_proofs.py",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-auth-verify",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
