@@ -21,9 +21,9 @@ class ClaudeNativeHarnessContract(unittest.TestCase):
         selector = (
             "HARNESS: ${{ github.event_name == 'issues' && "
             "(github.event.label.name == 'claude-native' && "
-            "'claude-code' || 'gemini') || inputs.harness }}"
+            "'claude-code' || 'auto') || inputs.harness }}"
         )
-        self.assertEqual(4, s.count(selector))
+        self.assertEqual(5, s.count(selector))
         self.assertNotIn("issues' && 'gemini' || inputs.harness", s)
 
     def test_live_claude_probe_precedes_agent_execution(self):
@@ -44,7 +44,7 @@ class ClaudeNativeHarnessContract(unittest.TestCase):
 
     def test_epistemic_firewall_and_patch_submission_remain(self):
         s = WORKFLOW.read_text()
-        self.assertIn("needs: [agent, firewall]", s)
+        self.assertIn("needs: [admit, agent, firewall]", s)
         self.assertIn("bin/epistemic_firewall.py", s)
         self.assertIn("persist-credentials: false", s)
         self.assertIn("contents: read", s)
