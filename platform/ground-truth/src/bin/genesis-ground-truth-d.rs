@@ -1,6 +1,6 @@
 use genesis_ground_truth::crypto::FounderVerifier;
 use genesis_ground_truth::reconciler::cold_boot_reconcile;
-use genesis_ground_truth::{ground_truth_router, GroundTruthEngine};
+use genesis_ground_truth::{ground_truth_router, mirror, GroundTruthEngine};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -27,6 +27,11 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => eprintln!("[genesis-ground-truth-d] cold-boot reconcile error: {e}"),
             }
         });
+    }
+
+    if let Some(cfg) = mirror::MirrorConfig::from_env() {
+        let eng = engine.clone();
+        tokio::spawn(async move { mirror::run_mirror(eng, cfg).await });
     }
 
     let app = ground_truth_router(engine);
