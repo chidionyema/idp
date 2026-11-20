@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 312,
     "service": 122,
-    "tool": 522,
+    "tool": 523,
     "workflow": 109
   },
   "records": [
@@ -37406,6 +37406,55 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/growmos-pin",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-agent-sandbox"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/growmos-pin",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/gvisor-cell-fence-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -61073,6 +61122,10 @@
         },
         {
           "id": "cap:tool/epistemic_firewall.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/growmos-pin",
           "edge": "invokes"
         },
         {
