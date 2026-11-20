@@ -1,0 +1,67 @@
+# button: Issue a QUAD identity
+# idp#8336, QUAD phase 1. An agent asks for an identity with `bin/quad request`, which runs this
+# with the session's PUBLIC key. The estate's App key signs a certificate binding quad_id, agent,
+# model, session, that key and a 12-hour expiry. The agent never holds the issuer key; the
+# certificate lands on refs/quad/certs/<quad_id> and refs/quad/by-key/<key prefix>.
+name: quad-issue
+on:
+  workflow_dispatch:
+    inputs:
+      agent: {description: "agent name", required: true}
+      model: {description: "model id (UNKNOWN if not disclosed)", required: false, default: ""}
+      session: {description: "session id", required: true}
+      pubkey: {description: "the session's Ed25519 public key, 64 hex chars", required: true}
+permissions:
+  contents: write   # refs/quad/* only
+concurrency:
+  group: quad-issue-${{ inputs.pubkey }}
+  cancel-in-progress: false
+jobs:
+  issue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Refuse anything that is not a name or a key
+        env:
+          AGENT: ${{ inputs.agent }}
+          MODEL: ${{ inputs.model }}
+          SESSION: ${{ inputs.session }}
+          PUBKEY: ${{ inputs.pubkey }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PUBKEY" | grep -Eq '^[0-9a-f]{64}$' || { echo "BLIND   quad  pubkey is not 64 hex chars"; exit 2; }
+          for v in "$AGENT" "$SESSION" "${MODEL:-x}"; do
+            printf '%s' "$v" | grep -Eq '^[A-Za-z0-9._:@/-]{1,80}$' || { echo "BLIND   quad  refusing '$v'"; exit 2; }
+          done
+      - name: Sign the certificate with the App key
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+          AGENT: ${{ inputs.agent }}
+          MODEL: ${{ inputs.model }}
+          SESSION: ${{ inputs.session }}
+          PUBKEY: ${{ inputs.pubkey }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   quad  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          umask 077
+          printf %s "$PEM_B64" | base64 -d > "$RUNNER_TEMP/issuer.pem"
+          python3 bin/quad issue --agent "$AGENT" --model "$MODEL" --session "$SESSION" \
+            --pubkey "$PUBKEY" --hours 12 --key "$RUNNER_TEMP/issuer.pem" > "$RUNNER_TEMP/cert.json"
+          openssl rsa -in "$RUNNER_TEMP/issuer.pem" -pubout > "$RUNNER_TEMP/issuer.pub.pem" 2>/dev/null
+          rm -f "$RUNNER_TEMP/issuer.pem"
+      - name: Publish it on refs/quad
+        env:
+          PUBKEY: ${{ inputs.pubkey }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/out"; mkdir -p "$dir"
+          cp "$RUNNER_TEMP/cert.json" "$RUNNER_TEMP/issuer.pub.pem" "$dir/"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/quad.index"
+          git --work-tree="$dir" add -A -f .
+          commit=$(git -c user.name=quad-issue -c user.email=actions@github.com commit-tree "$(git write-tree)" -m "quad certificate")
+          id=$(jq -r .cert.quad_id "$RUNNER_TEMP/cert.json")
+          git push -q origin "$commit:refs/quad/certs/$id" "+$commit:refs/quad/by-key/${PUBKEY:0:16}"
+          jq -c '.cert | {quad_id, agent, model, session, expires_at}' "$RUNNER_TEMP/cert.json" | tee -a "$GITHUB_STEP_SUMMARY"
