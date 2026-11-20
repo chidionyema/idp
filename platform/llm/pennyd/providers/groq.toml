@@ -16,7 +16,7 @@ price_out_per_mtok = 0
 context_window = 131072
 min_output_tokens = 256
 aliases = ["groq", "claude-haiku-fast"]
-fallbacks = ["openrouter/nvidia/nemotron-3.5-lightning:free"]
+fallbacks = ["openrouter/nvidia/nemotron-3.5-lightning:free", "deepseek/deepseek-flash", "zai/glm-5.3-flash"]
 
 [[models]]
 id = "qwen/qwen3.8-27b"
@@ -26,4 +26,4 @@ price_out_per_mtok = 0
 context_window = 131072
 min_output_tokens = 256
 aliases = ["narrate", "claude-haiku-local"]
-fallbacks = ["groq/openai/gpt-oss-120b"]
+fallbacks = ["groq/openai/gpt-oss-120b", "deepseek/deepseek-flash", "zai/glm-5.3-flash"]
