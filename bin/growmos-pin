@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# bin/growmos-pin SRC_DIR -- make a pinned growmos checkout safe to journal with, and prove it.
+#
+# idp#8342. growmos writes every journal heading as '### <ts> <U+00B7> <author>'. .githooks/pre-push
+# (Layer 1c) refuses non-ASCII added lines, so every `growmos journal` commit from every agent was
+# refused until hand-edited (first seen 2026-11-19 on 18a5941). Class FC_NON_ASCII_TOOL_OUTPUT: a
+# tool the estate runs writes bytes the estate's own gate refuses.
+#
+# The fix is applied at the pin, not by hand: this replaces the separator with an ASCII hyphen,
+# then proves the class closed by running growmos itself and refusing on any non-ASCII byte it
+# writes. If the pinned source no longer holds the expected line (the pin moved or upstream fixed
+# it), the patch step is a no-op and the proof still decides. Exit 0 proven, 1 refused.
+set -euo pipefail
+src="${1:?usage: bin/growmos-pin SRC_DIR}"
+store="$src/src/growmos/store.py"
+[ -f "$store" ] || { echo "FAIL  growmos-pin  no $store"; exit 1; }
+
+# \xc2\xb7 is U+00B7 in UTF-8; written as escapes so this file stays ASCII.
+sed -i 's/{now_iso()} \xc2\xb7 {author}/{now_iso()} - {author}/' "$store"
+
+proof="$(mktemp -d)"
+trap 'rm -rf "$proof"' EXIT
+(
+	cd "$proof"
+	git init -q .
+	PYTHONPATH="$src/src" python3 -m growmos init >/dev/null 2>&1 || true
+	PYTHONPATH="$src/src" python3 -m growmos journal "pin proof" >/dev/null
+)
+if LC_ALL=C grep -q -P '[^\x00-\x7F]' "$proof/.growmos/journal.md"; then
+	echo "FAIL  growmos-pin  growmos journal still writes non-ASCII bytes (FC_NON_ASCII_TOOL_OUTPUT)"
+	exit 1
+fi
+grep -q '^### .* - agent$' "$proof/.growmos/journal.md" || {
+	echo "FAIL  growmos-pin  growmos journal wrote no heading"
+	exit 1
+}
+echo "ok    growmos-pin  growmos journal writes ASCII only ($store)"
