@@ -162,3 +162,9 @@ CREATE TABLE IF NOT EXISTS gt_agent_leases (
     created_at_ns INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_gt_leases_token ON gt_agent_leases(bound_fencing_token, status);
+CREATE TABLE IF NOT EXISTS gt_ingress_nonces (
+ nonce TEXT PRIMARY KEY,
+ session_id TEXT NOT NULL,
+ ticket_sha256 TEXT NOT NULL,
+ fencing_token INTEGER NOT NULL,
+ consumed_at_ns INTEGER NOT NULL);
