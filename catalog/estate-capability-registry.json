@@ -60693,6 +60693,7 @@
           "--files",
           "--no-color",
           "--repo-root",
+          "--staged",
           "--timestamp"
         ],
         "outputs": [
