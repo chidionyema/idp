@@ -57,7 +57,26 @@ PLAN_TOOLS = (
 # blocked"); memory reads are how a plan is made from context; and a runtime's own bookkeeping --
 # loading a deferred tool's schema (which is how Claude Code reaches declare_plan at all), asking
 # the human, a todo list -- is not work.
-NEVER_BLOCKED = frozenset({*PLAN_TOOLS, "escalate"})
+NEVER_BLOCKED = frozenset(
+    {
+        *PLAN_TOOLS,
+        "escalate",
+        # MEASURED 2026-11-20: with no plan on disk every door was refused, including the
+        # declare_plan call needed to satisfy the lock -- the machine could not meet its own
+        # entry requirement and every new session died on turn 1. These are the doors that must
+        # be reachable from the empty state: the bootstrap itself, and pure reads (an agent must
+        # be able to look before it plans). Anything that mutates still needs a plan.
+        "read",
+        "view",
+        "cat",
+        "head",
+        "tail",
+        "ls",
+        "grep",
+        "glob",
+        "pwd",
+    }
+)
 MEMORY_READS = frozenset({"brief", "recall", "remember"})
 HOUSEKEEPING = frozenset(
     {
@@ -1402,7 +1421,8 @@ def main(argv: list) -> int:
         print(__doc__.split("\n\n")[-1], file=sys.stderr)
         return 2
     try:
-        calls = json.load(sys.stdin)
+        raw = sys.stdin.read()
+        calls = json.loads(raw) if raw.strip() else []
         args = json.loads(argv[2]) if len(argv) == 3 else None
         print(
             json.dumps(
@@ -1411,12 +1431,10 @@ def main(argv: list) -> int:
                 )
             )
         )
-    except (
-        Exception
-    ) as e:  # fail open: a broken rule must not take a session down (R38)
+    except Exception as e:  # fail CLOSED: a lock that cannot judge must not admit
         print(
             json.dumps(
-                {"ok": True, "reason": f"plan check failed open: {type(e).__name__}"}
+                {"ok": False, "reason": f"plan check failed closed: {type(e).__name__}"}
             )
         )
     return 0
