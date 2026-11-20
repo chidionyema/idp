@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -125,7 +126,7 @@ def verify_proof_1_physical_reality(
 
 
 def verify_proof_2_boundary_and_gate(
-    commit_sha: str, changed_files: List[str], has_founder_seal: bool = False
+    commit_sha: str, changed_files: List[str], founder_seal_verified: bool = False
 ) -> Tuple[bool, Dict]:
     for bad in BLACKLISTED_SHAS:
         if commit_sha.startswith(bad):
@@ -136,7 +137,7 @@ def verify_proof_2_boundary_and_gate(
     if not changed_files:
         return False, {"error": "PROOF_2_FAILED: Empty file set"}
 
-    if len(changed_files) > MAX_FILES_PER_CHANGE and not has_founder_seal:
+    if len(changed_files) > MAX_FILES_PER_CHANGE and not founder_seal_verified:
         return False, {
             "error": f"PROOF_2_FAILED: {len(changed_files)} files exceeds MAX_FILES_PER_CHANGE ({MAX_FILES_PER_CHANGE})"
         }
@@ -144,14 +145,16 @@ def verify_proof_2_boundary_and_gate(
     subsystems = set()
     for path in changed_files:
         for guarded in GUARDED_PATHS:
-            if (path == guarded or path.startswith(guarded)) and not has_founder_seal:
+            if (
+                path == guarded or path.startswith(guarded)
+            ) and not founder_seal_verified:
                 return False, {
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
         parts = path.strip("/").split("/")
         subsystems.add(parts[0] if len(parts) > 1 else "root")
 
-    if len(subsystems) > 1 and not has_founder_seal:
+    if len(subsystems) > 1 and not founder_seal_verified:
         return False, {
             "error": f"PROOF_2_FAILED: Cross-subsystem mutation {sorted(subsystems)} blocked"
         }
@@ -188,12 +191,12 @@ def evaluate_three_independent_proofs(
     changed_files: List[str],
     expected_hashes: Dict[str, str],
     claimed_unix_ts: int,
-    has_founder_seal: bool = False,
+    founder_seal_verified: bool = False,
     real_system_ts: int = None,
 ) -> Tuple[bool, Dict]:
     ok1, p1 = verify_proof_1_physical_reality(repo_root, changed_files, expected_hashes)
     ok2, p2 = verify_proof_2_boundary_and_gate(
-        commit_sha, changed_files, has_founder_seal
+        commit_sha, changed_files, founder_seal_verified
     )
     ok3, p3 = verify_proof_3_temporal_clock(claimed_unix_ts, real_system_ts)
 
@@ -206,6 +209,26 @@ def evaluate_three_independent_proofs(
     }
 
 
+def seal_verified(repo_root: str, commit_sha: str) -> bool:
+    """A seal is a signature, never a flag.
+
+    The old founder-seal flag granted the guarded-path and cross-subsystem
+    exemptions to whoever typed it. The trailer is signed off-host; a
+    missing, stale or replayed one grants nothing.
+    """
+    verifier = Path(__file__).resolve().with_name("idp-auth-verify")
+    if not verifier.exists():
+        return False
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [str(verifier), commit_sha],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return done.returncode == 0
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Verify 3 Independent Machine Proofs Locally"
@@ -214,7 +237,6 @@ if __name__ == "__main__":
     parser.add_argument("--commit-sha", default="HEAD")
     parser.add_argument("--files", nargs="+")
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
-    parser.add_argument("--founder-seal", action="store_true")
     parser.add_argument("--contract", action="store_true")
     args = parser.parse_args()
 
@@ -229,7 +251,7 @@ if __name__ == "__main__":
         changed_files=args.files,
         expected_hashes={},
         claimed_unix_ts=args.timestamp,
-        has_founder_seal=args.founder_seal,
+        founder_seal_verified=seal_verified(args.repo_root, args.commit_sha),
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)
