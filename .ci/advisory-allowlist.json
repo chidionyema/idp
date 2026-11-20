@@ -1,0 +1,12 @@
+{
+  "caps": {
+    ".github/workflows/ci.yml": 1,
+    ".github/workflows/estate-homes-drill.yml": 1,
+    ".github/workflows/shadow-verify.yml": 1
+  },
+  "why": {
+    "ci.yml": "dispatch sync to estate-graph is a notification, not a gate; a 404 means the repo is absent",
+    "estate-homes-drill.yml": "chronos measures cadence and reports the finding in the summary and an issue",
+    "shadow-verify.yml": "a missing artifact is graded fail-closed by the judge step that follows"
+  }
+}

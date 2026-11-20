@@ -4,7 +4,11 @@
   "metrics": [
     {
       "name": "estate.platform_dirs_never_applied",
-      "measure": ["python3", "bin/idp-infra-inventory", "--optimus"],
+      "measure": [
+        "python3",
+        "bin/idp-infra-inventory",
+        "--optimus"
+      ],
       "unit": "directories",
       "better": "lower",
       "owner": "greenlane",
@@ -12,11 +16,27 @@
     },
     {
       "name": "claims.ship_contract_enforced",
-      "measure": ["python3", "bin/claim-gate", "--optimus"],
+      "measure": [
+        "python3",
+        "bin/claim-gate",
+        "--optimus"
+      ],
       "unit": "bool",
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when bin/claim-gate refuses a claim with no SHIP-CONTRACT and admits it with one (idp#8350)"
+    },
+    {
+      "name": "gates.unmarked_inner_bounds",
+      "measure": [
+        "python3",
+        "bin/timeout-budget",
+        "--optimus"
+      ],
+      "unit": "bounds",
+      "better": "lower",
+      "owner": "greenlane",
+      "description": "literal wall-clock bounds bin/timeout-budget refuses (idp#8251, ADR 0043)"
     }
   ]
 }
