@@ -447,8 +447,14 @@ def test_the_witness_needs_no_claim_but_another_file_does():
         )
     }
 
+    contract = (  # the ship contract every claim carries (claim-gate, 2026-11-20)
+        "SHIP-CONTRACT\naccept: GET https://x.example.test/health expect 200 within 30m\n"
+        "optimus: x.pass_rate baseline=UNKNOWN target=1\n"
+        "failure-classes: gate-blocks-its-own-repair\ndebug-pack: DBG-001"
+    )
+
     def fetch(repo, number):
-        return {"state": "open"}, [comment]
+        return {"state": "open", "body": contract}, [comment]
 
     text = "Claim: chidionyema/idp#7203\nAgent: pi"
     witness = claim_gate.verdict(
