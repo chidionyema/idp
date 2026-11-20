@@ -1929,6 +1929,50 @@ class GitHubBackend:
             )
         return out
 
+    def retire_adopted_prs(self) -> list[int]:
+        """Close every open PR the engine adopted that it did not raise itself. Returns them.
+
+        idp#8331. Adoption kept the hand-raised PR open until its lane landed, and its own CI
+        ran in between: the bddproof rung refuses a body with no BDD-PROOF block, which only
+        the landing writes. Measured 2026-11-19: #8316 #8318 #8319 #8320 #8322 #8327 all red
+        on that rung, all agent PRs raised with the founder's login. The work is not lost:
+        the branch is the lane, and _land opens the lane's own PR with the proof when main
+        moves (`_ensure_pr`). A closed PR is reversible; a red one in the founder's list is not.
+        """
+        closed: list[int] = []
+        for pr in self.gh("pulls?state=open&per_page=100") or []:
+            body = pr.get("body") or ""
+            login = pr.get("user", {}).get("login") or ""
+            # A bot's PR stays: closing a dependabot PR tells dependabot to ignore that version.
+            if (
+                ADOPTED not in body
+                or login == self.app_login
+                or login.endswith("[bot]")
+            ):
+                continue
+            n = pr["number"]
+            lane = body.split(ADOPTED, 1)[1].split()[0]
+            try:
+                self.gh(
+                    f"issues/{n}/comments",
+                    "POST",
+                    {
+                        "body": (
+                            f"Closed by the Greenlane: lane `{lane}` carries this work and "
+                            "lands it through its own pull request, with the proof, the moment "
+                            "it is green on main. Nothing is discarded; push fixes to the lane."
+                        )
+                    },
+                )
+                self.gh(f"pulls/{n}", "PATCH", {"state": "closed"})
+                closed.append(n)
+            except (RuntimeError, ValueError) as e:
+                print(
+                    f"WARN    greenlane  could not close adopted PR #{n}: {e}",
+                    file=sys.stderr,
+                )
+        return closed
+
     def _ref(self, name: str) -> str:
         line = self.git(
             "ls-remote", "--heads", "origin", f"refs/heads/{name}", check=False
@@ -2080,11 +2124,10 @@ class GitHubBackend:
             "POST",
             {
                 "body": (
-                    f"Adopted by the Greenlane as lane `{lane}`. This pull request stays open: the lane "
-                    f"proves your branch on top of main, and this PR is marked merged the moment it lands. "
-                    f"A red or conflicting verdict appears as the `greenlane` status on your head commit "
-                    f"with its reason; push the fix to `{branch}` and the lane follows. Nothing here is "
-                    f"closed or discarded."
+                    f"Adopted by the Greenlane as lane `{lane}`. The lane proves your branch on top of main "
+                    f"and lands it through its own pull request, with the proof; this one is closed "
+                    f"so no red interim check reaches the founder (idp#8331). Push fixes to `{branch}` "
+                    f"and the lane follows. Nothing is discarded."
                 )
             },
         )
