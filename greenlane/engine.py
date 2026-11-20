@@ -122,6 +122,10 @@ class State:
     conflicts: int = (
         0  # lanes found not to rebase onto main at batch formation, all time
     )
+    verifying: dict[str, dict] = field(
+        default_factory=dict
+    )  # founder 2026-11-20: landed is not operational. lane -> {head, tip, batch, landed}: a
+    # landed lane stays here until its ship contract is proven live, or fails with evidence.
 
     def dumps(self) -> str:
         d = asdict(self)
@@ -148,6 +152,7 @@ class State:
         # a state written before these fields existed has neither: it loads with empty history
         st.history = [dict(r) for r in d.get("history") or []][-HISTORY_KEEP:]
         st.landings = [dict(r) for r in d.get("landings") or []][-HISTORY_KEEP:]
+        st.verifying = {str(k): dict(v) for k, v in (d.get("verifying") or {}).items()}
         if d.get("batch"):
             b = d["batch"]
             st.batch = Batch(
@@ -287,7 +292,35 @@ class Engine:
         if self.s.batch is None:
             self._start_batch()
         self._heartbeat_lanes()
+        self._verify_landed()
         return self.s
+
+    VERIFY_DEADLINE_MIN = 180.0
+
+    def _verify_landed(self) -> None:
+        """Landed is not done (founder, 2026-11-20 07:35): every landed lane is held here until
+        its ship contract is proven against the live estate -- the acceptance probe answers and
+        each declared Optimus metric reads -- or it fails, with the evidence, at its deadline.
+        The verdict is posted where the claim lives; nothing here trusts the authoring agent.
+        """
+        verify = getattr(self.b, "verify_operational", None)
+        if verify is None or not self.s.verifying:
+            return
+        now = self.b.now()
+        for name in sorted(self.s.verifying):
+            rec = self.s.verifying[name]
+            age = (now - float(rec.get("landed", now))) / 60.0
+            verdict, evidence = verify(name, rec)
+            if verdict == "pending" and age < float(
+                rec.get("deadline_min", self.VERIFY_DEADLINE_MIN)
+            ):
+                rec["last"] = evidence
+                continue
+            if verdict == "pending":
+                verdict, evidence = "failed", f"deadline passed: {evidence}"
+            self.b.report_operational(name, rec, verdict, evidence)
+            self.log.append(f"{verdict} {name} ({rec.get('batch')}): {evidence}")
+            del self.s.verifying[name]
 
     def _retire_stale_lanes(self) -> None:
         """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
@@ -599,6 +632,12 @@ class Engine:
                 lane.status = LANDED
                 lane.reason = f"landed in {b.id}"
                 self.b.report(name, head, LANDED, f"landed in {b.id}")
+                self.s.verifying[name] = {
+                    "head": head,
+                    "tip": b.tip,
+                    "batch": b.id,
+                    "landed": round(now, 2),
+                }
                 self.s.landed += 1
                 self.s.landings.append(
                     {
