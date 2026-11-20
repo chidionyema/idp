@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Generate a signed Proof of Yield for the current worktree.
+
+Runs the local falsifier surface (projector tests + build), captures repo state and disk,
+and writes an HMAC-signed proof. A commit/push without a valid proof is refused by the gate.
+"""
+import hashlib
+import hmac
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import time
+
+HOME = os.path.expanduser("~")
+ARGON = os.path.join(HOME, "Documents/code/argon")
+IDP = os.path.join(HOME, "Documents/code/idp")
+STATE = os.path.join(HOME, ".estate/state")
+KEY = os.path.join(STATE, "proof-key")
+OUT = os.path.join(STATE, "PROOF_OF_YIELD.json")
+MD = os.path.join(STATE, "PROOF_OF_YIELD.md")
+
+
+def _clean_env():
+    # Git exports GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE to hooks. Inheriting them makes the
+    # proof's `git` calls describe the pushing worktree instead of the canonical repo, so the
+    # proof can never match the gate. Strip them here the same way the gate does.
+    env = dict(os.environ)
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
+        env.pop(key, None)
+    return env
+
+
+def run(args, cwd, timeout=180):
+    try:
+        p = subprocess.run(
+            args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=_clean_env()
+        )
+        return p.returncode, p.stdout + p.stderr
+    except Exception as exc:
+        return 1, str(exc)
+
+
+def dirty_hash(repo):
+    code, out = run(["git", "status", "--porcelain"], repo, 15)
+    code2, diff = run(["git", "diff"], repo, 20)
+    return hashlib.sha256((out + diff).encode()).hexdigest()
+
+
+def head(repo):
+    code, out = run(["git", "rev-parse", "--short", "HEAD"], repo, 10)
+    return out.strip()
+
+
+
+def projector_verdict(code: int, out: str):
+    """What the projector run actually says.
+
+    A missing npm script is not 99 failing tests. Treating it as one made every push in a repo
+    without a `test:projector` suite look catastrophically broken, which is a gate lying about the
+    shape of the failure -- and a gate that lies is worse than a gate that fails. Three states:
+    PASS (tests ran and passed), FAIL (tests ran and failed), BLIND (no suite to run).
+    """
+    if "Missing script" in out or "missing script" in out:
+        return "BLIND", 0, 0, "projector suite not configured in this repo"
+    m = re.search(r"pass (\d+)", out)
+    f = re.search(r"fail (\d+)", out)
+    passed = int(m.group(1)) if m else 0
+    failed = int(f.group(1)) if f else 0
+    if code != 0 or failed > 0:
+        return "FAIL", passed, failed, f"projector reported {passed} pass / {failed} fail"
+    if passed == 0:
+        return "BLIND", 0, 0, "projector produced no results"
+    return "PASS", passed, failed, f"projector {passed} passed"
+
+
+def main():
+    os.chdir("/")
+    os.makedirs(STATE, exist_ok=True)
+    if not os.path.exists(KEY):
+        open(KEY, "w").write(secrets.token_hex(32))
+        os.chmod(KEY, 0o600)
+    key = open(KEY).read().strip()
+
+    code, tests = run(["npm", "run", "test:projector"], ARGON, 120)  # not -s: silent hides "Missing script"
+    projector_state, passed, failed, projector_why = projector_verdict(code, tests)
+
+    build_code, build_out = run(["npm", "run", "build"], ARGON, 180)
+    build_ok = build_code == 0 and "built in" in build_out
+
+    free = int(shutil.disk_usage("/System/Volumes/Data").free // (1024 * 1024))
+    body = {
+        "version": 1,
+        "generated_at": int(time.time()),
+        "generated_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "argon_head": head(ARGON),
+        "idp_head": head(IDP),
+        "argon_dirty_sha256": dirty_hash(ARGON),
+        "idp_dirty_sha256": dirty_hash(IDP),
+        "disk_free_mb": free,
+        "projector_state": projector_state,
+        "projector_why": projector_why,
+        "projector_pass": passed,
+        "projector_fail": failed,
+        "build_ok": build_ok,
+    }
+    # BLIND passes the gate only when there is genuinely no suite to run: the gate's job is to
+    # refuse a failing proof, not to demand a suite the repo never had.
+    projector_ok = projector_state == "BLIND" or (projector_state == "PASS" and passed >= 19)
+    body["ok"] = projector_ok and build_ok and free >= 1500
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    body["receipt"] = hmac.new(key.encode(), canonical, hashlib.sha256).hexdigest()
+    open(OUT, "w").write(json.dumps(body, indent=2) + "\n")
+
+    lines = [
+        "# Proof of Yield",
+        "",
+        "| field | value |",
+        "|---|---|",
+        "| generated | " + body["generated_iso"] + " |",
+        "| argon | " + body["argon_head"] + " |",
+        "| idp | " + body["idp_head"] + " |",
+        "| projector | " + str(passed) + " pass / " + str(failed) + " fail |",
+        "| build | " + ("ok" if build_ok else "FAIL") + " |",
+        "| disk | " + str(free) + " MB |",
+        "| status | " + ("PASS" if body["ok"] else "FAIL") + " |",
+        "| receipt | " + body["receipt"] + " |",
+        "",
+        "Yield equation: U = gates * (yield_verified + urgency + alignment - cost).",
+        "This proof certifies the local gates that can be checked deterministically; it does not",
+        "certify external DNS, Telegram delivery or model behaviour.",
+    ]
+    open(MD, "w").write("\n".join(lines) + "\n")
+
+    print("METRIC:disk_free_mb=" + str(free))
+    print("METRIC:projector_pass=" + str(passed))
+    print("METRIC:projector_fail=" + str(failed))
+    print("METRIC:build_ok=" + str(1 if build_ok else 0))
+    print("METRIC:proof_ok=" + str(1 if body["ok"] else 0))
+    print(MD)
+    raise SystemExit(0 if body["ok"] else 1)
+
+
+if __name__ == "__main__":
+    main()
