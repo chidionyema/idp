@@ -330,22 +330,23 @@ def request(agent: str, model: str, session: str, home: Path, repo: str) -> int:
     key.write_text(seed.hex() + "\n")
     os.chmod(key, 0o600)
     pub = ed_public(seed).hex()
+    # The REST dispatch, not `gh workflow run`: that one asks GraphQL for the default branch,
+    # and sandboxed sessions only reach the REST API (first live request, 2026-11-20).
     subprocess.run(
         [
             "gh",
-            "workflow",
-            "run",
-            "quad-issue.yml",
-            "-R",
-            repo,
+            "api",
+            f"repos/{repo}/actions/workflows/quad-issue.yml/dispatches",
             "-f",
-            f"agent={agent}",
+            "ref=main",
             "-f",
-            f"model={model}",
+            f"inputs[agent]={agent}",
             "-f",
-            f"session={session}",
+            f"inputs[model]={model}",
             "-f",
-            f"pubkey={pub}",
+            f"inputs[session]={session}",
+            "-f",
+            f"inputs[pubkey]={pub}",
         ],
         check=True,
     )
