@@ -6,6 +6,7 @@ import argparse
 import datetime as dt
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -40,14 +41,23 @@ def live_runs(repo, timeout_s=20):
     # existing Chronos cluster may have neither gh nor GH_TOKEN provisioned.
     if repo != "chidionyema/idp":
         raise RuntimeError(f"authenticated Github observation unavailable: {repo}")
-    req = urllib.request.Request(
-        "https://api.github.com/" + path,
-        headers={"Accept": "application/vnd.github+json",
-                 "User-Agent": "idp-karma-observer/1.0"},
-    )
+    hdrs = {"Accept": "application/vnd.github+json",
+            "User-Agent": "idp-karma-observer/1.0"}
+    tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if tok:
+        hdrs["Authorization"] = "bearer " + tok
+    req = urllib.request.Request("https://api.github.com/" + path, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as response:
             payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 429):
+            left = exc.headers.get("X-RateLimit-Remaining", "0")
+            raise RuntimeError(
+                "GITHUB_RATE_LIMIT_EXHAUSTED: unauthenticated reads are 60/hour for the "
+                f"whole machine, remaining={left}; export GH_TOKEN or use a lane token"
+            ) from exc
+        raise RuntimeError(f"public GitHub response {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("public GitHub observation unavailable") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):

@@ -31245,6 +31245,10 @@
         {
           "id": "cap:tool/start",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/verify_three_proofs.py",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -38984,8 +38988,7 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
-        "cap:tool/idp-pr-scope-audit",
-        "cap:tool/pre-push-wall.py"
+        "cap:tool/idp-pr-scope-audit"
       ],
       "cost": {
         "estimate": null,
@@ -42032,7 +42035,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/pre-push-wall.py"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -58304,10 +58309,10 @@
       "id": "cap:tool/pre-push-wall.py",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "pre-push-wall -- the front line, at push time, with microscopic telemetry.",
+      "summary": "pre-push-wall -- I-8107: one wall, six gates, identical at pre-push and in CI.",
       "contract": {
         "inputs": [
-          "--enforce"
+          "--name-only"
         ],
         "outputs": [
           "stdout",
@@ -58341,7 +58346,7 @@
       "path": "bin/pre-push-wall.py",
       "depends_on": [
         {
-          "id": "cap:tool/idp-bdd-proof-gate",
+          "id": "cap:tool/idp-differential-falsifier",
           "edge": "invokes"
         }
       ],
@@ -60147,6 +60152,7 @@
           "--installed",
           "--json",
           "--no-installed",
+          "--optimus",
           "--root",
           "--strict-ratchet",
           "--write-baseline"
@@ -60719,6 +60725,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/claim-open",
         "cap:tool/idp-agent-base-apply.py",
         "cap:tool/idp-ci"
       ],
