@@ -54,10 +54,16 @@ if(h.get('register')){
   say('Passkey created. Your Mac finishes the rest.','ok')});
 }else if(h.get('p')){
  const raw=b64u.dec(h.get('p')), lines=new TextDecoder().decode(raw).split('\\n');
- if(lines[0]!=='idp-founder-approval-v1'){say('This link is not an estate approval.','bad')}else{
-  const dl=document.createElement('dl');[['Change',lines[4]],['Files',lines.slice(5).join(', ')],['Requested',lines[1]],['On top of',lines[2].slice(0,12)],['Content',lines[3].slice(0,12)]]
-   .forEach(([k,v])=>{const t=document.createElement('dt');t.textContent=k;const d=document.createElement('dd');d.textContent=v;dl.append(t,d)});
-  $('#m').insertBefore(dl,s); say('Approving signs exactly this content. Any later edit voids it.');
+ const render=(rows)=>{const dl=document.createElement('dl');rows.forEach(([k,v])=>{const t=document.createElement('dt');t.textContent=k;const d=document.createElement('dd');d.textContent=v;dl.append(t,d)});
+  $('#m').insertBefore(dl,s); say('Approving signs exactly this content. Any later edit voids it.')};
+ // Two payload shapes, one ceremony: an approval manifest names PR heads, a commit seal names the
+ // commit the founder's key vouches for. Both are signed as SHA-256 of the whole text.
+ if(lines[0]==='idp-founder-approval-v1'){
+  render([['Change',lines[4]],['Files',lines.slice(5).join(', ')],['Requested',lines[1]],['On top of',lines[2].slice(0,12)],['Content',lines[3].slice(0,12)]]);
+ }else if(lines[0]==='idp-founder-seal-v1'){
+  render([['Seals commit',lines[1]],['Files',lines.slice(4).join(', ')],['Requested',lines[3]],['One-time nonce',lines[2]]]);
+ }else{say('This link is not an estate approval.','bad')}
+ if(lines[0]==='idp-founder-approval-v1'||lines[0]==='idp-founder-seal-v1'){
   // idp#8025: Safari on iPhone answered NotAllowedError ("not allowed ... in the current
   // context"). The handler awaited crypto.subtle.digest BEFORE credentials.get, and WebKit only
   // honours WebAuthn inside the user's tap when no other async work runs first. The digest is a
@@ -66,7 +72,7 @@ if(h.get('register')){
   btn('Approve with Face ID',async()=>{
    if(!ch){await ready;throw new Error('the page was still preparing the request')}
    const a=await navigator.credentials.get({publicKey:{challenge:ch,rpId:location.hostname,userVerification:'required',allowCredentials:[]}});
-   const body={authenticatorData:b64u.enc(a.response.authenticatorData),clientDataJSON:b64u.enc(a.response.clientDataJSON),signature:b64u.enc(a.response.signature)};
+   const body={credentialId:b64u.enc(a.rawId),authenticatorData:b64u.enc(a.response.authenticatorData),clientDataJSON:b64u.enc(a.response.clientDataJSON),signature:b64u.enc(a.response.signature)};
    const r=await fetch('/approve/'+b64u.enc(ch),{method:'POST',body:JSON.stringify(body)});
    if(!r.ok) throw new Error('relay answered '+r.status);
    say('Approved. The estate lands it from here.','ok')});
@@ -119,9 +125,9 @@ export default {
         if (req.method === 'POST') {
           if (list.length >= 5) return json({ error: 'full' }, 429);
           const b = await readBody(req);
-          if (!okB64u(b.authenticatorData, 2048) || !okB64u(b.clientDataJSON, 4096) || !okB64u(b.signature, 512))
+          if (!okB64u(b.credentialId, 512) || !okB64u(b.authenticatorData, 2048) || !okB64u(b.clientDataJSON, 4096) || !okB64u(b.signature, 512))
             return json({ error: 'bad assertion' }, 400);
-          list.push({ authenticatorData: b.authenticatorData, clientDataJSON: b.clientDataJSON, signature: b.signature });
+          list.push({ credentialId: b.credentialId, authenticatorData: b.authenticatorData, clientDataJSON: b.clientDataJSON, signature: b.signature });
           await env.APPROVALS.put(k, JSON.stringify(list), { expirationTtl: TTL });
           return json({ ok: true });
         }

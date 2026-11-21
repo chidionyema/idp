@@ -37,7 +37,8 @@ out.regAgain = await call('POST', '/registration/' + N, { credentialId: 'evil', 
 out.regRead = await call('GET', '/registration/' + N);
 out.badPath = await call('GET', '/registration/short');
 out.apMissing = await call('GET', '/approve/' + C);
-for (let i = 0; i < 5; i++) out['ap' + i] = await call('POST', '/approve/' + C, { authenticatorData: 'AA' + i, clientDataJSON: 'BB', signature: 'CC' });
+out.apNoCred = await call('POST', '/approve/' + C, { authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
+for (let i = 0; i < 5; i++) out['ap' + i] = await call('POST', '/approve/' + C, { credentialId: 'cred_' + i, authenticatorData: 'AA' + i, clientDataJSON: 'BB', signature: 'CC' });
 out.apFull = await call('POST', '/approve/' + C, { authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
 out.apRead = await call('GET', '/approve/' + C);
 out.apJunk = await call('POST', '/approve/' + 'd'.repeat(43), 'not json');
@@ -94,9 +95,18 @@ def test_unknown_or_short_paths_are_refused(results: dict) -> None:
     assert results["badPath"]["status"] == 404
 
 
+def test_an_assertion_without_a_credential_id_is_refused(results: dict) -> None:
+    """The verifier identifies the enrolled key by credential id; storing an assertion without
+    one stores something that can never verify (measured 2026-11-21: the page posted three fields
+    and bin/idp-passkey-verify.mjs requires four)."""
+    assert results["apNoCred"]["status"] == 400, results["apNoCred"]
+
+
 def test_approvals_are_kept_capped_and_validated(results: dict) -> None:
     assert results["apMissing"]["status"] == 404
     assert all(results[f"ap{i}"]["status"] == 200 for i in range(5))
+    kept = json.loads(results["apRead"]["text"])
+    assert [a["credentialId"] for a in kept] == [f"cred_{i}" for i in range(5)], kept
     assert results["apFull"]["status"] == 429
     assert len(json.loads(results["apRead"]["text"])) == 5
     assert results["apJunk"]["status"] == 400
