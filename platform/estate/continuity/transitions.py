@@ -20,7 +20,6 @@ UNFENCED_TRANSITIONS = {
 }
 
 
-
 def _require_verified_operational_effect(
     cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence
 ):
@@ -29,7 +28,11 @@ def _require_verified_operational_effect(
     This enforces evidence custody, not the external observer's integrity.
     External verifier authentication must be enforced at receipt admission.
     """
-    if not isinstance(evidence, str) or not evidence.startswith("effect:") or not evidence[7:]:
+    if (
+        not isinstance(evidence, str)
+        or not evidence.startswith("effect:")
+        or not evidence[7:]
+    ):
         raise InvalidTransition("OPERATING requires evidence='effect:<reconciled-effect-id>'")
     effect = cur.execute(
         "SELECT state, reconciliation_status, external_receipt, observed_at, verified_by"
@@ -107,7 +110,13 @@ class TransitionMixin(FenceMixin):
                     self.check_mandate(fenced, mandate_version)
             if to_state == "OPERATING":
                 _require_verified_operational_effect(
-                    cur, mission_id, attempt_id, lease_epoch, m["mandate_version"], actor, evidence
+                    cur,
+                    mission_id,
+                    attempt_id,
+                    lease_epoch,
+                    m["mandate_version"],
+                    actor,
+                    evidence,
                 )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
