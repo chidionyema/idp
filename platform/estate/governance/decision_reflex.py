@@ -10,6 +10,7 @@ CLI:
   python decision_reflex.py seed session_start
   python decision_reflex.py select envelope.json
   python decision_reflex.py review observation.json
+  python decision_reflex.py simulate synthetic_recovery_case.json
 
 Exit: 0 = useful answer, 2 = malformed/missing data. Outputs JSON only.
 """
@@ -50,6 +51,7 @@ def seed(stage: str) -> dict:
         "default": "UNKNOWN; observe or take a safe read-only diagnostic, never invent VERIFIED",
         "decision_law": "Prefer proven shared-capacity leverage; retain custody; attack alternatives; learn from reality",
         "effect_authority": "External QUAD/Greenlane authority and independent verifier required",
+        "mathematical_method": "MRDD-001: belief update, dependency feasibility, exact EVSI, independent feedback; simulation is never authority",
     }
 
 
@@ -111,12 +113,32 @@ def review(record: dict) -> dict:
             "next": "Update the hypothesis, preserve the observation, and choose a different action" if verdict == "PREDICTION_FALSIFIED" else "Authenticate the verifier receipt before settlement"}
 
 
+def simulate(config: dict) -> dict:
+    """Offline mathematical experiment only; NEVER authorise or dispatch an effect.
+
+    Research scenarios are declared synthetic. Live mission state requires
+    independent evidence/authority and is not ingestible through this entry point.
+    """
+    if not isinstance(config, dict) or "SYNTHETIC" not in str(config.get("_warning", "")):
+        raise ValueError("MRDD simulation requires an explicitly SYNTHETIC research scenario")
+    from recovery_model import run_model
+    return {
+        "schema": VERSION,
+        "model": "MRDD-001",
+        "decision": "RESEARCH_SIMULATION_ONLY",
+        "production_effects": False,
+        "execution_authority": "NONE",
+        "results": run_model(config),
+        "next": "Replace priors with observed evidence and obtain independent verifier receipts before any production intervention",
+    }
+
+
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) != 2 or argv[0] not in ("seed", "select", "review"):
-            raise ValueError("usage: decision_reflex.py seed STAGE | select FILE | review FILE")
+        if len(argv) != 2 or argv[0] not in ("seed", "select", "review", "simulate"):
+            raise ValueError("usage: decision_reflex.py seed STAGE | select FILE | review FILE | simulate SYNTHETIC_FILE")
         mode, arg = argv
-        value = seed(arg) if mode == "seed" else (select if mode == "select" else review)(json.loads(Path(arg).read_text()))
+        value = seed(arg) if mode == "seed" else {"select": select, "review": review, "simulate": simulate}[mode](json.loads(Path(arg).read_text()))
         print(json.dumps(value, sort_keys=True, indent=2))
         return 0
     except (ValueError, OSError, TypeError, KeyError) as exc:
