@@ -1,0 +1,25 @@
+{
+  "_warning": "SYNTHETIC EXAMPLE: priors, costs, capacity weights and endpoints are NOT estate measurements or permissions",
+  "decision": {
+    "fault_priors": {"receiver_route": 0.5, "cors_preflight": 0.3, "ingest_secret": 0.2},
+    "repair_costs": {"receiver_route": 3, "cors_preflight": 2, "ingest_secret": 1},
+    "successful_recovery_value": 10,
+    "probe_accuracy": 0.90,
+    "probe_cost": 0.30
+  },
+  "capability_graph": {
+    "verified_seed": ["ai_studio", "git_authority", "cloud_ci", "scheduler"],
+    "rules": [
+      {"name": "capture", "requires": ["ai_studio", "intake"], "weight": 1},
+      {"name": "custody", "requires": ["capture", "git_authority"], "weight": 2},
+      {"name": "replay", "requires": ["custody", "cloud_ci"], "weight": 3},
+      {"name": "recovery", "requires": ["replay", "scheduler"], "weight": 4},
+      {"name": "free_web_delivery", "requires": ["intake", "free_web_auth"], "weight": 3}
+    ]
+  },
+  "candidate_actions": [
+    {"name": "read_only_diagnosis", "effects": false, "worker_required": false, "authority_receipt": true, "budget_receipt": true},
+    {"name": "execute_legion_without_worker", "effects": true, "worker_required": true, "worker_verified": false, "authority_receipt": true, "budget_receipt": true, "independent_evidence_receipt": true},
+    {"name": "modify_prod_without_receipt", "effects": true, "worker_required": false, "authority_receipt": false, "budget_receipt": true, "independent_evidence_receipt": false}
+  ]
+}
