@@ -67,9 +67,14 @@ def _require_verified_operational_effect(
         raise InvalidTransition("OPERATING refused: effect receipt is missing or empty")
 
 
-
-def _require_yield_proof(cur, mission_id, attempt_id, lease_epoch, actor, evidence, settling):
-    if not isinstance(evidence, str) or not evidence.startswith("yield:") or not evidence[6:]:
+def _require_yield_proof(
+    cur, mission_id, attempt_id, lease_epoch, actor, evidence, settling
+):
+    if (
+        not isinstance(evidence, str)
+        or not evidence.startswith("yield:")
+        or not evidence[6:]
+    ):
         raise InvalidTransition("yield transition requires evidence='yield:<proof-id>'")
     proof = cur.execute(
         "SELECT p.proof_id, p.verifier, p.verified_at, p.settled_at, p.effect_id,"
@@ -79,15 +84,23 @@ def _require_yield_proof(cur, mission_id, attempt_id, lease_epoch, actor, eviden
         " WHERE p.proof_id=? AND p.mission_id=? AND p.attempt_id=? AND p.lease_epoch=?",
         (evidence[6:], mission_id, attempt_id, lease_epoch),
     ).fetchone()
-    if proof is None or proof["effect_state"] != "OBSERVED" or proof["reconciliation_status"] != "RECONCILED":
-        raise InvalidTransition("yield proof is missing or its external effect is not reconciled")
+    if (
+        proof is None
+        or proof["effect_state"] != "OBSERVED"
+        or proof["reconciliation_status"] != "RECONCILED"
+    ):
+        raise InvalidTransition(
+            "yield proof is missing or its external effect is not reconciled"
+        )
     if not proof["evidence_ref"] or not proof["metric"] or not proof["verified_at"]:
         raise InvalidTransition("yield proof has no measurable provenance")
     if proof["verifier"].strip().casefold() in {
         actor.strip().casefold() if not settling else "",
         proof["verified_by"].strip().casefold(),
     }:
-        raise InvalidTransition("yield proof must be independent of the effect observer and claimant")
+        raise InvalidTransition(
+            "yield proof must be independent of the effect observer and claimant"
+        )
     if proof["target"] >= proof["baseline"]:
         met = proof["observed"] >= proof["target"]
     else:
@@ -96,11 +109,14 @@ def _require_yield_proof(cur, mission_id, attempt_id, lease_epoch, actor, eviden
         raise InvalidTransition("measured outcome does not meet the yield target")
     if settling and (
         proof["settled_at"] is not None
-        or actor.strip().casefold() in {proof["verifier"].strip().casefold(), proof["verified_by"].strip().casefold()}
+        or actor.strip().casefold()
+        in {
+            proof["verifier"].strip().casefold(),
+            proof["verified_by"].strip().casefold(),
+        }
     ):
         raise InvalidTransition("settlement requires a separate independent certifier")
     return proof
-
 
 
 class TransitionMixin(FenceMixin):
@@ -165,7 +181,12 @@ class TransitionMixin(FenceMixin):
                 )
             if to_state in ("YIELD_PROVEN", "SETTLED"):
                 _require_yield_proof(
-                    cur, mission_id, attempt_id, lease_epoch, actor, evidence,
+                    cur,
+                    mission_id,
+                    attempt_id,
+                    lease_epoch,
+                    actor,
+                    evidence,
                     settling=to_state == "SETTLED",
                 )
             if to_state == "SETTLED":

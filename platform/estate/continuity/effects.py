@@ -160,7 +160,9 @@ class EffectsMixin(FenceMixin):
         ):
             raise InvalidTransition("yield metrics must be finite numbers")
         if not metric.strip() or not evidence_ref.strip() or not verifier.strip():
-            raise InvalidTransition("yield requires metric, evidence reference and verifier")
+            raise InvalidTransition(
+                "yield requires metric, evidence reference and verifier"
+            )
         if observed < target if target >= baseline else observed > target:
             raise InvalidTransition("yield target not met")
         with self.db:
@@ -181,7 +183,9 @@ class EffectsMixin(FenceMixin):
                 or effect["state"] != "OBSERVED"
                 or effect["reconciliation_status"] != "RECONCILED"
             ):
-                raise InvalidTransition("yield needs an observed reconciled external effect")
+                raise InvalidTransition(
+                    "yield needs an observed reconciled external effect"
+                )
             if verifier.strip().casefold() == effect["verified_by"].strip().casefold():
                 raise InvalidTransition("yield verifier cannot be the effect observer")
             proof_id = f"y-{uuid.uuid4()}"
@@ -191,8 +195,18 @@ class EffectsMixin(FenceMixin):
                 " metric, baseline, observed, target, evidence_ref, verifier, verified_at)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    proof_id, mission_id, attempt_id, lease_epoch, effect_id,
-                    metric, baseline, observed, target, evidence_ref, verifier, t,
+                    proof_id,
+                    mission_id,
+                    attempt_id,
+                    lease_epoch,
+                    effect_id,
+                    metric,
+                    baseline,
+                    observed,
+                    target,
+                    evidence_ref,
+                    verifier,
+                    t,
                 ),
             )
             return {"proof_id": proof_id, "state": "RECORDED", "verified_at": t}

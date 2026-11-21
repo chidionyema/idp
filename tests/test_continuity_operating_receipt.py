@@ -127,8 +127,12 @@ def test_operating_is_not_yield_or_settlement(tmp_path):
     assert store.get_mission("m-test")["state"] == "OPERATING"
     with pytest.raises(InvalidTransition, match="yield"):
         store.transition(
-            "m-test", "YIELD_PROVEN", "executor-a", "declared yield",
-            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+            "m-test",
+            "YIELD_PROVEN",
+            "executor-a",
+            "declared yield",
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
         )
     assert store.get_mission("m-test")["state"] == "OPERATING"
     store.close()
@@ -140,42 +144,91 @@ def test_measured_yield_requires_distinct_certifiers(tmp_path):
     operating(store, lease, "effect:" + eid)
     with pytest.raises(InvalidTransition, match="target not met"):
         store.record_yield_proof(
-            "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
-            "completed_jobs", 0, 0, 1, "external:jobs", "optimus-b",
+            "m-test",
+            lease["attempt_id"],
+            lease["lease_epoch"],
+            eid,
+            "completed_jobs",
+            0,
+            0,
+            1,
+            "external:jobs",
+            "optimus-b",
         )
     with pytest.raises(InvalidTransition, match="effect observer"):
         store.record_yield_proof(
-            "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
-            "completed_jobs", 0, 2, 1, "external:jobs", "observer-b",
+            "m-test",
+            lease["attempt_id"],
+            lease["lease_epoch"],
+            eid,
+            "completed_jobs",
+            0,
+            2,
+            1,
+            "external:jobs",
+            "observer-b",
         )
     proof = store.record_yield_proof(
-        "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
-        "completed_jobs", 0, 2, 1, "external:jobs", "optimus-b",
+        "m-test",
+        lease["attempt_id"],
+        lease["lease_epoch"],
+        eid,
+        "completed_jobs",
+        0,
+        2,
+        1,
+        "external:jobs",
+        "optimus-b",
     )
     with pytest.raises(InvalidTransition, match="independent"):
         store.transition(
-            "m-test", "YIELD_PROVEN", "optimus-b", "self-declared",
+            "m-test",
+            "YIELD_PROVEN",
+            "optimus-b",
+            "self-declared",
             evidence="yield:" + proof["proof_id"],
-            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
         )
-    assert store.transition(
-        "m-test", "YIELD_PROVEN", "executor-a", "measured",
-        evidence="yield:" + proof["proof_id"],
-        attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
-    )["state"] == "YIELD_PROVEN"
+    assert (
+        store.transition(
+            "m-test",
+            "YIELD_PROVEN",
+            "executor-a",
+            "measured",
+            evidence="yield:" + proof["proof_id"],
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
+        )["state"]
+        == "YIELD_PROVEN"
+    )
     with pytest.raises(InvalidTransition, match="separate independent"):
         store.transition(
-            "m-test", "SETTLED", "optimus-b", "self-certification",
+            "m-test",
+            "SETTLED",
+            "optimus-b",
+            "self-certification",
             evidence="yield:" + proof["proof_id"],
-            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
         )
-    assert store.transition(
-        "m-test", "SETTLED", "auditor-c", "independent settlement",
-        evidence="yield:" + proof["proof_id"],
-        attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
-    )["state"] == "SETTLED"
-    assert store.db.execute(
-        "SELECT settled_by FROM mission_yield_proofs WHERE proof_id=?",
-        (proof["proof_id"],),
-    ).fetchone()["settled_by"] == "auditor-c"
+    assert (
+        store.transition(
+            "m-test",
+            "SETTLED",
+            "auditor-c",
+            "independent settlement",
+            evidence="yield:" + proof["proof_id"],
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
+        )["state"]
+        == "SETTLED"
+    )
+    assert (
+        store.db.execute(
+            "SELECT settled_by FROM mission_yield_proofs WHERE proof_id=?",
+            (proof["proof_id"],),
+        ).fetchone()["settled_by"]
+        == "auditor-c"
+    )
     store.close()
