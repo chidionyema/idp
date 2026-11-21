@@ -9,7 +9,7 @@ MODULES = ROOT / 'platform' / 'estate' / 'governance'
 if str(MODULES) not in sys.path:
     sys.path.insert(0, str(MODULES))
 from founder_method import assess, decide
-from decision_reflex import STAGES, seed, select, review
+from decision_reflex import STAGES, seed, select, review, simulate
 
 
 def candidate(name, mode='PROBE', **overrides):
@@ -24,6 +24,19 @@ def candidate(name, mode='PROBE', **overrides):
 
 
 class DecisionReflexContract(unittest.TestCase):
+    def test_mrdd_is_exposed_without_granting_authority(self):
+        import json
+        case=json.loads((MODULES/'example_config.json').read_text())
+        out=simulate(case)
+        self.assertEqual(out['decision'],'RESEARCH_SIMULATION_ONLY')
+        self.assertEqual(out['execution_authority'],'NONE')
+        self.assertFalse(out['production_effects'])
+        self.assertEqual(out['results']['choice'],'PROBE')
+
+    def test_model_rejects_an_unlabelled_synthetic_input(self):
+        with self.assertRaisesRegex(ValueError,'SYNTHETIC'):
+            simulate({'decision':{}})
+
     def test_every_stage_has_usable_reflex(self):
         self.assertGreaterEqual(len(STAGES), 13)
         for stage in STAGES:
