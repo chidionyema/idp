@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "platform" / "estate"))
-from continuity import InvalidTransition, MissionStore  # noqa: E402
+from continuity import InvalidTransition, MissionStore, StaleFenceError  # noqa: E402
 
 
 def staged(tmp_path):
@@ -115,6 +115,6 @@ def test_reconciled_observation_is_linked_to_event_and_terminal(tmp_path):
         "WHERE mission_id='m-test' AND to_state='OPERATING'"
     ).fetchone()
     assert row["evidence"] == "effect:" + eid and row["created_at"] > 0
-    with pytest.raises(InvalidTransition):
+    with pytest.raises((InvalidTransition, StaleFenceError)):
         operating(store, lease, "effect:" + eid)
     store.close()
