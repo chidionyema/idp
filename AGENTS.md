@@ -42,7 +42,7 @@ harnesses before claiming fleet-wide improvement.
 The founder's repeated corrections are a testable DECISION METHOD, not another authority,
 scheduler, memory store, ledger or model personality. At each material lifecycle boundary,
 use the one source implementation in
-\`platform/estate/governance/decision_reflex.py\`:
+`platform/estate/governance/decision_reflex.py`:
 
 - instruction_intake / session_start: recover original obligation before proposing work;
 - context_retrieval / hypothesis / planning: name unknowns and falsifiers, compare
@@ -54,9 +54,9 @@ use the one source implementation in
 - handoff / settlement / session_end: preserve the successor checkpoint and
   require independent operational plus causal closure.
 
-\`python3 platform/estate/governance/decision_reflex.py seed STAGE\` emits the
-small, context-specific expectation. \`select DECISION.json\` compares options;
-\`review OBSERVATION.json\` tests prediction versus observed effect. These
+`python3 platform/estate/governance/decision_reflex.py seed STAGE` emits the
+small, context-specific expectation. `select DECISION.json` compares options;
+`review OBSERVATION.json` tests prediction versus observed effect. These
 commands are stdlib-only and do not require a working model or router.
 A selected candidate is advice only, NEVER signed authorisation, an effect
 receipt or a reason to bypass QUAD, the existing executor, Greenlane, Optimus
