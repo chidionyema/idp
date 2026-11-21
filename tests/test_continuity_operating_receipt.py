@@ -14,39 +14,55 @@ from continuity import InvalidTransition, MissionStore  # noqa: E402
 
 def staged(tmp_path):
     store = MissionStore(tmp_path / "custody.sqlite")
-    store.accept_mission({
-        "mission_id": "m-test",
-        "instruction_id": "idp#7443",
-        "mandate_id": "founder",
-        "goal": "live operational acceptance",
-        "acceptance_contract_digest": "a" * 64,
-        "risk_class": "HIGH",
-    })
+    store.accept_mission(
+        {
+            "mission_id": "m-test",
+            "instruction_id": "idp#7443",
+            "mandate_id": "founder",
+            "goal": "live operational acceptance",
+            "acceptance_contract_digest": "a" * 64,
+            "risk_class": "HIGH",
+        }
+    )
     store.transition("m-test", "READY", "estate", "dispatch")
-    lease = store.acquire_lease("m-test", {
-        "agent_adapter": "legion",
-        "provider": "test",
-        "model": "test",
-        "execution_host": "cloud",
-        "failure_domain": "runner",
-        "worktree_id": "test",
-        "base_sha": "a" * 40,
-    }, lease_seconds=600)
+    lease = store.acquire_lease(
+        "m-test",
+        {
+            "agent_adapter": "legion",
+            "provider": "test",
+            "model": "test",
+            "execution_host": "cloud",
+            "failure_domain": "runner",
+            "worktree_id": "test",
+            "base_sha": "a" * 40,
+        },
+        lease_seconds=600,
+    )
     for stage in ("EXECUTING", "VERIFYING", "PROMOTING", "DEPLOY_VERIFY"):
         store.transition(
-            "m-test", stage, "executor-a", "phase",
-            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+            "m-test",
+            stage,
+            "executor-a",
+            "phase",
+            attempt_id=lease["attempt_id"],
+            lease_epoch=lease["lease_epoch"],
         )
     return store, lease
 
 
 def effect(store, lease, *, reconciled=True, verifier="observer-b"):
     intent = store.record_effect_intent(
-        "m-test", lease["attempt_id"], lease["lease_epoch"],
-        "external-test", "example.invalid", "test-once", {"expected": "ok"},
+        "m-test",
+        lease["attempt_id"],
+        lease["lease_epoch"],
+        "external-test",
+        "example.invalid",
+        "test-once",
+        {"expected": "ok"},
     )
     store.record_receipt(
-        intent["effect_id"], {"observed": "ok"},
+        intent["effect_id"],
+        {"observed": "ok"},
         verified_by=verifier,
         reconciliation_status="RECONCILED" if reconciled else "AMBIGUOUS",
     )
@@ -55,8 +71,12 @@ def effect(store, lease, *, reconciled=True, verifier="observer-b"):
 
 def operating(store, lease, evidence="", actor="executor-a"):
     return store.transition(
-        "m-test", "OPERATING", actor, "claimed operational",
-        evidence=evidence, attempt_id=lease["attempt_id"],
+        "m-test",
+        "OPERATING",
+        actor,
+        "claimed operational",
+        evidence=evidence,
+        attempt_id=lease["attempt_id"],
         lease_epoch=lease["lease_epoch"],
     )
 
