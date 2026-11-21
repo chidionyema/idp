@@ -19,6 +19,8 @@ MISSION_STATES = (
     "PROMOTING",
     "DEPLOY_VERIFY",
     "OPERATING",
+    "YIELD_PROVEN",
+    "SETTLED",
 )
 
 TRANSITIONS: Dict[str, frozenset] = {
@@ -32,5 +34,7 @@ TRANSITIONS: Dict[str, frozenset] = {
     "VERIFYING": frozenset({"PROMOTING", "RECOVERY_PENDING"}),
     "PROMOTING": frozenset({"DEPLOY_VERIFY", "RECOVERY_PENDING"}),
     "DEPLOY_VERIFY": frozenset({"OPERATING", "RECOVERY_PENDING"}),
-    "OPERATING": frozenset(),
+    "OPERATING": frozenset({"YIELD_PROVEN"}),
+    "YIELD_PROVEN": frozenset({"SETTLED"}),
+    "SETTLED": frozenset(),
 }
