@@ -22,7 +22,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      ESTATE_HOME: ${{ runner.temp }}/estate
+      # github.run_id is available during workflow validation; runner.temp is not
+      # a permitted context in jobs.<job_id>.env and made every push fail before jobs.
+      ESTATE_HOME: /tmp/meridian-incident-${{ github.run_id }}
       ESTATE_INCIDENT_DISPATCH: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
