@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -214,18 +215,48 @@ def evaluate_three_independent_proofs(
     }
 
 
-def seal_verified(repo_root: str, commit_sha: str) -> bool:
+def seal_verified(repo_root: str, commit_sha: str, changed_files: List[str] = None) -> bool:
     """A seal is a signature, never a flag.
 
     The old founder-seal flag granted the guarded-path and cross-subsystem
     exemptions to whoever typed it. The trailer is signed off-host; a
     missing, stale or replayed one grants nothing.
+
+    Two independent proofs are accepted, and either one suffices:
+
+      * the Ed25519 file key (bin/idp-auth-verify, ~/.idp/founder.key), which
+        only exists on the founder's laptop;
+      * the founder's passkey (bin/idp-passkey-seal.mjs), whose public half is
+        committed at docs/keys/founder-passkey.json, so the seal no longer
+        depends on one device (docs/decisions/2026-11-17-the-estate-runs-
+        without-any-one-device.md).
+
+    Neither being present is a refusal, not an approval.
     """
-    verifier = Path(__file__).resolve().with_name("idp-auth-verify")
-    if not verifier.exists():
+    here = Path(__file__).resolve().parent
+    file_key = here / "idp-auth-verify"
+    if file_key.exists():
+        done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [str(file_key), commit_sha],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if done.returncode == 0:
+            return True
+
+    passkey = here / "idp-passkey-seal.mjs"
+    node = shutil.which("node")
+    if not (passkey.exists() and node):
         return False
+    argv = [node, str(passkey), "--repo", str(repo_root), "--commit", commit_sha]
+    if changed_files:
+        # The signed payload names the paths the founder sealed. Without passing them the seal
+        # would lift the file ceiling and the guarded-path rule for whatever the commit touched.
+        argv += ["--files", ",".join(changed_files)]
     done = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [str(verifier), commit_sha],
+        argv,
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -256,7 +287,9 @@ if __name__ == "__main__":
         changed_files=args.files,
         expected_hashes={},
         claimed_unix_ts=args.timestamp,
-        founder_seal_verified=seal_verified(args.repo_root, args.commit_sha),
+        founder_seal_verified=seal_verified(
+            args.repo_root, args.commit_sha, args.files
+        ),
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)

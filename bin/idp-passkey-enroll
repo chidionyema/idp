@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Enrol the founder's seal, once, from a phone.
+
+The estate's seal is a passkey: the private key never leaves the device's secure hardware,
+every signature needs a biometric, and the public half is committed on main where the verifier
+reads it. This script does the unglamorous half — mint the one-time nonce, print the one link
+the founder taps, then poll the Worker for the registration the device posts back.
+
+    bin/idp-passkey-enroll --host passkey.meridianlabs.cloud
+      -> open https://passkey.meridianlabs.cloud/#register=<nonce> on the phone, Face ID
+      -> docs/keys/founder-passkey.json written, ready to commit
+
+Nothing here can mint an approval: it writes a public key and the commit it was enrolled under.
+The verifier refuses any assertion that keyring did not sign, and the keyring only gains a key
+from a registration posted to a nonce this script generated.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import secrets
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "docs" / "keys" / "founder-passkey.json"
+KEYS = ("credentialId", "publicKeySpki", "rpId", "origin", "enrollmentCommit")
+
+
+def head_sha() -> str:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def get(url: str) -> tuple[int, dict | None]:
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        return exc.code, None
+    except (urllib.error.URLError, OSError, ValueError):
+        return 0, None
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="idp-passkey-enroll")
+    ap.add_argument("--host", required=True, help="the deployed worker host, e.g. passkey.<zone>")
+    ap.add_argument("--nonce", default="", help="reuse a nonce (default: mint one)")
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--enrollment-commit", default="", help="default: HEAD")
+    ap.add_argument("--timeout", type=int, default=900)
+    ap.add_argument("--poll", type=int, default=5)
+    a = ap.parse_args(argv)
+
+    raw = a.host if "://" in a.host else f"https://{a.host}"
+    origin = raw.rstrip("/")
+    host = origin.split("://", 1)[1].strip("/")
+    nonce = a.nonce or secrets.token_urlsafe(24)
+    if not 16 <= len(nonce) <= 128:
+        print("FAIL    idp-passkey-enroll  nonce must be 16..128 characters", file=sys.stderr)
+        return 2
+    url = f"{origin}/#register={nonce}"
+    print(f"open    {url}")
+    print(f"waiting up to {a.timeout}s for the device's registration ...")
+
+    deadline = time.time() + a.timeout
+    body = None
+    while time.time() < deadline:
+        status, body = get(f"{origin}/registration/{nonce}")
+        if status == 200 and isinstance(body, dict):
+            break
+        time.sleep(max(1, a.poll))
+    if not isinstance(body, dict) or not body.get("credentialId") or not body.get("publicKeySpki"):
+        print("FAIL    idp-passkey-enroll  no registration was posted for that nonce", file=sys.stderr)
+        return 1
+
+    keyring = {
+        "credentialId": body["credentialId"],
+        "publicKeySpki": body["publicKeySpki"],
+        "rpId": host,
+        "origin": origin,
+        "enrollmentCommit": a.enrollment_commit or head_sha(),
+    }
+    missing = [k for k in KEYS if not keyring.get(k)]
+    if missing:
+        print(f"FAIL    idp-passkey-enroll  registration is missing {missing}", file=sys.stderr)
+        return 1
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(keyring, indent=2, sort_keys=True) + "\n")
+    print(f"ok      idp-passkey-enroll  wrote {out} ({len(keyring['credentialId'])} chars of credential id)")
+    print("next    commit it through the lane; from then on a guarded change is one Face ID tap")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
