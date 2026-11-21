@@ -52,7 +52,9 @@ def get(url: str) -> tuple[int, dict | None]:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="idp-passkey-enroll")
-    ap.add_argument("--host", required=True, help="the deployed worker host, e.g. passkey.<zone>")
+    ap.add_argument(
+        "--host", required=True, help="the deployed worker host, e.g. passkey.<zone>"
+    )
     ap.add_argument("--nonce", default="", help="reuse a nonce (default: mint one)")
     ap.add_argument("--out", default=str(OUT))
     ap.add_argument("--enrollment-commit", default="", help="default: HEAD")
@@ -65,7 +67,10 @@ def main(argv: list[str]) -> int:
     host = origin.split("://", 1)[1].strip("/")
     nonce = a.nonce or secrets.token_urlsafe(24)
     if not 16 <= len(nonce) <= 128:
-        print("FAIL    idp-passkey-enroll  nonce must be 16..128 characters", file=sys.stderr)
+        print(
+            "FAIL    idp-passkey-enroll  nonce must be 16..128 characters",
+            file=sys.stderr,
+        )
         return 2
     url = f"{origin}/#register={nonce}"
     print(f"open    {url}")
@@ -78,8 +83,15 @@ def main(argv: list[str]) -> int:
         if status == 200 and isinstance(body, dict):
             break
         time.sleep(max(1, a.poll))
-    if not isinstance(body, dict) or not body.get("credentialId") or not body.get("publicKeySpki"):
-        print("FAIL    idp-passkey-enroll  no registration was posted for that nonce", file=sys.stderr)
+    if (
+        not isinstance(body, dict)
+        or not body.get("credentialId")
+        or not body.get("publicKeySpki")
+    ):
+        print(
+            "FAIL    idp-passkey-enroll  no registration was posted for that nonce",
+            file=sys.stderr,
+        )
         return 1
 
     keyring = {
@@ -91,13 +103,20 @@ def main(argv: list[str]) -> int:
     }
     missing = [k for k in KEYS if not keyring.get(k)]
     if missing:
-        print(f"FAIL    idp-passkey-enroll  registration is missing {missing}", file=sys.stderr)
+        print(
+            f"FAIL    idp-passkey-enroll  registration is missing {missing}",
+            file=sys.stderr,
+        )
         return 1
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(keyring, indent=2, sort_keys=True) + "\n")
-    print(f"ok      idp-passkey-enroll  wrote {out} ({len(keyring['credentialId'])} chars of credential id)")
-    print("next    commit it through the lane; from then on a guarded change is one Face ID tap")
+    print(
+        f"ok      idp-passkey-enroll  wrote {out} ({len(keyring['credentialId'])} chars of credential id)"
+    )
+    print(
+        "next    commit it through the lane; from then on a guarded change is one Face ID tap"
+    )
     return 0
 
 

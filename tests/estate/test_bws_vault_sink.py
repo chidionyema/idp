@@ -89,7 +89,9 @@ def test_only_the_prefix_propagates(harness) -> None:
 def test_an_unchanged_entry_is_not_rewritten_but_a_failed_put_is_named(harness) -> None:
     mod, calls, _, cfg = harness
     assert mod.cycle(cfg(vault_sink=True))["vault_puts"] == 1
-    assert mod.cycle(cfg(vault_sink=True))["vault_puts"] == 0, "a second run must not re-put"
+    assert mod.cycle(cfg(vault_sink=True))["vault_puts"] == 0, (
+        "a second run must not re-put"
+    )
 
     def boom(cfg_, name, value):
         return 3, "Split"
@@ -107,7 +109,9 @@ def test_the_value_never_reaches_argv_and_no_plaintext_is_left(tmp_path: Path) -
     mod = _module()
     dump = tmp_path / "argv.json"
     stub = tmp_path / "vault"
-    stub.write_text('#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done > ' + str(dump) + "\n")
+    stub.write_text(
+        '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done > ' + str(dump) + "\n"
+    )
     stub.chmod(0o755)
 
     real_put = mod.vault_put
@@ -119,4 +123,6 @@ def test_the_value_never_reaches_argv_and_no_plaintext_is_left(tmp_path: Path) -
     assert "s3cr3t-value" not in argv, f"the value was passed as an argument: {argv}"
     given = [ln for ln in argv.splitlines() if ".bws-" in ln]
     assert given, f"the value must travel a file: {argv}"
-    assert not any(Path(p).exists() for p in given), "the mode-600 plaintext file survived the write"
+    assert not any(Path(p).exists() for p in given), (
+        "the mode-600 plaintext file survived the write"
+    )

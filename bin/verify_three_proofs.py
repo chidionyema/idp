@@ -215,7 +215,9 @@ def evaluate_three_independent_proofs(
     }
 
 
-def seal_verified(repo_root: str, commit_sha: str, changed_files: List[str] = None) -> bool:
+def seal_verified(
+    repo_root: str, commit_sha: str, changed_files: List[str] = None
+) -> bool:
     """A seal is a signature, never a flag.
 
     The old founder-seal flag granted the guarded-path and cross-subsystem

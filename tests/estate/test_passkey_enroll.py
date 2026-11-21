@@ -43,13 +43,27 @@ def _serve(payload: dict | None, status: int = 200):
 
 def _run(host: str, out: Path, timeout: int = 2) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--host", host, "--out", str(out),
-         "--timeout", str(timeout), "--poll", "1"],
-        capture_output=True, text=True, timeout=60,
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--host",
+            host,
+            "--out",
+            str(out),
+            "--timeout",
+            str(timeout),
+            "--poll",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
 
-def test_a_registration_writes_the_keyring_shape_the_verifier_reads(tmp_path: Path) -> None:
+def test_a_registration_writes_the_keyring_shape_the_verifier_reads(
+    tmp_path: Path,
+) -> None:
     srv = _serve({"credentialId": "A" * 32, "publicKeySpki": "B" * 64})
     host = f"http://127.0.0.1:{srv.server_port}"
     out = tmp_path / "founder-passkey.json"
@@ -57,7 +71,13 @@ def test_a_registration_writes_the_keyring_shape_the_verifier_reads(tmp_path: Pa
     srv.shutdown()
     assert r.returncode == 0, r.stderr
     ring = json.loads(out.read_text())
-    assert set(ring) == {"credentialId", "publicKeySpki", "rpId", "origin", "enrollmentCommit"}
+    assert set(ring) == {
+        "credentialId",
+        "publicKeySpki",
+        "rpId",
+        "origin",
+        "enrollmentCommit",
+    }
     assert ring["rpId"] == host.removeprefix("http://")
     assert len(ring["enrollmentCommit"]) == 40
 
