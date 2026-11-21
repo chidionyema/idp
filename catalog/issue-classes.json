@@ -306,6 +306,45 @@
       "recurrence_checks": [
         "2026-11-20"
       ]
+    },
+    {
+      "class": "lane-pushed-that-no-longer-merges-onto-main",
+      "first_seen": "2026-11-20",
+      "instances": [
+        "lane/claim-gate-admits-its-own-entry refused `greenlane failure does not rebase onto main 90fb195695f8` (2026-11-20), after spending a batch slot; git merge-tree named catalog/issue-classes.json in under a second"
+      ],
+      "gap": "the pre-push gate proved a lane landed on a live claim but never proved the lane still merges onto the main it will be judged against, so a text conflict was discovered a batch later",
+      "compensating_action": "bin/claim-gate.merge_problems runs `git merge-tree --write-tree --name-only` against origin/main (or the BASE sha CI hands the job) and refuses, naming the conflicted paths; an unreadable main is a refusal, not a pass",
+      "falsifier": "tests/test_claim_gate.py: test_a_lane_that_no_longer_merges_onto_main_is_refused and test_judge_refuses_a_lane_that_cannot_merge_before_it_asks_github fail on the previous gate and pass now (idp#8387)",
+      "owner": "governance",
+      "surfaces": [
+        "git",
+        "ci",
+        "greenlane"
+      ],
+      "status": "open",
+      "recurrence_checks": [
+        "2026-11-20"
+      ]
+    },
+    {
+      "class": "plumbing-commit-loses-the-file-mode",
+      "first_seen": "2026-11-20",
+      "instances": [
+        "batch b6225 died `bin/claim-gate: Permission denied` exit 126: a lane built with git hash-object/update-index --cacheinfo forced 100644 onto a 100755 file, and `git show <sha>:bin/claim-gate` still looked perfect"
+      ],
+      "gap": "a commit built with git plumbing (the normal path on a host whose spawn fence refuses a local checkout) can change a file's mode with nothing in the diff text to show it",
+      "compensating_action": "bin/claim-gate.mode_problems reads `git diff --summary base head` and refuses a 100755 -> 100644 downgrade of a file that starts with a shebang, naming the path and the restore command",
+      "falsifier": "tests/test_claim_gate.py: test_a_script_that_loses_its_exec_bit_is_refused fails on the previous gate and passes now; test_gaining_an_exec_bit_is_not_a_refusal keeps the check from refusing ordinary chmod +x (idp#8387)",
+      "owner": "governance",
+      "surfaces": [
+        "git",
+        "ci"
+      ],
+      "status": "open",
+      "recurrence_checks": [
+        "2026-11-20"
+      ]
     }
   ]
 }
