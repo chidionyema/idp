@@ -33,9 +33,12 @@ def _require_verified_operational_effect(
         or not evidence.startswith("effect:")
         or not evidence[7:]
     ):
-        raise InvalidTransition("OPERATING requires evidence='effect:<reconciled-effect-id>'")
+        raise InvalidTransition(
+            "OPERATING requires evidence='effect:<reconciled-effect-id>'"
+        )
     effect = cur.execute(
-        "SELECT state, reconciliation_status, external_receipt, observed_at, verified_by"
+        "SELECT state, reconciliation_status, external_receipt, observed_at,"
+        " verified_by"
         " FROM external_effects WHERE effect_id=? AND mission_id=? AND attempt_id=?"
         " AND lease_epoch=? AND mandate_version=?",
         (evidence[7:], mission_id, attempt_id, lease_epoch, mandate_version),
@@ -45,11 +48,17 @@ def _require_verified_operational_effect(
         or effect["state"] != "OBSERVED"
         or effect["reconciliation_status"] != "RECONCILED"
     ):
-        raise InvalidTransition("OPERATING refused: matching reconciled external effect not found")
+        raise InvalidTransition(
+            "OPERATING refused: matching reconciled external effect not found"
+        )
     if effect["observed_at"] is None or not effect["verified_by"]:
-        raise InvalidTransition("OPERATING refused: effect has no dated verifier observation")
+        raise InvalidTransition(
+            "OPERATING refused: effect has no dated verifier observation"
+        )
     if effect["verified_by"].strip().casefold() == actor.strip().casefold():
-        raise InvalidTransition("OPERATING refused: executor cannot attest its own outcome")
+        raise InvalidTransition(
+            "OPERATING refused: executor cannot attest its own outcome"
+        )
     try:
         receipt = json.loads(effect["external_receipt"])
     except (TypeError, ValueError):
