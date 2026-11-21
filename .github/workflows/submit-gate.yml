@@ -79,7 +79,9 @@ jobs:
           git config user.name 'SEED formatting repair'
           git config user.email 'seed-format@users.noreply.github.com'
           git add -- '*.py'
-          git commit -m "style(submit): autoformat changed Python with pinned Ruff" -m "Claim: chidionyema/idp#7443" -m "Agent: seed-submit-format"
+          claim=$(git log -1 --format=%B "$SHA" | sed -n 's/^Claim:[[:space:]]*//p' | tail -1)
+          [ -n "$claim" ] || { echo "BLIND   submit-gate  no Claim trailer"; exit 2; }
+          git commit -m "style(submit): autoformat changed Python with pinned Ruff" -m "Claim: $claim" -m "Agent: seed-submit-format"
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           git -c "http.extraHeader=Authorization: Basic $auth" push origin "HEAD:refs/heads/$REF" --force-with-lease="refs/heads/$REF:$SHA"
