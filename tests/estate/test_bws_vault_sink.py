@@ -12,7 +12,6 @@ picks it up by name. The two ways that becomes a lie, both refused here:
 from __future__ import annotations
 
 import importlib.util
-import json
 from pathlib import Path
 
 import pytest
