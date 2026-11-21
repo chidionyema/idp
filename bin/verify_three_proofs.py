@@ -152,7 +152,12 @@ def verify_proof_2_boundary_and_gate(
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
         parts = path.strip("/").split("/")
-        subsystems.add(parts[0] if len(parts) > 1 else "root")
+        top = parts[0] if len(parts) > 1 else "root"
+        # A test of the change is the evidence half of that change, not a second subsystem.
+        # Counting it as one made the tested change illegal and the untested change legal:
+        # `--files bin/x tests/x` refused while `--files bin/x` passed (2026-11-21).
+        if top != "tests":
+            subsystems.add(top)
 
     if len(subsystems) > 1 and not founder_seal_verified:
         return False, {
@@ -161,7 +166,7 @@ def verify_proof_2_boundary_and_gate(
 
     return True, {
         "proof_2_status": "PASS",
-        "subsystem": sorted(subsystems)[0],
+        "subsystem": sorted(subsystems)[0] if subsystems else "tests",
         "file_count": len(changed_files),
     }
 

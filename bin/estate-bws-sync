@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -180,6 +181,30 @@ def metrics(path: Path, st: dict, events: dict) -> None:
     write_atomic(path, "\n".join(lines) + "\n", 0o644)
 
 
+def vault_put(cfg: dict, name: str, value: str) -> tuple[int, str]:
+    """Write one entry into the estate vault. The value travels a mode-600 file, never argv.
+
+    `bin/idp-cloud secret put` takes its content from --file precisely so a value is never an
+    argument: argv is visible in `ps` to every process on the host. The file is removed whatever
+    happens, so a crash cannot leave the plaintext on disk.
+    """
+    fd, tmp = tempfile.mkstemp(prefix=".bws-")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(value)
+        os.chmod(tmp, 0o600)
+        done = subprocess.run(
+            [cfg["vault"], "secret", "put", name, "--file", tmp],
+            capture_output=True, text=True, check=False,
+        )
+        return done.returncode, (done.stderr or done.stdout).strip()[:200]
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def cycle(cfg: dict) -> dict:
     root: Path = cfg["root"]
     state_path = root / "state.json"
@@ -201,6 +226,8 @@ def cycle(cfg: dict) -> dict:
     events = state.get("events", {})
     seen = set()
     changed = 0
+    puts = 0
+    failed: list[str] = []
     for s in secrets:
         key = s.get("key") or ""
         if not key or not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", key):
@@ -210,16 +237,26 @@ def cycle(cfg: dict) -> dict:
         value = s.get("value") or ""
         sha = hashlib.sha256(value.encode()).hexdigest()
         prev = keys.get(key) or {}
-        if prev.get("rev") == rev and prev.get("sha") == sha:
-            continue
-        dest = root / "secrets" / (key + ".yaml")
-        encrypt(value, dest, rcpt)
-        action = "update" if prev else "add"
-        keys[key] = {"rev": rev, "sha": sha, "at": int(time.time())}
-        events[action] = events.get(action, 0) + 1
-        audit(root / "audit.jsonl", action, key, rev, value)
-        changed += 1
-        log("%s %s rev=%s" % (action, key, rev[:10]))
+        if not (prev.get("rev") == rev and prev.get("sha") == sha):
+            dest = root / "secrets" / (key + ".yaml")
+            encrypt(value, dest, rcpt)
+            action = "update" if prev else "add"
+            keys[key] = {"rev": rev, "sha": sha, "at": int(time.time())}
+            events[action] = events.get(action, 0) + 1
+            audit(root / "audit.jsonl", action, key, rev, value)
+            changed += 1
+            log("%s %s rev=%s" % (action, key, rev[:10]))
+        if cfg.get("vault_sink") and key.startswith(cfg.get("only_prefix") or "estate-"):
+            done = state.get("vault") or {}
+            if done.get(key) != sha:
+                rc, why = vault_put(cfg, key, value)
+                if rc != 0:
+                    failed.append("%s rc=%d %s" % (key, rc, why))
+                else:
+                    done[key] = sha
+                    state["vault"] = done
+                    puts += 1
+                    log("vault put %s" % key)
 
     missing = [k for k in keys if k not in seen]
     if missing and not secrets and keys:
@@ -243,9 +280,12 @@ def cycle(cfg: dict) -> dict:
     state["keys"] = keys
     state["events"] = events
     state["secrets"] = len(keys)
+    state["vault_puts"] = puts
     state["last_success"] = int(time.time())
     write_atomic(state_path, json.dumps(state, indent=2, sort_keys=True) + "\n")
-    return finish(root, state, "ok", "%d changed" % changed)
+    if failed:
+        return finish(root, state, "vault_failed", "; ".join(failed[:3]))
+    return finish(root, state, "ok", "%d changed, %d to vault" % (changed, puts))
 
 
 def finish(root: Path, state: dict, status: str, reason: str) -> dict:
@@ -257,6 +297,7 @@ def finish(root: Path, state: dict, status: str, reason: str) -> dict:
     write_atomic(root / "status.json", json.dumps(
         {"state": status, "reason": reason, "at": state["at"],
          "secrets": state.get("secrets", 0),
+         "vault": state.get("vault_puts", 0),
          "last_success": state.get("last_success", 0)}, indent=2, sort_keys=True) + "\n", 0o644)
     metrics(root / "metrics.prom", state, state.get("events", {}))
     return state
@@ -272,9 +313,16 @@ def main() -> int:
     ap.add_argument("--org", default=ORG)
     ap.add_argument("--token-file", default="")
     ap.add_argument("--token-sops", default=str(HOME / ".estate" / "secrets" / "dev" / "bitwarden-machine.yaml"))
+    ap.add_argument("--vault-sink", action="store_true",
+                    help="also write each entry into the estate vault, so a runner reads it by "
+                         "name with no repository secret. Off by default.")
+    ap.add_argument("--only-prefix", default="estate-",
+                    help="only entries with this prefix reach the vault (default estate-)")
+    ap.add_argument("--vault", default=VAULT)
     a = ap.parse_args()
     cfg = {"root": Path(a.root), "identity": a.identity, "api": a.api, "org": a.org,
-           "token_file": a.token_file, "token_sops": a.token_sops, "recipient": recipient()}
+           "token_file": a.token_file, "token_sops": a.token_sops, "recipient": recipient(),
+           "vault": a.vault, "vault_sink": a.vault_sink, "only_prefix": a.only_prefix}
     if not cfg["recipient"]:
         log("no age recipient; refusing to write plaintext")
         return 2
