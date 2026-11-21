@@ -74,6 +74,35 @@ promotes and separately proves each live integration; merely reading it cannot
 establish operational adoption. No new provider spend or production mutation.
 <!-- MERIDIAN_DECISION_REFLEX_END -->
 
+<!-- MERIDIAN_RECURSIVE_DECISION_DYNAMICS_START -->
+### MRDD-001: recursive decision dynamics (research canary, no operational authority)
+
+The source model is `platform/estate/governance/recovery_model.py`; the
+falsifiable specification, synthetic configuration and executable tests live
+beside it. Use the existing decision-reflex entry point; **never** create an
+alternate executor, scheduler, permission authority or production gate.
+
+For every meaningful intervention, separate:
+1. observed state from inferred root causes (and UNKNOWN);
+2. AND/OR dependency feasibility from independently verified operational yield;
+3. immediate action value from net value of discriminating information;
+4. founder-preference prediction from effectiveness on held-out outcomes;
+5. preserved obligations under zero workers from conditional liveness.
+
+When a choice is uncertain, estimate the value of a bounded independent
+observation instead of repeating unsupported repairs. When a choice is made,
+record a prediction, compare a separately sourced effect receipt and preserve
+a counterexample before the next choice. Recursion terminates in evidence,
+not another architecture document.
+
+`python3 platform/estate/governance/decision_reflex.py simulate platform/estate/governance/example_config.json`
+is **synthetic/offline only**. It cannot certify quota, source custody, a live
+worker, production recovery, authority or actual improvement. Before any
+fleet-wide enforcement, use a pinned holdout, independent evidence from the
+existing observability and KARMA systems, and a bounded authorised canary.
+<!-- MERIDIAN_RECURSIVE_DECISION_DYNAMICS_END -->
+
+
 
 ### Infrastructure incident first step
 
