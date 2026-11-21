@@ -42,6 +42,24 @@ CREATE TABLE IF NOT EXISTS external_effects (
     reconciliation_status TEXT NOT NULL DEFAULT 'PENDING'
 );
 
+CREATE TABLE IF NOT EXISTS mission_yield_proofs (
+    proof_id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+    attempt_id TEXT NOT NULL,
+    lease_epoch INTEGER NOT NULL,
+    effect_id TEXT NOT NULL REFERENCES external_effects(effect_id),
+    metric TEXT NOT NULL,
+    baseline REAL NOT NULL,
+    observed REAL NOT NULL,
+    target REAL NOT NULL,
+    evidence_ref TEXT NOT NULL,
+    verifier TEXT NOT NULL,
+    verified_at REAL NOT NULL,
+    settled_at REAL,
+    settled_by TEXT,
+    UNIQUE(mission_id, attempt_id, lease_epoch, effect_id)
+);
+
 CREATE TABLE IF NOT EXISTS failure_classes (
     failure_class_id TEXT PRIMARY KEY,
     fingerprint TEXT NOT NULL UNIQUE,

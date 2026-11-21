@@ -118,3 +118,64 @@ def test_reconciled_observation_is_linked_to_event_and_terminal(tmp_path):
     with pytest.raises((InvalidTransition, StaleFenceError)):
         operating(store, lease, "effect:" + eid)
     store.close()
+
+
+def test_operating_is_not_yield_or_settlement(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    operating(store, lease, "effect:" + eid)
+    assert store.get_mission("m-test")["state"] == "OPERATING"
+    with pytest.raises(InvalidTransition, match="yield"):
+        store.transition(
+            "m-test", "YIELD_PROVEN", "executor-a", "declared yield",
+            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+        )
+    assert store.get_mission("m-test")["state"] == "OPERATING"
+    store.close()
+
+
+def test_measured_yield_requires_distinct_certifiers(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    operating(store, lease, "effect:" + eid)
+    with pytest.raises(InvalidTransition, match="target not met"):
+        store.record_yield_proof(
+            "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
+            "completed_jobs", 0, 0, 1, "external:jobs", "optimus-b",
+        )
+    with pytest.raises(InvalidTransition, match="effect observer"):
+        store.record_yield_proof(
+            "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
+            "completed_jobs", 0, 2, 1, "external:jobs", "observer-b",
+        )
+    proof = store.record_yield_proof(
+        "m-test", lease["attempt_id"], lease["lease_epoch"], eid,
+        "completed_jobs", 0, 2, 1, "external:jobs", "optimus-b",
+    )
+    with pytest.raises(InvalidTransition, match="independent"):
+        store.transition(
+            "m-test", "YIELD_PROVEN", "optimus-b", "self-declared",
+            evidence="yield:" + proof["proof_id"],
+            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+        )
+    assert store.transition(
+        "m-test", "YIELD_PROVEN", "executor-a", "measured",
+        evidence="yield:" + proof["proof_id"],
+        attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+    )["state"] == "YIELD_PROVEN"
+    with pytest.raises(InvalidTransition, match="separate independent"):
+        store.transition(
+            "m-test", "SETTLED", "optimus-b", "self-certification",
+            evidence="yield:" + proof["proof_id"],
+            attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+        )
+    assert store.transition(
+        "m-test", "SETTLED", "auditor-c", "independent settlement",
+        evidence="yield:" + proof["proof_id"],
+        attempt_id=lease["attempt_id"], lease_epoch=lease["lease_epoch"],
+    )["state"] == "SETTLED"
+    assert store.db.execute(
+        "SELECT settled_by FROM mission_yield_proofs WHERE proof_id=?",
+        (proof["proof_id"],),
+    ).fetchone()["settled_by"] == "auditor-c"
+    store.close()
