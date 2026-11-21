@@ -20,7 +20,74 @@ concurrency:
   group: submit-gate-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # The submit door repairs formatting before any fast-gate verdict. This is
+  # machine-owned: agents never need a local Ruff install or founder handback.
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    outputs:
+      changed: ${{ steps.fmt.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Format changed Python with the pinned gate version
+        id: fmt
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q ruff==0.15.18
+          base=$(git merge-base origin/main "$SHA")
+          git diff --name-only --diff-filter=ACMR -z "$base" "$SHA" -- '*.py' > "$RUNNER_TEMP/changed-python"
+          if [ -s "$RUNNER_TEMP/changed-python" ]; then
+            xargs -0 -r ruff format -- < "$RUNNER_TEMP/changed-python"
+          fi
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
+      - name: Decode SEED App key for the automatic formatting repair
+        if: steps.fmt.outputs.changed == 'true'
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   submit-gate  SEED app key missing"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        if: steps.fmt.outputs.changed == 'true'
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          permission-contents: write
+      - name: Push formatted successor through the same submit door
+        if: steps.fmt.outputs.changed == 'true'
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name 'SEED formatting repair'
+          git config user.email 'seed-format@users.noreply.github.com'
+          git add -- '*.py'
+          git commit -m "style(submit): autoformat changed Python with pinned Ruff" -m "Claim: chidionyema/idp#7443" -m "Agent: seed-submit-format"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.extraHeader=Authorization: Basic $auth" push origin "HEAD:refs/heads/$REF" --force-with-lease="refs/heads/$REF:$SHA"
+          echo "Machine formatted; successor push reruns fast-gate on its exact SHA" >> "$GITHUB_STEP_SUMMARY"
+
   gate:
+    needs: format
+    if: needs.format.outputs.changed == 'false'
     uses: ./.github/workflows/fast-gate.yml
 
   # QUAD phase 1 (idp#8336): every commit in the push is checked for an issued, signed
