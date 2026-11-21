@@ -933,6 +933,33 @@ if [ "$FAST" = 1 ]; then
   # stored number. Docs/tests-only changes are exempt. See docs/runbooks/diagnosis.md.
   if out=$("$MPY" "$IDP/bin/diagnosis-gate" --base "$base_local" 2>&1); then say "$out"
   else say "$out"; fail=1; fi
+  # 1d.6: build the Rust the estate lands. PR#8394 put harness/genesis-v1 on main with every
+  # required check green and nothing compiling it: no workflow in .github named the crate, and
+  # the laptop may not run cargo (AGENTS.md section 2). Its five falsifiers never executed, so
+  # the slice was landed and not proven -- a test that executes nothing is not a test.
+  # Path-scoped by touched(), so only a change under harness/ pays for it. Fail closed: a
+  # crate change that cannot be compiled is red, and so is a runner with no cargo.
+  if touched 'harness/'; then
+    if [ -z "${GITHUB_ACTIONS:-}" ]; then
+      say "skip  rust     local run: Actions compiles the crates under harness/"
+    else
+      crate_dirs=$(cd "$IDP" && git ls-files -- 'harness/*/Cargo.toml' | xargs -n1 dirname 2>/dev/null | sort -u)
+      if [ -z "$crate_dirs" ]; then say "ok    rust     no crate under harness/ in this tree"
+      elif ! command -v cargo >/dev/null 2>&1; then
+        say "FAIL  rust     cargo is not installed -- run bin/idp-install-deps"; fail=1
+      else
+        while IFS= read -r crate; do
+          [ -n "$crate" ] || continue
+          if (cd "$IDP/$crate" && cargo test --all-targets --quiet); then
+            say "ok    rust     cargo test $crate"
+          else say "FAIL  rust     cargo test $crate"; fail=1; fi
+          if (cd "$IDP/$crate" && cargo clippy --all-targets --quiet -- -D warnings); then
+            say "ok    rust     cargo clippy $crate"
+          else say "FAIL  rust     cargo clippy -D warnings $crate"; fail=1; fi
+        done <<< "$crate_dirs"
+      fi
+    fi
+  else say "ok    rust     no crate change against ${IDP_CI_BASE:-main}"; fi
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
