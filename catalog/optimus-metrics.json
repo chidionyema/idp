@@ -48,6 +48,18 @@
       "better": "higher",
       "owner": "pennyd-glm",
       "description": "Protected path prefixes the genesis v1 harness write-blocks (idp#8384)"
+    },
+    {
+      "name": "legion.missions_landed",
+      "measure": [
+        "python3",
+        "-c",
+        "import re, subprocess, sys\n\ndef run(*args):\n    p=subprocess.run(['git',*args],capture_output=True,text=True,timeout=35,check=True)\n    return p.stdout.strip()\n\ntry:\n    if run('rev-parse','--is-shallow-repository')!='false':\n        sys.exit('BLIND: history is shallow')\n    records=run('log','--format=%B%x00','HEAD').split('\\x00')\n    count=0\n    for message in records:\n        lines=message.strip().splitlines()\n        if not lines or not lines[0].startswith('agent-sandbox (auto): '):\n            continue\n        if not re.search(r'(?m)^Run: https://github\\.com/chidionyema/idp/actions/runs/[0-9]+\\s*$', message):\n            continue\n        if not re.search(r'(?m)^Greenlane-Head: [0-9a-f]{40}\\s*$', message):\n            continue\n        count+=1\nexcept (OSError,subprocess.SubprocessError) as exc:\n    sys.exit('BLIND: cannot verify reachable main history: '+str(exc))\nprint('optimus.legion.missions_landed='+str(count))\n"
+      ],
+      "unit": "missions",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
     }
   ]
 }
