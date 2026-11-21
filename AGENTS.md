@@ -36,6 +36,45 @@ selected action. Preserve the evidence under KARMA and test recurrence across
 harnesses before claiming fleet-wide improvement.
 <!-- ESTATE_CAPABILITY_ADVERTISING_END -->
 
+<!-- MERIDIAN_DECISION_REFLEX_START -->
+## Meridian decision reflex — source-advertised research candidate
+
+The founder's repeated corrections are a testable DECISION METHOD, not another authority,
+scheduler, memory store, ledger or model personality. At each material lifecycle boundary,
+use the one source implementation in
+\`platform/estate/governance/decision_reflex.py\`:
+
+- instruction_intake / session_start: recover original obligation before proposing work;
+- context_retrieval / hypothesis / planning: name unknowns and falsifiers, compare
+  alternative interventions, prefer provable cross-capability leverage;
+- capacity_admission / before_effect: verify quota, funds, scope, custody and
+  independent authority through existing trusted doors;
+- tool_result / failure / recovery: measure the world, preserve causal evidence,
+  reject unchanged retries of previously falsified actions;
+- handoff / settlement / session_end: preserve the successor checkpoint and
+  require independent operational plus causal closure.
+
+\`python3 platform/estate/governance/decision_reflex.py seed STAGE\` emits the
+small, context-specific expectation. \`select DECISION.json\` compares options;
+\`review OBSERVATION.json\` tests prediction versus observed effect. These
+commands are stdlib-only and do not require a working model or router.
+A selected candidate is advice only, NEVER signed authorisation, an effect
+receipt or a reason to bypass QUAD, the existing executor, Greenlane, Optimus
+or actual founder-decision requirements. Self-declared VERIFIED fields remain
+untrusted until checked by existing independent evidence authority.
+
+Propagation must occur through authenticated session bootstrap, the existing
+context compiler, execution admission, recovery handoff and verified outcome
+feedback, with bounded canaries and negative controls. Do not use self-replicating
+software, uncontrolled outbound messages or unapproved accounts. Agents must
+inherit a falsified prior decision as a counterexample, not repeat it.
+
+This section is an experimental source candidate until the authorised release
+promotes and separately proves each live integration; merely reading it cannot
+establish operational adoption. No new provider spend or production mutation.
+<!-- MERIDIAN_DECISION_REFLEX_END -->
+
+
 ### Infrastructure incident first step
 
 For a service outage, run `bin/idp-estate-homes --no-file --service SERVICE`
