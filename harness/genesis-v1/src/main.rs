@@ -1,7 +1,5 @@
-mod schema;
-mod tools;
-
-use crate::schema::InstructionEnvelopeV1;
+use genesis_harness_v1::schema::InstructionEnvelopeV1;
+use genesis_harness_v1::tools;
 use std::io::{self, Read};
 
 fn main() {
