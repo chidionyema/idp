@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 315,
     "service": 122,
-    "tool": 523,
+    "tool": 524,
     "workflow": 109
   },
   "records": [
@@ -61140,6 +61140,53 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/voice-watch",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/zero_repeat_gate.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/zero_repeat_gate.py \u2014 Pre-emit & runtime enforcement mirror of harness/zero-repeat-guard.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/zero_repeat_gate.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
