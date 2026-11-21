@@ -1,26 +1,32 @@
 """Falsifiers for the passkey seal — the device-independent replacement for a key file.
 
-The property: a commit is sealed only by a signature from the keyring's key, over a payload
-naming that exact commit, with a nonce never consumed before. Every refusal below is a real
-attack or a real mistake, not a formatting check.
+The property: a commit is sealed only by a WebAuthn assertion from the keyring's key, over a
+payload naming that exact commit, committed inside that commit, with a nonce never used for a
+different commit before. Every refusal below is a real attack or a real mistake.
+
+The assertion is a real WebAuthn one: authenticatorData (rpIdHash || flags || counter), a
+clientDataJSON whose challenge is SHA-256 of the payload, and a P-256 signature over
+authenticatorData || SHA-256(clientDataJSON) — the shape a passkey produces, never a raw
+signature over the payload.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
-from datetime import datetime, timezone
-from uuid import uuid4
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
 SEAL = ROOT / "bin" / "idp-passkey-seal.mjs"
+VERSION = "idp-founder-seal-v1"
+RP_ID = "passkey.example"
 
 
 def _b64url(b: bytes) -> str:
@@ -39,7 +45,9 @@ def _keypair(tmp: Path) -> tuple[Path, str]:
 
 
 def _git(repo: Path, *a: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(repo), *a], capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 def _commit(repo: Path, message: str) -> str:
@@ -49,46 +57,71 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def _sign(pem: Path, payload: bytes) -> str:
-    return _b64url(_openssl("dgst", "-sha256", "-sign", str(pem), stdin=payload))
+def _assertion(pem: Path, cred_id: str, payload: bytes, *, signed_payload: bytes | None = None) -> dict:
+    auth = hashlib.sha256(RP_ID.encode()).digest() + bytes([0x05]) + b"\x00\x00\x00\x01"
+    challenge = hashlib.sha256(payload if signed_payload is None else signed_payload).digest()
+    client = {
+        "type": "webauthn.get",
+        "challenge": _b64url(challenge),
+        "origin": "https://" + RP_ID,
+    }
+    client_bytes = json.dumps(client, separators=(",", ":")).encode()
+    sign_bytes = auth + hashlib.sha256(client_bytes).digest()
+    sig = _openssl("dgst", "-sha256", "-sign", str(pem), stdin=sign_bytes)
+    return {
+        "credentialId": cred_id,
+        "authenticatorData": _b64url(auth),
+        "clientDataJSON": _b64url(client_bytes),
+        "signature": _b64url(sig),
+    }
 
 
-def _setup(tmp: Path, signer: Path | None = None, target: str = "", nonce: str = "nonce-abcdefghijkl"):
+def _setup(tmp: Path, *, signer: Path | None = None, target: str = "",
+           nonce: str = "nonce-abcdefghijkl", paths=("bin/x", "tests/x"),
+           assertion_for: bytes | None = None):
     repo = tmp / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
-    base = _commit(repo, "base")
+    _commit(repo, "base")
     pem, spki = _keypair(tmp)
+    cred_id = _b64url(b"credential-id-" + uuid4().bytes[:8])
     (repo / "docs" / "keys").mkdir(parents=True)
     (repo / "docs" / "keys" / "founder-passkey.json").write_text(json.dumps({
-        "credentialId": "A" * 32, "publicKeySpki": spki,
-        "rpId": "passkey.example", "origin": "https://passkey.example",
-        "enrollmentCommit": base,
+        "credentialId": cred_id, "publicKeySpki": spki,
+        "rpId": RP_ID, "origin": "https://" + RP_ID,
+        "enrollmentCommit": _git(repo, "rev-parse", "HEAD"),
     }))
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "enrol")
     parent = _git(repo, "rev-parse", "HEAD")
+
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    payload = "\n".join(["idp-founder-seal-v1", parent, nonce, at, "bin/x", "tests/x"]).encode()
-    sig = _sign(signer or pem, payload)
-    sha = _commit(repo, "\n".join([
+    payload = "\n".join([VERSION, parent, nonce, at, *paths]).encode()
+    challenge = hashlib.sha256(payload).hexdigest()
+    assertion = _assertion(signer or pem, cred_id, payload, signed_payload=assertion_for)
+    approvals = repo / "docs" / "keys" / "approvals"
+    approvals.mkdir(parents=True)
+    (approvals / (challenge + ".json")).write_text(json.dumps(assertion))
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "\n".join([
         "sealed change", "",
-        f"X-Idp-Seal: {sig}", f"X-Idp-Seal-Nonce: {nonce}",
-        f"X-Idp-Seal-At: {at}", f"X-Idp-Seal-Target: {target or parent}",
-        "X-Idp-Seal-Paths: bin/x,tests/x",
+        f"X-Idp-Seal-Nonce: {nonce}",
+        f"X-Idp-Seal-At: {at}",
+        f"X-Idp-Seal-Target: {target or parent}",
+        f"X-Idp-Seal-Paths: {','.join(paths)}",
     ]))
-    return repo, sha, pem
+    return repo, _git(repo, "rev-parse", "HEAD"), pem
 
 
-def _seal(repo: Path, sha: str, ledger: Path) -> subprocess.CompletedProcess:
+def _seal(repo: Path, sha: str, ledger: Path, files: str = "bin/x,tests/x") -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["node", str(SEAL), "--repo", str(repo), "--commit", sha],
+        ["node", str(SEAL), "--repo", str(repo), "--commit", sha, "--files", files],
         capture_output=True, text=True,
         env={**os.environ, "IDP_SEAL_LEDGER": str(ledger)},
     )
 
 
-def test_a_signed_seal_over_this_commit_is_accepted_once(tmp_path: Path) -> None:
+def test_a_passkey_assertion_over_this_commit_seals_it_once(tmp_path: Path) -> None:
     repo, sha, _ = _setup(tmp_path)
     ledger = tmp_path / "nonces.jsonl"
     r = _seal(repo, sha, ledger)
@@ -113,12 +146,13 @@ def test_the_same_seal_cannot_be_carried_onto_another_commit(tmp_path: Path) -> 
     ledger = tmp_path / "nonces.jsonl"
     assert _seal(repo, sha, ledger).returncode == 0
 
-    # A sibling of the sealed commit shares its parent, so the signed payload is byte-identical.
-    # Only the recorded commit tells the two apart -- which is exactly why it is recorded.
+    # A sibling of the sealed commit shares its parent, so the signed payload is byte-identical
+    # and so is the committed assertion. Only the recorded commit tells the two apart.
     msg = _git(repo, "log", "-1", "--format=%B", sha)
     parent = _git(repo, "rev-parse", sha + "^")
     _git(repo, "checkout", "-q", parent)
-    (repo / "sibling.txt").write_text("sibling")
+    _git(repo, "checkout", "-q", sha, "--", "docs")
+    (repo / "sibling.txt").write_text("a second child of the same parent")
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", msg)
     sibling = _git(repo, "rev-parse", "HEAD")
@@ -129,12 +163,20 @@ def test_the_same_seal_cannot_be_carried_onto_another_commit(tmp_path: Path) -> 
     assert "nonce already consumed" in r.stderr
 
 
-def test_a_signature_from_another_key_is_refused(tmp_path: Path) -> None:
+def test_an_assertion_from_another_key_is_refused(tmp_path: Path) -> None:
     other, _ = _keypair(tmp_path)
     repo, sha, _ = _setup(tmp_path, signer=other)
     r = _seal(repo, sha, tmp_path / "l.jsonl")
     assert r.returncode == 1
-    assert "does not verify" in r.stderr
+    assert "signature invalid" in r.stderr
+
+
+def test_an_assertion_for_another_payload_is_refused(tmp_path: Path) -> None:
+    """The challenge must bind the exact bytes; a tap for something else signs something else."""
+    repo, sha, _ = _setup(tmp_path, assertion_for=b"a different change entirely")
+    r = _seal(repo, sha, tmp_path / "l.jsonl")
+    assert r.returncode == 1
+    assert "challenge not bound" in r.stderr
 
 
 def test_a_seal_aimed_at_another_commit_is_refused(tmp_path: Path) -> None:
@@ -142,6 +184,29 @@ def test_a_seal_aimed_at_another_commit_is_refused(tmp_path: Path) -> None:
     r = _seal(repo, sha, tmp_path / "l.jsonl")
     assert r.returncode == 1
     assert "seal targets" in r.stderr
+
+
+def test_the_seal_cannot_be_widened_past_the_paths_it_signed(tmp_path: Path) -> None:
+    """A tap for `bin/x,tests/x` must not lift the ceiling for a workflow rewrite."""
+    repo, sha, _ = _setup(tmp_path)
+    r = _seal(repo, sha, tmp_path / "l.jsonl", files="bin/x,.github/workflows/deploy.yml")
+    assert r.returncode == 1, r.stdout
+    assert "does not cover .github/workflows/deploy.yml" in r.stderr
+
+
+def test_an_assertion_that_is_not_in_the_commit_seals_nothing(tmp_path: Path) -> None:
+    repo, sha, _ = _setup(tmp_path)
+    # The same trailers on a fresh child of the same parent, with the assertion left out of the
+    # commit: a seal must be part of what was committed, never a file lying around the worktree.
+    msg = _git(repo, "log", "-1", "--format=%B", sha)
+    parent = _git(repo, "rev-parse", sha + "^")
+    _git(repo, "checkout", "-q", parent)
+    (repo / "file.txt").write_text("the sealed change, minus its assertion")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", msg)
+    r = _seal(repo, _git(repo, "rev-parse", "HEAD"), tmp_path / "l.jsonl")
+    assert r.returncode == 1
+    assert "no assertion committed" in r.stderr
 
 
 def test_without_a_keyring_nothing_is_sealed(tmp_path: Path) -> None:
@@ -157,6 +222,7 @@ def test_a_commit_with_no_trailers_is_refused(tmp_path: Path) -> None:
     sha = _commit(repo, "no trailers here")
     r = _seal(repo, sha, tmp_path / "l.jsonl")
     assert r.returncode == 1
+    assert "no seal trailers" in r.stderr
 
 
 # --- gate integration: the seal the gate actually calls ------------------------------
@@ -180,7 +246,7 @@ def test_the_gate_admits_a_guarded_path_sealed_by_the_passkey(tmp_path: Path, mo
     repo, sha, _ = _setup(tmp_path)
     monkeypatch.setenv("IDP_SEAL_LEDGER", str(tmp_path / "nonces.jsonl"))
     gate = _gate()
-    assert gate.seal_verified(str(repo), sha) is True
+    assert gate.seal_verified(str(repo), sha, ["bin/x", "tests/x"]) is True
 
 
 def test_the_gate_refuses_a_guarded_path_when_neither_seal_verifies(tmp_path: Path, monkeypatch) -> None:
@@ -189,30 +255,10 @@ def test_the_gate_refuses_a_guarded_path_when_neither_seal_verifies(tmp_path: Pa
     (repo / "docs" / "keys" / "founder-passkey.json").unlink()
     unsealed = _commit(repo, "unsealed change")
     gate = _gate()
-    sealed = gate.seal_verified(str(repo), unsealed)
+    sealed = gate.seal_verified(str(repo), unsealed, [".github/workflows/x.yml"])
     assert sealed is False, "no keyring and no signed trailer must never read as a seal"
     ok, report = gate.verify_proof_2_boundary_and_gate(
         "abc123", [".github/workflows/x.yml"], sealed
     )
     assert not ok
     assert "without Founder seal" in report["error"]
-
-
-def test_the_seal_cannot_be_widened_past_the_paths_it_signed(tmp_path: Path) -> None:
-    """A tap for `bin/x,tests/x` must not lift the ceiling for a workflow rewrite."""
-    repo, sha, _ = _setup(tmp_path)
-    ledger = tmp_path / "nonces.jsonl"
-    env = {**os.environ, "IDP_SEAL_LEDGER": str(ledger)}
-    inside = subprocess.run(
-        ["node", str(SEAL), "--repo", str(repo), "--commit", sha,
-         "--files", "bin/x,tests/x"],
-        capture_output=True, text=True, env=env,
-    )
-    assert inside.returncode == 0, inside.stderr
-    outside = subprocess.run(
-        ["node", str(SEAL), "--repo", str(repo), "--commit", sha,
-         "--files", "bin/x,.github/workflows/deploy.yml"],
-        capture_output=True, text=True, env=env,
-    )
-    assert outside.returncode == 1, outside.stdout
-    assert "does not cover .github/workflows/deploy.yml" in outside.stderr

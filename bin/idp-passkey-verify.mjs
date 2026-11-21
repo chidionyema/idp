@@ -78,7 +78,13 @@ export function approvalPayload(m) {
   ].join('\n'),'utf8');
 }
 
-export function verifyAssertion({ keyring, manifest, assertion, nowMs = Date.now() }) {
+export function verifyAssertionOverPayload({
+  keyring, payload, assertion, nowMs = Date.now(), maxAgeMs = 15 * 60_000, signedAtMs,
+}) {
+  // One implementation of "a WebAuthn assertion over these exact bytes", used by the approval
+  // manifest and by the commit seal. A passkey signs authenticatorData||sha256(clientDataJSON),
+  // never the payload itself, so any verifier that checks a raw signature over the payload can
+  // never accept a real Face ID tap (measured 2026-11-21).
   strictObject(keyring,'keyring');
   strictKeys(keyring,['credentialId','publicKeySpki','rpId','origin','enrollmentCommit'],'keyring');
   validRpId(keyring.rpId);
@@ -93,10 +99,13 @@ export function verifyAssertion({ keyring, manifest, assertion, nowMs = Date.now
   if (key.asymmetricKeyType!=='ec' || key.asymmetricKeyDetails?.namedCurve!=='prime256v1') {
     reject('passkey algorithm must be ES256 P-256');
   }
-  const created = validateManifest(manifest);
-  if (!Number.isFinite(nowMs) || created > nowMs + 60_000 || nowMs-created > 15 * 60_000) {
-    reject('approval expired or created in future');
+  if (signedAtMs !== undefined) {
+    if (!Number.isFinite(signedAtMs) || !Number.isFinite(nowMs)) reject('approval has no usable timestamp');
+    if (signedAtMs > nowMs + 60_000 || nowMs - signedAtMs > maxAgeMs) {
+      reject('approval expired or created in future');
+    }
   }
+  if (!Buffer.isBuffer(payload) || payload.length === 0) reject('empty signed payload');
   strictObject(assertion,'assertion');
   strictKeys(assertion,
     ['credentialId','authenticatorData','clientDataJSON','signature'],'assertion');
@@ -117,12 +126,24 @@ export function verifyAssertion({ keyring, manifest, assertion, nowMs = Date.now
   strictObject(client,'clientData');
   if (client.type!=='webauthn.get' || client.origin!==keyring.origin ||
     client.crossOrigin === true || client.topOrigin) reject('invalid WebAuthn ceremony or origin');
-  const challenge=sha256(approvalPayload(manifest));
-  if (!same(decodeB64url(client.challenge,512),challenge)) reject('challenge not bound to exact manifesto');
+  const challenge=sha256(payload);
+  if (!same(decodeB64url(client.challenge,512),challenge)) reject('challenge not bound to the signed payload');
   const signBytes=Buffer.concat([auth,sha256(clientBytes)]);
   let valid=false;
   try { valid=verifySignature('sha256',signBytes,key,sig); } catch { valid=false; }
   if (!valid) reject('P-256 assertion signature invalid');
+  return { challenge, key };
+}
+
+export function verifyAssertion({ keyring, manifest, assertion, nowMs = Date.now() }) {
+  const created = validateManifest(manifest);
+  if (!Number.isFinite(nowMs) || created > nowMs + 60_000 || nowMs-created > 15 * 60_000) {
+    reject('approval expired or created in future');
+  }
+  const { challenge } = verifyAssertionOverPayload({
+    keyring, payload: approvalPayload(manifest), assertion, nowMs,
+    maxAgeMs: 15 * 60_000, signedAtMs: created,
+  });
   return Object.freeze({
     verdict:'CRYPTO_ASSERTION_VERIFIED_ONLY',
     admissionPermitted:false,
