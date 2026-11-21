@@ -31102,8 +31102,12 @@
           "--no-tags",
           "--optimus",
           "--paginate",
+          "--quiet",
           "--reverse",
-          "--slurp"
+          "--slurp",
+          "--summary",
+          "--verify",
+          "--write-tree"
         ],
         "outputs": [
           "stdout",
