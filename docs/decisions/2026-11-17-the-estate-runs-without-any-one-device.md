@@ -3,7 +3,13 @@
 > **Decided:** the founder, 2026-11-17: *"we are not dependent on macbook at all, it is wholly
 > optional, our estate must be able to run fully without one device."*
 
-- **Status:** accepted (requirement). Implementation: not started.
+- **Status:** accepted (requirement). Implementation: BUILT and falsified, not yet operating.
+  `bin/idp-passkey-enroll` + `bin/idp-passkey-seal.mjs` + `seal_verified()` in
+  `bin/verify_three_proofs.py` (lane `lane/gate-and-vault-sink`, claim idp#8393): a guarded commit
+  is sealed by a WebAuthn assertion from a passkey, and the gate accepts either that or the file
+  key, refusing when neither verifies. Operating requires two measurements this record does not
+  have yet: the founder's keyring committed at `docs/keys/founder-passkey.json`, and a real tap
+  sealing a real guarded commit. See "Implementation, measured 2026-11-21" below.
 - **Refines:** ADR 0048 (one node + admission list). **Supersedes:** nothing.
 - **Claim:** pending (GitHub API unavailable in the session that wrote this - see "Blocker").
 
