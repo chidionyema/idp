@@ -4,11 +4,12 @@ base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 request_path = "/chat/completions"
 api_key_file = "/run/secrets/pennyd/gemini/GEMINI_API_KEY"
 
-[auth]
-kind = "bearer"
-key_env = "GEMINI_API_KEY"
-
 # I-8107 / LAW_ZERO_MODEL_SOVEREIGNTY: this provider carries no models. It stays as a
 # declared vendor so it can be re-enabled by a founder allocation without a code change, and
 # it is unreachable by any alias or fallback until then.
+# This field MUST be top-level: placing it below [auth] hides it from legion-admit.
 models = []
+
+[auth]
+kind = "bearer"
+key_env = "GEMINI_API_KEY"
