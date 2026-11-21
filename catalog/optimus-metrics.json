@@ -37,6 +37,17 @@
       "better": "lower",
       "owner": "greenlane",
       "description": "literal wall-clock bounds bin/timeout-budget refuses (idp#8251, ADR 0043)"
+    },
+    {
+      "name": "harness.protected_paths_covered",
+      "measure": [
+        "python3",
+        "harness/genesis-v1/bin/optimus-protected-paths.py"
+      ],
+      "unit": "paths",
+      "better": "higher",
+      "owner": "pennyd-glm",
+      "description": "Protected path prefixes the genesis v1 harness write-blocks (idp#8384)"
     }
   ]
 }
