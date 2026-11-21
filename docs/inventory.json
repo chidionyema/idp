@@ -13,7 +13,7 @@
    "DRIFTED": 0,
    "GHOST": 0,
    "MANAGED": 0,
-   "ORPHAN": 36,
+   "ORPHAN": 41,
    "UNKNOWN": false,
    "read": "yes"
   },
@@ -58,7 +58,7 @@
    "read": "UNKNOWN"
   }
  },
- "generated_at": "2026-09-25T07:56:22Z",
+ "generated_at": "2026-11-20T10:08:50Z",
  "rows": [
   {
    "declared_in": "",
@@ -136,6 +136,15 @@
    "declared_in": "",
    "id": "b921dfc71c8938f0ec39a404e66fc7c5",
    "name": "a-mcp.mumchimp.com TXT",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
+   "id": "b56fc0051b7dac6919616fdeec9871d4",
+   "name": "a-meridian.mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -242,6 +251,15 @@
   },
   {
    "declared_in": "",
+   "id": "7759f70bf8d0049945ab40f923b273b7",
+   "name": "dispatch.mumchimp.com CNAME",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "9aa146f9b0ad743e220c189bf7108bec",
    "name": "hc.mumchimp.com A",
    "plane": "cloudflare",
@@ -260,8 +278,17 @@
   },
   {
    "declared_in": "",
+   "id": "ea2adbce6455fb4aff3c284ccef999c6",
+   "name": "llm-recovery.mumchimp.com CNAME",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "52c1ac1774e1799b137453641cee6382",
-   "name": "llm.mumchimp.com A",
+   "name": "llm.mumchimp.com CNAME",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -287,6 +314,15 @@
   },
   {
    "declared_in": "",
+   "id": "bd6f4f4f1d73e477a308b4c1096ca365",
+   "name": "meridian.mumchimp.com A",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "937f1f507fe1b087134e2e24603dd9f2",
    "name": "metabase.mumchimp.com A",
    "plane": "cloudflare",
@@ -296,7 +332,7 @@
   },
   {
    "declared_in": "",
-   "id": "86e33f954f96a1860a5631f0d2d55275",
+   "id": "e7881196f92978922e0e81e99ddf8194",
    "name": "mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
@@ -314,7 +350,7 @@
   },
   {
    "declared_in": "",
-   "id": "e7881196f92978922e0e81e99ddf8194",
+   "id": "86e33f954f96a1860a5631f0d2d55275",
    "name": "mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
@@ -334,6 +370,15 @@
    "declared_in": "",
    "id": "8346a0703b2a7400c9214e530775c106",
    "name": "otto.mumchimp.com A",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
+   "id": "f048d102497d4491f493a8e6867803c4",
+   "name": "passkey.mumchimp.com AAAA",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",

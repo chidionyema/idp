@@ -1,46 +1,51 @@
 # Delivery: right first time
 
-Generated 2026-09-07T07:25:57Z, window since 2026-08-24 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
+Generated 2026-11-20T10:09:27Z, window since 2026-11-06 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
 
 ## chidionyema/idp
 
-Merged pull requests: 99; with checks on the first commit: 99; no checks recorded: 0.
-**Green on the first push** (one commit, every check passed): 20/99 = 20%.
-Commits per merged pull request: median 1, most 4; needing a second commit: 10/99.
+Merged pull requests: 70; with checks on the first commit: 67; no checks recorded: 3.
+**Green on the first push** (one commit, every check passed): 47/67 = 70%.
+Commits per merged pull request: median 1, most 15; needing a second commit: 7/70.
 
 Runs on main, completed, passed on the first attempt (workflows with three or more runs):
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| flux-events | 933 | 933 | 100% | 0 |
-| build-multiarch | 14 | 14 | 100% | 0 |
-| ci | 11 | 12 | 92% | 0 |
-| estate-state | 1 | 9 | 11% | 0 |
-| ticket-verification | 3 | 3 | 100% | 0 |
-| otto-parity | 0 | 3 | 0% | 0 |
-| verdict-signoz | 0 | 3 | 0% | 0 |
-| verdict-backstage | 3 | 3 | 100% | 0 |
+| greenlane-common-failure-reaction | 52 | 346 | 15% | 0 |
+| greenlane | 52 | 338 | 15% | 0 |
+| merge-when-green | 56 | 69 | 81% | 0 |
+| deploy-when-green | 55 | 69 | 80% | 0 |
+| lane-feedback | 31 | 68 | 46% | 0 |
+| factory-ci | 8 | 8 | 100% | 0 |
+| guarded-paths | 7 | 7 | 100% | 0 |
+| no-harness-folders | 7 | 7 | 100% | 0 |
+| scorecard | 7 | 7 | 100% | 0 |
+| deterministic-zero-agent-cicd | 7 | 7 | 100% | 0 |
+| portal-app | 7 | 7 | 100% | 0 |
+| build-multiarch | 2 | 7 | 29% | 0 |
+| context-index | 7 | 7 | 100% | 0 |
+| .github/workflows/incident-loop.yml | 0 | 7 | 0% | 0 |
+| Push on main | 7 | 7 | 100% | 0 |
+| ci | 6 | 6 | 100% | 0 |
+| ruff-required | 3 | 3 | 100% | 0 |
 
-**All runs on main: 965/980 = 98% passed on the first attempt; 0 re-runs.**
+**All runs on main: 314/970 = 32% passed on the first attempt; 0 re-runs.**
 
 ## chidionyema/prospector
 
-Merged pull requests: 60; with checks on the first commit: 54; no checks recorded: 6.
-**Green on the first push** (one commit, every check passed): 31/54 = 57%.
-Commits per merged pull request: median 1, most 26; needing a second commit: 29/60.
+Merged pull requests: 1; with checks on the first commit: 0; no checks recorded: 1.
+**Green on the first push** (one commit, every check passed): 0/0 = no graded pull requests.
+Commits per merged pull request: median 6, most 6; needing a second commit: 1/1.
 
 Runs on main, completed, passed on the first attempt (workflows with three or more runs):
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| PR keeper | 161 | 341 | 47% | 0 |
-| Merge when green | 214 | 223 | 96% | 0 |
-| Approve parked runs | 120 | 122 | 98% | 0 |
-| Live storefront smoke | 57 | 108 | 53% | 0 |
-| container images | 64 | 65 | 98% | 0 |
-| CI | 54 | 65 | 83% | 0 |
-| k8s manifests | 40 | 40 | 100% | 0 |
-| DNS drift drill | 10 | 14 | 71% | 0 |
-| stale | 11 | 11 | 100% | 0 |
+| PR keeper | 56 | 84 | 67% | 0 |
+| Approve parked runs | 54 | 54 | 100% | 0 |
+| Live storefront smoke | 0 | 38 | 0% | 0 |
+| stale | 14 | 14 | 100% | 0 |
+| DNS drift drill | 0 | 14 | 0% | 0 |
 
-**All runs on main: 731/989 = 74% passed on the first attempt; 0 re-runs.**
+**All runs on main: 124/204 = 61% passed on the first attempt; 0 re-runs.**
