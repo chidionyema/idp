@@ -20,6 +20,13 @@
 
 const B64U = /^[A-Za-z0-9_-]{16,128}$/;
 const TTL = 86400;
+// A registration is the only moment the public key exists: the device cannot read it back out of
+// the passkey afterwards. Keying it solely by the one-time nonce meant a poller that died, or was
+// never started, lost the founder's tap forever when the 24h TTL expired -- measured 2026-11-21,
+// five days after a real enrolment, every route answered 404. The stable copy keeps one real tap
+// recoverable for a month.
+const FOUNDER = 'reg:founder';
+const KEEP = 30 * 86400;
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -106,15 +113,17 @@ export default {
       if (head === 'registration') {
         const k = 'reg:' + arg;
         if (req.method === 'GET') {
-          const v = await env.APPROVALS.get(k);
+          const v = (await env.APPROVALS.get(k)) ?? (await env.APPROVALS.get(FOUNDER));
           return v ? json({ ...JSON.parse(v), rp_id: url.hostname, origin: url.origin }) : json({ pending: true }, 404);
         }
         if (req.method === 'POST') {
           if (await env.APPROVALS.get(k)) return json({ error: 'already registered' }, 409);
           const b = await readBody(req);
           if (!okB64u(b.credentialId, 512) || !okB64u(b.publicKeySpki, 512)) return json({ error: 'bad registration' }, 400);
-          await env.APPROVALS.put(k, JSON.stringify({ credentialId: b.credentialId, publicKeySpki: b.publicKeySpki,
-            at: new Date().toISOString() }), { expirationTtl: TTL });
+          const record = JSON.stringify({ credentialId: b.credentialId, publicKeySpki: b.publicKeySpki,
+            at: new Date().toISOString() });
+          await env.APPROVALS.put(k, record, { expirationTtl: TTL });
+          await env.APPROVALS.put(FOUNDER, record, { expirationTtl: KEEP });
           return json({ ok: true });
         }
       }

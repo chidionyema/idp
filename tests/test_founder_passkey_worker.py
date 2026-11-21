@@ -35,6 +35,8 @@ out.regBad = await call('POST', '/registration/' + N, { credentialId: 'x y', pub
 out.reg = await call('POST', '/registration/' + N, { credentialId: 'cred_1', publicKeySpki: 'MFkwEwYH' });
 out.regAgain = await call('POST', '/registration/' + N, { credentialId: 'evil', publicKeySpki: 'EVIL' });
 out.regRead = await call('GET', '/registration/' + N);
+out.regStable = await call('GET', '/registration/' + 'z'.repeat(24));
+out.regStored = [...store.keys()].sort();
 out.badPath = await call('GET', '/registration/short');
 out.apMissing = await call('GET', '/approve/' + C);
 out.apNoCred = await call('POST', '/approve/' + C, { authenticatorData: 'AA', clientDataJSON: 'BB', signature: 'CC' });
@@ -89,6 +91,15 @@ def test_registration_is_write_once_per_nonce(results: dict) -> None:
         got["rp_id"] == "passkey.example.com"
         and got["origin"] == "https://passkey.example.com"
     )
+
+
+def test_a_registration_survives_its_one_time_nonce(results: dict) -> None:
+    """The public key exists only in this POST, so losing it when the nonce expires throws away a
+    real Face ID tap. Measured 2026-11-21: a founder enrolment five days old answered 404."""
+    assert results["regStable"]["status"] == 200, results["regStable"]
+    got = json.loads(results["regStable"]["text"])
+    assert got["credentialId"] == "cred_1"
+    assert "reg:founder" in results["regStored"], results["regStored"]
 
 
 def test_unknown_or_short_paths_are_refused(results: dict) -> None:
