@@ -60,7 +60,7 @@ jobs:
           [ -n "$PEM_B64" ] || { echo "BLIND   submit-gate  SEED app key missing"; exit 2; }
           pem=$(printf %s "$PEM_B64" | base64 -d)
           while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
-          { echo "key<<PEM_EOF"; printf '%s\\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         if: steps.fmt.outputs.changed == 'true'
         id: app
