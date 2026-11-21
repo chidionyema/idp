@@ -1,0 +1,7 @@
+[package]
+name = "zero-repeat-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic 1-strike failure-class circuit breaker, headless continuation enforcer, superseded-head abort, and durable Founder inbox guard"
+
+[dependencies]
