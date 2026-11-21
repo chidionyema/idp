@@ -130,6 +130,73 @@ class EffectsMixin(FenceMixin):
                 "duplicate": False,
             }
 
+    def record_yield_proof(
+        self,
+        mission_id: str,
+        attempt_id: str,
+        lease_epoch: int,
+        effect_id: str,
+        metric: str,
+        baseline: float,
+        observed: float,
+        target: float,
+        evidence_ref: str,
+        verifier: str,
+        now: float | None = None,
+    ) -> dict:
+        """Record a measurable, attributable outcome, never a self-declared status.
+
+        Verifier identity must be authenticated by the caller's admission boundary.
+        This store enforces separation of identities and the evidence custody chain.
+        """
+        import math
+
+        from .fields import InvalidTransition
+
+        t = time.time() if now is None else now
+        if not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            for v in (baseline, observed, target)
+        ):
+            raise InvalidTransition("yield metrics must be finite numbers")
+        if not metric.strip() or not evidence_ref.strip() or not verifier.strip():
+            raise InvalidTransition("yield requires metric, evidence reference and verifier")
+        if observed < target if target >= baseline else observed > target:
+            raise InvalidTransition("yield target not met")
+        with self.db:
+            cur = self.db.execute("BEGIN IMMEDIATE")
+            self.assert_fence(mission_id, attempt_id, lease_epoch, now=t, cur=cur)
+            mission = cur.execute(
+                "SELECT state FROM missions WHERE mission_id=?", (mission_id,)
+            ).fetchone()
+            if mission["state"] != "OPERATING":
+                raise InvalidTransition("yield cannot precede operational verification")
+            effect = cur.execute(
+                "SELECT state, reconciliation_status, verified_by FROM external_effects"
+                " WHERE effect_id=? AND mission_id=? AND attempt_id=? AND lease_epoch=?",
+                (effect_id, mission_id, attempt_id, lease_epoch),
+            ).fetchone()
+            if (
+                effect is None
+                or effect["state"] != "OBSERVED"
+                or effect["reconciliation_status"] != "RECONCILED"
+            ):
+                raise InvalidTransition("yield needs an observed reconciled external effect")
+            if verifier.strip().casefold() == effect["verified_by"].strip().casefold():
+                raise InvalidTransition("yield verifier cannot be the effect observer")
+            proof_id = f"y-{uuid.uuid4()}"
+            cur.execute(
+                "INSERT INTO mission_yield_proofs"
+                " (proof_id, mission_id, attempt_id, lease_epoch, effect_id,"
+                " metric, baseline, observed, target, evidence_ref, verifier, verified_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    proof_id, mission_id, attempt_id, lease_epoch, effect_id,
+                    metric, baseline, observed, target, evidence_ref, verifier, t,
+                ),
+            )
+            return {"proof_id": proof_id, "state": "RECORDED", "verified_at": t}
+
     def pending_effects(self, mission_id: str) -> list:
         rows = self.db.execute(
             "SELECT effect_id, operation, target, idempotency_key, state,"
