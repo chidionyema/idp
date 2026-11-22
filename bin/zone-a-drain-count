@@ -1,0 +1,12 @@
+#!/bin/bash
+# Optimus measure (idp#8412): count Zone A Mac graph-drain artifacts in this checkout.
+# The drain was decommissioned 2026-11-22 (DARWIN_THIN_CLIENT); ingestion is Zone B
+# cloud-only (estate-graph sync.yml, 46d7796). Target: 0, forever.
+# Prints exactly one line: optimus.estate.zone_a_graph_drain_files=<n>
+set -u
+cd "$(dirname "$0")/.."
+n=0
+for f in bin/estate-graph-drain launchd/ai.estate.graph-drain.plist.tmpl; do
+	[ -e "$f" ] && n=$((n + 1))
+done
+echo "optimus.estate.zone_a_graph_drain_files=$n"
