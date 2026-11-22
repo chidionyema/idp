@@ -46,10 +46,16 @@ def test_an_ok_result_always_carries_plan_and_message(plan):
     declared = plan.apply(None, "declare_plan", GOAL)
     assert declared["ok"]
     for r in (
-        plan.apply(None, "add_bdd", {"goal_id": "g1", "given": "g", "when": "w", "then": "t"}),
+        plan.apply(
+            None, "add_bdd", {"goal_id": "g1", "given": "g", "when": "w", "then": "t"}
+        ),
         plan.apply(None, "address_edgecases", EDGE),
         plan.apply(None, "complete_goal", {"goal_id": "g1"}),
-        plan.apply(declared["plan"], "add_bdd", {"goal_id": "g1", "given": "g", "when": "w", "then": "t"}),
+        plan.apply(
+            declared["plan"],
+            "add_bdd",
+            {"goal_id": "g1", "given": "g", "when": "w", "then": "t"},
+        ),
     ):
         if r.get("ok"):
             assert "plan" in r, r
@@ -74,7 +80,10 @@ def test_replay_of_a_ledger_that_starts_with_a_recording_tool_does_not_raise(pla
     # the ledger could never be replayed back into a plan.
     out = plan.replay(
         [
-            ["address_edgecases", EDGE],  # recorded before any declare (the live ledger)
+            [
+                "address_edgecases",
+                EDGE,
+            ],  # recorded before any declare (the live ledger)
             ["declare_plan", GOAL],
             ["add_bdd", {"goal_id": "g1", "given": "g", "when": "w", "then": "t"}],
         ]
