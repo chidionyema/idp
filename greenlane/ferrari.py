@@ -150,7 +150,7 @@ def source_assess(
                 "REFUSE", "pre-CI language-gate: " + lang.stderr.strip()[:220]
             )
         if lang.returncode != 0:
-            return Verdict("UNKNOWN", "trusted language preflight unavailable")
+            return Verdict("REFUSE", "pre-CI hold: trusted language gate unavailable")
         changed = execute(
             [
                 "git",
@@ -169,7 +169,7 @@ def source_assess(
             check=False,
         )
         if changed.returncode:
-            return Verdict("UNKNOWN", "candidate Python paths unavailable")
+            return Verdict("REFUSE", "pre-CI hold: candidate Python paths unavailable")
         python_paths = [p for p in changed.stdout.split("\0") if p]
         if not python_paths:
             return Verdict(
@@ -180,6 +180,12 @@ def source_assess(
             if path.is_absolute() or ".." in path.parts or name.startswith(".git/"):
                 return Verdict("REFUSE", "unsafe candidate Python path")
         # The exact Ruff version installed by fast-gate and the agent worker.
+        # Never pass estate effect credentials into PyPI or the formatter.
+        safe_env = {
+            k: v
+            for k, v in os.environ.items()
+            if not any(x in k.upper() for x in ("TOKEN", "SECRET", "PASSWORD", "KEY"))
+        }
         # Missing format authority holds the Python lane rather than launching
         # expensive CI that can only discover the same unformatted files.
         binary = ruff_binary if ruff_binary is not None else shutil.which("ruff")
@@ -196,24 +202,29 @@ def source_assess(
                     "--only-binary=:all:",
                     f"ruff=={TRUSTED_RUFF_VERSION}",
                 ],
-                cwd=cwd,
+                cwd=tempfile.gettempdir(),
                 capture_output=True,
                 text=True,
                 timeout=60,
                 check=False,
-                env={
-                    k: v
-                    for k, v in os.environ.items()
-                    if not any(
-                        s in k.upper() for s in ("TOKEN", "SECRET", "PASSWORD", "KEY")
-                    )
-                },
+                env=safe_env,
             )
             if installer.returncode:
                 return Verdict("REFUSE", "pre-CI hold: trusted pinned Ruff unavailable")
             binary = shutil.which("ruff")
         if not binary:
             return Verdict("REFUSE", "pre-CI hold: trusted pinned Ruff unavailable")
+        version = execute(
+            [str(binary), "--version"],
+            cwd=tempfile.gettempdir(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=safe_env,
+        )
+        if version.returncode or version.stdout.strip() != f"ruff {TRUSTED_RUFF_VERSION}":
+            return Verdict("REFUSE", "pre-CI hold: Ruff version mismatch")
         with tempfile.TemporaryDirectory(prefix="greenlane-pre-ci-") as folder:
             names = []
             for name in python_paths:
@@ -226,7 +237,7 @@ def source_assess(
                     check=False,
                 )
                 if blob.returncode:
-                    return Verdict("UNKNOWN", "candidate Python blob unavailable")
+                    return Verdict("REFUSE", "pre-CI hold: candidate Python blob unavailable")
                 target = Path(folder) / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(blob.stdout, encoding="utf-8")
@@ -240,11 +251,12 @@ def source_assess(
                     str(TRUSTED_ROOT / "pyproject.toml"),
                     *names,
                 ],
-                cwd=cwd,
+                cwd=folder,
                 capture_output=True,
                 text=True,
                 timeout=35,
                 check=False,
+                env=safe_env,
             )
             if check.returncode == 1:
                 return Verdict(
@@ -255,4 +267,4 @@ def source_assess(
                 return Verdict("REFUSE", "pre-CI hold: pinned Ruff could not verify")
         return Verdict("ADMIT", "trusted language and exact-source Ruff format passed")
     except (OSError, ValueError, subprocess.TimeoutExpired):
-        return Verdict("UNKNOWN", "trusted source preflight unavailable")
+        return Verdict("REFUSE", "pre-CI hold: trusted source preflight unavailable")
