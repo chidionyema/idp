@@ -1,0 +1,136 @@
+{
+  "schema_version": "0.1.0",
+  "id": "MACA-001",
+  "status": "experimental",
+  "policy": {
+    "objective": "maximise independently verified task utility subject to authority, safety, budget and latency constraints",
+    "candidate_actions": [
+      "ask_information",
+      "abstain",
+      "execute_operator",
+      "compose_operators"
+    ],
+    "requirements": [
+      "explicit_uncertainty",
+      "bounded_cost",
+      "no_self_granted_authority",
+      "independent_verification",
+      "replayable_receipts"
+    ],
+    "selection": "baseline_heuristic_pending_evaluation"
+  },
+  "operators": [
+    {
+      "id": "clarify",
+      "trigger": "decision-relevant unknowns with positive expected value of information",
+      "preconditions": [
+        "question_can_be_asked"
+      ],
+      "risk": "delay_or_information_exposure"
+    },
+    {
+      "id": "via_negativa",
+      "trigger": "unnecessary complexity or harmful dependencies",
+      "preconditions": [
+        "removal_impact_assessed"
+      ],
+      "risk": "removal_of_essential_capability"
+    },
+    {
+      "id": "shift_left",
+      "trigger": "recurrent downstream defect with controllable upstream cause",
+      "preconditions": [
+        "upstream_control_point_identified"
+      ],
+      "risk": "premature_gate_or_false_positive"
+    },
+    {
+      "id": "reverse_causal",
+      "trigger": "outcome observed but generating mechanism uncertain",
+      "preconditions": [
+        "causal_hypotheses_testable"
+      ],
+      "risk": "reverse_inference_error"
+    },
+    {
+      "id": "first_principles",
+      "trigger": "inherited assumptions dominate search space",
+      "preconditions": [
+        "domain_constraints_explicit"
+      ],
+      "risk": "discarding_valid_knowledge"
+    },
+    {
+      "id": "combinatorial_search",
+      "trigger": "multiple viable configurations remain",
+      "preconditions": [
+        "bounded_space_or_pruning"
+      ],
+      "risk": "search_explosion"
+    },
+    {
+      "id": "counterfactual_simulation",
+      "trigger": "competing interventions require outcome comparison",
+      "preconditions": [
+        "model_assumptions_recorded"
+      ],
+      "risk": "model_misspecification"
+    },
+    {
+      "id": "falsification",
+      "trigger": "claim needs discriminating test",
+      "preconditions": [
+        "observable_failure_condition"
+      ],
+      "risk": "invalid_proxy_measure"
+    },
+    {
+      "id": "optimise_existing",
+      "trigger": "structure valid and measurable objective exists",
+      "preconditions": [
+        "objective_and_constraints_grounded"
+      ],
+      "risk": "goodharting"
+    },
+    {
+      "id": "reconstruct_frame",
+      "trigger": "problem framing excludes plausible alternatives",
+      "preconditions": [
+        "scope_and_invariants_recorded"
+      ],
+      "risk": "unbounded_reframing"
+    }
+  ],
+  "receipt_required": [
+    "context_id",
+    "timestamp",
+    "evidence_refs",
+    "candidate_operators",
+    "chosen_action",
+    "selection_rationale",
+    "predicted_utility",
+    "cost_budget",
+    "authority",
+    "outcome",
+    "verifier",
+    "policy_version"
+  ],
+  "benchmarks": {
+    "minimum_blinded_tasks": 30,
+    "baselines": [
+      "fixed_operator",
+      "random_valid",
+      "heuristic",
+      "adaptive"
+    ],
+    "metrics": [
+      "verified_quality",
+      "cost",
+      "latency",
+      "calibration",
+      "invalid_actions",
+      "regret"
+    ],
+    "holdout_required": true
+  }
+}
