@@ -7,7 +7,7 @@
 // The intake rule 59effb8f4 is enforced here rather than trusted upstream: the bytes that land
 // are hashed again at the edge and a declared digest that disagrees is a partial flush, refused.
 
-import { SUBMIT_REF, safeSourcePath, validateFiles, gitBlobSha, admittedMode, admittedBase, submissionReceipt } from "./aistudio-fence.js";
+import { SUBMIT_REF, safeSourcePath, validateFiles, gitBlobSha, admittedMode, admittedBase, submissionReceipt, requirePublicSourceRelease } from "./aistudio-fence.js";
 
 export const REPO = "chidionyema/idp";
 export const LANE = SUBMIT_REF; // The producer MUST enter the trusted submit/** pre-gate.
@@ -268,8 +268,15 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     throw new IngestError(409, "UNTRUSTED_SOURCE_REFUSED", { reason: String(error.message) });
   }
 
-  const submitHead = await laneHead(fetchImpl, env);
+  // Read-only verification first; no browser source reaches public Git objects
+  // without a matching server-held, task-bound public-release manifest.
   const mainHead = await trustedMainHead(fetchImpl, env);
+  let release;
+  try { release = requirePublicSourceRelease(prepared.accepted, env, mainHead); }
+  catch (error) {
+    throw new IngestError(409, "PUBLIC_SOURCE_RELEASE_HELD", { reason: String(error.message) });
+  }
+  const submitHead = await laneHead(fetchImpl, env);
   const parentHead = admittedBase(submitHead, mainHead);
   const base = await laneTree(fetchImpl, env, parentHead);
   const unchanged =
@@ -300,6 +307,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     commit,
     deduped: unchanged,
     intake_rule: INTAKE_RULE,
+    release: { issue: release.issue, instruction_id: release.instruction_id },
     files: manifest,
   };
 
@@ -316,6 +324,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     commit,
     tree,
     intake_rule: INTAKE_RULE,
+    release: { issue: release.issue, instruction_id: release.instruction_id },
     files: manifest,
     sanitized: prepared.sanitized,
     omniflow: { issue: OMNIFLOW_ISSUE, event: "OMNIFLOW-EVENT/v1", kind: "ASSIGN" },
