@@ -1,0 +1,26 @@
+# Credential-free source-only proof runner; not promoted into main.
+name: temporary-webfleet-7760-proof
+on:
+  push:
+    branches: ["proof/7760-v1-evidence-node-20261122"]
+permissions:
+  contents: read
+jobs:
+  falsify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Exact-source syntax
+        run: |
+          node --version
+          node --check scripts/web-fleet/github-evidence.mjs
+          node --check tests/web_fleet/github-evidence.test.mjs
+      - name: Independent V1 and adapter falsifiers
+        run: |
+          node --test platform/lifeboat/test/task-packet.test.mjs tests/web_fleet/github-evidence.test.mjs
