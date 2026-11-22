@@ -50,6 +50,8 @@ def test_no_unverified_initial_deploy_or_silent_gate_removal():
     assert 'run("npm", ["test"])' not in source
     assert 'run("node", ["--test"' not in source
     assert "RELEASE_PREFLIGHT_FILE" in source
+    assert "delete childEnv.CLOUDFLARE_API_TOKEN;" in source
+    assert "delete childEnv.CLOUDFLARE_ACCOUNT_ID;" in source
 
 
 def test_three_negative_release_tests_execute_without_credentials():

@@ -30,9 +30,14 @@ export function immutableTag(sha) {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("BLIND: SHA must be a full commit identifier");
   return "meridian-" + sha;
 }
-function run(cmd, args, env = {}, timeout = 120000) {
+function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false) {
+  const childEnv = { ...process.env, ...env };
+  if (stripWorkerAuthority) {
+    delete childEnv.CLOUDFLARE_API_TOKEN;
+    delete childEnv.CLOUDFLARE_ACCOUNT_ID;
+  }
   const p = spawnSync(cmd, args, {
-    cwd: ROOT, env: { ...process.env, ...env }, encoding: "utf8", timeout, maxBuffer: 1024 * 1024,
+    cwd: ROOT, env: childEnv, encoding: "utf8", timeout, maxBuffer: 1024 * 1024,
   });
   // Never echo process output: it could contain credentials or provider responses.
   if (p.error || p.status !== 0) throw new Error(path.basename(cmd) + " " + args.slice(0, 2).join(" ") + " failed rc=" + (p.status ?? "signal"));
@@ -76,7 +81,7 @@ export async function release() {
     run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     await pause(3000);
     for (let n = 1; n <= 3; n++) {
-      run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: sha }, 110000);
+      run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: sha }, 110000, true);
       r.probes.push({ round: n, passed: true, at: new Date().toISOString() });
     }
     r.status = "OPERATIONAL";
@@ -88,7 +93,7 @@ export async function release() {
       try {
         run(wrangler, ["rollback", r.previous_version_id, "--message", "restore:" + r.sha]);
         await pause(3000);
-        run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: "" }, 110000);
+        run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: "" }, 110000, true);
         r.rollback_verified = true;
       } catch (x) {
         r.rollback_error = String(x?.message ?? x).slice(0, 160);
