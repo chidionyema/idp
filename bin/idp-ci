@@ -50,12 +50,23 @@ pre_admit_fix() {
   local ruff=()
   if command -v ruff >/dev/null 2>&1; then ruff=(ruff)
   elif python3 -m ruff --version >/dev/null 2>&1; then ruff=(python3 -m ruff); fi
-  if [ -n "$py" ] && [ ${#ruff[@]} -gt 0 ]; then
-    local before after
-    before=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum)
-    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" format) >/dev/null 2>&1 || true
-    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" check --fix --quiet) >/dev/null 2>&1 || true
-    after=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum)
+  if [ -n "$py" ]; then
+    # Missing or failing formatting tools must not silently pass producer admission.
+    if [ ${#ruff[@]} -eq 0 ]; then
+      echo "BLIND  ruff-format  formatter unavailable" >&2
+      return 2
+    fi
+    local version before after
+    version=$("${ruff[@]}" --version) || return 2
+    if [ "$version" != "ruff 0.15.18" ]; then
+      echo "BLIND  ruff-format  expected ruff 0.15.18; got $version" >&2
+      return 2
+    fi
+    before=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum) || return 2
+    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" format) || return 2
+    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" check --fix --quiet) || return 2
+    (cd "$IDP" && printf '%s\n' "$py" | xargs "${ruff[@]}" format --check) || return 2
+    after=$(cd "$IDP" && printf '%s\n' "$py" | xargs shasum | sort | shasum) || return 2
     if [ "$before" != "$after" ]; then
       printf 'fixed  ruff   %s\n' "$(printf '%s' "$py" | tr '\n' ' ')"
       n=$((n + 1))
@@ -84,7 +95,12 @@ pre_admit_fix() {
   return "$n"
 }
 if [ "$FIX" = 1 ]; then
-  pre_admit_fix; fixed=$?
+  pre_admit_fix
+  fixed=$?
+  if [ "$fixed" -eq 2 ]; then
+    echo "BLIND  pre-admission repair failed; refusing commit" >&2
+    exit 2
+  fi
   printf 'fix    %s repair(s)\n' "$fixed"
   [ "$fixed" -eq 0 ] && exit 0
   exit 3
