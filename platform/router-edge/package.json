@@ -1,0 +1,16 @@
+{
+  "name": "meridian-router-edge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=neutral --outfile=dist/index.js",
+    "test": "npm run build && node tests/router.falsifier.mjs",
+    "deploy": "wrangler deploy --var COMMIT_SHA:$(git rev-parse --short HEAD)",
+    "probe": "node scripts/blackbox-prober.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "wrangler": "3.90.0"
+  }
+}
