@@ -174,7 +174,7 @@ async function laneTree(fetchImpl, env, head) {
   return { sha: commit.tree.sha, files };
 }
 
-async function commitFiles(fetchImpl, env, accepted, base) {
+async function commitFiles(fetchImpl, env, accepted, base, release) {
   // Guard ALL modes before a single write-capable GitHub POST.
   const staged = accepted.map((file) => ({
     ...file,
@@ -198,7 +198,7 @@ async function commitFiles(fetchImpl, env, accepted, base) {
   const commit = await gh(fetchImpl, env, `/repos/${REPO}/git/commits`, {
     method: "POST",
     body: JSON.stringify({
-      message: `feat(aistudio): untrusted source through submit gate (${INTAKE_RULE})\n\nClaim: chidionyema/idp#7760\nAgent: aistudio-browser-untrusted\n\nNo source is self-certified by this commit.`,
+      message: `feat(aistudio): untrusted source through submit gate (${INTAKE_RULE})\n\nClaim: chidionyema/idp#${release.issue}\nAgent: ${release.agent}\n\nNo source is self-certified by this commit.`,
       tree: tree.sha,
       parents: base.head ? [base.head] : [],
     }),
@@ -286,7 +286,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
   let commit = parentHead;
   let tree = base.sha;
   if (!unchanged) {
-    const landed = await commitFiles(fetchImpl, env, prepared.accepted, { ...base, head: parentHead, submitHead });
+    const landed = await commitFiles(fetchImpl, env, prepared.accepted, { ...base, head: parentHead, submitHead }, release);
     commit = landed.commit;
     tree = landed.tree;
   }
@@ -307,7 +307,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     commit,
     deduped: unchanged,
     intake_rule: INTAKE_RULE,
-    release: { issue: release.issue, instruction_id: release.instruction_id },
+    release: { issue: release.issue, agent: release.agent, instruction_id: release.instruction_id },
     files: manifest,
   };
 
@@ -324,7 +324,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     commit,
     tree,
     intake_rule: INTAKE_RULE,
-    release: { issue: release.issue, instruction_id: release.instruction_id },
+    release: { issue: release.issue, agent: release.agent, instruction_id: release.instruction_id },
     files: manifest,
     sanitized: prepared.sanitized,
     omniflow: { issue: OMNIFLOW_ISSUE, event: "OMNIFLOW-EVENT/v1", kind: "ASSIGN" },
