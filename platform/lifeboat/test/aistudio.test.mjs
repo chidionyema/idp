@@ -262,7 +262,7 @@ test("invalid trusted manifest fails closed even with correct file content", asy
     () => ingest({ source: "stream", files }, bad, fetchImpl),
     (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
   );
-  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+  assert.equal(journal.some((x) => x.method !== "GET" && x.path.startsWith("/repos/")), false);
 });
 
 test("trusted release issue and principal, not hardcoded intake owner, determine Git trailers", async () => {

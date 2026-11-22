@@ -228,26 +228,11 @@ async function laneHead(fetchImpl, env) {
   return ref?.object?.sha || null;
 }
 
-async function trustedMainHead(fetchImpl) {
-  // idp is public: verify protected-main head without minting any write token.
-  let response;
-  try {
-    response = await fetchImpl("https://api.github.com/repos/" + REPO + "/git/ref/heads/main", {
-      redirect: "error", cache: "no-store",
-      headers: { accept: "application/vnd.github+json" },
-    });
-  } catch {
-    throw new IngestError(503, "MAIN_HEAD_UNAVAILABLE");
-  }
-  if (!response.ok) throw new IngestError(503, "MAIN_HEAD_UNAVAILABLE",
-    { status: response.status });
-  let ref;
-  try { ref = await response.json(); }
-  catch { throw new IngestError(503, "MAIN_HEAD_INVALID"); }
-  if (!/^[0-9a-f]{40}$/.test(ref?.object?.sha || "")) {
-    throw new IngestError(503, "MAIN_HEAD_INVALID");
-  }
-  return ref.object.sha;
+async function trustedMainHead(fetchImpl, lease) {
+  const ref = await gh(fetchImpl, lease, "/repos/" + REPO + "/git/ref/heads/main");
+  const sha = ref?.object?.sha || "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new IngestError(503, "MAIN_HEAD_INVALID");
+  return sha;
 }
 
 async function laneTree(fetchImpl, env, head) {
@@ -357,15 +342,24 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
 
   // Read-only verification first; no browser source reaches public Git objects
   // without a matching server-held, task-bound public-release manifest.
-  const mainHead = await trustedMainHead(fetchImpl);
+  // Check exact source bytes and trusted release identity locally before
+  // asking the broker for a lease. The issuer must independently verify
+  // release freshness; GitHub HEAD is rechecked with the leased token.
   let release;
+  try {
+    const manifest = JSON.parse(env.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON || "null");
+    if (!/^[0-9a-f]{40}$/.test(manifest?.source_sha || "")) throw new Error("unpinned source");
+    release = requirePublicSourceRelease(prepared.accepted, env, manifest.source_sha);
+  } catch (error) {
+    throw new IngestError(409, "PUBLIC_SOURCE_RELEASE_HELD", { reason: String(error.message) });
+  }
+  const lease = await acquireGithubLease(fetchImpl, env, release);
+  const ghAuth = { token: lease.token, expiresAt: lease.expiresAt };
+  const mainHead = await trustedMainHead(fetchImpl, ghAuth);
   try { release = requirePublicSourceRelease(prepared.accepted, env, mainHead); }
   catch (error) {
     throw new IngestError(409, "PUBLIC_SOURCE_RELEASE_HELD", { reason: String(error.message) });
   }
-  // Mint only after exact server-held identity and source release are verified.
-  const lease = await acquireGithubLease(fetchImpl, env, release);
-  const ghAuth = { token: lease.token, expiresAt: lease.expiresAt };
   const submitHead = await laneHead(fetchImpl, ghAuth);
   const parentHead = admittedBase(submitHead, mainHead);
   const base = await laneTree(fetchImpl, ghAuth, parentHead);
