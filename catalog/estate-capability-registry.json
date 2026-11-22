@@ -34245,64 +34245,6 @@
       "mirrors": []
     },
     {
-      "id": "cap:tool/estate-graph-drain",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "!/bin/bash",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [
-        "cap:tool/memory-forward-launchd"
-      ],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/estate-graph-drain",
-      "depends_on": [
-        {
-          "id": "cap:tool/litellm-local",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
       "id": "cap:tool/estate-incident-loop",
       "schema_version": 1,
       "kind": "tool",
@@ -56131,7 +56073,6 @@
       },
       "consumers": [
         "cap:tool/diagnosis-gate",
-        "cap:tool/estate-graph-drain",
         "cap:tool/fleetview-launchd",
         "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
@@ -57001,12 +56942,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/memory-forward-launchd",
-      "depends_on": [
-        {
-          "id": "cap:tool/estate-graph-drain",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -59755,7 +59691,6 @@
         "cap:tool/estate-digest-worker",
         "cap:tool/estate-dispatch-action",
         "cap:tool/estate-face-avatar",
-        "cap:tool/estate-graph-drain",
         "cap:tool/estate-memory-enforce",
         "cap:tool/estate-memory-mcp",
         "cap:tool/estate-patch",
@@ -61187,6 +61122,53 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/zero_repeat_gate.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/zone-a-drain-count",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/zone-a-drain-count",
       "depends_on": [],
       "metrics": [],
       "blind": [
