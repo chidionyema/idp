@@ -44391,7 +44391,7 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-escrow",
         "cap:tool/idp-estate-seed",
-            "cap:tool/idp-tailscale-policy",
+        "cap:tool/idp-tailscale-policy",
         "cap:tool/idp-workstation-bootstrap",
         "cap:workflow/gha-ticket-verification",
         "cap:workflow/gha-vault-seed",
