@@ -30,3 +30,5 @@ test('forged mode or stale commit refuses',async()=>{const p=await ready();let d
 test('forged Git blob cannot pass as source provenance',async()=>{await fails('SOURCE_BLOB_DIGEST_MISMATCH',()=>ready({files:[{...make().files[0],blobSha:'b'.repeat(40)}]}));});
 test('unsigned altered task is refused before patch check',async()=>{const p=await ready();p.source_sha='f'.repeat(40);await fails('PACKET_TAMPERED',()=>validateProposal(p,{}));});
 test('checkpoint cannot hide bearer credentials',async()=>{await fails('UNTRUSTED_CHECKPOINT',()=>ready({checkpoint:{state:'READY',lease:'Authorization: Bearer xxxxxxxxx'}}));});
+
+test('checkpoint is an allowlisted projection, never a raw secret channel',async()=>{const p=await ready({checkpoint:{state:'READY',lease:'lease-01',raw_private_key:'secrets-must-not-leak'}});assert.equal(p.checkpoint.lease,'lease-01');assert.equal('raw_private_key' in p.checkpoint,false);assert.equal(JSON.stringify(p).includes('secrets-must-not-leak'),false);});
