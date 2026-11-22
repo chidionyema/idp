@@ -4,7 +4,11 @@
   "metrics": [
     {
       "name": "estate.platform_dirs_never_applied",
-      "measure": ["python3", "bin/idp-infra-inventory", "--optimus"],
+      "measure": [
+        "python3",
+        "bin/idp-infra-inventory",
+        "--optimus"
+      ],
       "unit": "directories",
       "better": "lower",
       "owner": "greenlane",
@@ -12,7 +16,11 @@
     },
     {
       "name": "claims.ship_contract_enforced",
-      "measure": ["python3", "bin/claim-gate", "--optimus"],
+      "measure": [
+        "python3",
+        "bin/claim-gate",
+        "--optimus"
+      ],
       "unit": "bool",
       "better": "higher",
       "owner": "greenlane",
@@ -20,7 +28,10 @@
     },
     {
       "name": "estate.zone_a_graph_drain_files",
-      "measure": ["bash", "bin/zone-a-drain-count"],
+      "measure": [
+        "bash",
+        "bin/zone-a-drain-count"
+      ],
       "unit": "files",
       "better": "lower",
       "owner": "greenlane",
@@ -37,6 +48,19 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
+    },
+    {
+      "name": "greenlane.cross_main_failure_cap",
+      "measure": [
+        "python3",
+        "-m",
+        "greenlane.cross_main_breaker",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Independent trusted-main execution of the actual Engine two-main unchanged-head identical-cause suppression, durable restart, changed-head re-admission, and UNKNOWN refusal (#8289); not a claim of external service availability"
     }
   ]
 }
