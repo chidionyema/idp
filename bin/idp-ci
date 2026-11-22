@@ -849,6 +849,36 @@ fi
 if [ "$FAST" = 1 ]; then
   if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
+  # 1d.1: the Lifeboat's Worker source and Node falsifiers are one tested unit.
+  # The existing submit-gate runs this same script: source cannot be promoted while
+  # its own tests are unparsed, absent, or failing. No separate workflow or retries.
+  # Scope it to Lifeboat and this gate so unrelated lanes pay nothing.
+  if touched 'platform/lifeboat/' 'bin/idp-ci'; then
+    if ! command -v node >/dev/null 2>&1; then
+      say "FAIL  lifeboat  Node.js unavailable in admission"
+      fail=1
+    else
+      node_major=$(node -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null)
+      if [ -z "$node_major" ] || [ "$node_major" -lt 22 ] 2>/dev/null; then
+        say "FAIL  lifeboat  Node.js 22+ required; got $(node --version 2>/dev/null)"
+        fail=1
+      else
+        lifeboat_out=$(cd "$IDP/platform/lifeboat" && node --test test/*.test.mjs 2>&1)
+        lifeboat_rc=$?
+        if [ "$lifeboat_rc" -eq 0 ]; then
+          say "ok    lifeboat $(printf '%s' "$lifeboat_out" | grep -E '^# (tests|pass|fail) ' | tr '\n' ' ')"
+        else
+          say "FAIL  lifeboat  Node tests reject this source (rc=$lifeboat_rc)"
+          # Preserve the failing assertion, not just the final 45 TAP summary lines.
+          printf '%s\n' "$lifeboat_out" | grep -B4 -A30 -E '^not ok [0-9]+' | head -130 | sed 's/^/      /' || true
+          printf '%s\n' "$lifeboat_out" | tail -17 | sed 's/^/      /'
+          fail=1
+        fi
+      fi
+    fi
+  else
+    say "ok    lifeboat unchanged against $IDP_CI_BASE"
+  fi
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
