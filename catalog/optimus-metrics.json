@@ -4,11 +4,7 @@
   "metrics": [
     {
       "name": "estate.platform_dirs_never_applied",
-      "measure": [
-        "python3",
-        "bin/idp-infra-inventory",
-        "--optimus"
-      ],
+      "measure": ["python3", "bin/idp-infra-inventory", "--optimus"],
       "unit": "directories",
       "better": "lower",
       "owner": "greenlane",
@@ -16,50 +12,19 @@
     },
     {
       "name": "claims.ship_contract_enforced",
-      "measure": [
-        "python3",
-        "bin/claim-gate",
-        "--optimus"
-      ],
+      "measure": ["python3", "bin/claim-gate", "--optimus"],
       "unit": "bool",
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when bin/claim-gate refuses a claim with no SHIP-CONTRACT and admits it with one (idp#8350)"
     },
     {
-      "name": "gates.unmarked_inner_bounds",
-      "measure": [
-        "python3",
-        "bin/timeout-budget",
-        "--optimus"
-      ],
-      "unit": "bounds",
+      "name": "estate.zone_a_graph_drain_files",
+      "measure": ["bash", "bin/zone-a-drain-count"],
+      "unit": "files",
       "better": "lower",
       "owner": "greenlane",
-      "description": "literal wall-clock bounds bin/timeout-budget refuses (idp#8251, ADR 0043)"
-    },
-    {
-      "name": "harness.protected_paths_covered",
-      "measure": [
-        "python3",
-        "harness/genesis-v1/bin/optimus-protected-paths.py"
-      ],
-      "unit": "paths",
-      "better": "higher",
-      "owner": "pennyd-glm",
-      "description": "Protected path prefixes the genesis v1 harness write-blocks (idp#8384)"
-    },
-    {
-      "name": "legion.missions_landed",
-      "measure": [
-        "python3",
-        "-c",
-        "import re, subprocess, sys\n\ndef run(*args):\n    p=subprocess.run(['git',*args],capture_output=True,text=True,timeout=35,check=True)\n    return p.stdout.strip()\n\ntry:\n    if run('rev-parse','--is-shallow-repository')!='false':\n        sys.exit('BLIND: history is shallow')\n    records=run('log','--format=%B%x00','HEAD').split('\\x00')\n    count=0\n    for message in records:\n        lines=message.strip().splitlines()\n        if not lines or not lines[0].startswith('agent-sandbox (auto): '):\n            continue\n        if not re.search(r'(?m)^Run: https://github\\.com/chidionyema/idp/actions/runs/[0-9]+\\s*$', message):\n            continue\n        if not re.search(r'(?m)^Greenlane-Head: [0-9a-f]{40}\\s*$', message):\n            continue\n        count+=1\nexcept (OSError,subprocess.SubprocessError) as exc:\n    sys.exit('BLIND: cannot verify reachable main history: '+str(exc))\nprint('optimus.legion.missions_landed='+str(count))\n"
-      ],
-      "unit": "missions",
-      "better": "higher",
-      "owner": "greenlane",
-      "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
+      "description": "Zone A Mac graph-drain artifacts on main (source + launchd template); decommissioned 2026-11-22, ingestion is Zone B cloud-only (idp#8412)"
     }
   ]
 }
