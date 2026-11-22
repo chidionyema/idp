@@ -324,6 +324,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     commit,
     tree,
     intake_rule: INTAKE_RULE,
+    release: { issue: release.issue, instruction_id: release.instruction_id },
     files: manifest,
     sanitized: prepared.sanitized,
     omniflow: { issue: OMNIFLOW_ISSUE, event: "OMNIFLOW-EVENT/v1", kind: "ASSIGN" },
