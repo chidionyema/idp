@@ -273,9 +273,7 @@ def test_trace_missing_custody_is_blind_not_a_success(tmp_path, monkeypatch):
     assert trace["state"] == "BLIND"
     assert trace["links"][0]["prompt_id"] == "prompt-0001"
     assert "private founder source" not in json.dumps(trace)
-    assert any(
-        x["reason"] == "CONTINUITY_DATABASE_NOT_SUPPLIED" for x in trace["gaps"]
-    )
+    assert any(x["reason"] == "CONTINUITY_DATABASE_NOT_SUPPLIED" for x in trace["gaps"])
 
 
 def test_trace_reconstructs_authoritative_custody_without_self_verifying(
