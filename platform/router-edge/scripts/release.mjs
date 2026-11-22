@@ -60,9 +60,11 @@ export async function release() {
     if (!fs.existsSync(wrangler) || !pinnedWranglerVersion(run(wrangler, ["--version"]))) {
       throw new Error("BLIND: pinned Wrangler 4.131.0 absent");
     }
-    // Source + zero-spend falsifiers first; no network mutation until all pass.
-    run("npm", ["test"]);
-    run("node", ["--test", "tests/release.falsifier.mjs"]);
+    // Tests ran in the prior credential-free GitHub step. Never execute npm here.
+    const preflight = process.env.RELEASE_PREFLIGHT_FILE;
+    if (!preflight || fs.readFileSync(preflight, "utf8").trim() !== sha) {
+      throw new Error("BLIND: exact-SHA preflight receipt missing");
+    }
     // Without a single previously active version, DO migration/bootstrap needs separate explicit authority.
     r.previous_version_id = activeRollbackId(run(wrangler, ["deployments", "status", "--json"]));
     const tag = immutableTag(sha);

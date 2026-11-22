@@ -47,7 +47,9 @@ def test_no_unverified_initial_deploy_or_silent_gate_removal():
     ):
         assert needle in source, needle
     assert 'run(wrangler, ["deploy"' not in source
-    assert 'run("npm", ["test"])' in source
+    assert 'run("npm", ["test"])' not in source
+    assert 'run("node", ["--test"' not in source
+    assert "RELEASE_PREFLIGHT_FILE" in source
 
 
 def test_three_negative_release_tests_execute_without_credentials():
