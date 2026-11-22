@@ -26,7 +26,7 @@ export const SOURCE_FILES = [
   { path: "src/data/generalPurposePersonaData.ts", content: "export const personas = [];\n" },
 ];
 
-export function makeFetch(existing = []) {
+export function makeFetch(existing = [], options = {}) {
   const journal = [];
   const head = existing.length > 0 ? "b".repeat(40) : null;
   const mainHead = "a".repeat(40);
@@ -50,6 +50,16 @@ export function makeFetch(existing = []) {
         headers: { "content-type": "application/json" },
       });
 
+    if (parsed.pathname === "/v1/github/installation-token") {
+      return ok(options.brokerResponse ?? {
+        schema: "MERIDIAN-GITHUB-LEASE-v1",
+        repository: REPO,
+        lane: "application-engineer",
+        permissions: { metadata: "read", contents: "write", issues: "write" },
+        token: "ghs_" + "x".repeat(48),
+        expires_at: new Date(Date.now() + 3_300_000).toISOString(),
+      });
+    }
     if (parsed.pathname === `/repos/${REPO}/git/ref/heads/${LANE}`) {
       return head
         ? ok({ ref: `refs/heads/${LANE}`, object: { sha: head, type: "commit" } })
