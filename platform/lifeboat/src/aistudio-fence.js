@@ -89,3 +89,52 @@ export function submissionReceipt({ commit, deduped = false }) {
     deduped,
   };
 }
+
+
+/**
+ * A browser-provided public label is never permission to publish. The only
+ * authority this projection consumes is a server-held, already-reviewed release
+ * manifest installed by the trusted estate. The manifest cannot be injected via
+ * JSON request, userscript, model or Drive payload. Absent/mismatched manifest
+ * means HOLD; private source must use private quarantine instead.
+ * This release predicate is a protective interlock, not a replacement for QUAD.
+ */
+export function requirePublicSourceRelease(accepted, env, mainHead) {
+  const raw = env?.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON;
+  if (typeof raw !== "string" || !raw || raw.length > 8192) {
+    throw new Error("PUBLIC_SOURCE_RELEASE_NOT_CONFIGURED");
+  }
+  let release;
+  try { release = JSON.parse(raw); }
+  catch { throw new Error("PUBLIC_SOURCE_RELEASE_INVALID"); }
+  if (!release || release.schema !== "MERIDIAN-PUBLIC-RELEASE-V1" ||
+      release.repo !== "chidionyema/idp" ||
+      release.source_sha !== mainHead ||
+      !HEX40.test(mainHead) ||
+      !Number.isSafeInteger(release.issue) || release.issue <= 0 ||
+      typeof release.instruction_id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$/.test(release.instruction_id) ||
+      !Array.isArray(release.files) || release.files.length !== accepted.length ||
+      release.files.length === 0 || release.files.length > MAX_FILES) {
+    throw new Error("PUBLIC_SOURCE_RELEASE_INVALID");
+  }
+  const seen = new Set();
+  const permitted = new Map();
+  for (const entry of release.files) {
+    if (!safeSourcePath(entry?.path) || seen.has(entry.path) ||
+        typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(entry.sha256) ||
+        !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
+      throw new Error("PUBLIC_SOURCE_RELEASE_INVALID");
+    }
+    seen.add(entry.path);
+    permitted.set(entry.path, entry);
+  }
+  for (const file of accepted) {
+    const entry = permitted.get(file.path);
+    if (!entry || entry.sha256 !== file.sha || entry.bytes !== file.bytes) {
+      throw new Error("UNREVIEWED_PUBLIC_SOURCE_REFUSED");
+    }
+  }
+  return { public_release_source: "TRUSTED_SERVER_CONFIGURATION", issue: release.issue,
+    instruction_id: release.instruction_id, source_sha: release.source_sha };
+}
