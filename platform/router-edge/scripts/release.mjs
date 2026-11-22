@@ -23,6 +23,9 @@ export function activeRollbackId(raw) {
   if (typeof id !== "string" || !UUID.test(id)) throw new Error("BLIND: no single 100-percent active rollback version");
   return id;
 }
+export function pinnedWranglerVersion(output) {
+  return /\b4\.131\.0\b/.test(output);
+}
 export function immutableTag(sha) {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("BLIND: SHA must be a full commit identifier");
   return "meridian-" + sha;
@@ -54,7 +57,7 @@ export async function release() {
     if (process.env.MERIDIAN_ROUTER_URL !== "https://llm.meridianlabs.cloud") {
       throw new Error("BLIND: target hostname differs from canonical Zone B endpoint");
     }
-    if (!fs.existsSync(wrangler) || !/^4\.131\.0\b/.test(run(wrangler, ["--version"]).trim())) {
+    if (!fs.existsSync(wrangler) || !pinnedWranglerVersion(run(wrangler, ["--version"]))) {
       throw new Error("BLIND: pinned Wrangler 4.131.0 absent");
     }
     // Source + zero-spend falsifiers first; no network mutation until all pass.

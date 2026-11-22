@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeRollbackId, requireMainSha, immutableTag } from "../scripts/release.mjs";
+import { activeRollbackId, requireMainSha, immutableTag, pinnedWranglerVersion } from "../scripts/release.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -21,4 +21,7 @@ test("refuse uncertain or split rollback origins", () => {
 test("immutable tags use full reviewed source SHA", () => {
   assert.equal(immutableTag(SHA), "meridian-" + SHA);
   assert.throws(() => immutableTag("main"), /BLIND/);
+  assert.equal(pinnedWranglerVersion(" ⛅️ wrangler 4.131.0"), true);
+  assert.equal(pinnedWranglerVersion("4.131.0"), true);
+  assert.equal(pinnedWranglerVersion("4.130.0"), false);
 });
