@@ -27,7 +27,11 @@ function makeNamespace(DOClass) {
       if (!instances.has(id)) {
         instances.set(id, new DOClass({ storage: createMemoryStorage() }));
       }
-      return instances.get(id);
+      return {
+        fetch(input, init) {
+          return instances.get(id).fetch(new Request(input, init));
+        },
+      };
     },
   };
 }
