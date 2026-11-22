@@ -223,7 +223,10 @@ def source_assess(
             check=False,
             env=safe_env,
         )
-        if version.returncode or version.stdout.strip() != f"ruff {TRUSTED_RUFF_VERSION}":
+        if (
+            version.returncode
+            or version.stdout.strip() != f"ruff {TRUSTED_RUFF_VERSION}"
+        ):
             return Verdict("REFUSE", "pre-CI hold: Ruff version mismatch")
         with tempfile.TemporaryDirectory(prefix="greenlane-pre-ci-") as folder:
             names = []
@@ -237,7 +240,9 @@ def source_assess(
                     check=False,
                 )
                 if blob.returncode:
-                    return Verdict("REFUSE", "pre-CI hold: candidate Python blob unavailable")
+                    return Verdict(
+                        "REFUSE", "pre-CI hold: candidate Python blob unavailable"
+                    )
                 target = Path(folder) / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(blob.stdout, encoding="utf-8")

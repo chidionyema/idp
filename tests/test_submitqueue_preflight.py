@@ -283,7 +283,7 @@ def test_python_source_ruff_refusal_happens_before_queue_ci(tmp_path):
 
     def runner(argv, **kwargs):
         if argv[:2] == ["trusted-test-ruff", "--version"]:
-            return SimpleNamespace(returncode=0, stdout="ruff 0.15.18\\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout="ruff 0.15.18\n", stderr="")
         if argv[0] == "trusted-test-ruff":
             inspected.append((argv, kwargs))
             assert argv[1:5] == [
