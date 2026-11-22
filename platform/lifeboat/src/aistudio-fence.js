@@ -112,6 +112,8 @@ export function requirePublicSourceRelease(accepted, env, mainHead) {
       release.source_sha !== mainHead ||
       !HEX40.test(mainHead) ||
       !Number.isSafeInteger(release.issue) || release.issue <= 0 ||
+      typeof release.agent !== "string" ||
+      !/^[a-z][a-z0-9_-]{2,63}$/.test(release.agent) ||
       typeof release.instruction_id !== "string" ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$/.test(release.instruction_id) ||
       !Array.isArray(release.files) || release.files.length !== accepted.length ||
@@ -136,5 +138,5 @@ export function requirePublicSourceRelease(accepted, env, mainHead) {
     }
   }
   return { public_release_source: "TRUSTED_SERVER_CONFIGURATION", issue: release.issue,
-    instruction_id: release.instruction_id, source_sha: release.source_sha };
+    agent: release.agent, instruction_id: release.instruction_id, source_sha: release.source_sha };
 }
