@@ -1,0 +1,27 @@
+name = "meridian-router-edge"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+[vars]
+COMMIT_SHA = "dev-local"
+DEPLOYMENT_ZONE = "zone-b-cloudflare-edge"
+DEFAULT_OUTPUT_FLOOR = "2048"
+UPSTREAM_TIMEOUT_MS = "45000"
+RESERVATION_TTL_MS = "120000"
+
+[[routes]]
+pattern = "llm.meridianlabs.cloud/*"
+zone_name = "meridianlabs.cloud"
+
+[[durable_objects.bindings]]
+name = "BUDGET_LEDGER"
+class_name = "BudgetLedgerDO"
+
+[[durable_objects.bindings]]
+name = "ROUTING_STATE"
+class_name = "RoutingStateDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetLedgerDO", "RoutingStateDO"]
