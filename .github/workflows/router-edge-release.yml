@@ -33,7 +33,7 @@ jobs:
           ./node_modules/.bin/wrangler --version | grep -Eq '(^|[^[:digit:]])4\.131\.0([^[:digit:]]|$)'
           npm test
           node --test tests/release.falsifier.mjs
-          printf '%s\\n' "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"
+          echo "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"
       - name: Release with bounded probes and rollback
         working-directory: platform/router-edge
         env:
