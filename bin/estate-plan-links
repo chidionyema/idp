@@ -9,10 +9,12 @@
     bin/estate-plan-links --json          the same, machine-readable
     bin/estate-plan-links --session ID    one session
     bin/estate-plan-links --strict        a missing link refuses too
+    bin/estate-plan-links --instruction ID --mission-db FILE --json
+                                         read-only causal trace of an instruction
 
 EXIT.  0 nothing is wrong.  4 a link is present and WRONG (unknown instruction, unresolvable
 founder prompt, a prompt bound to no protocol); with --strict, a MISSING link refuses too.
-2 usage.
+2 usage; 3 evidence BLIND in instruction trace mode.
 
 The links are derived from the estate's own ledgers -- ~/.estate/plans/<session>.jsonl for the
 plan, ~/.estate/plans/intents.jsonl for the instruction, ~/.estate/state/prompts.jsonl for the
@@ -38,6 +40,8 @@ def main(argv: list[str]) -> int:
     as_json = False
     strict = False
     session = ""
+    instruction = ""
+    mission_db = None
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -45,6 +49,19 @@ def main(argv: list[str]) -> int:
             as_json = True
         elif arg == "--strict":
             strict = True
+        elif arg in ("--instruction", "--mission-db"):
+            i += 1
+            if i >= len(argv):
+                sys.stderr.write(f"{arg} needs a value\n")
+                return 2
+            if arg == "--instruction":
+                instruction = argv[i]
+            else:
+                mission_db = argv[i]
+        elif arg.startswith("--instruction="):
+            instruction = arg.split("=", 1)[1]
+        elif arg.startswith("--mission-db="):
+            mission_db = arg.split("=", 1)[1]
         elif arg == "--session":
             i += 1
             if i >= len(argv):
@@ -61,6 +78,20 @@ def main(argv: list[str]) -> int:
             return 2
         i += 1
 
+    if instruction:
+        if not as_json or session or strict:
+            sys.stderr.write("--instruction requires --json, without --session/--strict\n")
+            return 2
+        try:
+            result = plan_links.trace_instruction(instruction, mission_db)
+        except ValueError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
+        print(json.dumps(result, indent=2, default=str))
+        return 3 if result["state"] == "BLIND" else 0
+    if mission_db:
+        sys.stderr.write("--mission-db requires --instruction\n")
+        return 2
     result = plan_links.audit(session or None)
 
     if as_json:
