@@ -17,6 +17,18 @@ const ENV = {
   GENESIS_REALTIME_URL: "https://genesis-founder-surface.pages.dev/realtime",
 };
 
+async function reviewedEnv(files, env = ENV) {
+  const prepared = await prepare(files);
+  return { ...env, AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON: JSON.stringify({
+    schema: "MERIDIAN-PUBLIC-RELEASE-V1",
+    repo: "chidionyema/idp",
+    source_sha: "a".repeat(40),
+    issue: 7760,
+    instruction_id: "FIR-07",
+    files: prepared.accepted.map((f) => ({path: f.path, sha256: f.sha, bytes: f.bytes})),
+  }) };
+}
+
 const posts = (journal, suffix) =>
   journal.filter((entry) => entry.method === "POST" && entry.path.endsWith(suffix));
 
@@ -42,7 +54,7 @@ test("prepare refuses a digest that disagrees with the bytes (59effb8f4)", async
 test("a finished stream turn becomes one sanitized commit and wakes the fleet", async () => {
   const { fetchImpl, journal } = makeFetch();
   const payload = { source: "stream", files: await encodeFiles(SOURCE_FILES) };
-  const receipt = await ingest(payload, ENV, fetchImpl);
+  const receipt = await ingest(payload, await reviewedEnv(payload.files), fetchImpl);
 
   assert.equal(receipt.ok, true);
   assert.equal(receipt.deduped, false);
@@ -73,7 +85,7 @@ test("the Drive channel dedupes into the stream channel's commit", async () => {
   const existing = prepared.accepted.map((file) => ({ path: file.path, sha: file.git_blob_sha }));
   const { fetchImpl, journal } = makeFetch(existing);
 
-  const receipt = await ingest({ source: "drive", files }, ENV, fetchImpl);
+  const receipt = await ingest({ source: "drive", files }, await reviewedEnv(files), fetchImpl);
 
   assert.equal(receipt.deduped, true);
   assert.equal(posts(journal, "/git/commits").length, 0);
@@ -151,7 +163,7 @@ test("protected paths refuse before any GitHub access, including in nested sourc
 test("first submit commit extends main and never becomes an orphan", async () => {
   const { fetchImpl, journal } = makeFetch();
   const files = await encodeFiles([SOURCE_FILES[0]]);
-  const receipt = await ingest({ source: "stream", files }, ENV, fetchImpl);
+  const receipt = await ingest({ source: "stream", files }, await reviewedEnv(files), fetchImpl);
   const post = posts(journal, "/git/commits")[0];
   assert.deepEqual(post.body.parents, ["a".repeat(40)]);
   assert.equal(receipt.lane, "submit/aistudio-auto-intake");
@@ -164,7 +176,7 @@ test("real Git blob digest controls idempotence, not SHA256", async () => {
   const { fetchImpl, journal } = makeFetch([
     { path: SOURCE_FILES[0].path, sha: prepared.accepted[0].git_blob_sha },
   ]);
-  const receipt = await ingest({ source: "stream", files }, ENV, fetchImpl);
+  const receipt = await ingest({ source: "stream", files }, await reviewedEnv(files), fetchImpl);
   assert.equal(receipt.deduped, true);
   assert.equal(posts(journal, "/git/blobs").length, 0);
   assert.equal(posts(journal, "/git/commits").length, 0);
@@ -175,7 +187,7 @@ test("100755 original stays executable in candidate tree", async () => {
   const { fetchImpl, journal } = makeFetch([
     { path: "src/engine/exec.sh", sha: "0".repeat(40), mode: "100755" },
   ]);
-  await ingest({ source: "stream", files }, ENV, fetchImpl);
+  await ingest({ source: "stream", files }, await reviewedEnv(files), fetchImpl);
   const tree = posts(journal, "/git/trees")[0].body.tree;
   assert.equal(tree[0].mode, "100755");
 });
@@ -185,8 +197,9 @@ test("symlink source cannot trigger even a GitHub blob POST", async () => {
   const { fetchImpl, journal } = makeFetch([
     { path: "src/external.ts", sha: "0".repeat(40), mode: "120000" },
   ]);
+  const env = await reviewedEnv(files);
   await assert.rejects(
-    () => ingest({ source: "stream", files }, ENV, fetchImpl),
+    () => ingest({ source: "stream", files }, env, fetchImpl),
     /EXISTING_FILE_MODE_REFUSED/,
   );
   assert.equal(journal.filter((x) => x.method === "POST").length, 0);
@@ -205,9 +218,46 @@ test("missing declared digest and byte length refuse source", async () => {
 test("configured relay cannot bypass the trusted submit gate", async () => {
   const files = await encodeFiles([SOURCE_FILES[0]]);
   const { fetchImpl, journal } = makeFetch();
-  const env = { ...ENV, OMNIFLOW_RELAY_URL: "https://relay.example/execute" };
+  const env = await reviewedEnv(files, { ...ENV, OMNIFLOW_RELAY_URL: "https://relay.example/execute" });
   const receipt = await ingest({ source: "stream", files }, env, fetchImpl);
   assert.equal(receipt.dispatch.promotion, "NOT_OBSERVED");
   assert.equal(journal.some((x) => x.path === "/execute"), false);
   assert.equal(posts(journal, "/greenlane.yml/dispatches").length, 0);
+});
+
+test("unreviewed browser source is held before any public Git write", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const { fetchImpl, journal } = makeFetch();
+  await assert.rejects(
+    () => ingest({ source: "stream", files, public: true }, ENV, fetchImpl),
+    (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
+  );
+  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+});
+
+test("model-written public release label cannot authorise its own bytes", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const reviewed = await reviewedEnv(files);
+  const tampered = [{ ...files[0], content_b64: btoa("changed model bytes"),
+    sha256: await (async () => {const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("changed model bytes"));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("");})(), bytes: 19 }];
+  const { fetchImpl, journal } = makeFetch();
+  await assert.rejects(
+    () => ingest({ source: "stream", files: tampered, public: true }, reviewed, fetchImpl),
+    (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
+  );
+  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+});
+
+test("invalid trusted manifest fails closed even with correct file content", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const trusted = await reviewedEnv(files);
+  const bad = { ...trusted, AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON: JSON.stringify({
+    ...JSON.parse(trusted.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON), source_sha: "b".repeat(40),
+  }) };
+  const { fetchImpl, journal } = makeFetch();
+  await assert.rejects(
+    () => ingest({ source: "stream", files }, bad, fetchImpl),
+    (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
+  );
+  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
 });
