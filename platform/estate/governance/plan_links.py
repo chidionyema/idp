@@ -28,6 +28,7 @@ prompt cannot be compiled -- is enforced here through the kit's own audit(), not
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -362,3 +363,243 @@ def audit(session: Optional[str] = None) -> Dict[str, Any]:
         "prompt_audit": prompts,
         "sessions": len(rows),
     }
+
+
+def trace_instruction(
+    instruction_id: str, mission_db: Optional[str] = None
+) -> Dict[str, Any]:
+    """Read-only, bounded reconstruction from real founder-plan and FLOW mission stores.
+
+    A mission event's incrementing DB key is NOT a cross-host causal parent, and
+    an external-effect receipt in SQLite is NOT a live independent readback.
+    Missing sources remain visible; no event is created or settled here.
+    """
+    if not isinstance(instruction_id, str) or not PROMPT_ID_RE.fullmatch(
+        instruction_id
+    ):
+        raise ValueError("instruction id must be a non-empty bounded identifier")
+    links = []
+    for row in link_rows():
+        if instruction_id not in [
+            row["declared_instruction"],
+            *row["observed_instructions"],
+        ]:
+            continue
+        prompt = row.get("founder_prompt") or {}
+        links.append(
+            {
+                "session": row["session"],
+                "instruction": instruction_id,
+                "link_type": (
+                    "DECLARED_PLAN_LINK"
+                    if row["declared_instruction"] == instruction_id
+                    else "OBSERVED_INTENT_LINK"
+                ),
+                "prompt_id": row.get("prompt_id") or None,
+                "prompt_fingerprint": prompt.get("fingerprint"),
+                "protocol": row.get("protocol") or None,
+                "prompt_verified": False,
+            }
+        )
+    result = {
+        "schema": "estate.instruction-trace.v1",
+        "instruction_id": instruction_id,
+        "authority": "READ_ONLY_FEDERATED_SOURCE_PROJECTION",
+        "operational_yield": "NOT_INDEPENDENTLY_VERIFIED",
+        "clock_accuracy": "UNVERIFIED; Unix REAL fractions are not certified milliseconds",
+        "links": links,
+        "missions": [],
+        "attempts": [],
+        "transitions": [],
+        "external_effects": [],
+        "checkpoints": [],
+        "gaps": [],
+    }
+    gaps = result["gaps"]
+    if not links:
+        gaps.append({"reason": "FOUNDER_PROMPT_LINK_NOT_OBSERVED"})
+    if not mission_db:
+        gaps.append({"reason": "CONTINUITY_DATABASE_NOT_SUPPLIED"})
+        result["state"] = "BLIND"
+        return result
+    from pathlib import Path
+    import sqlite3
+
+    # URI mode=ro is a mandatory read-only trust boundary; never instantiate
+    # MissionStore, because opening it executes schema migrations.
+    uri = Path(mission_db).expanduser().resolve().as_uri() + "?mode=ro"
+    try:
+        db = sqlite3.connect(uri, uri=True, timeout=3.0)
+    except sqlite3.Error:
+        gaps.append({"reason": "CONTINUITY_DATABASE_UNAVAILABLE"})
+        result["state"] = "BLIND"
+        return result
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute("PRAGMA query_only=ON")
+        # Follow only the authoritative parent_mission_id edges, never a
+        # timestamp-neighbour or matching GitHub SHA as a guessed parent.
+        rows = db.execute(
+            "WITH RECURSIVE family(mission_id) AS ("
+            " SELECT mission_id FROM missions WHERE instruction_id=?"
+            " UNION"
+            " SELECT m.mission_id FROM missions m JOIN family f"
+            " ON m.parent_mission_id=f.mission_id)"
+            " SELECT m.* FROM missions m JOIN family f ON f.mission_id=m.mission_id"
+            " ORDER BY m.created_at, m.mission_id LIMIT 129",
+            (instruction_id,),
+        ).fetchall()
+        if len(rows) > 128:
+            gaps.append({"reason": "MISSION_DESCENDANTS_TRUNCATED", "limit": 128})
+            rows = rows[:128]
+        mids = {r["mission_id"] for r in rows}
+        if not mids:
+            gaps.append({"reason": "DURABLE_MISSION_NOT_FOUND"})
+        for r in rows:
+            result["missions"].append(
+                {
+                    "mission_id": r["mission_id"],
+                    "parent_mission_id": r["parent_mission_id"],
+                    "instruction_id": r["instruction_id"],
+                    "mandate_id": r["mandate_id"],
+                    "mandate_version": r["mandate_version"],
+                    "owner": r["authoritative_owner"],
+                    "state": r["state"],
+                    "current_attempt_id": r["current_attempt_id"],
+                    "lease_epoch": r["current_lease_epoch"],
+                    "acceptance_contract_digest": r["acceptance_contract_digest"],
+                    "created_at_unix": r["created_at"],
+                    "clock_precision": "UNVERIFIED_SOURCE_CLOCK",
+                }
+            )
+            if r["parent_mission_id"] and r["parent_mission_id"] not in mids:
+                gaps.append(
+                    {
+                        "mission_id": r["mission_id"],
+                        "reason": "PARENT_MISSION_NOT_IN_PROJECTION",
+                    }
+                )
+            mission_id = r["mission_id"]
+            for a in db.execute(
+                "SELECT attempt_id, mission_id, agent_adapter, provider, model,"
+                " execution_host, failure_domain, base_sha, candidate_sha,"
+                " started_at, lease_epoch, state, failure_class"
+                " FROM mission_attempts WHERE mission_id=? ORDER BY started_at, attempt_id",
+                (mission_id,),
+            ):
+                result["attempts"].append(dict(a))
+            observed = list(
+                db.execute(
+                    "SELECT event_id, mission_id, attempt_id, lease_epoch,"
+                    " from_state, to_state, actor, cause, evidence, created_at"
+                    " FROM mission_events WHERE mission_id=? ORDER BY event_id",
+                    (mission_id,),
+                )
+            )
+            if not observed:
+                gaps.append(
+                    {"mission_id": mission_id, "reason": "TRANSITION_HISTORY_MISSING"}
+                )
+            previous = None
+            for e in observed:
+                if previous is not None and e["from_state"] != previous:
+                    gaps.append(
+                        {
+                            "mission_id": mission_id,
+                            "event_id": e["event_id"],
+                            "reason": "TRANSITION_REPLAY_MISMATCH",
+                        }
+                    )
+                if e["to_state"] is not None:
+                    previous = e["to_state"]
+                evidence = e["evidence"] or ""
+                result["transitions"].append(
+                    {
+                        "event_id": f"continuity:{mission_id}:{e['event_id']}",
+                        "local_event_id": e["event_id"],
+                        "mission_id": mission_id,
+                        "attempt_id": e["attempt_id"],
+                        "lease_epoch": e["lease_epoch"],
+                        "from_state": e["from_state"],
+                        "to_state": e["to_state"],
+                        "actor": e["actor"],
+                        "cause_sha256": hashlib.sha256(
+                            (e["cause"] or "").encode()
+                        ).hexdigest(),
+                        "evidence_sha256": hashlib.sha256(
+                            evidence.encode()
+                        ).hexdigest(),
+                        "effect_ref": (
+                            evidence if evidence.startswith("effect:") else None
+                        ),
+                        "created_at_unix": e["created_at"],
+                        "clock_precision": "UNVERIFIED_SOURCE_CLOCK",
+                        "parent_event_ids": None,
+                    }
+                )
+            if previous != r["state"]:
+                gaps.append(
+                    {"mission_id": mission_id, "reason": "PROJECTED_STATE_MISMATCH"}
+                )
+            for effect in db.execute(
+                "SELECT effect_id, mission_id, attempt_id, lease_epoch,"
+                " state, operation, target, intent_digest, external_transaction_ref,"
+                " external_receipt, observed_at, verified_by, reconciliation_status"
+                " FROM external_effects WHERE mission_id=? ORDER BY effect_id",
+                (mission_id,),
+            ):
+                receipt = effect["external_receipt"]
+                result["external_effects"].append(
+                    {
+                        "effect_id": effect["effect_id"],
+                        "mission_id": mission_id,
+                        "attempt_id": effect["attempt_id"],
+                        "lease_epoch": effect["lease_epoch"],
+                        "state": effect["state"],
+                        "operation": effect["operation"],
+                        "target_sha256": hashlib.sha256(
+                            effect["target"].encode()
+                        ).hexdigest(),
+                        "intent_digest": effect["intent_digest"],
+                        "external_transaction_ref": effect["external_transaction_ref"],
+                        "receipt_sha256": hashlib.sha256(receipt.encode()).hexdigest()
+                        if receipt
+                        else None,
+                        "observed_at_unix": effect["observed_at"],
+                        "verified_by_claim": effect["verified_by"],
+                        "reconciliation_status": effect["reconciliation_status"],
+                        "independently_rechecked": False,
+                    }
+                )
+            for chk in db.execute(
+                "SELECT checkpoint_id, mission_id, attempt_id, sequence,"
+                " content_digest, created_at FROM mission_checkpoints"
+                " WHERE mission_id=? ORDER BY sequence",
+                (mission_id,),
+            ):
+                result["checkpoints"].append(dict(chk))
+        result["state"] = "PARTIAL_UNVERIFIED" if mids else "BLIND"
+        if mids:
+            gaps.append({"reason": "CROSS_SYSTEM_CAUSAL_PARENTS_UNOBSERVED"})
+            gaps.append({"reason": "INDEPENDENT_LIVE_EFFECT_READBACK_MISSING"})
+    except (sqlite3.Error, TypeError, ValueError):
+        gaps.append({"reason": "CONTINUITY_READ_OR_SCHEMA_BLIND"})
+        result["state"] = "BLIND"
+        for key in (
+            "missions",
+            "attempts",
+            "transitions",
+            "external_effects",
+            "checkpoints",
+        ):
+            result[key] = []
+    finally:
+        db.close()
+    result["coverage"] = {
+        "missions": len(result["missions"]),
+        "attempts": len(result["attempts"]),
+        "transition_events": len(result["transitions"]),
+        "external_effect_intents": len(result["external_effects"]),
+        "verified_live_effects": 0,
+    }
+    return result
