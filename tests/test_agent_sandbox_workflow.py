@@ -629,3 +629,40 @@ def test_automatic_missions_use_discovery_and_only_the_selected_secret():
     assert "LEGION_PAID_PROVIDERS" in admit["env"]
     assert "LEGION_DISABLED_PROVIDERS" in admit["env"]
     assert "firewall" in JOBS["submit-lane"]["needs"]
+
+
+def test_submit_lane_bootstraps_exact_hook_python_and_falsifies_missing_pytest():
+    """Run 45003840186: git push failed after agent success with /usr/bin/python3 missing pytest.
+
+    The executing python3 and the installer must be the same setup-python interpreter;
+    readiness must run before a CLAIM is created, not for the first time in pre-push.
+    """
+    steps = _steps("submit-lane")
+    setup = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    install = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("name", "").startswith("Install and execute the exact estate")
+    )
+    claim = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("name", "").startswith("Claim the work")
+    )
+    commit = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("name", "").startswith("Commit through the estate")
+    )
+    assert setup < install < claim < commit
+    assert steps[setup]["with"]["python-version"] == "3.12"
+    cmd = steps[install]["run"]
+    assert "python3 -m pip install" in cmd
+    assert "pytest==8.4.2" in cmd
+    assert "python3 -m pytest --version" in cmd
+    assert "bin/idp-production-readiness" in cmd
+    assert "sudo apt-get install -y -qq shellcheck" in cmd
