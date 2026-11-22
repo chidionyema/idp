@@ -28,8 +28,8 @@ jobs:
         working-directory: platform/router-edge
         run: |
           set -euo pipefail
-          # No package-lock exists yet; exact top-level versions, checked again in the release adapter.
-          npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0 esbuild@0.24.0
+          # No package-lock yet: use the repo's esbuild pin; override Wrangler only for versioned releases.
+          npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0
           ./node_modules/.bin/wrangler --version | grep -Eq '(^|[^[:digit:]])4\.131\.0([^[:digit:]]|$)'
           npm test
           node --test tests/release.falsifier.mjs
