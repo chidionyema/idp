@@ -116,6 +116,7 @@ def assess(base: str, candidate: str, repo: str, runner=None) -> Verdict:
         return Verdict("UNKNOWN", f"trusted gate unavailable: {type(exc).__name__}")
     return interpret(base, p.returncode, p.stdout)
 
+
 # Fast CI runs MUST NOT be the first observer of deterministic source defects.
 # This is a cost-only admission pass: it reads Git objects, never executes
 # candidate code, and does not replace protected required checks.
