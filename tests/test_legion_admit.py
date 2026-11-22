@@ -478,11 +478,8 @@ def test_auto_excludes_unfunded_and_disabled(tmp_path):
     routes = mod.auto_candidates(tmp_path, env)
     assert {r["provider"] for r in routes} == {"north"}
     assert routes[0]["base"] == "https://north.example/v1"
-    env["LEGION_PAID_PROVIDERS"] = "south"
-    assert {r["provider"] for r in mod.auto_candidates(tmp_path, env)} == {
-        "north",
-        "south",
-    }
+    env["LEGION_PAID_PROVIDERS"] = "south"  # stale flag is never spend authority
+    assert {r["provider"] for r in mod.auto_candidates(tmp_path, env)} == {"north"}
 
 
 def test_auto_rate_limit_skips_account_not_only_model(tmp_path):
@@ -657,3 +654,56 @@ def test_an_unreadable_cooldown_file_cools_nothing(tmp_path):
     cool.write_text('["north"]')
     assert mod.load_cooldown(cool, 0.0) == {}
     assert mod.load_cooldown(None, 0.0) == {}
+
+
+def test_paid_catalogue_route_refused_before_network_even_with_old_allowlist(tmp_path):
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "south", "paid", 2)
+    env = {"SOUTH_API_KEY": "present", "LEGION_PAID_PROVIDERS": "south"}
+    assert mod.auto_candidates(tmp_path, env) == []
+    stale = {"provider": "south", "model": "capable", "class": "paid",
+             "price_in": 2, "price_out": 2}
+    seen = []
+    selected, observations = mod.auto_select(
+        [stale], env, lambda route, unused: seen.append(route) or {"verdict": "capacity"}
+    )
+    assert selected is None and seen == []
+    assert observations[0]["verdict"] == "cost-unverified"
+    with mock.patch("urllib.request.build_opener") as opener:
+        assert mod.auto_probe(stale, env)["verdict"] == "cost-unverified"
+        opener.assert_not_called()
+
+
+def test_unpriced_or_falsely_free_record_cannot_probe_or_launch(tmp_path):
+    from unittest import mock
+
+    mod = _auto_module()
+    env = {"NORTH_API_KEY": "present"}
+    forged = {"provider": "north", "model": "capable", "class": "free",
+              "price_in": 0, "price_out": 1}
+    selected, observations = mod.auto_select([forged], env)
+    assert selected is None and observations[0]["verdict"] == "cost-unverified"
+    with mock.patch("urllib.request.build_opener") as opener:
+        assert mod.auto_probe(forged, env)["verdict"] == "cost-unverified"
+        opener.assert_not_called()
+    with pytest.raises(ValueError, match="COST_UNVERIFIED"):
+        mod.auto_launch(tmp_path, {"decision": "ADMITTED", "route": forged},
+                        "task", tmp_path, env)
+
+
+def test_remote_legacy_model_probe_is_refused_before_network(tmp_path):
+    from unittest import mock
+
+    mod = _auto_module()
+    with (
+        mock.patch.dict(os.environ, {
+            "GEMINI_API_KEY": "secret",
+            "LEGION_GOOGLE_BASE": "https://vendor.example/v1",
+        }),
+        mock.patch("urllib.request.urlopen") as remote,
+    ):
+        result = mod.probe("google", "gemini-test")
+    assert result["verdict"] == "cost-unverified"
+    remote.assert_not_called()

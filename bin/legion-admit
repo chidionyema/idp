@@ -12,8 +12,9 @@ delivery cannot classify a change differently.
             `paths=` token). They are validated by idp-agent-base-apply.admit(), the
             same Proof 2 boundary the submit lane applies, at the exact commit the
             agent will start from. No scope, or an inadmissible one: REFUSED, exit 2.
-  capacity  each provider lane the run may use is sent one 1-token request. The first
-            that answers 200 is selected. None: REFUSED, exit 75, in seconds.
+  capacity  paid or cost-unverified legacy vendor routes are refused without any
+            network call. Only catalogue-free zero-price auto routes can be probed;
+            that classification alone is not provider-side billing certification.
 
 Writes into --out: scope.json (the exact bytes the submit lane verifies),
 scope.sha256, contract.txt (appended to the agent's task) and admission.json.
@@ -140,6 +141,11 @@ def probe(lane: str, model: str) -> dict:
     if not key:
         return {"lane": lane, "model": model, "verdict": "no-key"}
     base = os.environ.get(env_base, default_base).rstrip("/")
+    # Legacy Gemini/MiniMax probes can consume paid API tokens. Without an existing
+    # independently authenticated no-charge entitlement, they cannot run remotely.
+    # Loopback is retained solely for the real local HTTP falsifier in this suite.
+    if urlsplit(base).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return {"lane": lane, "model": model, "verdict": "cost-unverified"}
     body = json.dumps(
         {
             "model": model,
@@ -202,8 +208,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def zero_catalogue_cost(route: dict) -> bool:
+    """Necessary zero-price boundary, not proof of the account's remaining free quota."""
+    return (
+        isinstance(route, dict)
+        and route.get("class") == "free"
+        and type(route.get("price_in")) in (int, float)
+        and type(route.get("price_out")) in (int, float)
+        and route["price_in"] == 0
+        and route["price_out"] == 0
+    )
+
+
 def auto_candidates(directory: Path, env: dict) -> list[dict]:
-    paid = set(env.get("LEGION_PAID_PROVIDERS", "").split(",")) - {""}
+    # LEGION_PAID_PROVIDERS cannot grant new expenditure, even when set on a
+    # historic workflow/environment. A new paid lane requires separate authority.
     disabled = set(env.get("LEGION_DISABLED_PROVIDERS", "").split(",")) - {""}
     routes = []
     for path in sorted(directory.glob("*.toml")):
@@ -236,7 +255,7 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
             continue
         for model in spec["models"]:
             cls = model["class"]
-            if cls != "free" and (cls != "paid" or provider not in paid):
+            if cls != "free":
                 continue
             context = model["context_window"]
             cost_in = model["price_in_per_mtok"]
@@ -272,6 +291,10 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
 
 
 def auto_probe(route: dict, env: dict) -> dict:
+    if not zero_catalogue_cost(route):
+        return {"provider": route.get("provider", "UNKNOWN"),
+                "model": route.get("model", "UNKNOWN"),
+                "verdict": "cost-unverified"}
     payload = {
         "model": route["model"],
         "messages": [
@@ -383,6 +406,13 @@ def auto_select(
     cooldown = {} if cooldown is None else cooldown
     now = time.time() if now is None else now
     for route in routes:
+        # Defence in depth: reject injected or stale paid admission records
+        # before invoking even an injected probe callback.
+        if not zero_catalogue_cost(route):
+            observations.append({"provider": route.get("provider", "UNKNOWN"),
+                                 "model": route.get("model", "UNKNOWN"),
+                                 "verdict": "cost-unverified"})
+            continue
         provider = route["provider"]
         if provider in unavailable:
             continue
@@ -418,6 +448,9 @@ def auto_launch(
     directory: Path, record: dict, task: str, session_dir: Path, env: dict
 ) -> int:
     selected = record.get("route")
+    # A prior admission is not spend authority. Recheck at actual egress.
+    if not zero_catalogue_cost(selected):
+        raise ValueError("COST_UNVERIFIED: paid or unknown model route")
     env = dict(env)
     env[env.get("ADMITTED_KEY_ENV", "")] = env.get("LEGION_SELECTED_KEY", "")
     if record.get("decision") != "ADMITTED" or selected not in auto_candidates(
