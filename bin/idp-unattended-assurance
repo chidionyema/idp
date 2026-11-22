@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Read-only, bounded failure-intelligence census for an existing Chronos cloud run.
+
+A repeated unsuccessful workflow is evidence of an outcome pattern, NOT proof of
+an identical root cause. Missing assurance metadata is UNKNOWN, never certified.
+No model, state store, scheduler, write token, incident ticket or production effect.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REGISTRY = ROOT / "catalog" / "critical-functions.json"
+REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+MAX_RUNS = 100
+
+
+def analyse(runs: list[dict], registry: dict, repo: str, recorded_at: str) -> dict:
+    """Deterministic analysis of a bounded snapshot; no inferred causal claims."""
+    if not isinstance(runs, list) or not runs or len(runs) > MAX_RUNS:
+        raise ValueError("no usable bounded workflow-run sample")
+    if not isinstance(registry, dict) or not isinstance(registry.get("functions"), list):
+        raise ValueError("critical-function registry unavailable or malformed")
+    if not all(isinstance(run, dict) for run in runs):
+        raise ValueError("workflow run is not an object")
+
+    candidates = defaultdict(lambda: {"ids": set(), "shas": set(), "urls": []})
+    completed = 0
+    failures = 0
+    uncertain = 0
+    for run in runs:
+        state = run.get("status")
+        conclusion = run.get("conclusion")
+        if state != "completed":
+            uncertain += 1
+            continue
+        completed += 1
+        if conclusion != "failure":
+            continue
+        failures += 1
+        # Workflow identity and branch identify only a recurring symptom class.
+        name = str(run.get("name") or "UNKNOWN")[:110]
+        branch = str(run.get("head_branch") or "UNKNOWN")[:110]
+        key = (str(run.get("workflow_id") or name)[:110], name, branch)
+        group = candidates[key]
+        if isinstance(run.get("id"), int):
+            group["ids"].add(run["id"])
+        if isinstance(run.get("head_sha"), str) and re.fullmatch(r"[0-9a-f]{40}", run["head_sha"]):
+            group["shas"].add(run["head_sha"])
+        url = run.get("html_url")
+        if isinstance(url, str) and url.startswith(f"https://github.com/{repo}/actions/runs/"):
+            group["urls"].append(url)
+
+    repeats = []
+    for (_id, name, branch), group in candidates.items():
+        if len(group["shas"]) < 2:
+            continue
+        repeats.append({
+            "workflow": name,
+            "branch": branch,
+            "distinct_failed_shas": len(group["shas"]),
+            "observed_runs": len(group["ids"]),
+            "sample_urls": sorted(set(group["urls"]))[:3],
+            "epistemic_state": "RECURRING_FAILURE_OUTCOME_NOT_CAUSAL_CLASS",
+        })
+    repeats.sort(key=lambda x: (-x["distinct_failed_shas"], x["workflow"], x["branch"]))
+
+    unknown = []
+    for function in registry["functions"]:
+        if not isinstance(function, dict) or not isinstance(function.get("id"), str):
+            raise ValueError("malformed critical function")
+        modes = function.get("failure_modes")
+        if not isinstance(modes, list) or not modes:
+            unknown.append({"id": function["id"],
+                            "severity": function.get("severity", "UNKNOWN"),
+                            "gap": "NO_EXPLICIT_FAILURE_MODE_MAP",
+                            "evidence_state": "UNKNOWN"})
+    unknown.sort(key=lambda x: (x["severity"] != "critical", x["id"]))
+
+    return {
+        "schema": "meridian.assurance.observation.v1",
+        "recorded_at": recorded_at,
+        "repo": repo,
+        "state": "MEASURED_NOT_OPERATIONALLY_ASSURED",
+        "source": "bounded_github_workflow_runs_and_versioned_critical_functions",
+        "coverage": {
+            "sampled_runs": len(runs), "completed_runs": completed,
+            "failed_runs": failures, "nonterminal_runs": uncertain,
+            "max_runs": MAX_RUNS,
+            "sample_may_be_truncated": len(runs) == MAX_RUNS,
+            "critical_function_denominator": len(registry["functions"]),
+            "critical_functions_without_explicit_failure_map": len(unknown),
+            "estate_wide_denominator": "UNKNOWN",
+        },
+        "suspected_recurrences": repeats[:10],
+        "uncharacterised_functions": unknown,
+        "next_falsifiable_target": unknown[0]["id"] if unknown else None,
+        "independent_operational_effect": "UNKNOWN",
+        "paid_inference_calls": 0,
+        "assurance_owner": "chidionyema/idp#7819",
+    }
+
+
+def live_runs(repo: str) -> list[dict]:
+    proc = subprocess.run(
+        ["gh", "api", "-X", "GET", f"repos/{repo}/actions/runs?per_page={MAX_RUNS}"],
+        capture_output=True, text=True, timeout=35, check=False,
+    )
+    if proc.returncode:
+        raise RuntimeError("github_actions_read_unavailable")
+    data = json.loads(proc.stdout)
+    if not isinstance(data, dict) or not isinstance(data.get("workflow_runs"), list):
+        raise ValueError("github_actions_response_missing_workflow_runs")
+    return data["workflow_runs"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--repo", default="chidionyema/idp")
+    p.add_argument("--registry", type=Path, default=REGISTRY)
+    p.add_argument("--runs-json", type=Path, help="offline fixture, no network")
+    p.add_argument("--now", help="ISO-8601 UTC reference for deterministic fixtures")
+    p.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+    recorded_at = args.now or dt.datetime.now(dt.timezone.utc).isoformat()
+    try:
+        if not REPO.fullmatch(args.repo):
+            raise ValueError("invalid_repository_identifier")
+        registry = json.loads(args.registry.read_text(encoding="utf-8"))
+        if args.runs_json:
+            data = json.loads(args.runs_json.read_text(encoding="utf-8"))
+            runs = data.get("workflow_runs") if isinstance(data, dict) else data
+        else:
+            runs = live_runs(args.repo)
+        result = analyse(runs, registry, args.repo, recorded_at)
+        code = 0
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError,
+            json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+        # No credential, command stderr, or other potentially sensitive data in evidence.
+        result = {"schema": "meridian.assurance.observation.v1",
+                  "recorded_at": recorded_at, "repo": args.repo, "state": "BLIND",
+                  "reason_class": type(exc).__name__,
+                  "independent_operational_effect": "UNKNOWN"}
+        code = 2
+    if args.json:
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    else:
+        if code:
+            print("ASSURANCE BLIND: source data unavailable; no positive assurance verdict")
+        else:
+            c = result["coverage"]
+            print(f"ASSURANCE OBSERVED {c['sampled_runs']} runs; {len(result['suspected_recurrences'])} "
+                  f"recurrence candidates; {c['critical_functions_without_explicit_failure_map']}/"
+                  f"{c['critical_function_denominator']} functions uncharacterised; "
+                  "operational effect UNKNOWN")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
