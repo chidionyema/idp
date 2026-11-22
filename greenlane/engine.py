@@ -21,6 +21,7 @@ import json
 import math
 import os
 
+from .cross_main_breaker import LIMIT, normalize_epochs, prune_epochs, record_failure
 from .learning import choose_batch_size, fingerprint, repeated_exact_failure
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Protocol
@@ -126,6 +127,7 @@ class State:
         default_factory=dict
     )  # founder 2026-11-20: landed is not operational. lane -> {head, tip, batch, landed}: a
     # landed lane stays here until its ship contract is proven live, or fails with evidence.
+    failure_epochs: dict[str, dict] = field(default_factory=dict)
 
     def dumps(self) -> str:
         d = asdict(self)
@@ -153,6 +155,7 @@ class State:
         st.history = [dict(r) for r in d.get("history") or []][-HISTORY_KEEP:]
         st.landings = [dict(r) for r in d.get("landings") or []][-HISTORY_KEEP:]
         st.verifying = {str(k): dict(v) for k, v in (d.get("verifying") or {}).items()}
+        st.failure_epochs = normalize_epochs(d.get("failure_epochs"))
         if d.get("batch"):
             b = d["batch"]
             st.batch = Batch(
@@ -456,6 +459,7 @@ class Engine:
         for name in list(self.s.lanes):
             if name not in heads:
                 del self.s.lanes[name]  # branch gone: nothing to prove
+        prune_epochs(self.s.failure_epochs, heads)
         for name in list(self.s.timed):
             seen = self.s.timed[name]
             if not seen:
@@ -661,12 +665,16 @@ class Engine:
             lane = self.s.lanes[name]
             lane.attempts += 1
             cause = fingerprint(reason)
+            epochs = self.s.failure_epochs
+            distinct_mains = record_failure(epochs, name, head, b.base, cause)
+            across_main_cap = distinct_mains >= LIMIT
             repeated = repeated_exact_failure(self.s.history, name, head, b.base, cause)
             # An admission block does not become green by re-running the
             # identical source/baseline. Keep the failed lane visible for the
             # owner; a changed HEAD or baseline re-arms the lifecycle.
             admission_blocked = "runner-not-allocated:" in reason
-            if lane.attempts <= self.retries and not repeated and not admission_blocked:
+            retryable = lane.attempts <= self.retries and not repeated
+            if retryable and not admission_blocked and not across_main_cap:
                 # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
                 # and `_start_batch` serves `queued` before the pending list -- so a lane that
                 # had already spent a full check suite ran as a ONE-lane batch in front of lanes
@@ -709,7 +717,14 @@ class Engine:
                 if admission_blocked:
                     lane.reason = f"infra admission hold [no-runner]: {reason}"
                     lane.judged_on = b.base
-                if repeated:
+                if across_main_cap:
+                    lane.reason = (
+                        f"learned hold [cross-main:{cause}]: unchanged {head[:12]} "
+                        f"failed the same cause on {distinct_mains} distinct main SHAs; "
+                        f"new source required; {reason}"
+                    )
+                    lane.judged_on = ""
+                elif repeated:
                     # Exact cause, source and trusted baseline failed twice: no-op CI
                     # repetitions cannot alter the source. A new head/main re-arms it.
                     lane.reason = f"learned hold [{cause}]: fix source; {reason}"
@@ -722,6 +737,8 @@ class Engine:
                     action = "learned-hold"
                 if admission_blocked:
                     action = "runner-admission-hold"
+                if across_main_cap:
+                    action = "cross-main-hold"
                 self._record(b, outcome, action, reason)
             self.log.append(
                 f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
@@ -761,6 +778,11 @@ class Engine:
             r["action"] = action
         if reason:
             r["reason"] = reason[:160]
+        if len(b.members) == 1:
+            name, head, _ = b.members[0]
+            epoch = self.s.failure_epochs.get(name)
+            if epoch and epoch.get("head") == head:
+                r["distinct_failed_mains"] = len(epoch.get("bases", []))
         self.s.history.append(r)
         del self.s.history[:-HISTORY_KEEP]
 
