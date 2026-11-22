@@ -365,18 +365,25 @@ def audit(session: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
-def trace_instruction(instruction_id: str, mission_db: Optional[str] = None) -> Dict[str, Any]:
+def trace_instruction(
+    instruction_id: str, mission_db: Optional[str] = None
+) -> Dict[str, Any]:
     """Read-only, bounded reconstruction from real founder-plan and FLOW mission stores.
 
     A mission event's incrementing DB key is NOT a cross-host causal parent, and
     an external-effect receipt in SQLite is NOT a live independent readback.
     Missing sources remain visible; no event is created or settled here.
     """
-    if not isinstance(instruction_id, str) or not PROMPT_ID_RE.fullmatch(instruction_id):
+    if not isinstance(instruction_id, str) or not PROMPT_ID_RE.fullmatch(
+        instruction_id
+    ):
         raise ValueError("instruction id must be a non-empty bounded identifier")
     links = []
     for row in link_rows():
-        if instruction_id not in [row["declared_instruction"], *row["observed_instructions"]]:
+        if instruction_id not in [
+            row["declared_instruction"],
+            *row["observed_instructions"],
+        ]:
             continue
         prompt = row.get("founder_prompt") or {}
         links.append(
@@ -467,7 +474,10 @@ def trace_instruction(instruction_id: str, mission_db: Optional[str] = None) -> 
             )
             if r["parent_mission_id"] and r["parent_mission_id"] not in mids:
                 gaps.append(
-                    {"mission_id": r["mission_id"], "reason": "PARENT_MISSION_NOT_IN_PROJECTION"}
+                    {
+                        "mission_id": r["mission_id"],
+                        "reason": "PARENT_MISSION_NOT_IN_PROJECTION",
+                    }
                 )
             mission_id = r["mission_id"]
             for a in db.execute(
@@ -487,7 +497,9 @@ def trace_instruction(instruction_id: str, mission_db: Optional[str] = None) -> 
                 )
             )
             if not observed:
-                gaps.append({"mission_id": mission_id, "reason": "TRANSITION_HISTORY_MISSING"})
+                gaps.append(
+                    {"mission_id": mission_id, "reason": "TRANSITION_HISTORY_MISSING"}
+                )
             previous = None
             for e in observed:
                 if previous is not None and e["from_state"] != previous:
@@ -514,15 +526,21 @@ def trace_instruction(instruction_id: str, mission_db: Optional[str] = None) -> 
                         "cause_sha256": hashlib.sha256(
                             (e["cause"] or "").encode()
                         ).hexdigest(),
-                        "evidence_sha256": hashlib.sha256(evidence.encode()).hexdigest(),
-                        "effect_ref": evidence if evidence.startswith("effect:") else None,
+                        "evidence_sha256": hashlib.sha256(
+                            evidence.encode()
+                        ).hexdigest(),
+                        "effect_ref": (
+                            evidence if evidence.startswith("effect:") else None
+                        ),
                         "created_at_unix": e["created_at"],
                         "clock_precision": "UNVERIFIED_SOURCE_CLOCK",
                         "parent_event_ids": None,
                     }
                 )
             if previous != r["state"]:
-                gaps.append({"mission_id": mission_id, "reason": "PROJECTED_STATE_MISMATCH"})
+                gaps.append(
+                    {"mission_id": mission_id, "reason": "PROJECTED_STATE_MISMATCH"}
+                )
             for effect in db.execute(
                 "SELECT effect_id, mission_id, attempt_id, lease_epoch,"
                 " state, operation, target, intent_digest, external_transaction_ref,"
@@ -567,7 +585,13 @@ def trace_instruction(instruction_id: str, mission_db: Optional[str] = None) -> 
     except (sqlite3.Error, TypeError, ValueError):
         gaps.append({"reason": "CONTINUITY_READ_OR_SCHEMA_BLIND"})
         result["state"] = "BLIND"
-        for key in ("missions", "attempts", "transitions", "external_effects", "checkpoints"):
+        for key in (
+            "missions",
+            "attempts",
+            "transitions",
+            "external_effects",
+            "checkpoints",
+        ):
             result[key] = []
     finally:
         db.close()
