@@ -40,7 +40,27 @@ export class BudgetLedgerDO implements DurableObject {
       await this.state.storage.put(STORAGE_KEY, fresh);
       return fresh;
     }
+    // Reap expired reservations so crashed requests never leak budget
+    let mutated = false;
+    for (const [id, entry] of Object.entries(stored.reservations)) {
+      if (entry.expiresAtMs <= nowMs) {
+        delete stored.reservations[id];
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      await this.state.storage.put(STORAGE_KEY, stored);
+    }
+    return stored;
+  }
 
+  private sumReserved(snap: LedgerSnapshot): number {
+    let total = 0;
+    for (const entry of Object.values(snap.reservations)) {
+      total += entry.estimatedUsd;
+    }
+    return total;
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -154,24 +174,3 @@ export class BudgetLedgerDO implements DurableObject {
     }
   }
 }
-    // Reap expired reservations so crashed requests never leak budget
-    let mutated = false;
-    for (const [id, entry] of Object.entries(stored.reservations)) {
-      if (entry.expiresAtMs <= nowMs) {
-        delete stored.reservations[id];
-        mutated = true;
-      }
-    }
-    if (mutated) {
-      await this.state.storage.put(STORAGE_KEY, stored);
-    }
-    return stored;
-  }
-
-  private sumReserved(snap: LedgerSnapshot): number {
-    let total = 0;
-    for (const entry of Object.values(snap.reservations)) {
-      total += entry.estimatedUsd;
-    }
-    return total;
-  }
