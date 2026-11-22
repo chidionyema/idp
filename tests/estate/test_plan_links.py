@@ -7,6 +7,7 @@ not a test, and a gate that cannot fail is not a gate (AGENTS.md section 9, R1 a
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 
@@ -17,6 +18,8 @@ if ESTATE_PKG not in sys.path:
 
 from governance import founder_intake  # noqa: E402
 from governance import plan_links  # noqa: E402
+from continuity.schema import SCHEMA  # noqa: E402
+from continuity.schema2 import SCHEMA_2  # noqa: E402
 
 
 def _home(tmp_path, monkeypatch):
@@ -176,3 +179,190 @@ def test_the_door_passes_on_a_correct_link(tmp_path, monkeypatch):
         timeout=60,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def _continuity_db(tmp_path):
+    path = tmp_path / "continuity.sqlite"
+    db = sqlite3.connect(path)
+    db.executescript(SCHEMA)
+    db.executescript(SCHEMA_2)
+    db.execute(
+        "INSERT INTO missions (mission_id, instruction_id, mandate_id,"
+        " mandate_version, goal, acceptance_contract_digest, risk_class,"
+        " state, authoritative_owner, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            "m1",
+            "FIR-02",
+            "mandate",
+            1,
+            "deploy and verify",
+            "digest",
+            "LOW",
+            "READY",
+            "legion",
+            10.125,
+        ),
+    )
+    db.execute(
+        "INSERT INTO mission_events"
+        " (mission_id, from_state, to_state, actor, cause, evidence, created_at)"
+        " VALUES (?,?,?,?,?,?,?)",
+        ("m1", "ACCEPTED", "READY", "legion", "root accepted", "", 10.125),
+    )
+    db.execute(
+        "INSERT INTO mission_attempts"
+        " (attempt_id, mission_id, agent_adapter, provider, model,"
+        " execution_host, failure_domain, worktree_id, base_sha,"
+        " started_at, lease_epoch, lease_expires_at, state)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "a1",
+            "m1",
+            "legion",
+            "google",
+            "UNKNOWN",
+            "cloud",
+            "remote",
+            "work",
+            "a" * 40,
+            10.125,
+            1,
+            50.0,
+            "RUNNING",
+        ),
+    )
+    db.execute(
+        "INSERT INTO external_effects"
+        " (effect_id, mission_id, attempt_id, lease_epoch, mandate_version,"
+        " operation, target, idempotency_key, intent_digest, state,"
+        " external_receipt, verified_by, reconciliation_status)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "e1",
+            "m1",
+            "a1",
+            1,
+            1,
+            "deploy",
+            "https://private.example/token",
+            "idem",
+            "digest",
+            "OBSERVED",
+            '{"ok":true}',
+            "agent",
+            "RECONCILED",
+        ),
+    )
+    db.commit()
+    db.close()
+    return path
+
+
+def test_trace_missing_custody_is_blind_not_a_success(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="FIR-02", prompt="prompt-0001")
+    _intent(home, "s1", "FIR-02")
+    _prompt(
+        home,
+        id="prompt-0001",
+        session="s1",
+        text="private founder source must not leave its custody",
+    )
+    trace = plan_links.trace_instruction("FIR-02")
+    assert trace["state"] == "BLIND"
+    assert trace["links"][0]["prompt_id"] == "prompt-0001"
+    assert "private founder source" not in json.dumps(trace)
+    assert any(x["reason"] == "CONTINUITY_DATABASE_NOT_SUPPLIED" for x in trace["gaps"])
+
+
+def test_trace_reconstructs_authoritative_custody_without_self_verifying(
+    tmp_path, monkeypatch
+):
+    _home(tmp_path, monkeypatch)
+    path = _continuity_db(tmp_path)
+    trace = plan_links.trace_instruction("FIR-02", str(path))
+    assert trace["state"] == "PARTIAL_UNVERIFIED"
+    assert trace["missions"][0]["owner"] == "legion"
+    assert trace["attempts"][0]["provider"] == "google"
+    assert trace["transitions"][0]["to_state"] == "READY"
+    assert trace["external_effects"][0]["independently_rechecked"] is False
+    assert trace["coverage"]["verified_live_effects"] == 0
+    assert trace["clock_accuracy"].startswith("UNVERIFIED")
+    assert trace["transitions"][0]["parent_event_ids"] is None
+    assert "private.example" not in json.dumps(trace)
+    assert path.stat().st_size > 0
+
+
+def test_trace_detects_false_operating_and_keeps_child_instruction_causality(
+    tmp_path, monkeypatch
+):
+    _home(tmp_path, monkeypatch)
+    path = _continuity_db(tmp_path)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE missions SET state='OPERATING' WHERE mission_id='m1'")
+        db.execute(
+            "INSERT INTO missions (mission_id, parent_mission_id,"
+            " instruction_id, mandate_id, mandate_version, goal,"
+            " acceptance_contract_digest, risk_class, state,"
+            " authoritative_owner, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "m2",
+                "m1",
+                "CHILD-02",
+                "mandate",
+                1,
+                "subtask",
+                "digest",
+                "LOW",
+                "READY",
+                "successor",
+                12.0,
+            ),
+        )
+        db.execute(
+            "INSERT INTO mission_events (mission_id, from_state, to_state,"
+            " actor, cause, evidence, created_at) VALUES (?,?,?,?,?,?,?)",
+            ("m2", "ACCEPTED", "READY", "successor", "handoff", "", 12.0),
+        )
+    trace = plan_links.trace_instruction("FIR-02", str(path))
+    assert [m["mission_id"] for m in trace["missions"]] == ["m1", "m2"]
+    assert trace["missions"][1]["parent_mission_id"] == "m1"
+    assert trace["state"] == "PARTIAL_UNVERIFIED"
+    assert {"mission_id": "m1", "reason": "PROJECTED_STATE_MISMATCH"} in trace["gaps"]
+
+
+def test_trace_cli_refuses_to_invent_source_and_reads_a_real_sqlite(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    path = _continuity_db(tmp_path)
+    cli = os.path.join(REPO_ROOT, "bin", "estate-plan-links")
+    env = dict(os.environ, ESTATE_HOME=str(home))
+    blind = subprocess.run(
+        [sys.executable, cli, "--instruction", "FIR-02", "--json"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert blind.returncode == 3
+    assert json.loads(blind.stdout)["state"] == "BLIND"
+    good = subprocess.run(
+        [
+            sys.executable,
+            cli,
+            "--instruction",
+            "FIR-02",
+            "--mission-db",
+            str(path),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert good.returncode == 0, good.stderr
+    assert json.loads(good.stdout)["coverage"]["missions"] == 1
