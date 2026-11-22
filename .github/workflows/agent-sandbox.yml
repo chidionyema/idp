@@ -437,7 +437,10 @@ jobs:
       - name: Install what the estate's commit hooks run (the fast gate's own pins)
         run: |
           set -euo pipefail
-          pip install -q ruff==0.15.18 yamllint==1.37.1
+          # pytest: pre-push runs bin/idp-production-readiness, which runs the greenlane suite
+          # through pytest when CI is set -- run 45003840186 failed "No module named pytest"
+          # (idp#8411). Same pin ci.yml's production-readiness job installs.
+          pip install -q ruff==0.15.18 yamllint==1.37.1 pytest==8.4.2
           sudo apt-get install -y -qq shellcheck
 
       - name: Claim the work on an issue
