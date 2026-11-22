@@ -1,0 +1,57 @@
+# Existing Greenlane owns source admission. This only deploys an exact landed main commit.
+name: router-edge-release
+on:
+  push:
+    branches: [main]
+    paths:
+      - "platform/router-edge/**"
+      - ".github/workflows/router-edge-release.yml"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: zone-b-router-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Exact tools and zero-secret preflight
+        working-directory: platform/router-edge
+        run: |
+          set -euo pipefail
+          # No package-lock yet: use the repo's esbuild pin; override Wrangler only for versioned releases.
+          npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0
+          ./node_modules/.bin/wrangler --version | grep -Eq '(^|[^[:digit:]])4\.131\.0([^[:digit:]]|$)'
+          npm test
+          node --test tests/release.falsifier.mjs
+          echo "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"
+      - name: Release with bounded probes and rollback
+        working-directory: platform/router-edge
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_RECEIPT_PATH: ${{ runner.temp }}/router-release-receipt.json
+          RELEASE_PREFLIGHT_FILE: ${{ runner.temp }}/router-preflight.sha
+          MERIDIAN_ROUTER_URL: https://llm.meridianlabs.cloud
+          CLOUDFLARE_API_TOKEN: ${{ secrets.SEED_CLOUDFLARE_WORKERS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          MERIDIAN_CLIENT_KEY: ${{ secrets.SEED_MERIDIAN_CLIENT_KEY }}
+          MERIDIAN_ADMIN_KEY: ${{ secrets.SEED_MERIDIAN_ADMIN_KEY }}
+        run: node scripts/release.mjs
+      - name: Preserve exact-SHA release receipt even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v5.0.1
+        with:
+          name: router-edge-release-${{ github.sha }}
+          path: ${{ runner.temp }}/router-release-receipt.json
+          if-no-files-found: warn
+          retention-days: 30
