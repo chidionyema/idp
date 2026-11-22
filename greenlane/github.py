@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING, UnavailableLaneObject
-from .ferrari import assess as ferrari_assess
+from .ferrari import assess as ferrari_assess, source_assess
 
 STATE_REF = "refs/greenlane/state"
 # The capability witness is derived from the tree (`bin/capability-index emit`) and the
@@ -1160,7 +1160,10 @@ class GitHubBackend:
         cost optimization for a candidate already rebased onto trusted main.
         """
         verdict = ferrari_assess(base, candidate, self.repo)
-        return verdict.admissible, verdict.reason
+        if not verdict.admissible:
+            return False, verdict.reason
+        source = source_assess(base, candidate, self.repo)
+        return source.admissible, source.reason
 
     CLAIM_GATE = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
 

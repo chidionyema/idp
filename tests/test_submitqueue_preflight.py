@@ -222,3 +222,119 @@ def test_synthetic_blind_incident_never_suppresses_required_ci():
     )
     verdict = interpret(BASE, 1, synthetic)
     assert verdict.state == "UNKNOWN" and verdict.admissible
+
+
+def test_language_failure_is_refused_before_the_candidate_enters_ci(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+
+    from greenlane.ferrari import source_assess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Preflight")
+    git("config", "user.email", "preflight@example.invalid")
+    (tmp_path / "README.md").write_text("base\n")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "new-tool").write_text(
+        "#!/usr/bin/env python3\nprint('new executable')\n"
+    )
+    git("add", ".")
+    git("commit", "-qm", "add extensionless Python without language exception")
+    head = git("rev-parse", "HEAD")
+    result = source_assess(base, head, "chidionyema/idp", checkout=tmp_path)
+    assert result.state == "REFUSE"
+    assert "language-gate" in result.reason
+    assert "bin/new-tool" in result.reason
+
+
+def test_python_source_ruff_refusal_happens_before_queue_ci(tmp_path):
+    import subprocess
+    from types import SimpleNamespace
+
+    from greenlane.ferrari import source_assess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Preflight")
+    git("config", "user.email", "preflight@example.invalid")
+    (tmp_path / "README.md").write_text("base\n")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_bad.py").write_text(
+        "def test_bad():\n    assert(1==1)\n"
+    )
+    git("add", ".")
+    git("commit", "-qm", "new Python test")
+    head = git("rev-parse", "HEAD")
+    inspected = []
+
+    def runner(argv, **kwargs):
+        if argv[0] == "trusted-test-ruff":
+            inspected.append((argv, kwargs))
+            assert argv[1:5] == [
+                "format",
+                "--check",
+                "--config",
+                str(Path(__file__).resolve().parents[1] / "pyproject.toml"),
+            ]
+            assert Path(argv[5]).read_text() == "def test_bad():\n    assert(1==1)\n"
+            return SimpleNamespace(returncode=1, stdout="", stderr="bad format")
+        return subprocess.run(argv, **kwargs)
+
+    result = source_assess(
+        base,
+        head,
+        "chidionyema/idp",
+        checkout=tmp_path,
+        runner=runner,
+        ruff_binary="trusted-test-ruff",
+    )
+    assert result.state == "REFUSE"
+    assert "Ruff" in result.reason
+    assert len(inspected) == 1
+
+
+def test_pinned_ruff_absent_holds_without_sending_candidate_to_ci(tmp_path):
+    import subprocess
+
+    from greenlane.ferrari import source_assess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Preflight")
+    git("config", "user.email", "preflight@example.invalid")
+    (tmp_path / "README.md").write_text("base\n")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_ok.py").write_text("def test_ok():\n    pass\n")
+    git("add", ".")
+    git("commit", "-qm", "add Python test")
+    result = source_assess(
+        base,
+        git("rev-parse", "HEAD"),
+        "chidionyema/idp",
+        checkout=tmp_path,
+        ruff_binary=False,
+    )
+    assert result.state == "REFUSE"
+    assert "pinned Ruff unavailable" in result.reason
