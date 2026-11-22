@@ -1,15 +1,59 @@
-# Meridian Web Fleet: bounded ChatGPT Web / Gemini AI Studio source packets
+# Meridian Web Fleet: one live-evidence task contract
 
-This is source-only; not a consumer browser automator, operational Cloudflare door, active Drive Outbox or new GitHub merge authority.
+**Source-only, not a deployed browser agent.** The model-facing contract is
+`platform/lifeboat/src/task-packet.js`'s **`MERIDIAN-TASK-V1` /
+`MERIDIAN-PATCH-V1`**, under issue [#8430](https://github.com/chidionyema/idp/issues/8430).
+The historical `MERIDIAN-TASK-V2` branch-level design is superseded; its CLI now
+calls the canonical V1 hydrator and `patch-wire.mjs` delegates its data-only
+validation to V1. No independent V2 acceptance authority remains.
 
-`node scripts/web-fleet/task-packet.mjs --issue 7760 --file scripts/web-fleet/patch-wire.mjs` produces a model-neutral `MERIDIAN-TASK-V2` payload from public idp at an exact observed main SHA. Only caller-declared paths can be read. Files over 3400 bytes, an issue over 1500 body bytes, or a CI run at another SHA are marked BLIND rather than silently truncated. The complete packet is capped at 12KiB.
+## Live source → canonical task packet (read-only)
 
-`node --test tests/web_fleet/task-packet.test.mjs` exercises nine grounded negative/positive cases.
+```sh
+node scripts/web-fleet/task-packet.mjs --issue 8430 \
+  --file platform/lifeboat/src/task-packet.js \
+  --instruction FIR-07 --owner gemini-web-unverified \
+  --task FIR-07-GEMINI-001 --out /tmp/meridian-task.json
+```
 
-Use `validatePatch(candidate, packet)` from `scripts/web-fleet/patch-wire.mjs` for strictly local `MERIDIAN-PATCH-V1` shape checks. A SCHEMA_VALID_ONLY verdict never grants QUAD mandate, source commit permission, CI approval or independent operational yield. The existing authenticated submit/**, fast gate and Greenlane must independently re-check exact main/base SHA, source bytes, paths, modes, owner claim, and all credentials before taking any effect.
+The GitHub adapter `github-evidence.mjs` reads the **actual current** public IDP
+`main`, exact Git tree/blob SHA, original executable mode, immutable source bytes
+and an open issue. It rejects a moving main, missing or inaccessible source, an
+unknown mode, a mismatched hash, private payloads, and an oversized packet.
+The canonical V1 packet is capped at **12,288 bytes**, written as an exclusive
+owner-only file (`0600`) when `--out` is used, and marked
+`DATA_ONLY_UNTRUSTED`. A packet is never a worker lease or signature.
 
-Gemini Web / AI Studio's role: generate a source patch or adversarial review from a task packet; do not invent tool output or GitHub commit. ChatGPT Web's role: claim, verify, submit, inspect independent job receipts and hand back only verified results to the instruction ledger. Coordination uses the existing public OMNIFLOW #8133 for non-sensitive references; all private AI Studio sources continue through the existing private source-intake #7760.
+CI failure diagnostics must be read from an authorized job-log source using a
+trusted caller's `readJobLog` callback. For the standalone CLI, `--run ID`
+**refuses with BLIND** until that evidence reader is present; it never guesses
+stderr from job names or treats GitHub's second-granularity timestamps as
+certified milliseconds. Ordinary use without `--run` is valid and reports no
+observed failed job. A changing repository or absent external transport is BLIND.
 
-The separate companion ZIP includes a manually invoked Chrome MV3 local validator and an iOS Shortcut bridge spec. No scraping, headless consumer-account login, evasion of provider quotas/CAPTCHAs, or secret in public GitHub is authorised. Consumer tier free capacity and 70-85% workload coverage remain unmeasured hypotheses, not guarantees.
+To validate an untrusted model proposal, call `validateProposal(packet, proposal)`
+from `platform/lifeboat/src/task-packet.js` or its compatibility entry point
+`validatePatch(proposal, packet)` in `patch-wire.mjs`. Both call **exactly the
+same V1 validator**. A successfully shaped proposal stays
+`PROPOSED_UNTRUSTED`; only existing authenticated submit gate → Greenlane →
+independent outside-in proof may promote an effect. No model, browser userscript,
+CLI or signed-in tab may mint that authority.
 
-Current source acceptance issue: https://github.com/chidionyema/idp/issues/7760; source SHIP-CONTRACT is not a deployed capability certificate.
+## Evidence and tests
+
+```sh
+node --check scripts/web-fleet/task-packet.mjs
+node --check scripts/web-fleet/patch-wire.mjs
+node --test \
+  platform/lifeboat/test/task-packet.test.mjs \
+  tests/web_fleet/github-evidence.test.mjs \
+  tests/web_fleet/task-packet.test.mjs
+```
+
+This path consumes no paid inference, browser scraping or hidden API quota.
+The private Gemini/AI Studio handoff lives in `chidionyema/gemini-sync` issue
+[#3](https://github.com/chidionyema/gemini-sync/issues/3); a GitHub task commit
+is **not** evidence that Gemini Web consumed the task or produced a patch.
+`submit.meridianlabs.cloud` and the proposed browser/app bridges require separate
+real DNS/TLS, authenticated client and deployment probes before they are called
+operational. The quoted 70–85% zero-marginal-API-cost workload share is unmeasured.
