@@ -175,14 +175,19 @@ async function laneTree(fetchImpl, env, head) {
 }
 
 async function commitFiles(fetchImpl, env, accepted, base) {
+  // Guard ALL modes before a single write-capable GitHub POST.
+  const staged = accepted.map((file) => ({
+    ...file,
+    mode: admittedMode(base.files.get(file.path)),
+  }));
   const blobs = [];
-  for (const file of accepted) {
+  for (const file of staged) {
     const blob = await gh(fetchImpl, env, `/repos/${REPO}/git/blobs`, {
       method: "POST",
       body: JSON.stringify({ content: file.content_b64, encoding: "base64" }),
     });
     if (blob?.sha !== file.git_blob_sha) throw new IngestError(409, "GITHUB_BLOB_SHA_MISMATCH");
-    blobs.push({ path: file.path, mode: admittedMode(base.files.get(file.path)), type: "blob", sha: blob.sha });
+    blobs.push({ path: file.path, mode: file.mode, type: "blob", sha: blob.sha });
   }
 
   const tree = await gh(fetchImpl, env, `/repos/${REPO}/git/trees`, {
@@ -213,19 +218,10 @@ async function commitFiles(fetchImpl, env, accepted, base) {
   return { commit: commit.sha, tree: tree.sha };
 }
 
-async function announce(fetchImpl, env, packet) {
-  const relay = env.OMNIFLOW_RELAY_URL || "";
-  if (relay) {
-    const res = await fetchImpl(relay, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(packet),
-    });
-    if (!res.ok) throw new IngestError(502, "OMNIFLOW_RELAY", { status: res.status });
-    return { relay: true };
-  }
-  // submit-gate owns promotion; the untrusted browser must NEVER dispatch
-  // Greenlane or impersonate the trusted SEED app.
+async function announce(_fetchImpl, _env, _packet) {
+  // Submit branch push wakes the existing trusted submit-gate automatically.
+  // Neither an untrusted browser nor an optional OMNIFLOW URL may promote
+  // source or dispatch Greenlane before the fast-gate signs the exact SHA.
   return { submit_gate_on_push: true, promotion: "NOT_OBSERVED" };
 }
 
