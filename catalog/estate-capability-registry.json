@@ -7,7 +7,7 @@
     "layer": 315,
     "service": 122,
     "tool": 524,
-    "workflow": 109
+    "workflow": 110
   },
   "records": [
     {
@@ -66304,6 +66304,63 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/router-catalog-gate.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-router-edge-release",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "router-edge-release -- the GitHub Actions workflow router-edge-release.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/router-edge-release.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
