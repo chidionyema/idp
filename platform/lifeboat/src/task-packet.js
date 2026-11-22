@@ -86,7 +86,7 @@ export async function hydrateTask({ taskId, instructionId, issue, sourceSha, fil
     schema: 'MERIDIAN-TASK-V1', task_id: tid, root_instruction_id: iid, issue,
     source_repo: 'chidionyema/idp', source_sha: sourceSha.toLowerCase(),
     source_files: sources, acceptance, owner: actor,
-    checkpoint: checkpoint === null ? { state: 'UNKNOWN', lease: 'UNOBSERVED' } : checkpoint,
+    checkpoint: checkpoint === null ? { state: 'UNKNOWN', lease: 'UNOBSERVED' } : { state: checkpoint.state, lease: checkpoint.lease },
     failure, requested_result: { schema: 'MERIDIAN-PATCH-V1', authority: 'DATA_ONLY_UNTRUSTED', preseal: 'PINNED_RUFF_REGISTRY_TESTS_REQUIRED' },
     clock: { wall_clock_accuracy: 'UNVERIFIED', causal_edges: 'NOT_INFERRED_FROM_TIMESTAMPS' },
   };
