@@ -34917,7 +34917,9 @@
       "contract": {
         "inputs": [
           "--help",
+          "--instruction",
           "--json",
+          "--mission-db",
           "--session",
           "--strict"
         ],
