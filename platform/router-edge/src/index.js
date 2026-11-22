@@ -4,7 +4,7 @@ export { BudgetLedgerDO, RoutingStateDO };
 
 const FAILOVER_STATUS_CODES = new Set([408, 413, 429, 500, 502, 503, 504, 520, 522, 524, 525, 530]);
 
-async function timingSafeTokenEqual(provided: string, expected: string) {
+async function timingSafeTokenEqual(provided, expected) {
   if (!provided || !expected) return false;
   const enc = new TextEncoder();
   const [a, b] = await Promise.all([
@@ -20,47 +20,14 @@ async function timingSafeTokenEqual(provided: string, expected: string) {
   return diff === 0;
 }
 
-function extractBearer(request: Request) {
-  const header = request.headers.get("authorization") ?? "";
-  if (!header.toLowerCase().startsWith("bearer ")) return "";
-  return header.slice(7).trim();
-}
-
-export function estimateRequestInputTokens(req: ChatCompletionRequest) {
-  const encoder = new TextEncoder();
-  const payloadBytes =
-    encoder.encode(JSON.stringify(req.messages ?? [])).byteLength +
-    (req.tools ? encoder.encode(JSON.stringify(req.tools)).byteLength : 0);
-  // Conservative 3.2 bytes/token + fixed framing overhead
-  return Math.ceil(payloadBytes / 3.2) + 128;
-}
-
-function estimateCostUsd(candidate: BackendCandidate, inputTokens: number, outputTokens: number) {
-  return (inputTokens / 1000) * candidate.costPer1kInputUsd + (outputTokens / 1000) * candidate.costPer1kOutputUsd;
-}
-
-function resolveRole(modelField: string | undefined) {
+function extractBearer(request) {
   if (!modelField || !modelField.trim()) return "role:default";
   const normalized = modelField.trim();
   if (normalized.startsWith("role:")) return normalized;
   return `role:${normalized}`;
 }
 
-function getLedgerStub(env: Env) {
-  return env.BUDGET_LEDGER.get(env.BUDGET_LEDGER.idFromName("global-ledger-v1"));
-}
-
-function getRoutingStub(env: Env) {
-  return env.ROUTING_STATE.get(env.ROUTING_STATE.idFromName("global-routing-v1"));
-}
-
-async function recordOutcome(
-  routingStub: DurableObjectStub,
-  backendId: string,
-  outcome: "success" | "payload_too_large" | "transient_failure",
-  statusCode?: number,
-  observedTokens?: number
-) {
+function getLedgerStub(env) {
   await routingStub.fetch("https://routing.internal/record", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -68,7 +35,7 @@ async function recordOutcome(
   });
 }
 
-async function releaseReservation(ledgerStub: DurableObjectStub, reservationId: string) {
+async function releaseReservation(ledgerStub, reservationId) {
   await ledgerStub.fetch("https://ledger.internal/release", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -77,10 +44,9 @@ async function releaseReservation(ledgerStub: DurableObjectStub, reservationId: 
 }
 
 async function settleReservation(
-  ledgerStub: DurableObjectStub,
-  reservationId: string,
-  actualUsd: number
-) {
+  ledgerStub,
+  reservationId,
+  actualUsd) {
   await ledgerStub.fetch("https://ledger.internal/settle", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -94,8 +60,7 @@ async function settleReservation(
  * before any token arrives, returns { ok: false } so the router fails over cleanly.
  */
 async function probeFirstStreamChunk(
-  upstreamBody: ReadableStream<Uint8Array>
-) { ok: true; stream: ReadableStream<Uint8Array> } | { ok: false; reason: string }> {
+  upstreamBody) {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
   const [];
@@ -155,7 +120,7 @@ async function probeFirstStreamChunk(
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const commitSha = env.COMMIT_SHA || "unknown";
     const zone = env.DEPLOYMENT_ZONE || "zone-b-cloudflare-edge";
@@ -199,7 +164,11 @@ export default {
         return getRoutingStub(env).fetch("https://routing.internal/roles", {
           method: request.method,
           headers: { "content-type": "application/json" },
-          body: request.method === "PUT" ? await request.text() {
+          body: request.method === "PUT" ? await request.text() : undefined,
+        });
+      }
+
+      if (url.pathname === "/admin/v1/circuits" && request.method === "GET") {
         return getRoutingStub(env).fetch("https://routing.internal/circuits");
       }
 
@@ -208,7 +177,11 @@ export default {
         return getLedgerStub(env).fetch(`https://ledger.internal${targetPath}`, {
           method: request.method,
           headers: { "content-type": "application/json" },
-          body: request.method === "POST" ? await request.text() { error: { type: "not_found" } }, { status: 404 });
+          body: request.method === "POST" ? await request.text() : undefined,
+        });
+      }
+
+      return Response.json({ error: { type: "not_found" } }, { status: 404 });
     }
 
     // 3. Authenticated Inference Data Plane (/v1/chat/completions)

@@ -33,8 +33,8 @@ code = code.replace(/^(export\s+)?interface [\w<>,\s]+\s*\{[\s\S]*?^\}\s*\n?/gm,
 // 3. Remove export type lines
 code = code.replace(/^export type \w+[^;]*;\s*\n?/gm, "");
 
-// 4. Remove return type annotations: `): Promise<...> {` -> `) {`
-code = code.replace(/\)\s*:\s*[^{]*\{/g, ") {");
+// 4. Remove return type annotations: `): Promise<X> {` / `): Promise<{ok: b}> {` -> `) {`
+code = code.replace(/\)\s*:\s*(?:[^{}]|\{[^{}]*\})*\s*\{/g, ") {");
 
 // 5. Remove `implements X` from class declarations
 code = code.replace(/implements\s+[\w\s,]+/g, "");
@@ -45,12 +45,16 @@ code = code.replace(/\b(private|public|protected)\s+/g, "");
 code = code.replace(/\breadonly\s+/g, "");
 code = code.replace(/^\s*(\w+)\s*:\s*[\w<>\[\]?|.]+\s*;\s*$/gm, "$1;");
 
-// 7. Strip parameter type annotations from function declarations
+// 7. Strip parameter type annotations from function/method declarations
 //    `function utcDay(nowMs: number) {` → `function utcDay(nowMs) {`
-code = code.replace(/function\s+(\w+)\s*\(([^)]*)\)/g, (match, name, params) => {
-  const cleanParams = params.replace(/:[\w<>\[\]?|.]+\s*/g, "");
-  return `function ${name}(${cleanParams})`;
-});
+//    Handles the space after the colon, unions and generics, constructors, class
+//    methods and arrow assignments -- never call sites, where `:` is an object key.
+const stripParamTypes = (params) =>
+  params.replace(/:\s*[\w<>\[\]?|.,\s]+?(?=,|\)|$)/g, "");
+code = code.replace(/(\bfunction\s+\w+\s*)\(([^()]*)\)/g, (m, head, params) => `${head}(${stripParamTypes(params)})`);
+code = code.replace(/(\bconstructor\s*)\(([^()]*)\)/g, (m, head, params) => `${head}(${stripParamTypes(params)})`);
+code = code.replace(/(^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?[\w$]+\s*)\(([^()]*)\)\s*\{/gm, (m, head, params) =>
+  head.trimEnd().endsWith("=") ? m : `${head}(${stripParamTypes(params)}) {`);
 
 // 8. Strip simple type annotations from const/let/var declarations
 code = code.replace(/(const|let|var)\s+\w+\s*:[^=]*= /g, "$1 ");

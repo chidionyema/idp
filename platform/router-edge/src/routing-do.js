@@ -6,7 +6,7 @@ const MAX_COOLDOWN_MS = 300_000;
 
 export class RoutingStateDO {
 state;
-  constructor(state: DurableObjectState) {
+  constructor(state) {
     this.state = state;
   }
 
@@ -18,7 +18,7 @@ state;
     return (await this.state.storage.get<Record<string, CircuitRecord>>(CIRCUITS_KEY)) ?? {};
   }
 
-  async fetch(request: Request) {
+  async fetch(request) {
     const url = new URL(request.url);
     const nowMs = Date.now();
 
@@ -126,7 +126,13 @@ backendId;
         circuits[body.backendId] = {
           ...prev,
           learnedMaxContextTokens: prev.learnedMaxContextTokens
-            ? Math.min(prev.learnedMaxContextTokens, safeCap) {
+            ? Math.min(prev.learnedMaxContextTokens, safeCap)
+            : safeCap,
+          learnedMaxExpiresMs: nowMs + LEARNED_413_TTL_MS,
+          lastErrorCode: 413,
+          lastErrorAtMs: nowMs,
+        };
+      } else {
         const failures = prev.failures + 1;
         const cooldown = Math.min(MAX_COOLDOWN_MS, BASE_COOLDOWN_MS * Math.pow(2, Math.min(failures - 1, 5)));
         circuits[body.backendId] = {

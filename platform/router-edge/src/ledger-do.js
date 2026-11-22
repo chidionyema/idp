@@ -1,17 +1,13 @@
 const DEFAULT_DAILY_LIMIT_USD = 25.0;
 const STORAGE_KEY = "ledger_state_v1";
 
-function utcDay(nowMs: number) {
-  return new Date(nowMs).toISOString().slice(0, 10);
-}
-
-export class BudgetLedgerDO {
+function utcDay(nowMs) {
 state;
-  constructor(state: DurableObjectState) {
+  constructor(state) {
     this.state = state;
   }
 
-  async load(nowMs: number) {
+  async load(nowMs) {
     const today = utcDay(nowMs);
     const stored = await this.state.storage.get<LedgerSnapshot>(STORAGE_KEY);
     if (!stored || stored.epochDay !== today) {
@@ -26,7 +22,7 @@ state;
     }
 
 
-  async fetch(request: Request) {
+  async fetch(request) {
     const url = new URL(request.url);
     const nowMs = Date.now();
 
@@ -152,7 +148,7 @@ state;
     return stored;
   }
 
-  sumReserved(snap: LedgerSnapshot) {
+  sumReserved(snap) {
     let total = 0;
     for (const entry of Object.values(snap.reservations)) {
       total += entry.estimatedUsd;
