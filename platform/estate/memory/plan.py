@@ -253,8 +253,18 @@ def apply(plan: dict | None, tool: str, args) -> dict:
     if name not in PLAN_TOOLS:
         return _refuse(f"{tool} is not a plan tool")
     if not plan and _is_plan_bootstrap(tool, args):
-        # the act of declaring a plan cannot itself require a declared plan
-        return {"ok": True}
+        # the act of declaring a plan cannot itself require a declared plan. The result still
+        # carries the full {"ok", "plan", "message"} contract every caller reads: the V1
+        # bridge does r["plan"], replay() does r["plan"], the V2 door does r["message"].
+        # MEASURED 2026-11-22: a restart lost the in-memory plan, the next plan-tool call
+        # landed here, and KeyError 'plan' killed the shared MCP process for the whole
+        # runtime. ok-without-plan is admitted but records nothing, which is what "no plan
+        # yet" means; a refusal would re-block the bootstrap this branch exists to open.
+        return {
+            "ok": True,
+            "plan": plan,
+            "message": f"{name} admitted with no plan declared yet; nothing was recorded",
+        }
     if not plan:
         return _refuse("no plan declared; call declare_plan first")
     gid = _s(a.get("goal_id"))

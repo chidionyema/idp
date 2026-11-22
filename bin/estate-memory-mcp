@@ -205,6 +205,10 @@ class Bridge:
         r = plan.apply(self.plan, name, args)
         if not r["ok"]:
             return refuse(mid, f"Refused: {r['reason']}")
+        if "plan" not in r or "message" not in r:
+            # A contract violation must cost this one call, not the process: one malformed
+            # result killed the shared MCP server for every session (2026-11-22).
+            return refuse(mid, f"Refused: {name} returned an incomplete result; plan unchanged")
         self.plan = r["plan"]
         # The durable ledger is the plan's home. The in-memory plan above is the same plan
         # (plan.apply is the only interpreter); this writes it where the door can read it, in
