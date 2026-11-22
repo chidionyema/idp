@@ -43,6 +43,23 @@ export class RoutingStateDO implements DurableObject {
         return Response.json({ error: "invalid_roles_payload" }, { status: 400 });
       }
       for (const [roleName, pool] of Object.entries(body.roles)) {
+        if (!Array.isArray(pool.candidates) || pool.candidates.length === 0) {
+          return Response.json({ error: `role_${roleName}_requires_candidates` }, { status: 400 });
+        }
+        for (const c of pool.candidates) {
+          if (!c.id || !c.baseUrl || !c.apiKeySecretName || !c.upstreamModel || c.maxContextTokens <= 0) {
+            return Response.json({ error: `invalid_candidate_${c.id || "unknown"}` }, { status: 400 });
+          }
+        }
+      }
+      await this.state.storage.put(ROLES_KEY, body.roles);
+      return Response.json({ ok: true, roleCount: Object.keys(body.roles).length });
+    }
+
+    if (request.method === "GET" && url.pathname === "/circuits") {
+      const circuits = await this.getCircuits();
+      return Response.json({ circuits, nowMs });
+    }
 
     if (request.method === "POST" && url.pathname === "/plan") {
       const req = (await request.json()) as PlanRequest;
@@ -161,20 +178,3 @@ export class RoutingStateDO implements DurableObject {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 }
-        if (!Array.isArray(pool.candidates) || pool.candidates.length === 0) {
-          return Response.json({ error: `role_${roleName}_requires_candidates` }, { status: 400 });
-        }
-        for (const c of pool.candidates) {
-          if (!c.id || !c.baseUrl || !c.apiKeySecretName || !c.upstreamModel || c.maxContextTokens <= 0) {
-            return Response.json({ error: `invalid_candidate_${c.id || "unknown"}` }, { status: 400 });
-          }
-        }
-      }
-      await this.state.storage.put(ROLES_KEY, body.roles);
-      return Response.json({ ok: true, roleCount: Object.keys(body.roles).length });
-    }
-
-    if (request.method === "GET" && url.pathname === "/circuits") {
-      const circuits = await this.getCircuits();
-      return Response.json({ circuits, nowMs });
-    }
