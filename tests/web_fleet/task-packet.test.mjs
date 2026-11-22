@@ -86,7 +86,7 @@ test('unverified CI run without a real log reader stays BLIND',async()=>{
   await assert.rejects(createPacket(p,{read:gitRead,hydrate:noSource}),(e)=>e instanceof EvidenceBlind&&e.code==='NO_VERIFIABLE_FAILED_CI_LOG');
 });
 
-import { validatePatch } from '../../scripts/web-fleet/patch-wire.mjs';
+import { validatePatch, assertPath } from '../../scripts/web-fleet/patch-wire.mjs';
 import { hydrateTask } from '../../platform/lifeboat/src/task-packet.js';
 
 test('legacy V2 compatibility door refuses duplicate authority', async () => {
@@ -108,4 +108,16 @@ test('compatibility door invokes exact V1 validator; never marks yield complete'
   assert.equal(result.files, 1);
   assert.ok(result.needs.includes('TRUSTED_PRESEAL_CANONICALISATION'));
   await assert.rejects(validatePatch({...proposal, base_sha:'b'.repeat(40)},packet),e=>e.code==='STALE_OR_UNBOUND_PROPOSAL');
+});
+
+
+test('legacy compatibility path helper preserves all original denial boundaries', () => {
+  assert.equal(assertPath('platform/estate/code.py'), 'platform/estate/code.py');
+  for (const path of [
+    'other/subdir/a.py', 'src/file.ts', '.github/workflows/evil.yml',
+    'platform/../../.github/workflows/x.yml', 'platform/.env.prod',
+    'platform/private/a.txt', 'platform/credentials/pass.pem',
+    'platform/secret.key', 'platform/bundle.age', 'platform\\evil.js',
+    'platform/a//x.js', '/tmp/a.ts',
+  ]) assert.throws(() => assertPath(path), e => e.code === 'PATH_NOT_ADMITTED');
 });
