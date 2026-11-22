@@ -204,7 +204,9 @@ test("symlink source cannot trigger even a GitHub blob POST", async () => {
     () => ingest({ source: "stream", files }, env, fetchImpl),
     /EXISTING_FILE_MODE_REFUSED/,
   );
-  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+  // Acquiring a scoped read/write lease is not a GitHub write; an existing
+  // symlink cannot be detected until GitHub reports its tree mode.
+  assert.equal(journal.filter((x) => x.method !== "GET" && x.path.startsWith("/repos/")).length, 0);
 });
 
 test("missing declared digest and byte length refuse source", async () => {
