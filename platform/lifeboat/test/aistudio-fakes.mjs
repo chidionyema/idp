@@ -1,4 +1,5 @@
 import { LANE, REPO, b64ToBytes, sha256Hex } from "../src/aistudio.js";
+import { gitBlobSha } from "../src/aistudio-fence.js";
 
 export function bytesToB64(bytes) {
   let bin = "";
@@ -27,7 +28,8 @@ export const SOURCE_FILES = [
 
 export function makeFetch(existing = []) {
   const journal = [];
-  const head = existing.length > 0 ? "head0" : null;
+  const head = existing.length > 0 ? "b".repeat(40) : null;
+  const mainHead = "a".repeat(40);
 
   const fetchImpl = async (url, init = {}) => {
     const parsed = new URL(url);
@@ -53,20 +55,23 @@ export function makeFetch(existing = []) {
         ? ok({ ref: `refs/heads/${LANE}`, object: { sha: head, type: "commit" } })
         : new Response("{}", { status: 404 });
     }
-    if (parsed.pathname === `/repos/${REPO}/git/commits/${head}`) {
-      return ok({ sha: head, tree: { sha: "tree0" } });
+    if (parsed.pathname === `/repos/${REPO}/git/ref/heads/main`) {
+      return ok({ ref: "refs/heads/main", object: { sha: mainHead, type: "commit" } });
+    }
+    if (parsed.pathname === `/repos/${REPO}/git/commits/${head || mainHead}`) {
+      return ok({ sha: head || mainHead, tree: { sha: "tree0" } });
     }
     if (parsed.pathname === `/repos/${REPO}/git/trees/tree0`) {
       return ok({
-        tree: existing.map((file) => ({ path: file.path, sha: file.sha, type: "blob" })),
+        tree: existing.map((file) => ({ path: file.path, sha: file.sha, type: file.type || "blob", mode: file.mode || "100644" })),
         truncated: false,
       });
     }
     if (parsed.pathname === `/repos/${REPO}/git/blobs`) {
-      return ok({ sha: await sha256Hex(b64ToBytes(body.content)) });
+      return ok({ sha: await gitBlobSha(b64ToBytes(body.content)) });
     }
     if (parsed.pathname === `/repos/${REPO}/git/trees`) return ok({ sha: "tree1" });
-    if (parsed.pathname === `/repos/${REPO}/git/commits`) return ok({ sha: "commit1" });
+    if (parsed.pathname === `/repos/${REPO}/git/commits`) return ok({ sha: "c".repeat(40) });
     if (parsed.pathname === `/repos/${REPO}/git/refs/heads/${LANE}`) return ok({});
     if (parsed.pathname === `/repos/${REPO}/git/refs`) return ok({});
     if (parsed.pathname === `/repos/${REPO}/issues/8133/comments`) return ok({ id: 1 });
