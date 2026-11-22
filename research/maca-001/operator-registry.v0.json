@@ -207,5 +207,58 @@
         "independent_verification"
       ]
     }
-  ]
+  ],
+  "autonomous_intelligence": {
+    "purpose": "Maintain decision-ready situational awareness so authorised interventions can be selected and executed precisely",
+    "activation": "event-driven changes, new obligations, explicit hypotheses, freshness deadlines; no blind polling",
+    "collection": [
+      "inventory_existing_evidence",
+      "detect_evidence_gaps",
+      "trace_dependencies",
+      "evaluate_competing_hypotheses",
+      "identify_high_leverage_interventions",
+      "estimate_information_value",
+      "monitor_evidence_freshness"
+    ],
+    "outputs": [
+      "timestamped_provenance",
+      "confidence_and_unknowns",
+      "dependency_map",
+      "candidate_actions",
+      "estimated_effect_and_cost",
+      "falsifiers",
+      "decision_readiness_receipt"
+    ],
+    "decision_gate": {
+      "act_when": [
+        "sufficient_evidence_for_risk_tier",
+        "expected_benefit_exceeds_cost_and_risk",
+        "authority_confirmed",
+        "independent_verification_plan_available"
+      ],
+      "otherwise": [
+        "gather_targeted_evidence",
+        "run_bounded_experiment",
+        "abstain_or_escalate"
+      ],
+      "exceptions": "time-critical safety or recovery actions may execute within preauthorised emergency bounds"
+    },
+    "limits": [
+      "budget_caps",
+      "data_minimisation",
+      "source_permissions",
+      "rate_limits",
+      "no_unbounded_research",
+      "no_self_expanding_authority",
+      "staleness_recheck_before_irreversible_action"
+    ],
+    "integration": [
+      "Chronos triggers",
+      "Estate Graph dependencies",
+      "FLOW obligations",
+      "KARMA receipts",
+      "Optimus verification",
+      "Legion execution"
+    ]
+  }
 }
