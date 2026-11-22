@@ -181,8 +181,6 @@ def test_the_door_passes_on_a_correct_link(tmp_path, monkeypatch):
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
-
-
 def _continuity_db(tmp_path):
     path = tmp_path / "continuity.sqlite"
     db = sqlite3.connect(path)
