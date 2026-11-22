@@ -434,11 +434,19 @@ jobs:
             echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
           fi
 
-      - name: Install what the estate's commit hooks run (the fast gate's own pins)
+      # Match ci.yml and fast-gate.yml: the hook invokes python3, not the pip
+      # executable found on an otherwise unconfigured ubuntu runner.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: "3.12" }
+
+      - name: Install and execute the exact estate push-readiness dependencies
         run: |
           set -euo pipefail
-          pip install -q ruff==0.15.18 yamllint==1.37.1
+          python3 -m pip install -q ruff==0.15.18 yamllint==1.37.1 pytest==8.4.2
           sudo apt-get install -y -qq shellcheck
+          # Refuse before claim/commit when the hook's interpreter is incomplete.
+          python3 -m pytest --version
+          bin/idp-production-readiness
 
       - name: Claim the work on an issue
         id: claim
