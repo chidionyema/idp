@@ -113,3 +113,21 @@ def test_the_v1_bridge_guard_refuses_instead_of_dying(plan, monkeypatch):
     assert calls == []  # never recorded
     assert out["result"]["isError"] is True, out
     assert out["result"]["content"][0]["text"].startswith("Refused:"), out
+
+
+def test_a_refusal_keeps_the_mcp_error_shape_a_v2_door_reads(plan):
+    # The V2 door reads result.content[0].text and result.isError; a refactor to
+    # {"error": {...}} would look safe here and break every door that renders it.
+    loader = importlib.machinery.SourceFileLoader(
+        "estate_memory_refuse_shape", str(ROOT / "bin/estate-memory-mcp")
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    out = mod.refuse(7, "Refused: no plan declared; call declare_plan first")
+    assert out["jsonrpc"] == "2.0" and out["id"] == 7
+    assert out["result"]["isError"] is True
+    assert out["result"]["content"] == [
+        {"type": "text", "text": "Refused: no plan declared; call declare_plan first"}
+    ]
+    assert "error" not in out
