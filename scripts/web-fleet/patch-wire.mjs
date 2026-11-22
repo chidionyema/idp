@@ -15,17 +15,19 @@ export function strictKeys(obj, keys, kind) {
     throw new PacketError(`${kind}_SCHEMA_INVALID`);
   }
 }
+const LEGACY_ALLOWED = /^(?:platform|tests|scripts|web|bin|catalog)\/[A-Za-z0-9_+./-]+$/;
+const LEGACY_DENIED = /(^|\/)(?:\.git|\.github|\.env[^/]*|node_modules|secrets?|private|credentials?)(?:\/|$)|\.(?:pem|key|p12|pfx|age)$/i;
+// The compatibility helper must not become weaker than its predecessor.
 export function assertPath(path) {
-  if (typeof path !== 'string' || path.length > 180 || path.startsWith('/') ||
-      path.includes('\\') || path.includes('//') ||
-      path.split('/').some(seg => !seg || seg === '.' || seg === '..' ||
-        ['.git', '.github', '.githooks', 'node_modules', '.ssh', 'secrets', 'credentials'].includes(seg.toLowerCase()) ||
-        seg.toLowerCase().startsWith('.env')) ||
-      !/^[A-Za-z0-9._+@/-]+$/.test(path)) {
+  if (typeof path !== 'string' || path.length > 180 || !LEGACY_ALLOWED.test(path) ||
+      path.startsWith('/') || path.includes('\\') || path.includes('//') ||
+      path.split('/').includes('..') || path.split('/').includes('.') ||
+      LEGACY_DENIED.test(path)) {
     throw new PacketError('PATH_NOT_ADMITTED');
   }
   return path;
 }
+
 export { validateProposal, PacketError };
 
 export async function validatePatch(proposal, packet) {
