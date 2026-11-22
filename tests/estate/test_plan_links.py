@@ -182,6 +182,7 @@ def test_the_door_passes_on_a_correct_link(tmp_path, monkeypatch):
 
 
 
+
 def _continuity_db(tmp_path):
     path = tmp_path / "continuity.sqlite"
     db = sqlite3.connect(path)
@@ -192,8 +193,18 @@ def _continuity_db(tmp_path):
         " mandate_version, goal, acceptance_contract_digest, risk_class,"
         " state, authoritative_owner, created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("m1", "FIR-02", "mandate", 1, "deploy and verify", "digest",
-         "LOW", "READY", "legion", 10.125),
+        (
+            "m1",
+            "FIR-02",
+            "mandate",
+            1,
+            "deploy and verify",
+            "digest",
+            "LOW",
+            "READY",
+            "legion",
+            10.125,
+        ),
     )
     db.execute(
         "INSERT INTO mission_events"
@@ -207,8 +218,21 @@ def _continuity_db(tmp_path):
         " execution_host, failure_domain, worktree_id, base_sha,"
         " started_at, lease_epoch, lease_expires_at, state)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("a1", "m1", "legion", "google", "UNKNOWN", "cloud", "remote",
-         "work", "a" * 40, 10.125, 1, 50.0, "RUNNING"),
+        (
+            "a1",
+            "m1",
+            "legion",
+            "google",
+            "UNKNOWN",
+            "cloud",
+            "remote",
+            "work",
+            "a" * 40,
+            10.125,
+            1,
+            50.0,
+            "RUNNING",
+        ),
     )
     db.execute(
         "INSERT INTO external_effects"
@@ -216,8 +240,21 @@ def _continuity_db(tmp_path):
         " operation, target, idempotency_key, intent_digest, state,"
         " external_receipt, verified_by, reconciliation_status)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("e1", "m1", "a1", 1, 1, "deploy", "https://private.example/token",
-         "idem", "digest", "OBSERVED", '{"ok":true}', "agent", "RECONCILED"),
+        (
+            "e1",
+            "m1",
+            "a1",
+            1,
+            1,
+            "deploy",
+            "https://private.example/token",
+            "idem",
+            "digest",
+            "OBSERVED",
+            '{"ok":true}',
+            "agent",
+            "RECONCILED",
+        ),
     )
     db.commit()
     db.close()
@@ -229,7 +266,9 @@ def test_trace_missing_custody_is_blind_not_a_success(tmp_path, monkeypatch):
     _plan(home, "s1", instruction="FIR-02", prompt="prompt-0001")
     _intent(home, "s1", "FIR-02")
     _prompt(
-        home, id="prompt-0001", session="s1",
+        home,
+        id="prompt-0001",
+        session="s1",
         text="private founder source must not leave its custody",
     )
     trace = plan_links.trace_instruction("FIR-02")
@@ -272,8 +311,19 @@ def test_trace_detects_false_operating_and_keeps_child_instruction_causality(
             " acceptance_contract_digest, risk_class, state,"
             " authoritative_owner, created_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            ("m2", "m1", "CHILD-02", "mandate", 1, "subtask", "digest",
-             "LOW", "READY", "successor", 12.0),
+            (
+                "m2",
+                "m1",
+                "CHILD-02",
+                "mandate",
+                1,
+                "subtask",
+                "digest",
+                "LOW",
+                "READY",
+                "successor",
+                12.0,
+            ),
         )
         db.execute(
             "INSERT INTO mission_events (mission_id, from_state, to_state,"
@@ -296,16 +346,27 @@ def test_trace_cli_refuses_to_invent_source_and_reads_a_real_sqlite(
     env = dict(os.environ, ESTATE_HOME=str(home))
     blind = subprocess.run(
         [sys.executable, cli, "--instruction", "FIR-02", "--json"],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
     assert blind.returncode == 3
     assert json.loads(blind.stdout)["state"] == "BLIND"
     good = subprocess.run(
         [
-            sys.executable, cli, "--instruction", "FIR-02",
-            "--mission-db", str(path), "--json",
+            sys.executable,
+            cli,
+            "--instruction",
+            "FIR-02",
+            "--mission-db",
+            str(path),
+            "--json",
         ],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
     assert good.returncode == 0, good.stderr
     assert json.loads(good.stdout)["coverage"]["missions"] == 1
