@@ -50359,6 +50359,7 @@
       },
       "consumers": [
         "cap:tool/estate-production-acceptance",
+        "cap:workflow/gha-agent-sandbox",
         "cap:workflow/gha-ci"
       ],
       "cost": {
@@ -61319,6 +61320,7 @@
           "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
           "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
           "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
         ]
       },
@@ -61357,6 +61359,10 @@
         },
         {
           "id": "cap:tool/idp-agent-base-apply.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-production-readiness",
           "edge": "invokes"
         },
         {
