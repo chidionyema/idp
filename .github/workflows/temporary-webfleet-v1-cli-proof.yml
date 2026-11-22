@@ -1,0 +1,44 @@
+# One-shot, no-paid-model, read-only proof branch. NEVER MERGE THIS WORKFLOW.
+name: temporary-webfleet-v1-cli-proof
+on:
+  push:
+    branches: ["proof/7760-v1-cli-20261122"]
+permissions:
+  contents: read
+  issues: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Complete canonical V1 falsifiers (offline)
+        run: |
+          set -euo pipefail
+          node --check scripts/web-fleet/task-packet.mjs
+          node --check scripts/web-fleet/patch-wire.mjs
+          node --test platform/lifeboat/test/task-packet.test.mjs tests/web_fleet/github-evidence.test.mjs tests/web_fleet/task-packet.test.mjs
+      - name: Real current public IDP source into canonical CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          node scripts/web-fleet/task-packet.mjs --issue 8430 --file platform/lifeboat/src/task-packet.js --instruction FIR-07 --owner gemini-web-unverified --task FIR-07-LIVE-CLI-PROOF --out "$RUNNER_TEMP/task.json"
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const p=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/task.json','utf8'));
+          if(p.schema!=='MERIDIAN-TASK-V1'||p.root_instruction_id!=='FIR-07'||p.source_files.length!==1||p.requested_result.authority!=='DATA_ONLY_UNTRUSTED'||!p.payload_sha256||p.checkpoint.state!=='UNKNOWN')throw new Error('NOT_CANONICAL_V1');
+          console.log(JSON.stringify({schema:p.schema,task:p.task_id,source_sha:p.source_sha,git_blob:p.source_files[0].git_blob_sha,mode:p.source_files[0].source_mode,packet_bytes:fs.statSync(process.env.RUNNER_TEMP+'/task.json').size,verdict:'REAL_GITHUB_SOURCE_PACKET_ONLY_NOT_GEMINI_RUN'}));
+          NODE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: 7760-live-v1-cli-packet
+          path: ${{ runner.temp }}/task.json
+          retention-days: 2
+          if-no-files-found: error
