@@ -17,7 +17,8 @@
       "independent_verification",
       "replayable_receipts"
     ],
-    "selection": "baseline_heuristic_pending_evaluation"
+    "selection": "baseline_heuristic_pending_evaluation",
+    "mode_selection": "context-dependent; terrain_mapping is one selectable mode, not a universal mandatory gate"
   },
   "operators": [
     {
@@ -132,5 +133,79 @@
       "regret"
     ],
     "holdout_required": true
-  }
+  },
+  "operating_modes": [
+    {
+      "id": "terrain_mapping",
+      "purpose": "reconnaissance before commitment when uncertainty and irreversibility justify it",
+      "entry_conditions": [
+        "material_unknowns",
+        "high_cost_of_wrong_action",
+        "structural_ambiguity"
+      ],
+      "behaviour": [
+        "map_context_and_dependencies",
+        "surface_assumptions",
+        "compare_options",
+        "preserve_optionality",
+        "estimate_value_of_information"
+      ],
+      "exit_conditions": [
+        "decision_ready_with_bounded_uncertainty",
+        "information_cost_exceeds_expected_value",
+        "deadline_or_safety_requires_action"
+      ],
+      "guards": [
+        "not_mandatory_for_low_risk_reversible_tasks",
+        "timeboxed",
+        "explicit_stop_rule"
+      ]
+    },
+    {
+      "id": "direct_execution",
+      "purpose": "execute sufficiently understood low-risk or time-critical actions",
+      "entry_conditions": [
+        "clear_objective",
+        "authorised_action",
+        "acceptable_risk"
+      ],
+      "guards": [
+        "verify_outcome"
+      ]
+    },
+    {
+      "id": "exploration",
+      "purpose": "test competing hypotheses with bounded experiments",
+      "entry_conditions": [
+        "high_uncertainty",
+        "experiments_feasible"
+      ],
+      "guards": [
+        "budget_cap",
+        "record_negative_results"
+      ]
+    },
+    {
+      "id": "structural_reconstruction",
+      "purpose": "change the framing or architecture when local optimisation is inadequate",
+      "entry_conditions": [
+        "evidence_of_structural_constraint"
+      ],
+      "guards": [
+        "preserve_invariants",
+        "compare_baselines"
+      ]
+    },
+    {
+      "id": "recovery",
+      "purpose": "restore operation from known failure class using authorised bounded controls",
+      "entry_conditions": [
+        "failure_detected"
+      ],
+      "guards": [
+        "avoid_unbounded_retries",
+        "independent_verification"
+      ]
+    }
+  ]
 }
