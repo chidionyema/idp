@@ -12,7 +12,8 @@ import {
 import { SOURCE_FILES, encodeFiles, makeFetch } from "./aistudio-fakes.mjs";
 
 const ENV = {
-  OMNIFLOW_GH_TOKEN: "test-token",
+  AI_STUDIO_GH_BROKER_URL: "https://broker.example/v1/github/installation-token",
+  AI_STUDIO_GH_BROKER_AUTH: "test-broker-auth",
   AI_STUDIO_INGEST_SECRET: "test-secret",
   GENESIS_REALTIME_URL: "https://genesis-founder-surface.pages.dev/realtime",
 };
@@ -203,7 +204,9 @@ test("symlink source cannot trigger even a GitHub blob POST", async () => {
     () => ingest({ source: "stream", files }, env, fetchImpl),
     /EXISTING_FILE_MODE_REFUSED/,
   );
-  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+  // Acquiring a scoped read/write lease is not a GitHub write; an existing
+  // symlink cannot be detected until GitHub reports its tree mode.
+  assert.equal(journal.filter((x) => x.method !== "GET" && x.path.startsWith("/repos/")).length, 0);
 });
 
 test("missing declared digest and byte length refuse source", async () => {
@@ -261,7 +264,7 @@ test("invalid trusted manifest fails closed even with correct file content", asy
     () => ingest({ source: "stream", files }, bad, fetchImpl),
     (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
   );
-  assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+  assert.equal(journal.some((x) => x.method !== "GET" && x.path.startsWith("/repos/")), false);
 });
 
 test("trusted release issue and principal, not hardcoded intake owner, determine Git trailers", async () => {
@@ -311,4 +314,89 @@ test("a model-provided identity cannot override the trusted release principal", 
   assert.match(commit, /^Claim: chidionyema\/idp#7760$/m);
   assert.match(commit, /^Agent: chatgpt-web$/m);
   assert.doesNotMatch(commit, /^Agent: root$/m);
+});
+
+
+test("legacy deployment-time installation token never grants a write lease", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const env = await reviewedEnv(files, {
+    OMNIFLOW_GH_TOKEN: "ghs_" + "x".repeat(48),
+    AI_STUDIO_INGEST_SECRET: "test-secret",
+  });
+  const { fetchImpl, journal } = makeFetch();
+  await assert.rejects(
+    () => ingest({ source: "stream", files }, env, fetchImpl),
+    (error) => error instanceof IngestError && error.code === "GH_BROKER_ABSENT",
+  );
+  assert.equal(journal.some((x) => x.method !== "GET" && x.path.startsWith("/repos/")), false);
+});
+
+test("reviewed source requests exactly one scoped lease with trusted claim identity", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const { fetchImpl, journal } = makeFetch();
+  const receipt = await ingest({ source: "stream", files, release: {
+    issue: 1, agent: "browser-forged", token: "model-token",
+  } }, await reviewedEnv(files), fetchImpl);
+  const requests = journal.filter((x) => x.path === "/v1/github/installation-token");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].body.repository, "chidionyema/idp");
+  assert.equal(requests[0].body.lane, "application-engineer");
+  assert.equal(requests[0].body.release.issue, 7760);
+  assert.equal(requests[0].body.release.agent, "chatgpt-web");
+  assert.deepEqual(requests[0].body.permissions,
+    { metadata: "read", contents: "write", issues: "write" });
+  assert.equal(JSON.stringify(receipt).includes("ghs_"), false);
+});
+
+test("unreviewed source cannot request broker credentials", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const { fetchImpl, journal } = makeFetch();
+  await assert.rejects(
+    () => ingest({ source: "stream", files }, ENV, fetchImpl),
+    (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
+  );
+  assert.equal(journal.some((x) => x.path === "/v1/github/installation-token"), false);
+});
+
+test("expired, wrong-scope, wrong-repository broker leases cannot write", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const good = {
+    schema: "MERIDIAN-GITHUB-LEASE-v1",
+    repository: "chidionyema/idp",
+    lane: "application-engineer",
+    permissions: { metadata: "read", contents: "write", issues: "write" },
+    token: "ghs_" + "x".repeat(48),
+    expires_at: new Date(Date.now() + 3_300_000).toISOString(),
+  };
+  for (const brokerResponse of [
+    { ...good, expires_at: new Date(Date.now() - 60_000).toISOString() },
+    { ...good, repository: "other/repo" },
+    { ...good, permissions: { ...good.permissions, administration: "write" } },
+    { ...good, token: "not-an-installation-token" },
+  ]) {
+    const { fetchImpl, journal } = makeFetch([], { brokerResponse });
+    const reviewed = await reviewedEnv(files);
+    await assert.rejects(
+      () => ingest({ source: "stream", files }, reviewed, fetchImpl),
+      (error) => error instanceof IngestError && error.code === "GH_BROKER_LEASE_INVALID",
+    );
+    assert.equal(journal.some((x) => x.method !== "GET" && x.path.startsWith("/repos/")), false);
+  }
+});
+
+test("non-TLS and credential-bearing broker URLs are refused before broker access", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  for (const url of [
+    "http://broker.example/v1/github/installation-token",
+    "https://user:pass@broker.example/v1/github/installation-token",
+    "https://broker.example/anything",
+  ]) {
+    const env = await reviewedEnv(files, { ...ENV, AI_STUDIO_GH_BROKER_URL: url });
+    const { fetchImpl, journal } = makeFetch();
+    await assert.rejects(
+      () => ingest({ source: "stream", files }, env, fetchImpl),
+      (error) => error instanceof IngestError && error.code === "GH_BROKER_CONFIGURATION_REFUSED",
+    );
+    assert.equal(journal.some((x) => x.path === "/v1/github/installation-token"), false);
+  }
 });

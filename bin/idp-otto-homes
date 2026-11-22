@@ -90,7 +90,8 @@ SECRETS = [
     ("FOUNDER_SEAL_TOKEN", [("otto-lifeboat", "FOUNDER_SEAL_TOKEN")]),
     ("FOUNDER_SEAL_KEY_PEM", [("otto-lifeboat", "FOUNDER_SEAL_KEY_PEM")]),
     ("AI_STUDIO_INGEST_SECRET", [("otto-lifeboat", "AI_STUDIO_INGEST_SECRET")]),
-    ("OMNIFLOW_GH_TOKEN", [("otto-lifeboat", "OMNIFLOW_GH_TOKEN")]),
+    ("AI_STUDIO_GH_BROKER_URL", [("otto-lifeboat", "AI_STUDIO_GH_BROKER_URL")]),
+    ("AI_STUDIO_GH_BROKER_AUTH", [("otto-lifeboat", "AI_STUDIO_GH_BROKER_AUTH")]),
 ]
 
 
@@ -289,30 +290,6 @@ def ingest_secret() -> str:
     return secret
 
 
-def omniflow_token() -> str:
-    """The GitHub credential the ingest engine writes the lane with, minted FRESH on every deploy.
-
-    Never a person's token: it is an installation token of the estate's one GitHub App, narrowed
-    to the application-engineer lane (platform/github-app/lanes.json) by bin/idp-github-app. The
-    App's tokens live one hour, so the value is minted here rather than read from the vault: a
-    cached one would be dead by the next deploy, and a dead token in the vault is worse than no
-    token because it looks live. The current value is written back so the vault never holds a
-    credential that has expired.
-    """
-    out = subprocess.run([str(IDP / "bin/idp-github-app"), "token", "application-engineer"],
-                         capture_output=True, text=True, timeout=180)
-    token = ""
-    if out.returncode == 0:
-        lines = [ln.strip() for ln in out.stdout.strip().splitlines() if ln.strip()]
-        token = lines[-1] if lines else ""
-    if not token:
-        print("  BLIND   omniflow  no GitHub App installation token (the App may not be installed "
-              "or the vault may hold no pem); the door will answer but cannot write the lane")
-        return ""
-    vault_merge("otto-lifeboat", {"OMNIFLOW_GH_TOKEN": token})
-    print("  minted otto-lifeboat/OMNIFLOW_GH_TOKEN (GitHub App installation token, 1h life)")
-    return token
-
 
 def wrangler(args: list[str], stdin: str | None = None) -> None:
     subprocess.run(["npx", "--yes", "wrangler@latest", *args], cwd=LIFEBOAT,
@@ -362,14 +339,12 @@ def deploy() -> int:
     # variable or a line in this session's scrollback (LAW 21).
     for name, candidates in SECRETS:
         # Three of home 2's secrets are minted by the estate itself, not read: the door key
-        # (lifeboat_key), the ingest bearer (ingest_secret) and the lane writer (omniflow_token).
-        # A vault that lost one of them must not produce a door that answers 401 to everything.
+        # (lifeboat_key) and the ingest bearer (ingest_secret).
+        # The GitHub App token now comes from the separate trusted broker per request.
         if name == "LIFEBOAT_KEY":
             value = lifeboat_key()
         elif name == "AI_STUDIO_INGEST_SECRET":
             value = ingest_secret()
-        elif name == "OMNIFLOW_GH_TOKEN":
-            value = omniflow_token()
         else:
             value = vault_first(candidates)
         if value:
