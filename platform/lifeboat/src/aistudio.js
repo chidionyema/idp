@@ -7,8 +7,10 @@
 // The intake rule 59effb8f4 is enforced here rather than trusted upstream: the bytes that land
 // are hashed again at the edge and a declared digest that disagrees is a partial flush, refused.
 
+import { SUBMIT_REF, safeSourcePath, validateFiles, gitBlobSha, admittedMode, admittedBase, submissionReceipt } from "./aistudio-fence.js";
+
 export const REPO = "chidionyema/idp";
-export const LANE = "lane/aistudio-auto-intake";
+export const LANE = SUBMIT_REF; // The producer MUST enter the trusted submit/** pre-gate.
 export const INTAKE_RULE = "59effb8f4";
 export const OMNIFLOW_ISSUE = 8133;
 export const INTAKE_PATH = "/api/ingest/stream";
@@ -20,7 +22,6 @@ const MOCK_FIXTURES = [
   "INITIAL_SPECIALIST_FLEET",
 ];
 
-const SAFE_PATH = /^[A-Za-z0-9._/-]+$/;
 
 export class IngestError extends Error {
   constructor(status, code, detail = {}) {
@@ -63,13 +64,7 @@ export async function sha256Hex(bytes) {
 }
 
 export function unsafePath(path) {
-  return (
-    typeof path !== "string" ||
-    path.length === 0 ||
-    path.startsWith("/") ||
-    path.split("/").includes("..") ||
-    !SAFE_PATH.test(path)
-  );
+  return !safeSourcePath(path);
 }
 
 export function isMockFixture(path) {
@@ -102,11 +97,11 @@ export async function prepare(files) {
     }
 
     const sha = await sha256Hex(bytes);
-    if (file.sha256 && file.sha256 !== sha) {
+    if (typeof file.sha256 !== "string" || file.sha256 !== sha) {
       rejected.push({ path, reason: "PARTIAL_FLUSH_DIGEST" });
       continue;
     }
-    if (typeof file.bytes === "number" && file.bytes !== bytes.length) {
+    if (!Number.isSafeInteger(file.bytes) || file.bytes !== bytes.length) {
       rejected.push({ path, reason: "PARTIAL_FLUSH_LENGTH" });
       continue;
     }
@@ -117,7 +112,7 @@ export async function prepare(files) {
       continue;
     }
     seen.add(key);
-    accepted.push({ path, sha, bytes: bytes.length, content_b64: bytesToB64(bytes) });
+    accepted.push({ path, sha, bytes: bytes.length, content_b64: bytesToB64(bytes), git_blob_sha: await gitBlobSha(bytes) });
   }
 
   return { accepted, sanitized, rejected };
@@ -163,13 +158,18 @@ async function laneHead(fetchImpl, env) {
   return ref?.object?.sha || null;
 }
 
+async function trustedMainHead(fetchImpl, env) {
+  const ref = await gh(fetchImpl, env, `/repos/${REPO}/git/ref/heads/main`);
+  return ref?.object?.sha || null;
+}
+
 async function laneTree(fetchImpl, env, head) {
-  if (!head) return { sha: null, files: new Map() };
   const commit = await gh(fetchImpl, env, `/repos/${REPO}/git/commits/${head}`);
-  const tree = await gh(fetchImpl, env, `/repos/${REPO}/git/trees/${commit.tree.sha}`);
+  const tree = await gh(fetchImpl, env, `/repos/${REPO}/git/trees/${commit.tree.sha}?recursive=1`);
+  if (tree.truncated) throw new IngestError(409, "TRUNCATED_SOURCE_TREE");
   const files = new Map();
   for (const entry of tree.tree || []) {
-    if (entry.type === "blob") files.set(entry.path, entry.sha);
+    files.set(entry.path, { sha: entry.sha, mode: entry.mode, type: entry.type });
   }
   return { sha: commit.tree.sha, files };
 }
@@ -181,7 +181,8 @@ async function commitFiles(fetchImpl, env, accepted, base) {
       method: "POST",
       body: JSON.stringify({ content: file.content_b64, encoding: "base64" }),
     });
-    blobs.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
+    if (blob?.sha !== file.git_blob_sha) throw new IngestError(409, "GITHUB_BLOB_SHA_MISMATCH");
+    blobs.push({ path: file.path, mode: admittedMode(base.files.get(file.path)), type: "blob", sha: blob.sha });
   }
 
   const tree = await gh(fetchImpl, env, `/repos/${REPO}/git/trees`, {
@@ -192,13 +193,13 @@ async function commitFiles(fetchImpl, env, accepted, base) {
   const commit = await gh(fetchImpl, env, `/repos/${REPO}/git/commits`, {
     method: "POST",
     body: JSON.stringify({
-      message: `feat(aistudio): zero-click intake (${INTAKE_RULE})`,
+      message: `feat(aistudio): untrusted source through submit gate (${INTAKE_RULE})\n\nClaim: chidionyema/idp#7760\nAgent: aistudio-browser-untrusted\n\nNo source is self-certified by this commit.`,
       tree: tree.sha,
       parents: base.head ? [base.head] : [],
     }),
   });
 
-  if (base.head) {
+  if (base.submitHead) {
     await gh(fetchImpl, env, `/repos/${REPO}/git/refs/heads/${LANE}`, {
       method: "PATCH",
       body: JSON.stringify({ sha: commit.sha, force: false }),
@@ -223,11 +224,9 @@ async function announce(fetchImpl, env, packet) {
     if (!res.ok) throw new IngestError(502, "OMNIFLOW_RELAY", { status: res.status });
     return { relay: true };
   }
-  await gh(fetchImpl, env, `/repos/${REPO}/actions/workflows/greenlane.yml/dispatches`, {
-    method: "POST",
-    body: JSON.stringify({ ref: "main", inputs: { lane: LANE, commit: packet.commit } }),
-  });
-  return { greenlane: true };
+  // submit-gate owns promotion; the untrusted browser must NEVER dispatch
+  // Greenlane or impersonate the trusted SEED app.
+  return { submit_gate_on_push: true, promotion: "NOT_OBSERVED" };
 }
 
 async function broadcast(fetchImpl, env, packet) {
@@ -264,16 +263,27 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     throw new IngestError(422, "NO_SOURCE_AFTER_SANITIZE", prepared.sanitized);
   }
 
-  const head = await laneHead(fetchImpl, env);
-  const base = await laneTree(fetchImpl, env, head);
-  const unchanged =
-    head !== null &&
-    prepared.accepted.every((file) => base.files.get(file.path) === file.sha);
+  try {
+    validateFiles(prepared.accepted.map((file) => ({
+      path: file.path,
+      bytes: b64ToBytes(file.content_b64),
+    })));
+  } catch (error) {
+    throw new IngestError(409, "UNTRUSTED_SOURCE_REFUSED", { reason: String(error.message) });
+  }
 
-  let commit = head;
+  const submitHead = await laneHead(fetchImpl, env);
+  const mainHead = await trustedMainHead(fetchImpl, env);
+  const parentHead = admittedBase(submitHead, mainHead);
+  const base = await laneTree(fetchImpl, env, parentHead);
+  const unchanged =
+    submitHead !== null &&
+    prepared.accepted.every((file) => base.files.get(file.path)?.sha === file.git_blob_sha);
+
+  let commit = parentHead;
   let tree = base.sha;
   if (!unchanged) {
-    const landed = await commitFiles(fetchImpl, env, prepared.accepted, { ...base, head });
+    const landed = await commitFiles(fetchImpl, env, prepared.accepted, { ...base, head: parentHead, submitHead });
     commit = landed.commit;
     tree = landed.tree;
   }
@@ -281,11 +291,13 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
   const manifest = prepared.accepted.map((file) => ({
     path: file.path,
     sha256: file.sha,
+    git_blob_sha: file.git_blob_sha,
+    mode: admittedMode(base.files.get(file.path)),
     bytes: file.bytes,
   }));
   const packet = {
-    kind: "ASSIGN",
-    mission: "aistudio-auto-land",
+    kind: "SOURCE_PROPOSED",
+    mission: "aistudio-preseal",
     source,
     repo: REPO,
     lane: LANE,
@@ -313,6 +325,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     omniflow: { issue: OMNIFLOW_ISSUE, event: "OMNIFLOW-EVENT/v1", kind: "ASSIGN" },
     broadcast: broadcastResult,
     dispatch,
+    custody: submissionReceipt({ commit, deduped: unchanged }),
   };
 }
 
