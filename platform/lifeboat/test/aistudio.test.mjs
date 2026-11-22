@@ -24,6 +24,7 @@ async function reviewedEnv(files, env = ENV) {
     repo: "chidionyema/idp",
     source_sha: "a".repeat(40),
     issue: 7760,
+    agent: "chatgpt-web",
     instruction_id: "FIR-07",
     files: prepared.accepted.map((f) => ({path: f.path, sha256: f.sha, bytes: f.bytes})),
   }) };
@@ -261,4 +262,53 @@ test("invalid trusted manifest fails closed even with correct file content", asy
     (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
   );
   assert.equal(journal.filter((x) => x.method === "POST").length, 0);
+});
+
+test("trusted release issue and principal, not hardcoded intake owner, determine Git trailers", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const reviewed = await reviewedEnv(files);
+  const manifest = JSON.parse(reviewed.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON);
+  reviewed.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON = JSON.stringify({
+    ...manifest, issue: 7794, agent: "gemini-web",
+  });
+  const { fetchImpl, journal } = makeFetch();
+  const receipt = await ingest({ source: "stream", files }, reviewed, fetchImpl);
+  const message = posts(journal, "/git/commits")[0].body.message;
+  assert.match(message, /^Claim: chidionyema\/idp#7794$/m);
+  assert.match(message, /^Agent: gemini-web$/m);
+  assert.doesNotMatch(message, /^Agent: aistudio-browser-untrusted$/m);
+  assert.deepEqual(receipt.release, { issue: 7794, agent: "gemini-web", instruction_id: "FIR-07" });
+  assert.equal(receipt.custody.operational_yield, false);
+});
+
+test("a missing or invalid trusted agent is refused before any write", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  for (const agent of [undefined, "", "a\nAgent: root", "bad name", "../../root"]) {
+    const env = await reviewedEnv(files);
+    const release = JSON.parse(env.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON);
+    if (agent === undefined) delete release.agent;
+    else release.agent = agent;
+    env.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON = JSON.stringify(release);
+    const { fetchImpl, journal } = makeFetch();
+    await assert.rejects(
+      () => ingest({ source: "stream", files }, env, fetchImpl),
+      (error) => error instanceof IngestError && error.code === "PUBLIC_SOURCE_RELEASE_HELD",
+    );
+    assert.equal(journal.filter((entry) => entry.method === "POST").length, 0);
+  }
+});
+
+test("a model-provided identity cannot override the trusted release principal", async () => {
+  const files = await encodeFiles([SOURCE_FILES[0]]);
+  const trusted = await reviewedEnv(files);
+  const { fetchImpl, journal } = makeFetch();
+  await ingest({
+    source: "stream",
+    release: { issue: 1, agent: "root", instruction_id: "MODEL-FORGED" },
+    files,
+  }, trusted, fetchImpl);
+  const commit = posts(journal, "/git/commits")[0].body.message;
+  assert.match(commit, /^Claim: chidionyema\/idp#7760$/m);
+  assert.match(commit, /^Agent: chatgpt-web$/m);
+  assert.doesNotMatch(commit, /^Agent: root$/m);
 });
