@@ -118,37 +118,107 @@ export async function prepare(files) {
   return { accepted, sanitized, rejected };
 }
 
-function token(env) {
-  return env.OMNIFLOW_GH_TOKEN || env.GITHUB_TOKEN || "";
+// The public Worker never stores a GitHub App root or a deploy-time installation token.
+// An independently trusted issuer mints one short-lived, permission-scoped lease
+// only for an exact, server-authorised source release.
+const GH_LEASE_SCHEMA = "MERIDIAN-GITHUB-LEASE-v1";
+const GH_LEASE_PATH = "/v1/github/installation-token";
+const GH_PERMISSIONS = Object.freeze({ metadata: "read", contents: "write", issues: "write" });
+
+async function acquireGithubLease(fetchImpl, env, release) {
+  const endpoint = env.AI_STUDIO_GH_BROKER_URL || "";
+  const auth = env.AI_STUDIO_GH_BROKER_AUTH || "";
+  if (!endpoint || !auth) throw new IngestError(503, "GH_BROKER_ABSENT");
+  let url;
+  try {
+    url = new URL(endpoint);
+    if (url.protocol !== "https:" || url.username || url.password ||
+        url.search || url.hash || url.pathname !== GH_LEASE_PATH) {
+      throw new Error("invalid broker endpoint");
+    }
+  } catch {
+    throw new IngestError(503, "GH_BROKER_CONFIGURATION_REFUSED");
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(url.toString(), {
+      method: "POST",
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+      headers: {
+        authorization: "Bearer " + auth,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "MERIDIAN-GITHUB-LEASE-REQUEST-v1",
+        audience: "aistudio-source-only",
+        repository: REPO,
+        lane: "application-engineer",
+        permissions: GH_PERMISSIONS,
+        release,
+        release_manifest: env.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON,
+      }),
+    });
+  } catch {
+    throw new IngestError(503, "GH_BROKER_UNREACHABLE");
+  }
+  if (!response.ok) throw new IngestError(503, "GH_BROKER_REFUSED", { status: response.status });
+  let lease;
+  try {
+    const raw = await response.text();
+    if (raw.length > 4096) throw new Error("oversized lease");
+    lease = JSON.parse(raw);
+  } catch {
+    throw new IngestError(503, "GH_BROKER_LEASE_INVALID");
+  }
+  const permissions = lease?.permissions;
+  const keys = permissions && typeof permissions === "object" ?
+    Object.keys(permissions).sort().join(",") : "";
+  const expiresAt = Date.parse(lease?.expires_at);
+  const remaining = expiresAt - Date.now();
+  if (lease?.schema !== GH_LEASE_SCHEMA ||
+      lease.repository !== REPO ||
+      lease.lane !== "application-engineer" ||
+      !/^ghs_[A-Za-z0-9]{30,256}$/.test(lease.token || "") ||
+      keys !== "contents,issues,metadata" ||
+      Object.entries(GH_PERMISSIONS).some(([k, v]) => permissions[k] !== v) ||
+      !Number.isFinite(remaining) || remaining < 300_000 || remaining > 3_900_000) {
+    throw new IngestError(503, "GH_BROKER_LEASE_INVALID");
+  }
+  return { token: lease.token, expiresAt };
 }
 
-async function gh(fetchImpl, env, path, init = {}) {
-  const ghToken = token(env);
-  if (!ghToken) throw new IngestError(503, "GH_TOKEN_ABSENT");
-  const res = await fetchImpl(`https://api.github.com${path}`, {
+async function gh(fetchImpl, lease, path, init = {}) {
+  if (!lease?.token || !Number.isFinite(lease.expiresAt) ||
+      Date.now() + 60_000 >= lease.expiresAt) {
+    throw new IngestError(503, "GH_LEASE_EXPIRED");
+  }
+  const res = await fetchImpl("https://api.github.com" + path, {
     ...init,
+    redirect: "error",
     headers: {
-      authorization: `Bearer ${ghToken}`,
+      authorization: "Bearer " + lease.token,
       accept: "application/vnd.github+json",
       "content-type": "application/json",
       "user-agent": "genesis-aistudio-ingest",
       ...(init.headers || {}),
     },
   });
-  const text = await res.text();
-  let body = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
-    }
-  }
+  if (res.status === 404 && init.allow404) return null;
   if (!res.ok) {
-    if (res.status === 404 && init.allow404) return null;
-    throw new IngestError(502, "GITHUB_API", { path, status: res.status, body });
+    const code = res.status === 401 || res.status === 403 ?
+      "GH_CREDENTIAL_REFUSED" : "GITHUB_API";
+    // Neither upstream error bodies nor secret values enter public receipts.
+    throw new IngestError(code === "GH_CREDENTIAL_REFUSED" ? 503 : 502, code,
+      { status: res.status });
   }
-  return body;
+  const body = await res.text();
+  if (!body) return null;
+  try { return JSON.parse(body); }
+  catch { throw new IngestError(502, "GITHUB_API_MALFORMED"); }
 }
 
 async function laneHead(fetchImpl, env) {
@@ -158,9 +228,11 @@ async function laneHead(fetchImpl, env) {
   return ref?.object?.sha || null;
 }
 
-async function trustedMainHead(fetchImpl, env) {
-  const ref = await gh(fetchImpl, env, `/repos/${REPO}/git/ref/heads/main`);
-  return ref?.object?.sha || null;
+async function trustedMainHead(fetchImpl, lease) {
+  const ref = await gh(fetchImpl, lease, "/repos/" + REPO + "/git/ref/heads/main");
+  const sha = ref?.object?.sha || "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new IngestError(503, "MAIN_HEAD_INVALID");
+  return sha;
 }
 
 async function laneTree(fetchImpl, env, head) {
@@ -270,15 +342,27 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
 
   // Read-only verification first; no browser source reaches public Git objects
   // without a matching server-held, task-bound public-release manifest.
-  const mainHead = await trustedMainHead(fetchImpl, env);
+  // Check exact source bytes and trusted release identity locally before
+  // asking the broker for a lease. The issuer must independently verify
+  // release freshness; GitHub HEAD is rechecked with the leased token.
   let release;
+  try {
+    const manifest = JSON.parse(env.AI_STUDIO_PUBLIC_RELEASE_MANIFEST_JSON || "null");
+    if (!/^[0-9a-f]{40}$/.test(manifest?.source_sha || "")) throw new Error("unpinned source");
+    release = requirePublicSourceRelease(prepared.accepted, env, manifest.source_sha);
+  } catch (error) {
+    throw new IngestError(409, "PUBLIC_SOURCE_RELEASE_HELD", { reason: String(error.message) });
+  }
+  const lease = await acquireGithubLease(fetchImpl, env, release);
+  const ghAuth = { token: lease.token, expiresAt: lease.expiresAt };
+  const mainHead = await trustedMainHead(fetchImpl, ghAuth);
   try { release = requirePublicSourceRelease(prepared.accepted, env, mainHead); }
   catch (error) {
     throw new IngestError(409, "PUBLIC_SOURCE_RELEASE_HELD", { reason: String(error.message) });
   }
-  const submitHead = await laneHead(fetchImpl, env);
+  const submitHead = await laneHead(fetchImpl, ghAuth);
   const parentHead = admittedBase(submitHead, mainHead);
-  const base = await laneTree(fetchImpl, env, parentHead);
+  const base = await laneTree(fetchImpl, ghAuth, parentHead);
   const unchanged =
     submitHead !== null &&
     prepared.accepted.every((file) => base.files.get(file.path)?.sha === file.git_blob_sha);
@@ -286,7 +370,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
   let commit = parentHead;
   let tree = base.sha;
   if (!unchanged) {
-    const landed = await commitFiles(fetchImpl, env, prepared.accepted, { ...base, head: parentHead, submitHead }, release);
+    const landed = await commitFiles(fetchImpl, ghAuth, prepared.accepted, { ...base, head: parentHead, submitHead }, release);
     commit = landed.commit;
     tree = landed.tree;
   }
@@ -311,7 +395,7 @@ export async function ingest(payload, env = {}, fetchImpl = fetch) {
     files: manifest,
   };
 
-  await commentAssignment(fetchImpl, env, packet);
+  await commentAssignment(fetchImpl, ghAuth, packet);
   const broadcastResult = await broadcast(fetchImpl, env, packet);
   const dispatch = await announce(fetchImpl, env, packet);
 
