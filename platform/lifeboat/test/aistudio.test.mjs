@@ -373,8 +373,9 @@ test("expired, wrong-scope, wrong-repository broker leases cannot write", async 
     { ...good, token: "not-an-installation-token" },
   ]) {
     const { fetchImpl, journal } = makeFetch([], { brokerResponse });
+    const reviewed = await reviewedEnv(files);
     await assert.rejects(
-      () => ingest({ source: "stream", files }, await reviewedEnv(files), fetchImpl),
+      () => ingest({ source: "stream", files }, reviewed, fetchImpl),
       (error) => error instanceof IngestError && error.code === "GH_BROKER_LEASE_INVALID",
     );
     assert.equal(journal.some((x) => x.method !== "GET" && x.path.startsWith("/repos/")), false);
