@@ -145,7 +145,9 @@ def source_assess(
             check=False,
         )
         if lang.returncode == 1 and "FAIL  language-gate:" in lang.stderr:
-            return Verdict("REFUSE", "pre-CI language-gate: " + lang.stderr.strip()[:220])
+            return Verdict(
+                "REFUSE", "pre-CI language-gate: " + lang.stderr.strip()[:220]
+            )
         if lang.returncode != 0:
             return Verdict("UNKNOWN", "trusted language preflight unavailable")
         changed = execute(
@@ -169,7 +171,9 @@ def source_assess(
             return Verdict("UNKNOWN", "candidate Python paths unavailable")
         python_paths = [p for p in changed.stdout.split("\0") if p]
         if not python_paths:
-            return Verdict("ADMIT", "trusted language gate passed; no Python format delta")
+            return Verdict(
+                "ADMIT", "trusted language gate passed; no Python format delta"
+            )
         for name in python_paths:
             path = Path(name)
             if path.is_absolute() or ".." in path.parts or name.startswith(".git/"):
@@ -199,7 +203,9 @@ def source_assess(
                 env={
                     k: v
                     for k, v in os.environ.items()
-                    if not any(s in k.upper() for s in ("TOKEN", "SECRET", "PASSWORD", "KEY"))
+                    if not any(
+                        s in k.upper() for s in ("TOKEN", "SECRET", "PASSWORD", "KEY")
+                    )
                 },
             )
             if installer.returncode:

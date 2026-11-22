@@ -224,9 +224,8 @@ def test_synthetic_blind_incident_never_suppresses_required_ci():
     assert verdict.state == "UNKNOWN" and verdict.admissible
 
 
-def test_language_failure_is_refused_before_the_candidate_enters_ci(tmp_path, monkeypatch):
+def test_language_failure_is_refused_before_the_candidate_enters_ci(tmp_path):
     import subprocess
-    import sys
 
     from greenlane.ferrari import source_assess
 
