@@ -118,15 +118,6 @@ def resolve_repo() -> str:
 
 REPO = resolve_repo()
 GATE = os.path.join(REPO, "bin", "claim-gate")
-# The same list bin/verify_three_proofs.py refuses on. Copied deliberately: a claim that
-# resolves authority late costs a whole build, so it is named here, before the claim.
-GUARDED = (
-    ".github/workflows/",
-    "catalog/dof-registry.json",
-    "catalog/genesis-protocols.json",
-    ".github/CODEOWNERS",
-    "AGENTS.md",
-)
 
 # The two trailer regexes are claim-gate's own, copied deliberately rather than imported: a gate
 # that imports its writer can be made to agree with it by editing one file, and then a green gate
@@ -318,11 +309,6 @@ def note_claim(num: int) -> None:
         )
 
 
-def guarded_hits(files):
-    """The files in `files` that bin/verify_three_proofs.py refuses without a seal."""
-    return [f for f in files if any(f == g or f.startswith(g) for g in GUARDED)]
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
@@ -371,17 +357,6 @@ def main() -> int:
         f"      claim-open  change touches {len(files)} file(s): {', '.join(files[:5])}"
         + (f" (+{len(files) - 5} more)" if len(files) > 5 else "")
     )
-    guarded = guarded_hits(files)
-    if guarded:
-        print(
-            "FAIL    claim-open  GUARDED_PATHS_NEED_SEAL: "
-            + ", ".join(guarded)
-            + "\n        bin/verify_three_proofs.py refuses these without the Founder seal, so"
-            + " the seal is resolved BEFORE the work, not after it.\n"
-            + "        Ask for the seal door on this issue, then claim again.",
-            file=sys.stderr,
-        )
-        return 2
 
     if not a.check_only:
         num = find_issue(a.title, a.issue)

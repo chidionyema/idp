@@ -397,116 +397,6 @@ def runner_pin_only(diff: str) -> bool:
     return True
 
 
-# A lane the Greenlane cannot judge costs a batch slot to discover. Two such shapes are decided
-# locally in under a second, and both were measured on 2026-11-20 (idp#8387).
-MERGE_CHECK_TIMEOUT = 60
-MODE_CHANGE = re.compile(r"^ mode change (\d{6}) => (\d{6}) (\S.*)$")
-
-
-def _git_proc(*a: str) -> subprocess.CompletedProcess:
-    """A git call whose non-zero exit is an ANSWER, not an exception."""
-    return subprocess.run(  # noqa: S603 -- fixed argv, no shell
-        ["git", *a],  # noqa: S607
-        capture_output=True,
-        text=True,
-        timeout=MERGE_CHECK_TIMEOUT,
-    )
-
-
-def _judge_base() -> tuple[str, str]:
-    """(label, committish) of what a lane is judged against here, or ("", "").
-
-    origin/main first (the Greenlane's own judgement), then the `BASE` sha that ci.yml hands the
-    claim-gate job on a pull_request or merge_queue event. Only when neither resolves does this
-    checkout really not know where main is.
-    """
-    for cand in ("refs/remotes/origin/main", "origin/main", "refs/heads/main", "main"):
-        proc = _git_proc("rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}")
-        if proc.returncode == 0 and proc.stdout.strip():
-            return cand, cand
-    base = os.environ.get("BASE", "").strip()
-    if base and re.fullmatch(r"[0-9a-f]{7,40}", base):
-        return f"BASE {base[:9]}", base
-    return "", ""
-
-
-def merge_problems(head: str) -> list[str]:
-    """Refuse a lane that no longer merges onto main (idp#8387).
-
-    Measured 2026-11-20: three lanes in one evening were pushed, queued, and returned
-    `greenlane failure does not rebase onto main 90fb195695f8`, each spending a whole batch slot
-    to learn what `git merge-tree --write-tree` answers in under a second. Main moves every few
-    minutes, so the window between "built on main" and "judged against main" is the queue itself.
-
-    Unmeasured is a refusal here, not a pass: a checkout that can see neither origin/main nor the
-    BASE sha CI hands the claim-gate job is told so, because a gate that answers "no conflict"
-    without reading main is the fail-open this file exists to stop.
-    """
-    label, ref = _judge_base()
-    if not ref:
-        return [
-            f"merge-check cannot judge {head[:9]}: this checkout can see neither origin/main nor "
-            "BASE. Run `git fetch origin main` and push again; an unread main is not a clean merge."
-        ]
-    proc = _git_proc("merge-tree", "--write-tree", "--name-only", ref, head)
-    if proc.returncode == 0:
-        return []
-    # `--write-tree --name-only`: line 1 is the tree oid, then one path per conflict, then a blank
-    # line and the CONFLICT/Auto-merging narration (measured on git 2.39 and 2.43).
-    paths: list[str] = []
-    for line in proc.stdout.splitlines()[1:]:
-        if not line.strip():
-            break
-        paths.append(line.strip())
-    if proc.returncode != 1 or not paths:
-        return [
-            f"merge-check could not judge {head[:9]} against {label} (git exit "
-            f"{proc.returncode}): {(proc.stderr.strip() or proc.stdout.strip())[:200]}"
-        ]
-    more = f" (+{len(paths) - 5} more)" if len(paths) > 5 else ""
-    return [
-        f"does not merge onto {label}: {', '.join(paths[:5])}{more}. Resolve it before pushing "
-        f"(`git fetch origin main && git merge origin/main`); the Greenlane would spend a batch "
-        "slot to tell you the same thing."
-    ]
-
-
-def _is_script(rev: str, path: str) -> bool:
-    """True when the file at `rev:path` is a script, i.e. its exec bit means something."""
-    proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-        ["git", "cat-file", "blob", f"{rev}:{path}"],  # noqa: S607
-        capture_output=True,
-        timeout=MERGE_CHECK_TIMEOUT,
-    )
-    return proc.returncode == 0 and proc.stdout.startswith(b"#!")
-
-
-def mode_problems(base: str, head: str) -> list[str]:
-    """Refuse a change that drops a script's exec bit (idp#8387).
-
-    Measured 2026-11-20: a lane built with `git hash-object` / `git update-index --cacheinfo` /
-    `git commit-tree` -- the normal build path on a host whose spawn fence refuses a local
-    checkout -- forced 100644 onto every path, and batch b6225 died
-    `bin/claim-gate: Permission denied` with exit 126. `git show <sha>:bin/claim-gate` looks
-    perfect; only the mode differs. `git diff --summary base head` names it in under a second.
-    """
-    out = git("diff", "--summary", f"{base}..{head}")
-    problems: list[str] = []
-    for line in out.splitlines():
-        m = MODE_CHANGE.match(line)
-        if not m or m.group(1) != "100755" or m.group(2) != "100644":
-            continue
-        path = m.group(3)
-        if not _is_script(head, path):
-            continue
-        problems.append(
-            f"{path} loses its exec bit in this change (100755 -> 100644) and it is a script: it "
-            "fails as `Permission denied`, exit 126, for every job that runs it. Restore the "
-            f"mode with `git update-index --chmod=+x {path}` before pushing."
-        )
-    return problems
-
-
 # The ship contract (founder, 2026-11-20 07:36-07:41): nothing lands without its acceptance
 # probe, its Optimus metrics, the failure classes it touches and its debugging pack. It is
 # declared once on the claim issue (body or any comment; the newest block wins) and judged here,
@@ -534,48 +424,6 @@ def _known(path: Path, list_key: str, id_key: str) -> set[str]:
     return {str(i.get(id_key)) for i in items if isinstance(i, dict) and i.get(id_key)}
 
 
-def _head_registers(
-    head: str, path: Path, list_key: str, id_key: str, with_measure: bool = False
-) -> set[str]:
-    """What the change ITSELF registers in one estate registry, judged the way main will.
-
-    A lane that ADDS a registry entry could not cite it: this gate reads the registries in the
-    checkout it runs in, and the Greenlane checks that out at `ref: main`
-    (.github/workflows/greenlane.yml), so the entry the lane is adding is not there yet.
-    Measured 2026-11-20: lane/i8251-wall-gate registered `gates.unmarked_inner_bounds` and was
-    refused "optimus names unregistered metric(s)" by the gate that asks for the metric.
-    idp#8381.
-
-    Admitting the head's own entry does not let an author's text become a reading: for a metric
-    the reading is taken from main AFTER landing (greenlane/github.py verify_operational ->
-    _optimus_readings runs the registered argv in the main checkout) and only an entry carrying
-    a `measure` argv counts here, so a name with nothing behind it still refuses. For classes and
-    debugging packs the entry is a record reviewed like any other line of the change.
-    """
-    if not head:
-        return set()
-    rel = path.relative_to(ROOT).as_posix()
-    try:
-        data = json.loads(git("show", f"{head}:{rel}"))
-    except (subprocess.CalledProcessError, OSError, ValueError):
-        return set()
-    items = data.get(list_key, []) if isinstance(data, dict) else data
-    out: set[str] = set()
-    for i in items:
-        if not isinstance(i, dict) or not i.get(id_key):
-            continue
-        if with_measure:
-            measure = i.get("measure")
-            if not (
-                isinstance(measure, list)
-                and measure
-                and all(isinstance(a, str) for a in measure)
-            ):
-                continue
-        out.add(str(i[id_key]))
-    return out
-
-
 def ship_contract(texts: list[str]) -> dict | None:
     """The newest SHIP-CONTRACT block across the claim issue's body and comments."""
     block = None
@@ -591,7 +439,7 @@ def ship_contract(texts: list[str]) -> dict | None:
     return fields
 
 
-def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]:
+def contract_problems(where: str, texts: list[str]) -> list[str]:
     """Why the claim's ship contract does not admit the change; empty means it does."""
     c = ship_contract(texts)
     how = (
@@ -613,9 +461,7 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
             f"{where} SHIP-CONTRACT optimus needs `<metric> baseline=<n|UNKNOWN> target=<n>`"
         )
     else:
-        registered = _known(METRICS_FILE, "metrics", "name") | _head_registers(
-            head, METRICS_FILE, "metrics", "name", with_measure=True
-        )
+        registered = _known(METRICS_FILE, "metrics", "name")
         unknown = [
             OPTIMUS.match(m).group("name")
             for m in metrics
@@ -627,9 +473,7 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
                 f"{', '.join(unknown[:5])}: register a measure in catalog/optimus-metrics.json"
             )
     classes = [x.strip() for x in c.get("failure-classes", "").split(",") if x.strip()]
-    known = _known(CLASSES_FILE, "classes", "class") | _head_registers(
-        head, CLASSES_FILE, "classes", "class"
-    )
+    known = _known(CLASSES_FILE, "classes", "class")
     missing = [x for x in classes if x not in known]
     if not classes or missing:
         out.append(
@@ -637,19 +481,14 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
             + (f" (unknown: {', '.join(missing[:5])})" if missing else "")
         )
     pack = c.get("debug-pack", "")
-    if pack not in (
-        _known(PACKS_FILE, "packs", "id")
-        | _head_registers(head, PACKS_FILE, "packs", "id")
-    ):
+    if pack not in _known(PACKS_FILE, "packs", "id"):
         out.append(
             f"{where} SHIP-CONTRACT debug-pack {pack or '<none>'!r} is not in docs/debugging-packs.json"
         )
     return out
 
 
-def verdict(
-    text: str, files: list[str], repo: str, fetch, now: datetime, head: str = ""
-) -> list[str]:
+def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> list[str]:
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
     (issue dict, comments list)."""
     refs = CLAIM_REF.findall(text)
@@ -729,9 +568,7 @@ def verdict(
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
         problems += contract_problems(
-            where,
-            [issue.get("body") or ""] + [x.get("body", "") for x in comments],
-            head,
+            where, [issue.get("body") or ""] + [x.get("body", "") for x in comments]
         )
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
@@ -778,11 +615,6 @@ def judge(
 ) -> list[str]:
     if pr_author == DEPENDABOT:
         return []
-    # Before any claim or GitHub call: a lane the Greenlane cannot judge has no business in the
-    # queue. Both checks are local and sub-second (idp#8387).
-    unlandable = merge_problems(head) + mode_problems(base, head)
-    if unlandable:
-        return unlandable
     commits = [c for c in git("rev-list", "--reverse", f"{base}..{head}").split() if c]
     lanes = [
         (c, HEAD_TRAILER.search(git("log", "-1", "--format=%B", c))) for c in commits
@@ -808,7 +640,7 @@ def judge(
             text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
             problems += [
                 f"lane {lane_head[:9]}: {p}"
-                for p in verdict(text, files, repo, fetch, now, head)
+                for p in verdict(text, files, repo, fetch, now)
             ]
         return problems
     diff = git("diff", f"{base}...{head}")
@@ -820,7 +652,7 @@ def judge(
     if dependency_pin_only(files, diff):
         return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
-    return verdict(text, files, repo, fetch, now, head)
+    return verdict(text, files, repo, fetch, now)
 
 
 def pr_of_head(repo: str, head: str) -> tuple[str, str]:

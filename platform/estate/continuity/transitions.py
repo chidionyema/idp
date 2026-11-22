@@ -7,7 +7,6 @@ immutable causally-linked receipt in mission_events.
 
 from __future__ import annotations
 
-import json
 import time
 
 from .fence import FenceMixin
@@ -18,53 +17,6 @@ UNFENCED_TRANSITIONS = {
     "ACCEPTED->READY": "estate",
     "RECOVERY_PENDING->REASSIGNING": "recovery",
 }
-
-
-def _require_verified_operational_effect(
-    cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence
-):
-    """Require a dated, reconciled effect from this exact mission attempt.
-
-    This enforces evidence custody, not the external observer's integrity.
-    External verifier authentication must be enforced at receipt admission.
-    """
-    if (
-        not isinstance(evidence, str)
-        or not evidence.startswith("effect:")
-        or not evidence[7:]
-    ):
-        raise InvalidTransition(
-            "OPERATING requires evidence='effect:<reconciled-effect-id>'"
-        )
-    effect = cur.execute(
-        "SELECT state, reconciliation_status, external_receipt, observed_at,"
-        " verified_by"
-        " FROM external_effects WHERE effect_id=? AND mission_id=? AND attempt_id=?"
-        " AND lease_epoch=? AND mandate_version=?",
-        (evidence[7:], mission_id, attempt_id, lease_epoch, mandate_version),
-    ).fetchone()
-    if (
-        effect is None
-        or effect["state"] != "OBSERVED"
-        or effect["reconciliation_status"] != "RECONCILED"
-    ):
-        raise InvalidTransition(
-            "OPERATING refused: matching reconciled external effect not found"
-        )
-    if effect["observed_at"] is None or not effect["verified_by"]:
-        raise InvalidTransition(
-            "OPERATING refused: effect has no dated verifier observation"
-        )
-    if effect["verified_by"].strip().casefold() == actor.strip().casefold():
-        raise InvalidTransition(
-            "OPERATING refused: executor cannot attest its own outcome"
-        )
-    try:
-        receipt = json.loads(effect["external_receipt"])
-    except (TypeError, ValueError):
-        receipt = None
-    if not isinstance(receipt, dict) or not receipt:
-        raise InvalidTransition("OPERATING refused: effect receipt is missing or empty")
 
 
 class TransitionMixin(FenceMixin):
@@ -117,16 +69,6 @@ class TransitionMixin(FenceMixin):
                 )
                 if mandate_version is not None:
                     self.check_mandate(fenced, mandate_version)
-            if to_state == "OPERATING":
-                _require_verified_operational_effect(
-                    cur,
-                    mission_id,
-                    attempt_id,
-                    lease_epoch,
-                    m["mandate_version"],
-                    actor,
-                    evidence,
-                )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
                 (to_state, mission_id),

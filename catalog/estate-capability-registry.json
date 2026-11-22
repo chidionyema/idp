@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 315,
     "service": 122,
-    "tool": 524,
+    "tool": 523,
     "workflow": 109
   },
   "records": [
@@ -31102,12 +31102,8 @@
           "--no-tags",
           "--optimus",
           "--paginate",
-          "--quiet",
           "--reverse",
-          "--slurp",
-          "--summary",
-          "--verify",
-          "--write-tree"
+          "--slurp"
         ],
         "outputs": [
           "stdout",
@@ -31248,10 +31244,6 @@
         },
         {
           "id": "cap:tool/start",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/verify_three_proofs.py",
           "edge": "invokes"
         }
       ],
@@ -38992,7 +38984,8 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
-        "cap:tool/idp-pr-scope-audit"
+        "cap:tool/idp-pr-scope-audit",
+        "cap:tool/pre-push-wall.py"
       ],
       "cost": {
         "estimate": null,
@@ -42039,9 +42032,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/pre-push-wall.py"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -58313,10 +58304,10 @@
       "id": "cap:tool/pre-push-wall.py",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "pre-push-wall -- I-8107: one wall, six gates, identical at pre-push and in CI.",
+      "summary": "pre-push-wall -- the front line, at push time, with microscopic telemetry.",
       "contract": {
         "inputs": [
-          "--name-only"
+          "--enforce"
         ],
         "outputs": [
           "stdout",
@@ -58350,7 +58341,7 @@
       "path": "bin/pre-push-wall.py",
       "depends_on": [
         {
-          "id": "cap:tool/idp-differential-falsifier",
+          "id": "cap:tool/idp-bdd-proof-gate",
           "edge": "invokes"
         }
       ],
@@ -60156,7 +60147,6 @@
           "--installed",
           "--json",
           "--no-installed",
-          "--optimus",
           "--root",
           "--strict-ratchet",
           "--write-baseline"
@@ -60729,7 +60719,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/claim-open",
         "cap:tool/idp-agent-base-apply.py",
         "cap:tool/idp-ci"
       ],
@@ -61140,53 +61129,6 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/voice-watch",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:tool/zero_repeat_gate.py",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "bin/zero_repeat_gate.py \u2014 Pre-emit & runtime enforcement mirror of harness/zero-repeat-guard.",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/zero_repeat_gate.py",
       "depends_on": [],
       "metrics": [],
       "blind": [

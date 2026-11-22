@@ -421,9 +421,6 @@ def main(argv: list[str] | None = None) -> int:
         action="store_false",
         help="check only this checkout (the default under --root, so a test tree stays hermetic)",
     )
-    ap.add_argument(
-        "--optimus", action="store_true", help="print the SHIP-CONTRACT metric"
-    )
     args = ap.parse_args(argv)
 
     if args.root:
@@ -441,13 +438,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     findings = check_budgets(ceiling) + scan_inner_bounds(ceiling)
-    if args.optimus:
-        # The metric the SHIP-CONTRACT names (idp#8251): literal wall-clock bounds this gate
-        # refuses, which is the number a lane that trips the budget rung adds to.
-        print(
-            f"optimus.gates.unmarked_inner_bounds={len([f for f in findings if f['verdict'] == 'FAIL'])}"
-        )
-        return 0
     if check_installed and INSTALLED.is_dir():
         prefix = (
             f"~/.estate/intents/"

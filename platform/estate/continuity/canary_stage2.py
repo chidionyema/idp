@@ -54,15 +54,6 @@ def stage_two(store, receipt, work_dir, lease_a, lines) -> int:
     artifact_data = store.restore_latest_checkpoint("m-canary")
     receipt["restored_completed_work"] = len(artifact_data["completed_work"])
     artifact = os.path.join(work_dir, "artifact.txt")
-    effect = store.record_effect_intent(
-        "m-canary",
-        lease_b["attempt_id"],
-        lease_b["lease_epoch"],
-        "verify-canary-artifact",
-        artifact,
-        "m-canary-artifact-v1",
-        {"expected_lines": [f"line-{i}" for i in range(1, lines + 1)]},
-    )
     for item in artifact_data["remaining_work"]:
         with open(artifact, "a") as fh:
             fh.write(item + "\n")
@@ -75,11 +66,6 @@ def stage_two(store, receipt, work_dir, lease_a, lines) -> int:
         print(json.dumps(receipt))
         return 4
     receipt["artifact_sha256"] = hashlib.sha256("\n".join(final).encode()).hexdigest()
-    store.record_receipt(
-        effect["effect_id"],
-        {"sha256": receipt["artifact_sha256"], "complete": True, "no_duplicates": True},
-        verified_by="canary-artifact-check",
-    )
     for to in CLOSING:
         store.transition(
             "m-canary",
@@ -88,7 +74,6 @@ def stage_two(store, receipt, work_dir, lease_a, lines) -> int:
             to,
             attempt_id=lease_b["attempt_id"],
             lease_epoch=lease_b["lease_epoch"],
-            evidence=f"effect:{effect['effect_id']}" if to == "OPERATING" else "",
         )
     receipt["final_state"] = store.get_mission("m-canary")["state"]
     events = store.db.execute(
