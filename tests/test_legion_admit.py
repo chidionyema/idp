@@ -573,13 +573,20 @@ def test_auto_launcher_binds_base_model_and_isolates_key(tmp_path):
         "PATH": "/usr/bin",
     }
     route = mod.auto_candidates(tmp_path, env)[0]
-    record = {"decision": "ADMITTED", "route": route, "base": "exact"}
+    record = {
+        "decision": "ADMITTED",
+        "route": route,
+        "base": "exact",
+        "paths": ["web/f0.txt"],
+    }
     with (
         mock.patch("subprocess.check_output", return_value="exact\n"),
         mock.patch("subprocess.run") as run,
+        mock.patch.object(mod, "verify_agent_scope") as scope_check,
     ):
         run.return_value.returncode = 0
         assert mod.auto_launch(tmp_path, record, "test", tmp_path, env) == 0
+        scope_check.assert_called_once_with(["web/f0.txt"])
         assert run.call_args.kwargs["env"]["LEGION_SELECTED_KEY"] == "n"
         assert "OTHER_API_KEY" not in run.call_args.kwargs["env"]
         config = (tmp_path / "legion-pi/models.json").read_text()
