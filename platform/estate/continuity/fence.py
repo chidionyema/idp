@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from .fields import StaleFenceError
+from .fields import InvalidTransition, StaleFenceError
 
 
 class FenceMixin:
@@ -89,17 +89,62 @@ class FenceMixin:
         evidence: str,
         now: float | None = None,
     ) -> dict:
+        """Only an independent, reconciled external effect advances progress.
+
+        A narration, repeated receipt or checkpoint is not verified progress.
+        Heartbeats and durable checkpoints remain available without resetting
+        the ten-minute stagnation clock. Reuse the OPERATING verifier contract
+        and the existing mission event ledger; create no parallel tracker.
+        """
+        from .transitions import _require_verified_operational_effect
+
         t = time.time() if now is None else now
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
-            self.assert_fence(mission_id, attempt_id, lease_epoch, now=t, cur=cur)
+            m = self.assert_fence(
+                mission_id, attempt_id, lease_epoch, now=t, cur=cur
+            )
+            attempt = cur.execute(
+                "SELECT agent_adapter FROM mission_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            ).fetchone()
+            _require_verified_operational_effect(
+                cur, mission_id, attempt_id, lease_epoch,
+                m["mandate_version"], attempt["agent_adapter"], evidence,
+            )
+            used = cur.execute(
+                "SELECT 1 FROM mission_events"
+                " WHERE mission_id=? AND attempt_id=?"
+                " AND cause='verified external progress' AND evidence=?"
+                " LIMIT 1",
+                (mission_id, attempt_id, evidence),
+            ).fetchone()
+            if used is not None:
+                raise InvalidTransition(
+                    "same external effect cannot reset the progress clock twice"
+                )
+            observed_at = cur.execute(
+                "SELECT observed_at FROM external_effects WHERE effect_id=?",
+                (evidence[7:],),
+            ).fetchone()["observed_at"]
+            if observed_at > t:
+                raise InvalidTransition(
+                    "future-dated external effect cannot count as progress"
+                )
             cur.execute(
                 "UPDATE mission_attempts SET last_progress_at=?,"
                 " last_heartbeat_at=? WHERE attempt_id=?",
                 (t, t, attempt_id),
             )
             cur.execute(
-                "UPDATE missions SET last_verified_progress_at=? WHERE mission_id=?",
+                "UPDATE missions SET last_verified_progress_at=?"
+                " WHERE mission_id=?",
                 (t, mission_id),
+            )
+            self._event(
+                mission_id, m["state"], "estate",
+                "verified external progress", evidence,
+                attempt_id=attempt_id, lease_epoch=lease_epoch,
+                from_state=m["state"], cur=cur,
             )
             return {"progress_at": t, "evidence": evidence}
