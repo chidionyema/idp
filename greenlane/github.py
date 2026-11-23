@@ -1950,8 +1950,8 @@ class GitHubBackend:
 
     def report_operational(
         self, lane: str, rec: dict, verdict: str, evidence: str
-    ) -> None:
-        """Post the operational verdict where the claim lives; a failure reopens the owner."""
+    ) -> bool:
+        """Post an independent operational receipt; false keeps the obligation open."""
         claim = rec.get("claim") or "/".join(
             self._claim_of(rec.get("head", ""))
         ).replace("/", "#", 1)
@@ -1960,7 +1960,7 @@ class GitHubBackend:
                 f"WARN    greenlane  {lane} {verdict}: no claim to tell",
                 file=sys.stderr,
             )
-            return
+            return False
         claim_repo, number = str(claim).rsplit("#", 1)
         head = "OPERATIONAL" if verdict == "pass" else "NOT OPERATIONAL"
         body = (
@@ -1984,6 +1984,8 @@ class GitHubBackend:
                 f"WARN    greenlane  operational verdict for {lane} not posted: {e}",
                 file=sys.stderr,
             )
+            return False
+        return True
 
     def gh_issue_comment(self, claim_repo: str, number: str, body: str) -> None:
         _run(
