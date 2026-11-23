@@ -79,28 +79,40 @@ pre_admit_fix() {
 
   local h0 h1
   h0=$(cd "$IDP" && [ -f "$snap" ] && shasum "$snap" | cut -d' ' -f1)
-  case "$chg" in
-    *catalog/*|*platform/estate/intents/*|bin/*) regen=1 ;;
-    *) regen=0 ;;
-  esac
+  # Read changed paths as records: an affected bin/ file must trigger regeneration
+  # even when another path sorts before it in the diff.
+  if printf '%s\n' "$chg" | grep -Eq '^(catalog/|platform/estate/intents/|bin/)'; then
+    regen=1
+  else
+    regen=0
+  fi
   [ "${IDP_CI_FIX_FILES:-}" ] && regen=0
   if [ "$regen" = 1 ]; then
-    (cd "$IDP" && python3 bin/capability-index emit --write) >/dev/null 2>&1 || true
+    if ! (cd "$IDP" && python3 bin/capability-index emit --write) >/dev/null 2>&1; then
+      echo "BLIND  capability-registry  generator failed; refusing commit" >&2
+      return 2
+    fi
     h1=$(cd "$IDP" && [ -f "$snap" ] && shasum "$snap" | cut -d' ' -f1)
     if [ -n "$h1" ] && [ "$h0" != "$h1" ]; then
       printf 'fixed  registry %s regenerated\n' "$snap"
       n=$((n + 1))
     fi
   fi
-  return "$n"
+  # Return status is reserved for success (0) or tool failure (2); the repair
+  # count is data, not an exit code. Two valid repairs were previously misgraded
+  # as a failed pre-admission, and 3+ repairs could be misgraded as success.
+  PRE_ADMIT_FIXED=$n
+  return 0
 }
 if [ "$FIX" = 1 ]; then
+  PRE_ADMIT_FIXED=0
   pre_admit_fix
-  fixed=$?
-  if [ "$fixed" -eq 2 ]; then
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
     echo "BLIND  pre-admission repair failed; refusing commit" >&2
     exit 2
   fi
+  fixed=$PRE_ADMIT_FIXED
   printf 'fix    %s repair(s)\n' "$fixed"
   [ "$fixed" -eq 0 ] && exit 0
   exit 3
