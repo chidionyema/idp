@@ -306,3 +306,67 @@ def test_future_dated_observer_cannot_settle_or_reset_clock(tmp_path):
         )
     assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
     store.close()
+
+
+def test_global_idempotency_key_cannot_cross_mission_or_effect_scope(tmp_path):
+    store, lease = staged(tmp_path)
+
+    def record(mission_id, active, operation, target, intent):
+        return store.record_effect_intent(
+            mission_id,
+            active["attempt_id"],
+            active["lease_epoch"],
+            operation,
+            target,
+            "global-once",
+            intent,
+        )
+
+    original = record(
+        "m-test", lease, "external-test", "example.invalid", {"want": "ok"}
+    )
+    duplicate = record(
+        "m-test", lease, "external-test", "example.invalid", {"want": "ok"}
+    )
+    assert duplicate["duplicate"] is True
+    assert duplicate["effect_id"] == original["effect_id"]
+    for operation, target, intent in [
+        ("different-op", "example.invalid", {"want": "ok"}),
+        ("external-test", "different.invalid", {"want": "ok"}),
+        ("external-test", "example.invalid", {"want": "different"}),
+    ]:
+        with pytest.raises(DuplicateEffect, match="already bound"):
+            record("m-test", lease, operation, target, intent)
+
+    store.accept_mission(
+        {
+            "mission_id": "m-other",
+            "instruction_id": "idp#7443-other",
+            "mandate_id": "founder",
+            "goal": "independent mission custody",
+            "acceptance_contract_digest": "b" * 64,
+            "risk_class": "HIGH",
+        }
+    )
+    store.transition("m-other", "READY", "estate", "dispatch")
+    lease_other = store.acquire_lease(
+        "m-other",
+        {
+            "agent_adapter": "legion",
+            "provider": "test",
+            "model": "test",
+            "execution_host": "cloud",
+            "failure_domain": "runner",
+            "worktree_id": "test-other",
+            "base_sha": "b" * 40,
+        },
+    )
+    with pytest.raises(DuplicateEffect, match="already bound"):
+        record(
+            "m-other", lease_other, "external-test", "example.invalid",
+            {"want": "ok"},
+        )
+    assert store.db.execute(
+        "SELECT COUNT(*) FROM external_effects WHERE idempotency_key='global-once'"
+    ).fetchone()[0] == 1
+    store.close()
