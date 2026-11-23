@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "platform" / "estate"))
@@ -14,12 +16,47 @@ from continuity import (  # noqa: E402
     DuplicateEffect,
     InvalidTransition,
     MissionStore,
+    RecordRejected,
     StaleFenceError,
 )
+from continuity.util import effect_receipt_subject  # noqa: E402
+
+
+def signed_receipt(
+    store,
+    effect_id,
+    receipt,
+    *,
+    verified_by="observer-b",
+    observed_state="OBSERVED",
+    reconciliation_status="RECONCILED",
+):
+    subject = effect_receipt_subject(
+        effect_id, receipt, verified_by, observed_state, reconciliation_status
+    )
+    signature = base64.b64encode(store._test_signer.sign(subject)).decode()
+    return store.record_receipt(
+        effect_id,
+        receipt,
+        verified_by=verified_by,
+        observed_state=observed_state,
+        reconciliation_status=reconciliation_status,
+        verifier_signature=signature,
+    )
 
 
 def staged(tmp_path):
-    store = MissionStore(tmp_path / "custody.sqlite")
+    signer = Ed25519PrivateKey.generate()
+    pinned = signer.public_key().public_bytes_raw()
+    store = MissionStore(
+        tmp_path / "custody.sqlite",
+        trusted_verifier_keys={
+            "observer-b": pinned,
+            "executor-a": pinned,
+            "legion": pinned,
+        },
+    )
+    store._test_signer = signer
     store.accept_mission(
         {
             "mission_id": "m-test",
@@ -66,7 +103,7 @@ def effect(store, lease, *, reconciled=True, verifier="observer-b"):
         "test-once",
         {"expected": "ok"},
     )
-    store.record_receipt(
+    signed_receipt(store,
         intent["effect_id"],
         {"observed": "ok"},
         verified_by=verifier,
@@ -132,7 +169,7 @@ def test_ambiguous_observation_can_be_reconciled_and_settled(tmp_path):
     eid = effect(store, lease, reconciled=False)
     with pytest.raises(InvalidTransition, match="reconciled"):
         operating(store, lease, "effect:" + eid)
-    result = store.record_receipt(
+    result = signed_receipt(store,
         eid,
         {"observed": "ok"},
         verified_by="observer-b",
@@ -156,7 +193,7 @@ def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
         " WHERE effect_id=?",
         (eid,),
     ).fetchone()
-    assert store.record_receipt(
+    assert signed_receipt(store,
         eid, {"observed": "ok"}, verified_by="observer-b"
     )["duplicate"] is True
     for receipt, verifier, reconciliation in [
@@ -165,7 +202,7 @@ def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
         ({"observed": "ok"}, "observer-b", "AMBIGUOUS"),
     ]:
         with pytest.raises(DuplicateEffect, match="immutable reconciled"):
-            store.record_receipt(
+            signed_receipt(store,
                 eid, receipt, verified_by=verifier,
                 reconciliation_status=reconciliation,
             )
@@ -212,7 +249,7 @@ def test_ambiguous_recovery_can_observe_real_completion(tmp_path):
     with pytest.raises(DuplicateEffect, match="independent record_receipt"):
         store.reconcile_effect(eid, "unverified-agent-assertion", "COMPLETED")
     assert store.pending_effects("m-test")[0]["effect_id"] == eid
-    completed = store.record_receipt(
+    completed = signed_receipt(store,
         eid, {"external": "observed-external-transaction"},
         verified_by="observer-b",
     )
@@ -400,4 +437,83 @@ def test_reconciler_cannot_fabricate_independent_completion(tmp_path):
     assert store.pending_effects("m-test")[0]["effect_id"] == eid
     with pytest.raises(InvalidTransition, match="reconciled"):
         operating(store, lease, "effect:" + eid)
+    store.close()
+
+
+def test_unsigned_or_untrusted_receipt_never_certifies_an_effect(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "unsigned-proof",
+        {"expected": "external truth"},
+    )
+    eid = intent["effect_id"]
+    with pytest.raises(RecordRejected, match="signature required"):
+        store.record_receipt(eid, {"claimed": True}, verified_by="observer-b")
+    with pytest.raises(RecordRejected, match="signature not accepted"):
+        store.record_receipt(
+            eid, {"claimed": True}, verified_by="observer-b",
+            verifier_signature=base64.b64encode(b"forged").decode(),
+        )
+    with pytest.raises(RecordRejected, match="signature not accepted"):
+        signed_receipt(
+            store, eid, {"claimed": True}, verified_by="unregistered-actor"
+        )
+    row = store.db.execute(
+        "SELECT state, reconciliation_status, external_receipt FROM external_effects"
+        " WHERE effect_id=?", (eid,)
+    ).fetchone()
+    assert row["state"] == "INTENDED"
+    assert row["reconciliation_status"] == "PENDING"
+    assert row["external_receipt"] is None
+    with pytest.raises(InvalidTransition):
+        operating(store, lease, "effect:" + eid)
+    store.close()
+
+
+def test_tampered_persisted_signature_fails_at_terminal_and_progress(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    import json
+
+    stored = json.loads(store.db.execute(
+        "SELECT external_receipt FROM external_effects WHERE effect_id=?", (eid,)
+    ).fetchone()[0])
+    stored["_meridian_verifier"]["signature"] = base64.b64encode(b"fake").decode()
+    store.db.execute(
+        "UPDATE external_effects SET external_receipt=? WHERE effect_id=?",
+        (json.dumps(stored), eid),
+    )
+    with pytest.raises(InvalidTransition, match="observer seal"):
+        operating(store, lease, "effect:" + eid)
+    with pytest.raises(InvalidTransition, match="observer seal"):
+        store.report_progress(
+            "m-test", lease["attempt_id"], lease["lease_epoch"], "effect:" + eid
+        )
+    store.close()
+
+
+def test_replayed_signed_receipt_cannot_certify_a_different_effect(tmp_path):
+    store, lease = staged(tmp_path)
+    original = effect(store, lease)
+    observed = store.db.execute(
+        "SELECT external_receipt FROM external_effects WHERE effect_id=?",
+        (original,),
+    ).fetchone()[0]
+    second = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "different-effect",
+        {"expected": "ok"},
+    )
+    import json
+
+    store.db.execute(
+        "UPDATE external_effects SET state='OBSERVED',"
+        " reconciliation_status='RECONCILED',"
+        " external_receipt=?, observed_at=?, verified_by=?"
+        " WHERE effect_id=?",
+        (observed, time.time(), "observer-b", second["effect_id"]),
+    )
+    with pytest.raises(InvalidTransition, match="observer seal"):
+        operating(store, lease, "effect:" + second["effect_id"])
     store.close()
