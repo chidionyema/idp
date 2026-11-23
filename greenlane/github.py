@@ -1910,7 +1910,9 @@ class GitHubBackend:
             min_fence = int(os.environ["EPISTEMIC_MIN_FENCE"])
             keys = {name: bytes.fromhex(value) for name, value in key_hex.items()}
         except (KeyError, TypeError, ValueError, AttributeError):
-            return "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN: verifier custody unavailable"
+            return (
+                "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN: verifier custody unavailable"
+            )
         if (
             min_fence < 1
             or len(keys) < 3
