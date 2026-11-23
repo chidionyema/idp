@@ -6,6 +6,8 @@ import http.server
 import importlib.util
 import json
 import threading
+
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +35,36 @@ EXPECTED = [
 
 def test_catalog_is_aliases_then_every_discovered_model():
     assert rc.all_models(CATALOG) == EXPECTED
+
+
+def test_cloud_router_default_and_explicit_remote_override():
+    assert rc.DEFAULT_ROUTER == "https://llm.mumchimp.com/v1"
+    assert rc.ROUTER.startswith("https://")
+    assert rc.ROUTER == rc.cloud_router_url(
+        __import__("os").environ.get("ESTATE_ROUTER_URL") or rc.DEFAULT_ROUTER
+    )
+    assert rc.cloud_router_url("https://router.example.org/v1/") == (
+        "https://router.example.org/v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:4000/v1",
+        "http://router.example.org/v1",
+        "https://localhost:4000/v1",
+        "https://localhost.localhost/v1",
+        "https://127.0.0.1:4000/v1",
+        "https://10.0.0.2/v1",
+        "https://169.254.1.2/v1",
+        "https://router.example.org/v1#unsafe",
+        "https://alice:secret@router.example.org/v1",
+    ],
+)
+def test_local_or_insecure_router_is_refused(url):
+    with pytest.raises(ValueError, match="router"):
+        rc.cloud_router_url(url)
 
 
 def test_opencode_gets_every_model_and_keeps_its_other_settings(tmp_path):
