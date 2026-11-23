@@ -131,7 +131,7 @@ class EffectsMixin(FenceMixin):
                 reconciliation_status == "RECONCILED"
                 or row["reconciliation_status"] == "RECONCILED"
             ):
-                actors = cur.execute;
+                actors = cur.execute(
                     "SELECT actor FROM mission_events WHERE mission_id=?"
                     " AND attempt_id=?"
                     " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
