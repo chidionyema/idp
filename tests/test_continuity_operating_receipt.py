@@ -146,9 +146,9 @@ def test_ambiguous_effect_cannot_settle(tmp_path):
 @pytest.mark.parametrize("verifier", ["executor-a", "legion"])
 def test_executor_cannot_self_certify(tmp_path, verifier):
     store, lease = staged(tmp_path)
-    eid = effect(store, lease, verifier=verifier)
-    with pytest.raises(InvalidTransition, match="executor"):
-        operating(store, lease, "effect:" + eid)
+    with pytest.raises(RecordRejected, match="leased executor"):
+        effect(store, lease, verifier=verifier)
+    assert store.pending_effects("m-test")[0]["reconciliation_status"] == "PENDING"
     store.close()
 
 
@@ -205,7 +205,8 @@ def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
         ({"observed": "ok"}, "executor-a", "RECONCILED"),
         ({"observed": "ok"}, "observer-b", "AMBIGUOUS"),
     ]:
-        with pytest.raises(DuplicateEffect, match="immutable reconciled"):
+        error = RecordRejected if verifier == "executor-a" else DuplicateEffect
+        with pytest.raises(error):
             signed_receipt(
                 store,
                 eid, receipt, verified_by=verifier,
@@ -589,4 +590,41 @@ def test_replayed_signed_receipt_cannot_certify_a_different_effect(tmp_path):
     )
     with pytest.raises(InvalidTransition, match="observer seal"):
         operating(store, lease, "effect:" + second["effect_id"])
+    store.close()
+
+
+def test_legacy_self_signed_external_effect_stays_pending(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "legacy-self-signed",
+        {"expected": "independent observer"},
+    )
+    eid = intent["effect_id"]
+    claimed = {"external": "agent wrote this"}
+    sig = base64.b64encode(
+        store._test_signer.sign(
+            effect_receipt_subject(eid, claimed, "executor-a")
+        )
+    ).decode()
+    forged = {
+        **claimed,
+        "_meridian_verifier": {"key_id": "executor-a", "signature": sig},
+    }
+    store.db.execute(
+        "UPDATE external_effects SET state='OBSERVED',"
+        " reconciliation_status='RECONCILED', external_receipt=?,"
+        " verified_by=?, observed_at=? WHERE effect_id=?",
+        (json.dumps(forged), "executor-a", time.time(), eid),
+    )
+    assert store.pending_effects("m-test")[0]["reconciliation_status"] == "UNVERIFIED"
+    with pytest.raises(InvalidTransition, match="executor"):
+        operating(store, lease, "effect:" + eid)
+    # An actual independent observer can replace the untrusted historical claim.
+    repaired = signed_receipt(
+        store, eid, {"external": "observer checked real state"},
+        verified_by="observer-b",
+    )
+    assert repaired["state"] == "OBSERVED"
+    assert store.pending_effects("m-test") == []
     store.close()
