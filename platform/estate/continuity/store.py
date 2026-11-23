@@ -46,7 +46,9 @@ class MissionStore(
             or len(key) != 32
             for name, key in keys.items()
         ):
-            raise ValueError("trusted verifier keys must be Ed25519 32-byte public keys")
+            raise ValueError(
+                "trusted verifier keys must be Ed25519 32-byte public keys"
+            )
         self._trusted_verifier_keys = MappingProxyType(keys)
         self.path = str(path)
         self.db = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
