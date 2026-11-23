@@ -97,14 +97,27 @@ class EffectsMixin(FenceMixin):
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
             row = cur.execute(
-                "SELECT state FROM external_effects WHERE effect_id=?",
+                "SELECT state, reconciliation_status, external_receipt, verified_by"
+                " FROM external_effects WHERE effect_id=?",
                 (effect_id,),
             ).fetchone()
             if row is None:
                 cur.execute("ROLLBACK")
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if row["state"] == "OBSERVED" and reconciliation_status == "RECONCILED":
-                cur.execute("ROLLBACK")
+            # Compare the STORED reconciliation state, never the caller's desired
+            # state. An OBSERVED/AMBIGUOUS receipt must remain correctable after
+            # an independent external reconciliation; otherwise a task can
+            # remain permanently stuck despite genuine observed success.
+            if row["state"] == "OBSERVED" and row["reconciliation_status"] == "RECONCILED":
+                if (
+                    observed_state != "OBSERVED"
+                    or reconciliation_status != "RECONCILED"
+                    or canonical(receipt) != row["external_receipt"]
+                    or verified_by != row["verified_by"]
+                ):
+                    raise DuplicateEffect(
+                        f"effect {effect_id} already has an immutable reconciled receipt"
+                    )
                 return {
                     "effect_id": effect_id,
                     "state": row["state"],
