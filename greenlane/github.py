@@ -2001,11 +2001,6 @@ class GitHubBackend:
                 "pending",
                 f"GET {m.group('url')} -> {code} (want {want}{', containing ' + repr(needle) if needle else ''})",
             )
-        epistemic_defect = self._epistemic_operational_proof(
-            rec, m.group("url"), code, needle
-        )
-        if epistemic_defect:
-            return "pending", epistemic_defect
         specs = [
             gate.OPTIMUS.match(x.strip())
             for x in contract.get("optimus", "").split(";")
@@ -2027,6 +2022,11 @@ class GitHubBackend:
         read = ", ".join(f"{k}={v:g}" for k, v in sorted(readings.items()))
         if short:
             return "pending", f"probe ok ({code}); Optimus short: {', '.join(short)}"
+        epistemic_defect = self._epistemic_operational_proof(
+            rec, m.group("url"), code, needle
+        )
+        if epistemic_defect:
+            return "pending", epistemic_defect
         ids = ",".join(rec["epistemic_verified_receipts"])
         custody_sha = rec["epistemic_custody_sha256"]
         return (
