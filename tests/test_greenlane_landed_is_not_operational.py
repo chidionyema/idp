@@ -86,7 +86,8 @@ def test_a_contract_still_pending_at_its_deadline_fails_with_the_evidence():
     st.verifying["lane/a"]["deadline_min"] = 30
     w.clock += 31 * 60
     eng._verify_landed()
-    assert st.verifying == {}
+    assert st.verifying["lane/a"]["state"] == "recovery_required"
+    assert st.verifying["lane/a"]["next_action"] == "recover_via_authorised_executor"
     assert w.posted == [
         ("lane/a", "failed", "deadline passed: no Optimus reading for x")
     ]
@@ -96,7 +97,52 @@ def test_a_hard_failure_is_posted_at_once():
     w = World([("failed", "landed with no Claim: trailer")])
     eng, st = _landing(w)
     eng._verify_landed()
-    assert st.verifying == {} and w.posted[0][1] == "failed"
+    assert st.verifying["lane/a"]["state"] == "recovery_required"
+    assert w.posted[0][1] == "failed"
+
+
+def test_a_failed_contract_survives_restart_and_settles_only_after_repair():
+    w = World([("failed", "HTTP 525"), ("pending", "HTTP 525"), ("pass", "GET 200")])
+    eng, st = _landing(w)
+    eng._verify_landed()
+    restored = E.State.loads(st.dumps())
+    assert restored.verifying["lane/a"]["last"] == "HTTP 525"
+    eng = E.Engine(w, restored)
+    eng._verify_landed()
+    assert len(w.posted) == 1, "failure notification is not spammed"
+    assert "lane/a" in restored.verifying
+    eng._verify_landed()
+    assert restored.verifying == {}
+    assert [v for _, v, _ in w.posted] == ["failed", "pass"]
+
+
+def test_a_failed_operational_receipt_write_never_loses_the_obligation():
+    class Refused(World):
+        def report_operational(self, lane, rec, verdict, evidence):
+            self.posted.append((lane, verdict, evidence))
+            return False if len(self.posted) == 1 else True
+
+    w = Refused([("failed", "unauthorised"), ("failed", "unauthorised")])
+    eng, st = _landing(w)
+    eng._verify_landed()
+    assert "lane/a" in st.verifying and not st.verifying["lane/a"].get(
+        "failure_reported"
+    )
+    eng._verify_landed()
+    assert st.verifying["lane/a"]["failure_reported"] is True
+    assert len(w.posted) == 2, "retry once the receipt door can write"
+
+
+def test_pass_without_durable_receipt_remains_unsettled():
+    class Refused(World):
+        def report_operational(self, lane, rec, verdict, evidence):
+            return False
+
+    w = Refused([("pass", "HTTP 200")])
+    eng, st = _landing(w)
+    eng._verify_landed()
+    assert "lane/a" in st.verifying
+    assert "receipt unavailable" in st.verifying["lane/a"]["last"]
 
 
 def test_verifying_survives_the_state_ref():
