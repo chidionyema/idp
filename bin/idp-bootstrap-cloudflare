@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/reference/policy/root-trust.md; crew#578).
 #   bin/idp-bootstrap-cloudflare              mint the DNS, Workers and R2 credentials, write vault entries cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_*
-#   bin/idp-bootstrap-cloudflare --preflight  prove the vault, the browser driver and the dashboard reachability, write nothing
+#   bin/idp-bootstrap-cloudflare --preflight  prove the vault and selected root-token or browser road, write nothing
 #   bin/idp-bootstrap-cloudflare --rotate     mint anew even though the vault entries already verify
 # R52 (founder 2026-08-29): with CLOUDFLARE_ROOT_TOKEN in the environment (oke-check apply reads repository
 # secret SEED_CLOUDFLARE_ROOT_TOKEN, one token with "User API Tokens: Edit", made once) nothing drives a browser.
@@ -95,6 +95,12 @@ if [ "$MODE" = mint ]; then
   unset dns eng
 fi
 if [ "$MODE" = --preflight ]; then
+  # Measure the road the live run uses. Lane 3 already supplies its standing
+  # root; dashboard reachability says nothing about that API-only credential.
+  if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+    verify "$CLOUDFLARE_ROOT_TOKEN" || fail root "standing root token failed API verification"
+    say ok preflight "vault and standing root token verified through the API; nothing written"; exit 0
+  fi
   code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
   case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
