@@ -1018,6 +1018,27 @@ if [ "$FAST" = 1 ]; then
       fi
     fi
   else say "ok    rust     no crate change against ${IDP_CI_BASE:-main}"; fi
+  # #8426: verify changed Zone B router source with its actual production build
+  # before submit/** becomes lane/**. Unaffected diffs do not pay this cost.
+  if touched 'platform/router-edge/'; then
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      say "BLIND router-edge missing node or npm; cannot verify production build"
+      fail=1
+    elif (
+      cd "$IDP/platform/router-edge" || exit 1
+      # The existing fast-gate owns the 100-second wall; do not nest timeouts.
+      npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0 &&
+        npm test &&
+        node --test tests/release.falsifier.mjs
+    ); then
+      say "ok    router-edge actual production build and release falsifiers"
+    else
+      say "FAIL  router-edge actual production build or release falsifiers"
+      fail=1
+    fi
+  else
+    say "ok    router-edge not touched by this diff"
+  fi
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
