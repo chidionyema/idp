@@ -21,7 +21,8 @@ UNFENCED_TRANSITIONS = {
 
 
 def _require_verified_operational_effect(
-    cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence
+    cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence,
+    now=None,
 ):
     """Require a dated, reconciled effect from this exact mission attempt.
 
@@ -54,6 +55,10 @@ def _require_verified_operational_effect(
     if effect["observed_at"] is None or not effect["verified_by"]:
         raise InvalidTransition(
             "OPERATING refused: effect has no dated verifier observation"
+        )
+    if effect["observed_at"] > (time.time() if now is None else now):
+        raise InvalidTransition(
+            "OPERATING refused: verifier observation is dated in the future"
         )
     if effect["verified_by"].strip().casefold() == actor.strip().casefold():
         raise InvalidTransition(
@@ -126,6 +131,7 @@ class TransitionMixin(FenceMixin):
                     m["mandate_version"],
                     actor,
                     evidence,
+                    now=t,
                 )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
