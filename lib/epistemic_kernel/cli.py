@@ -14,9 +14,8 @@ import json
 import os
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
-from epistemic_kernel import EpistemicKernel, SignedReceipt
+from . import EpistemicKernel, SignedReceipt
 
 
 def load_json(path: str) -> dict:
@@ -24,13 +23,20 @@ def load_json(path: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Meridian Epistemic Falsification Gate")
+    parser = argparse.ArgumentParser(
+        description="Meridian Epistemic Falsification Gate"
+    )
     parser.add_argument("--mode", choices=["diagnosis", "operational"], required=True)
     parser.add_argument("--input", required=True, help="Path to envelope/contract JSON")
-    parser.add_argument("--receipts", required=True, help="Path to signed receipts JSON array")
+    parser.add_argument(
+        "--receipts", required=True, help="Path to signed receipts JSON array"
+    )
     parser.add_argument(
         "--authorities",
-        default=os.environ.get("EPISTEMIC_TRUSTED_AUTHORITIES", "gh-actions-prober,cloudflare-prober,oci-blackbox-prober"),
+        default=os.environ.get(
+            "EPISTEMIC_TRUSTED_AUTHORITIES",
+            "gh-actions-prober,cloudflare-prober,oci-blackbox-prober",
+        ),
         help="Comma-separated trusted non-agent capture authorities",
     )
     parser.add_argument("--max-age", type=int, default=3600)
@@ -39,7 +45,15 @@ def main(argv: list[str] | None = None) -> int:
 
     secret = os.environ.get("ESTATE_RECEIPT_KEY", "")
     if not secret:
-        print(json.dumps({"allowed": False, "verdict": "REJECTED_MISSING_KEY", "error_codes": ["ERR_MISSING_ESTATE_RECEIPT_KEY"]}))
+        print(
+            json.dumps(
+                {
+                    "allowed": False,
+                    "verdict": "REJECTED_MISSING_KEY",
+                    "error_codes": ["ERR_MISSING_ESTATE_RECEIPT_KEY"],
+                }
+            )
+        )
         return 42
 
     payload = load_json(args.input)
@@ -54,9 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.mode == "diagnosis":
-        decision = kernel.evaluate_diagnosis(payload, receipts, min_fencing_token=args.min_fence)
+        decision = kernel.evaluate_diagnosis(
+            payload, receipts, min_fencing_token=args.min_fence
+        )
     else:
-        decision = kernel.evaluate_operational_transition(payload, receipts, min_fencing_token=args.min_fence)
+        decision = kernel.evaluate_operational_transition(
+            payload, receipts, min_fencing_token=args.min_fence
+        )
 
     print(json.dumps(decision.to_dict(), indent=2, sort_keys=True))
     return 0 if decision.allowed else 42

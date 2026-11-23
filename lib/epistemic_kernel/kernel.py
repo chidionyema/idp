@@ -31,12 +31,14 @@ class ExecutionPlane(str, Enum):
     PLANE_PRODUCTION_RUNTIME = "PLANE_PRODUCTION_RUNTIME"
 
 
-PROXY_SOURCE_HOSTS = frozenset({
-    "raw.githubusercontent.com",
-    "api.github.com",
-    "github.com",
-    "gist.githubusercontent.com",
-})
+PROXY_SOURCE_HOSTS = frozenset(
+    {
+        "raw.githubusercontent.com",
+        "api.github.com",
+        "github.com",
+        "gist.githubusercontent.com",
+    }
+)
 
 # Universal-scope claims that CANNOT be inferred from a single job-local empty env var.
 SCOPE_HIERARCHY: Dict[str, int] = {
@@ -50,15 +52,19 @@ SCOPE_HIERARCHY: Dict[str, int] = {
 
 # Required store scopes that MUST each have an independent TIER_0 receipt before
 # claiming global non-existence of a credential in the estate.
-REQUIRED_ESTATE_EXISTENCE_SCOPES = frozenset({
-    "repo_secrets",
-    "vault_store",
-    "provider_account",
-})
+REQUIRED_ESTATE_EXISTENCE_SCOPES = frozenset(
+    {
+        "repo_secrets",
+        "vault_store",
+        "provider_account",
+    }
+)
 
 
 class EpistemicError(Exception):
-    def __init__(self, code: str, message: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, code: str, message: str, details: Optional[Dict[str, Any]] = None
+    ):
         super().__init__(f"[{code}] {message}")
         self.code = code
         self.message = message
@@ -76,14 +82,20 @@ def sha256_hex(data: str) -> str:
 
 def parse_utc(ts: str) -> datetime:
     if not isinstance(ts, str) or not ts:
-        raise EpistemicError("ERR_INVALID_TIMESTAMP", "Timestamp must be a non-empty RFC3339 UTC string.")
+        raise EpistemicError(
+            "ERR_INVALID_TIMESTAMP", "Timestamp must be a non-empty RFC3339 UTC string."
+        )
     normalized = ts.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(normalized)
     except ValueError as exc:
-        raise EpistemicError("ERR_INVALID_TIMESTAMP", f"Malformed RFC3339 timestamp: {ts}") from exc
+        raise EpistemicError(
+            "ERR_INVALID_TIMESTAMP", f"Malformed RFC3339 timestamp: {ts}"
+        ) from exc
     if dt.tzinfo is None:
-        raise EpistemicError("ERR_INVALID_TIMESTAMP", f"Timestamp missing timezone: {ts}")
+        raise EpistemicError(
+            "ERR_INVALID_TIMESTAMP", f"Timestamp missing timezone: {ts}"
+        )
     return dt.astimezone(timezone.utc)
 
 
@@ -154,7 +166,10 @@ def verify_receipt_signature(
 ) -> Tuple[bool, Optional[str]]:
     """Verify receipt authenticity, payload integrity, authority isolation, TTL, and fence."""
     # 1. Authority isolation: an agent CANNOT sign its own primary receipt.
-    if not receipt.capture_authority or receipt.capture_authority == receipt.subject_agent_id:
+    if (
+        not receipt.capture_authority
+        or receipt.capture_authority == receipt.subject_agent_id
+    ):
         return False, "ERR_FORGED_OR_SELF_SIGNED_RECEIPT"
     if receipt.capture_authority not in set(trusted_authorities):
         return False, "ERR_UNTRUSTED_CAPTURE_AUTHORITY"
@@ -320,12 +335,16 @@ class EpistemicKernel:
                     if not REQUIRED_ESTATE_EXISTENCE_SCOPES.issubset(supporting_scopes):
                         errors.append("ERR_INVALID_NEGATION_SCOPE_LEAP")
                 else:
-                    max_observed_rank = max(SCOPE_HIERARCHY.get(s, 0) for s in supporting_scopes)
+                    max_observed_rank = max(
+                        SCOPE_HIERARCHY.get(s, 0) for s in supporting_scopes
+                    )
                     claimed_rank = SCOPE_HIERARCHY.get(claim_scope, 99)
                     if claimed_rank > max_observed_rank:
                         errors.append("ERR_INVALID_NEGATION_SCOPE_LEAP")
             else:
-                max_observed_rank = max(SCOPE_HIERARCHY.get(s, 0) for s in supporting_scopes)
+                max_observed_rank = max(
+                    SCOPE_HIERARCHY.get(s, 0) for s in supporting_scopes
+                )
                 claimed_rank = SCOPE_HIERARCHY.get(claim_scope, 99)
                 if claimed_rank > max_observed_rank:
                     errors.append("ERR_SCOPE_OVERCLAIM")
@@ -336,13 +355,18 @@ class EpistemicKernel:
             errors.append("ERR_CONFIRMATION_BIAS_NO_ALTERNATIVE")
 
         for idx, hyp in enumerate(hypotheses):
-            if not hyp.get("statement") or not hyp.get("falsified_by") or not hyp.get("discriminating_probe"):
+            if (
+                not hyp.get("statement")
+                or not hyp.get("falsified_by")
+                or not hyp.get("discriminating_probe")
+            ):
                 errors.append(f"ERR_UNFALSIFIABLE_HYPOTHESIS:{idx}")
 
         # E2: Mutating remediation requires discriminating probe evidence unless explicitly scoped.
         if envelope.get("requests_mutation", False):
             discriminated = any(
-                h.get("status") == "FALSIFIED" and h.get("falsifying_receipt_id") in verified_map
+                h.get("status") == "FALSIFIED"
+                and h.get("falsifying_receipt_id") in verified_map
                 for h in hypotheses
             )
             # A caller-controlled boolean cannot turn a mutating effect into a read-only probe.
@@ -396,15 +420,23 @@ class EpistemicKernel:
             required_min_proofs = 1
             errors.append("ERR_INVALID_OPERATIONAL_CONTRACT")
         if (
-            not isinstance(required_host, str) or not required_host
-            or ":" in required_host or "/" in required_host
-            or not isinstance(required_path, str) or not required_path.startswith("/")
-            or type(required_status) is not int or not (100 <= required_status <= 599)
-            or not isinstance(required_body_substring, str) or not required_body_substring
-            or type(required_min_proofs) is not int or not (1 <= required_min_proofs <= 10)
+            not isinstance(required_host, str)
+            or not required_host
+            or ":" in required_host
+            or "/" in required_host
+            or not isinstance(required_path, str)
+            or not required_path.startswith("/")
+            or type(required_status) is not int
+            or not (100 <= required_status <= 599)
+            or not isinstance(required_body_substring, str)
+            or not required_body_substring
+            or type(required_min_proofs) is not int
+            or not (1 <= required_min_proofs <= 10)
         ):
             errors.append("ERR_INVALID_OPERATIONAL_CONTRACT")
-            required_min_proofs = max(1, required_min_proofs) if type(required_min_proofs) is int else 1
+            required_min_proofs = (
+                max(1, required_min_proofs) if type(required_min_proofs) is int else 1
+            )
 
         matching_proofs: List[str] = []
         independent_authorities = set()
@@ -417,16 +449,28 @@ class EpistemicKernel:
             except ValueError:
                 errors.append(f"ERR_INVALID_RUNTIME_TARGET:{rid}")
                 continue
-            if (parsed.scheme != "https" or parsed.username is not None or parsed.password is not None
-                or port not in (None, 443) or parsed.query or parsed.fragment):
+            if (
+                parsed.scheme != "https"
+                or parsed.username is not None
+                or parsed.password is not None
+                or port not in (None, 443)
+                or parsed.query
+                or parsed.fragment
+            ):
                 errors.append(f"ERR_INVALID_RUNTIME_TARGET:{rid}")
                 continue
-            if r.tier != EvidenceTier.TIER_0_RAW_MACHINE_RECEIPT.value or r.exit_code != 0:
+            if (
+                r.tier != EvidenceTier.TIER_0_RAW_MACHINE_RECEIPT.value
+                or r.exit_code != 0
+            ):
                 errors.append(f"ERR_NON_PRIMARY_OR_FAILED_PROBE:{rid}")
                 continue
 
             # E3: Hard ban on source-plane / GitHub raw proxy substitution.
-            if r.plane != ExecutionPlane.PLANE_PRODUCTION_RUNTIME.value or host in PROXY_SOURCE_HOSTS:
+            if (
+                r.plane != ExecutionPlane.PLANE_PRODUCTION_RUNTIME.value
+                or host in PROXY_SOURCE_HOSTS
+            ):
                 errors.append(f"ERR_PROXY_GREEN_SUBSTITUTION:{rid}")
                 continue
 
@@ -439,7 +483,9 @@ class EpistemicKernel:
                 continue
 
             if r.http_status != required_status:
-                errors.append(f"ERR_RUNTIME_STATUS_MISMATCH:{rid}:got_{r.http_status}_want_{required_status}")
+                errors.append(
+                    f"ERR_RUNTIME_STATUS_MISMATCH:{rid}:got_{r.http_status}_want_{required_status}"
+                )
                 continue
 
             if required_body_substring and required_body_substring not in r.raw_payload:
@@ -461,20 +507,28 @@ class EpistemicKernel:
         # Distinct keys only establish cryptographic separation, not physical control-plane
         # independence (that requires external custody attestation from existing QUAD).
         if required_min_proofs > 1:
-            candidate_keys = [self._authority_keys.get(a) for a in independent_authorities]
+            candidate_keys = [
+                self._authority_keys.get(a) for a in independent_authorities
+            ]
             distinct_key_digests = {
-                hashlib.sha256(key).hexdigest() for key in candidate_keys if isinstance(key, bytes) and key
+                hashlib.sha256(key).hexdigest()
+                for key in candidate_keys
+                if isinstance(key, bytes) and key
             }
             if len(distinct_key_digests) < required_min_proofs:
                 errors.append("ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN")
         expected_revision = contract.get("expected_revision")
         if expected_revision is not None:
-            if not isinstance(expected_revision, str) or not re.fullmatch(r"[a-f0-9]{40}", expected_revision):
+            if not isinstance(expected_revision, str) or not re.fullmatch(
+                r"[a-f0-9]{40}", expected_revision
+            ):
                 errors.append("ERR_INVALID_EXPECTED_REVISION")
             else:
                 for rid in matching_proofs:
                     try:
-                        observed_revision = json.loads(verified_map[rid].raw_payload)["commit_sha"]
+                        observed_revision = json.loads(verified_map[rid].raw_payload)[
+                            "commit_sha"
+                        ]
                     except (ValueError, TypeError, KeyError):
                         observed_revision = None
                     if observed_revision != expected_revision:
