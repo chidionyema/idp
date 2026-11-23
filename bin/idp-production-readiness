@@ -3,6 +3,31 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+
+# Run 45106948958: the cloud submit job had an approved agent patch but its
+# pre-push hook was BLIND (kubeconform absent, pydantic absent). The workflow
+# checks out current main before this step; repair only that runner environment
+# so rerunning the failed job reuses the original sealed model output.
+if [ "${GITHUB_ACTIONS:-}" = true ] && [ "${GITHUB_JOB:-}" = submit-lane ]; then
+  python3 -m pip install -q --disable-pip-version-check 'pydantic==2.12.4'
+  python3 -c 'import pydantic; assert pydantic.__version__ == "2.12.4"'
+  tools="$HOME/.cache/estate-tools"
+  mkdir -p "$tools"
+  version="$("$tools/kubeconform" -v 2>&1 || true)"
+  if [[ "$version" != *v0.8.0* ]]; then
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    curl -fsSL --retry 3 --retry-delay 2 \
+      https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+      -o "$tmp/kubeconform.tar.gz"
+    tar -xzf "$tmp/kubeconform.tar.gz" -C "$tmp" kubeconform
+    install -m 0755 "$tmp/kubeconform" "$tools/kubeconform"
+    rm -rf "$tmp"
+    trap - EXIT
+  fi
+  "$tools/kubeconform" -v 2>&1 | grep -Fq v0.8.0
+fi
+
 python=python3
 if [ -z "${CI:-}" ] && [ -x "$HOME/.estate/venv-ci/bin/python" ]; then
   python="$HOME/.estate/venv-ci/bin/python"
