@@ -4,6 +4,7 @@ A squash records Greenlane-Head in the *landing* commit; the original producer
 keeps Run: and Agent: auto. Requiring both in one message falsely measures zero.
 This test uses real Git objects, not model output, network or fabricated runtime status.
 """
+
 from __future__ import annotations
 
 import json
