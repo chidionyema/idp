@@ -151,6 +151,12 @@ class EffectsMixin(FenceMixin):
                         "state": row["state"],
                         "duplicate": True,
                     }
+                if reconciliation_status != "RECONCILED":
+                    # Historical untrusted claims must be reattested, not
+                    # overwritten with another unauthenticated claim.
+                    raise RecordRejected(
+                        "legacy unverified settlement needs signed reattestation"
+                    )
             stored_receipt = receipt
             if reconciliation_status == "RECONCILED":
                 if observed_state not in ("OBSERVED", "ABANDONED"):
