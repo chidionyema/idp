@@ -72,7 +72,6 @@ def test_three_negative_release_tests_execute_without_credentials():
     assert "# tests 3" in result.stdout
 
 
-
 def _vault_binding_step():
     flow = yaml.safe_load(WORKFLOW.read_text())
     steps = flow["jobs"]["release"]["steps"]
