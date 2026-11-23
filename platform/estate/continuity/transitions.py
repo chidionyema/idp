@@ -13,6 +13,7 @@ import time
 from .fence import FenceMixin
 from .fields import InvalidTransition, StaleFenceError
 from .model import TRANSITIONS
+from .util import verify_effect_receipt
 
 UNFENCED_TRANSITIONS = {
     "ACCEPTED->READY": "estate",
@@ -29,6 +30,7 @@ def _require_verified_operational_effect(
     actor,
     evidence,
     now=None,
+    trusted_keys=None,
 ):
     """Require a dated, reconciled effect from this exact mission attempt.
 
@@ -91,6 +93,14 @@ def _require_verified_operational_effect(
         receipt = None
     if not isinstance(receipt, dict) or not receipt:
         raise InvalidTransition("OPERATING refused: effect receipt is missing or empty")
+    try:
+        verify_effect_receipt(
+            evidence[7:], receipt, effect["verified_by"], trusted_keys or {},
+        )
+    except (ValueError, TypeError) as exc:
+        raise InvalidTransition(
+            "OPERATING refused: external receipt has no trusted observer seal"
+        ) from exc
 
 
 class TransitionMixin(FenceMixin):
@@ -153,6 +163,7 @@ class TransitionMixin(FenceMixin):
                     actor,
                     evidence,
                     now=t,
+                    trusted_keys=self._trusted_verifier_keys,
                 )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
