@@ -207,7 +207,7 @@ def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
     ]:
         with pytest.raises(DuplicateEffect, match="immutable reconciled"):
             signed_receipt(
-        store,
+                store,
                 eid, receipt, verified_by=verifier,
                 reconciliation_status=reconciliation,
             )
