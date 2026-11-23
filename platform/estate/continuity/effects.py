@@ -162,6 +162,12 @@ class EffectsMixin(FenceMixin):
                     )
                 except (ValueError, TypeError):
                     original = None
+                if original is not None and row["state"] not in (
+                    "OBSERVED", "ABANDONED"
+                ):
+                    # Even a valid signature on INTENDED is not a terminal
+                    # external outcome and cannot hide a live obligation.
+                    original = None
                 if (
                     original is not None
                     and row["verified_by"].strip().casefold() in executors
@@ -267,7 +273,12 @@ class EffectsMixin(FenceMixin):
                     "state", "reconciliation_status",
                 )
             }
-            if row["reconciliation_status"] != "RECONCILED":
+            if (
+                row["reconciliation_status"] != "RECONCILED"
+                or row["state"] not in ("OBSERVED", "ABANDONED")
+            ):
+                if row["reconciliation_status"] == "RECONCILED":
+                    item["reconciliation_status"] = "UNVERIFIED"
                 pending.append(item)
                 continue
             actors = self.db.execute(
