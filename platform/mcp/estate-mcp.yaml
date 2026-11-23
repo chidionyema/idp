@@ -109,12 +109,7 @@ spec:
             - { name: ESTATE_BLAST_CATALOG_DIR, value: /data }
             # idp#8061: the issuer-verified cloud intent door is optional until
             # ESO has a cloud-only URL/token. No laptop route or token fallback.
-            - name: ESTATE_CLOUD_INTENT_URL
-              valueFrom:
-                secretKeyRef:
-                  name: cloud-intent
-                  key: url
-                  optional: true
+            - { name: ESTATE_CLOUD_INTENT_URL_FILE, value: /run/secrets/cloud-intent/url }
             - { name: ESTATE_CLOUD_INTENT_TOKEN_FILE, value: /run/secrets/cloud-intent/token }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
