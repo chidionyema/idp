@@ -120,7 +120,7 @@ class EffectsMixin(FenceMixin):
                 ):
                     raise DuplicateEffect(
                         f"effect {effect_id} already has an immutable "
-                    "reconciled receipt"
+                        "reconciled receipt"
                     )
                 return {
                     "effect_id": effect_id,
