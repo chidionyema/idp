@@ -468,7 +468,7 @@ jobs:
           # ancestry against current main. The agent's work must not disappear when
           # another lane advances main while the model is working.
           # The Greenlane, not this stage, rebases and independently proves promotion.
-          if [ "$REPLAY" = 1 ]; then
+          if [ "${REPLAY:-0}" = 1 ]; then
             SCOPE_JSON="$(cat "$RUNNER_TEMP/admission/scope.json")"
             SCOPE_SHA256="$(sha256sum "$RUNNER_TEMP/admission/scope.json" | cut -d' ' -f1)"
           fi
@@ -487,9 +487,18 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with: { python-version: "3.12" }
 
-      # The applicator intentionally checks out the agent's historical base.
-      # Install trusted runner dependencies OUTSIDE that worktree before pre-push.
-      - uses: ./.github/actions/estate-tools
+      # The applicator checks out the historical agent base. Install the exact
+      # kubeconform pin in runner HOME, which survives that checkout.
+      - name: Restore pinned kubeconform to cloud submission runner
+        run: |
+          set -euo pipefail
+          tools="$HOME/.cache/estate-tools"; mkdir -p "$tools"
+          curl -fsSL --retry 3 --retry-delay 2 \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            -o "$RUNNER_TEMP/kubeconform.tar.gz"
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C "$tools" kubeconform
+          chmod 0755 "$tools/kubeconform"
+          echo "$tools" >> "$GITHUB_PATH"
 
       - name: Install and execute the exact estate push-readiness dependencies
         run: |
