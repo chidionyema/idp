@@ -423,6 +423,10 @@ def test_future_dated_observer_cannot_settle_or_reset_clock(tmp_path):
         "UPDATE external_effects SET observed_at=? WHERE effect_id=?",
         (time.time() + 3600, eid),
     )
+    pending = store.pending_effects("m-test")
+    assert len(pending) == 1
+    assert pending[0]["effect_id"] == eid
+    assert pending[0]["reconciliation_status"] == "UNVERIFIED"
     with pytest.raises(InvalidTransition, match="future"):
         operating(store, lease, "effect:" + eid)
     with pytest.raises(InvalidTransition, match="future"):
