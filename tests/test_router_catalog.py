@@ -6,6 +6,8 @@ import http.server
 import importlib.util
 import json
 import threading
+
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +35,41 @@ EXPECTED = [
 
 def test_catalog_is_aliases_then_every_discovered_model():
     assert rc.all_models(CATALOG) == EXPECTED
+
+
+def test_projected_default_route_is_cloud_only():
+    assert rc.DEFAULT_ROUTER == "https://llm.mumchimp.com/v1"
+    assert rc.ROUTER.startswith("https://")
+    assert rc.cloud_router_url(rc.DEFAULT_ROUTER) == rc.DEFAULT_ROUTER
+    assert "127.0.0.1" not in rc.ROUTER
+
+
+def test_explicit_remote_https_override_keeps_path():
+    assert rc.cloud_router_url(" https://router.example.net/v1/ ") == (
+        "https://router.example.net/v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "http://llm.mumchimp.com/v1",
+        "http://127.0.0.1:4000/v1",
+        "https://localhost:4000/v1",
+        "https://agent.localhost/v1",
+        "https://127.0.0.1:4000/v1",
+        "https://169.254.1.2/v1",
+        "https://10.0.0.1/v1",
+        "https://192.168.1.2/v1",
+        "https://[::1]/v1",
+        "https://user:secret@router.example.net/v1",
+        "https://router.example.net/v1#fragment",
+    ],
+)
+def test_local_or_insecure_router_is_refused(url):
+    with pytest.raises(ValueError, match="router"):
+        rc.cloud_router_url(url)
 
 
 def test_opencode_gets_every_model_and_keeps_its_other_settings(tmp_path):
