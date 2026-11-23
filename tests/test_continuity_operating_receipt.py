@@ -9,7 +9,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "platform" / "estate"))
-from continuity import InvalidTransition, MissionStore, StaleFenceError  # noqa: E402
+from continuity import (  # noqa: E402
+    DuplicateEffect,
+    InvalidTransition,
+    MissionStore,
+    StaleFenceError,
+)
 
 
 def staged(tmp_path):
@@ -117,4 +122,55 @@ def test_reconciled_observation_is_linked_to_event_and_terminal(tmp_path):
     assert row["evidence"] == "effect:" + eid and row["created_at"] > 0
     with pytest.raises((InvalidTransition, StaleFenceError)):
         operating(store, lease, "effect:" + eid)
+    store.close()
+
+
+def test_ambiguous_observation_can_be_reconciled_and_settled(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease, reconciled=False)
+    with pytest.raises(InvalidTransition, match="reconciled"):
+        operating(store, lease, "effect:" + eid)
+    result = store.record_receipt(
+        eid,
+        {"observed": "ok"},
+        verified_by="observer-b",
+        reconciliation_status="RECONCILED",
+    )
+    assert result["duplicate"] is False
+    row = store.db.execute(
+        "SELECT state, reconciliation_status FROM external_effects WHERE effect_id=?",
+        (eid,),
+    ).fetchone()
+    assert (row["state"], row["reconciliation_status"]) == ("OBSERVED", "RECONCILED")
+    assert operating(store, lease, "effect:" + eid)["state"] == "OPERATING"
+    store.close()
+
+
+def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    original = store.db.execute(
+        "SELECT external_receipt, verified_by, observed_at FROM external_effects"
+        " WHERE effect_id=?",
+        (eid,),
+    ).fetchone()
+    assert store.record_receipt(
+        eid, {"observed": "ok"}, verified_by="observer-b"
+    )["duplicate"] is True
+    for receipt, verifier, reconciliation in [
+        ({"observed": "different"}, "observer-b", "RECONCILED"),
+        ({"observed": "ok"}, "executor-a", "RECONCILED"),
+        ({"observed": "ok"}, "observer-b", "AMBIGUOUS"),
+    ]:
+        with pytest.raises(DuplicateEffect, match="immutable reconciled"):
+            store.record_receipt(
+                eid, receipt, verified_by=verifier,
+                reconciliation_status=reconciliation,
+            )
+    final = store.db.execute(
+        "SELECT external_receipt, verified_by, observed_at FROM external_effects"
+        " WHERE effect_id=?",
+        (eid,),
+    ).fetchone()
+    assert tuple(final) == tuple(original)
     store.close()
