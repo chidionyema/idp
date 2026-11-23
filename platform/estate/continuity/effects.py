@@ -130,7 +130,9 @@ class EffectsMixin(FenceMixin):
             if reconciliation_status == "RECONCILED":
                 actors = cur.execute(
                     "SELECT actor FROM mission_events WHERE mission_id=?"
-                    " AND attempt_id=?",
+                    " AND attempt_id=?"
+                    " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
+                    " 'VERIFYING', 'PROMOTING', 'DEPLOY_VERIFY')",
                     (row["mission_id"], row["attempt_id"]),
                 ).fetchall()
                 executors = {
@@ -268,7 +270,9 @@ class EffectsMixin(FenceMixin):
             actors = self.db.execute(
                 "SELECT actor FROM mission_events WHERE mission_id=?"
                 " AND attempt_id=(SELECT attempt_id FROM external_effects"
-                " WHERE effect_id=?)",
+                " WHERE effect_id=?)"
+                " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
+                " 'VERIFYING', 'PROMOTING', 'DEPLOY_VERIFY')",
                 (mission_id, row["effect_id"]),
             ).fetchall()
             executors = {
