@@ -589,8 +589,12 @@ def test_auto_launcher_binds_base_model_and_isolates_key(tmp_path):
         scope_check.assert_called_once_with(["web/f0.txt"])
         assert run.call_args.kwargs["env"]["LEGION_SELECTED_KEY"] == "n"
         assert "OTHER_API_KEY" not in run.call_args.kwargs["env"]
+        assert run.call_args.kwargs["timeout"] == 240
         config = (tmp_path / "legion-pi/models.json").read_text()
         assert '"apiKey": "$LEGION_SELECTED_KEY"' in config
+        model = json.loads(config)["providers"]["estate-admitted"]["models"][0]
+        assert model["contextWindow"] <= 32768
+        assert model["maxTokens"] == 4096
     with pytest.raises(ValueError, match="admission mismatch"):
         mod.auto_launch(
             tmp_path, record, "test", tmp_path, dict(env, ADMITTED_MODEL="fake")
