@@ -157,6 +157,14 @@ class EffectsMixin(FenceMixin):
                     )
                 except (ValueError, TypeError):
                     original = None
+                if (
+                    original is not None
+                    and row["verified_by"].strip().casefold() in executors
+                ):
+                    # A correctly formed signature from the actual executor
+                    # is NOT independent evidence; it can be superseded only
+                    # by a new authenticated third-party observation.
+                    original = None
                 if original is not None:
                     if (
                         observed_state != row["state"]
