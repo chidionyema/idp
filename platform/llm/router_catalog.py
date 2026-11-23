@@ -31,7 +31,7 @@ DEFAULT_ROUTER = "https://llm.mumchimp.com/v1"
 
 
 def cloud_router_url(raw: str) -> str:
-    """Require a remote TLS router before writing client configuration."""
+    """Require cloud HTTPS before writing any OpenCode or Pi client configuration."""
     import ipaddress
     from urllib.parse import urlsplit
 
