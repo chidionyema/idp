@@ -67,6 +67,17 @@ class LeaseMixin:
                 raise LeaseNotAcquired(
                     f"mission in state {m['state']} is not claimable"
                 )
+            # No recovery path may mint free retries after the mission's
+            # authorised retry budget is exhausted. READY is the initial
+            # attempt, not a retry; both expired-LEASED takeover and
+            # REASSIGNING consume exactly one retry under this transaction.
+            if (
+                m["state"] in ("LEASED", "REASSIGNING")
+                and m["retry_budget_remaining"] <= 0
+            ):
+                raise LeaseNotAcquired(
+                    f"retry budget exhausted for mission {mission_id}"
+                )
             attempt_id = f"a-{uuid.uuid4()}"
             epoch = m["current_lease_epoch"] + 1
             if m["state"] == "REASSIGNING" or m["state"] == "LEASED":
@@ -109,7 +120,7 @@ class LeaseMixin:
                     attempt_id,
                     epoch,
                     max(0, m["retry_budget_remaining"] - 1)
-                    if m["state"] == "REASSIGNING"
+                    if m["state"] in ("REASSIGNING", "LEASED")
                     else m["retry_budget_remaining"],
                     mission_id,
                 ),
