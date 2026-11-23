@@ -207,8 +207,14 @@ def test_ambiguous_recovery_can_observe_real_completion(tmp_path):
     eid = intent["effect_id"]
     store.reconcile_effect(eid, "unmeasured", "AMBIGUOUS")
     assert store.pending_effects("m-test")[0]["effect_id"] == eid
-    completed = store.reconcile_effect(
-        eid, "observed-external-transaction", "COMPLETED"
+    # Executor-controlled outcome text must not create an independently
+    # authenticated effect. An external observer must enter a separate receipt.
+    with pytest.raises(DuplicateEffect, match="independent record_receipt"):
+        store.reconcile_effect(eid, "unverified-agent-assertion", "COMPLETED")
+    assert store.pending_effects("m-test")[0]["effect_id"] == eid
+    completed = store.record_receipt(
+        eid, {"external": "observed-external-transaction"},
+        verified_by="observer-b",
     )
     assert completed["state"] == "OBSERVED" and not completed["duplicate"]
     assert store.pending_effects("m-test") == []
@@ -369,4 +375,29 @@ def test_global_idempotency_key_cannot_cross_mission_or_effect_scope(tmp_path):
     assert store.db.execute(
         "SELECT COUNT(*) FROM external_effects WHERE idempotency_key='global-once'"
     ).fetchone()[0] == 1
+    store.close()
+
+
+def test_reconciler_cannot_fabricate_independent_completion(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "untrusted-claim-once",
+        {"expected": "real observation"},
+    )
+    eid = intent["effect_id"]
+    before = dict(store.db.execute(
+        "SELECT state, reconciliation_status, external_receipt, verified_by"
+        " FROM external_effects WHERE effect_id=?", (eid,)
+    ).fetchone())
+    with pytest.raises(DuplicateEffect, match="independent record_receipt"):
+        store.reconcile_effect(eid, "I say done", "COMPLETED")
+    after = dict(store.db.execute(
+        "SELECT state, reconciliation_status, external_receipt, verified_by"
+        " FROM external_effects WHERE effect_id=?", (eid,)
+    ).fetchone())
+    assert after == before
+    assert store.pending_effects("m-test")[0]["effect_id"] == eid
+    with pytest.raises(InvalidTransition, match="reconciled"):
+        operating(store, lease, "effect:" + eid)
     store.close()
