@@ -83,11 +83,15 @@ def _vault_binding_step():
     ]
     assert len(matched) == 1
     binding = matched[0]
-    exchange = [step for step in steps if "oci-token-exchange-action@" in step.get("uses", "")]
+    exchange = [
+        step for step in steps if "oci-token-exchange-action@" in step.get("uses", "")
+    ]
     assert len(exchange) == 1
     assert steps.index(exchange[0]) < steps.index(binding)
     assert binding["env"]["OCI_CLI_AUTH"] == "security_token"
-    release = next(step for step in steps if "node scripts/release.mjs" in step.get("run", ""))
+    release = next(
+        step for step in steps if "node scripts/release.mjs" in step.get("run", "")
+    )
     assert "CLOUDFLARE_API_TOKEN" not in release["env"]
     assert "SEED_CLOUDFLARE_ROOT_TOKEN" not in WORKFLOW.read_text()
     assert "::add-mask::" in binding["run"]
