@@ -35,7 +35,10 @@ def signed_receipt(
     subject = effect_receipt_subject(
         effect_id, receipt, verified_by, observed_state, reconciliation_status
     )
-    signature = base64.b64encode(store._test_signer.sign(subject)).decode()
+    signer = store._test_signers.get(
+        verified_by, store._test_signers["observer-b"]
+    )
+    signature = base64.b64encode(signer.sign(subject)).decode()
     return store.record_receipt(
         effect_id,
         receipt,
@@ -47,17 +50,18 @@ def signed_receipt(
 
 
 def staged(tmp_path):
-    signer = Ed25519PrivateKey.generate()
-    pinned = signer.public_key().public_bytes_raw()
+    signers = {
+        identity: Ed25519PrivateKey.generate()
+        for identity in ("observer-b", "executor-a", "legion")
+    }
     store = MissionStore(
         tmp_path / "custody.sqlite",
         trusted_verifier_keys={
-            "observer-b": pinned,
-            "executor-a": pinned,
-            "legion": pinned,
+            identity: signer.public_key().public_bytes_raw()
+            for identity, signer in signers.items()
         },
     )
-    store._test_signer = signer
+    store._test_signers = signers
     store.accept_mission(
         {
             "mission_id": "m-test",
@@ -603,7 +607,7 @@ def test_legacy_self_signed_external_effect_stays_pending(tmp_path):
     eid = intent["effect_id"]
     claimed = {"external": "agent wrote this"}
     sig = base64.b64encode(
-        store._test_signer.sign(
+        store._test_signers["executor-a"].sign(
             effect_receipt_subject(eid, claimed, "executor-a")
         )
     ).decode()
@@ -628,3 +632,12 @@ def test_legacy_self_signed_external_effect_stays_pending(tmp_path):
     assert repaired["state"] == "OBSERVED"
     assert store.pending_effects("m-test") == []
     store.close()
+
+
+def test_trusted_verifiers_cannot_share_private_key_material(tmp_path):
+    one_key = Ed25519PrivateKey.generate().public_key().public_bytes_raw()
+    with pytest.raises(ValueError, match="multiple independent verifiers"):
+        MissionStore(
+            tmp_path / "key-alias.sqlite",
+            trusted_verifier_keys={"observer-b": one_key, "legion": one_key},
+        )
