@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -231,4 +232,76 @@ def test_not_started_and_unknown_effects_are_not_false_success(tmp_path):
     for outcome in ("NOT_STARTED", "AMBIGUOUS"):
         with pytest.raises(DuplicateEffect, match="unknown effect"):
             store.reconcile_effect("e-missing", "", outcome)
+    store.close()
+
+
+def _progress_clock(store, lease):
+    return store.db.execute(
+        "SELECT last_progress_at FROM mission_attempts WHERE attempt_id=?",
+        (lease["attempt_id"],),
+    ).fetchone()["last_progress_at"]
+
+
+def test_narration_cannot_extend_progress_clock(tmp_path):
+    store, lease = staged(tmp_path)
+    initial = _progress_clock(store, lease)
+    for evidence in ("working", "tests passed", "merged", "effect:missing"):
+        with pytest.raises(InvalidTransition):
+            store.report_progress(
+                "m-test", lease["attempt_id"], lease["lease_epoch"], evidence
+            )
+    assert _progress_clock(store, lease) == initial
+    assert store.get_mission("m-test")["last_verified_progress_at"] is None
+    store.close()
+
+
+def test_verified_external_progress_can_only_be_counted_once(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    args = ("m-test", lease["attempt_id"], lease["lease_epoch"], "effect:" + eid)
+    first = store.report_progress(*args)
+    assert first["evidence"] == "effect:" + eid
+    clock = _progress_clock(store, lease)
+    assert clock == first["progress_at"]
+    with pytest.raises(InvalidTransition, match="same external effect"):
+        store.report_progress(*args, now=first["progress_at"] + 1)
+    assert _progress_clock(store, lease) == clock
+    events = store.db.execute(
+        "SELECT COUNT(*) AS n FROM mission_events"
+        " WHERE mission_id='m-test' AND cause='verified external progress'"
+    ).fetchone()["n"]
+    assert events == 1
+    store.close()
+
+
+def test_checkpoint_is_durable_custody_not_verified_progress(tmp_path):
+    store, lease = staged(tmp_path)
+    initial = _progress_clock(store, lease)
+    store.write_checkpoint(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        {
+            "source_revision": "a" * 40,
+            "next_admissible_action": "verify an external effect",
+            "completed_work": ["wrote another report"],
+        },
+    )
+    assert _progress_clock(store, lease) == initial
+    assert store.get_mission("m-test")["last_checkpoint_digest"]
+    store.close()
+
+
+def test_future_dated_observer_cannot_settle_or_reset_clock(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    store.db.execute(
+        "UPDATE external_effects SET observed_at=? WHERE effect_id=?",
+        (time.time() + 3600, eid),
+    )
+    with pytest.raises(InvalidTransition, match="future"):
+        operating(store, lease, "effect:" + eid)
+    with pytest.raises(InvalidTransition, match="future"):
+        store.report_progress(
+            "m-test", lease["attempt_id"], lease["lease_epoch"], "effect:" + eid
+        )
+    assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
     store.close()
