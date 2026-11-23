@@ -25,7 +25,40 @@ import sys
 import time
 from pathlib import Path
 
-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "http://127.0.0.1:4000/v1")
+# The Mac is never an inference host or disaster-recovery router (#8061).
+# Use the existing cloud endpoint; do not change the model selection or credentials.
+DEFAULT_ROUTER = "https://llm.mumchimp.com/v1"
+
+
+def cloud_router_url(raw: str) -> str:
+    """Reject local and insecure client routes before rewriting installed harness configs."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    url = raw.strip().rstrip("/")
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or host == "localhost"
+        or host.endswith(".localhost")
+    ):
+        raise ValueError("estate router must be an HTTPS cloud endpoint")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise ValueError("estate router cannot be local or private")
+    return url
+
+
+ROUTER = cloud_router_url(os.environ.get("ESTATE_ROUTER_URL") or DEFAULT_ROUTER)
 KEY_ENV = "LITELLM_API_KEY"  # the one key every harness presents to the router
 DISCOVER_TIMEOUT_S = 30
 
