@@ -641,3 +641,39 @@ def test_trusted_verifiers_cannot_share_private_key_material(tmp_path):
             tmp_path / "key-alias.sqlite",
             trusted_verifier_keys={"observer-b": one_key, "legion": one_key},
         )
+
+
+def test_reconciled_receipt_rejects_ambiguous_rewrite_without_crashing(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    with pytest.raises(DuplicateEffect, match="immutable reconciled"):
+        signed_receipt(
+            store, eid, {"observed": "ok"},
+            verified_by="observer-b", reconciliation_status="AMBIGUOUS",
+        )
+    assert store.pending_effects("m-test") == []
+    assert operating(store, lease, "effect:" + eid)["state"] == "OPERATING"
+    store.close()
+
+
+def test_legacy_reconciled_receipt_rejects_unsigned_ambiguous_rewrite(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "legacy-ambiguous-mutation",
+        {"expected": "external truth"},
+    )
+    eid = intent["effect_id"]
+    store.db.execute(
+        "UPDATE external_effects SET state='ABANDONED',"
+        " reconciliation_status='RECONCILED',"
+        " external_receipt=?, verified_by=? WHERE effect_id=?",
+        (json.dumps({"external": "legacy self-report"}), "observer-b", eid),
+    )
+    with pytest.raises(RecordRejected, match="signed reattestation"):
+        store.record_receipt(
+            eid, {"external": "rewrite"}, "observer-b",
+            observed_state="OBSERVED", reconciliation_status="AMBIGUOUS",
+        )
+    assert store.pending_effects("m-test")[0]["reconciliation_status"] == "UNVERIFIED"
+    store.close()
