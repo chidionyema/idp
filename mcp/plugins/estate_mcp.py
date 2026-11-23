@@ -51,12 +51,24 @@ log = logging.getLogger(__name__)
 
 # idp#8061: cloud governed execution. The Mac is a thin client only.
 CLOUD_INTENT_URL_ENV = "ESTATE_CLOUD_INTENT_URL"
+CLOUD_INTENT_URL_FILE_ENV = "ESTATE_CLOUD_INTENT_URL_FILE"
 CLOUD_INTENT_TOKEN_FILE_ENV = "ESTATE_CLOUD_INTENT_TOKEN_FILE"  # noqa: S105
 CLOUD_INTENT_TOKEN_ENV = "ESTATE_CLOUD_INTENT_TOKEN"  # noqa: S105
 
 
 def _local_executor() -> Path:
     return HOME / ".estate" / "bin" / "estate-execute"
+
+
+def _cloud_intent_url() -> str:
+    """Read a mounted cloud URL first; an unreadable file refuses rather than falling back."""
+    file_path = (os.environ.get(CLOUD_INTENT_URL_FILE_ENV) or "").strip()
+    if file_path:
+        try:
+            return Path(file_path).read_text().strip()
+        except OSError:
+            return ""
+    return (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip()
 
 
 def _cloud_intent_token() -> str:
@@ -81,7 +93,7 @@ def _invoke_cloud(name, arg_items, session, timeout):
     import ipaddress
     import urllib.parse
 
-    url = (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip()
+    url = _cloud_intent_url()
     if not url:
         return "BLIND: no governed cloud intent door configured."
     parsed = urllib.parse.urlsplit(url)
@@ -534,42 +546,11 @@ def _estate_invoke(args):
         if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
             return "ERROR: invalid arg name: {}".format(k)
         arg_items.append((str(k), v))
-    # Only an expressly provisioned cloud worker may execute a local intent.
-    # A workstation with an old executor still calls the governed cloud.
-    if os.environ.get("ESTATE_EXECUTOR_ROLE") != "cloud-worker":
-        return _invoke_cloud(name, arg_items, session, timeout)
-    exe = _local_executor()
-    if not exe.exists():
-        return "BLIND: cloud worker executor unavailable."
-    cmd = [sys.executable, str(exe), name]
-    if session:
-        cmd.extend(["--session", session])
-    child_env = dict(os.environ)
-    if session:
-        child_env["ESTATE_SESSION_ID"] = session
-    for k, v in arg_items:
-        cmd.append("{}={}".format(k, v))
-    idp_root = HOME / "Documents" / "code" / "idp"
-    try:
-        r = subprocess.run(  # noqa: S603  # cmd validated by regex above
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(idp_root),
-            env=child_env,
-            check=False,
-        )
-        out = r.stdout.strip()
-        if r.returncode == 0:
-            return out if out else "ok"
-        err = r.stderr.strip() if r.stderr else ""
-        msg = "ERROR (exit {}):\n{}\n{}"
-        return msg.format(r.returncode, out, err)
-    except subprocess.TimeoutExpired:
-        return "ERROR: intent timed out after {}s".format(timeout)
-    except Exception as exc:
-        return "ERROR: {}".format(exc)
+    # An environment variable is not an authenticated workload identity.
+    # Never execute an estate intent in the MCP client's host, even when
+    # ESTATE_EXECUTOR_ROLE is spoofed or ~/.estate/bin/estate-execute exists.
+    # The authorised cloud door owns the actual executable and its audit.
+    return _invoke_cloud(name, arg_items, session, timeout)
 
 
 def _registry_door():
