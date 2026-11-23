@@ -84,7 +84,10 @@ def test_a_contract_still_pending_at_its_deadline_fails_with_the_evidence():
     w = World([("pending", "no Optimus reading for x")] * 3)
     eng, st = _landing(w)
     st.verifying["lane/a"]["deadline_min"] = 30
-    w.clock += 31 * 60
+    w.clock += 29
+    eng._verify_landed()
+    assert "lane/a" in st.verifying and w.posted == []
+    w.clock += 2  # The backend clock is MINUTES, not seconds.
     eng._verify_landed()
     assert st.verifying["lane/a"]["state"] == "recovery_required"
     assert st.verifying["lane/a"]["next_action"] == "recover_via_authorised_executor"

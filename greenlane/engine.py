@@ -312,7 +312,8 @@ class Engine:
         now = self.b.now()
         for name in sorted(self.s.verifying):
             rec = self.s.verifying[name]
-            age = (now - float(rec.get("landed", now))) / 60.0
+            # Both backend.now() and rec["landed"] are already in minutes.
+            age = now - float(rec.get("landed", now))
             verdict, evidence = verify(name, rec)
             if verdict == "pending" and age < float(
                 rec.get("deadline_min", self.VERIFY_DEADLINE_MIN)
