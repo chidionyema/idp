@@ -108,7 +108,10 @@ class EffectsMixin(FenceMixin):
             # state. An OBSERVED/AMBIGUOUS receipt must remain correctable after
             # an independent external reconciliation; otherwise a task can
             # remain permanently stuck despite genuine observed success.
-            if row["state"] == "OBSERVED" and row["reconciliation_status"] == "RECONCILED":
+            if (
+                row["state"] == "OBSERVED"
+                and row["reconciliation_status"] == "RECONCILED"
+            ):
                 if (
                     observed_state != "OBSERVED"
                     or reconciliation_status != "RECONCILED"
@@ -116,7 +119,8 @@ class EffectsMixin(FenceMixin):
                     or verified_by != row["verified_by"]
                 ):
                     raise DuplicateEffect(
-                        f"effect {effect_id} already has an immutable reconciled receipt"
+                        f"effect {effect_id} already has an immutable "
+                    "reconciled receipt"
                     )
                 return {
                     "effect_id": effect_id,
@@ -179,13 +183,24 @@ class EffectsMixin(FenceMixin):
             ).fetchone()
             if row is None:
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if row["state"] == "OBSERVED" and row["reconciliation_status"] == "RECONCILED":
+            if (
+                row["state"] == "OBSERVED"
+                and row["reconciliation_status"] == "RECONCILED"
+            ):
                 raise DuplicateEffect(
-                    f"effect {effect_id} already has an immutable reconciled receipt"
+                    f"effect {effect_id} already has an immutable "
+                    "reconciled receipt"
                 )
             if outcome == "NOT_STARTED":
-                if row["state"] == "ABANDONED" and row["reconciliation_status"] == "RECONCILED":
-                    return {"effect_id": effect_id, "state": "ABANDONED", "duplicate": True}
+                if (
+                    row["state"] == "ABANDONED"
+                    and row["reconciliation_status"] == "RECONCILED"
+                ):
+                    return {
+                        "effect_id": effect_id,
+                        "state": "ABANDONED",
+                        "duplicate": True,
+                    }
                 cur.execute(
                     "UPDATE external_effects SET state='ABANDONED',"
                     " reconciliation_status='RECONCILED' WHERE effect_id=?",
