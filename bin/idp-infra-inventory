@@ -184,8 +184,14 @@ def reached_dirs(applied_dirs) -> set:
         if d in seen:
             continue
         seen.add(d)
-        k = ROOT / d / "kustomization.yaml"
-        if not k.exists():
+        # Try all three kustomization file variants so that kustomization.yml and
+        # Kustomization are also recognised alongside kustomization.yaml.
+        k = None
+        for candidate in (ROOT / d / "kustomization.yaml", ROOT / d / "kustomization.yml", ROOT / d / "Kustomization"):
+            if candidate.exists():
+                k = candidate
+                break
+        if k is None:
             continue
         try:
             docs = list(yaml.safe_load_all(k.read_text()))
@@ -200,10 +206,16 @@ def reached_dirs(applied_dirs) -> set:
                     if "://" in ref or ref.startswith("github.com/"):
                         continue
                     target = os.path.normpath(os.path.join(d, ref))
-                    if (ROOT / target).is_dir():
+                    target_path = ROOT / target
+                    if target_path.is_dir():
                         stack.append(target)
+                    elif target_path.is_file():
+                        # A local file resource: mark its parent directory as reached so that
+                        # the directory is counted as part of the active Kustomization graph.
+                        parent = os.path.dirname(target)
+                        if parent and parent != ".":
+                            stack.append(parent)
     return seen
-
 
 def kustomize(path: str):
     """Build one path. Returns (docs, error)."""
