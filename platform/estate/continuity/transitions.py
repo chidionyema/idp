@@ -21,7 +21,13 @@ UNFENCED_TRANSITIONS = {
 
 
 def _require_verified_operational_effect(
-    cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence,
+    cur,
+    mission_id,
+    attempt_id,
+    lease_epoch,
+    mandate_version,
+    actor,
+    evidence,
     now=None,
 ):
     """Require a dated, reconciled effect from this exact mission attempt.
