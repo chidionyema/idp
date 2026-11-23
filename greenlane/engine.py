@@ -340,9 +340,8 @@ class Engine:
             rec.setdefault("failed_at", round(now, 2))
             rec["next_action"] = "recover_via_authorised_executor"
             if not rec.get("failure_reported"):
-                if (
-                    self.b.report_operational(name, rec, "failed", evidence) is not False
-                ):
+                posted = self.b.report_operational(name, rec, "failed", evidence)
+                if posted is not False:
                     rec["failure_reported"] = True
             self.log.append(
                 f"recovery_required {name} ({rec.get('batch')}): {evidence}"
