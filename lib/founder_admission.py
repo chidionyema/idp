@@ -45,8 +45,11 @@ MAX_AGE = timedelta(hours=1)
 
 def _canonical(payload: object) -> bytes:
     return json.dumps(
-        payload, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False, allow_nan=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
 
 
@@ -85,15 +88,22 @@ def _url(value: object, *, runtime: bool) -> str:
             or not parsed.path.startswith("/")
         ):
             raise ValueError("invalid target")
-        if runtime and (host.lower() in PROXY_SOURCE_HOSTS or host.lower().endswith(".githubusercontent.com")):
+        if runtime and (
+            host.lower() in PROXY_SOURCE_HOSTS
+            or host.lower().endswith(".githubusercontent.com")
+        ):
             raise ValueError("source proxy cannot certify operational effect")
         return str(value)
     except (TypeError, ValueError) as exc:
-        raise AdmissionDenied("invalid-runtime-target" if runtime else "invalid-evidence-uri") from exc
+        raise AdmissionDenied(
+            "invalid-runtime-target" if runtime else "invalid-evidence-uri"
+        ) from exc
 
 
 def _authenticate(
-    envelope: object, trust_roots: dict, expected_role: str,
+    envelope: object,
+    trust_roots: dict,
+    expected_role: str,
 ) -> tuple[dict, dict, str]:
     """Verifier-supplied Ed25519 root: role alone or a model flag is never authority."""
     if not isinstance(envelope, dict):
@@ -130,7 +140,9 @@ def _independent_evidence(
         raise AdmissionDenied("invalid-evidence-digest")
     try:
         raw = reader(uri)
-        if not isinstance(raw, bytes) or not hmac.compare_digest(digest(raw), hash_value):
+        if not isinstance(raw, bytes) or not hmac.compare_digest(
+            digest(raw), hash_value
+        ):
             raise AdmissionDenied("evidence-digest-mismatch")
         document = json.loads(raw)
     except AdmissionDenied:
@@ -157,7 +169,9 @@ def _diagnosis(claim: dict, proofs: list[dict]) -> None:
     if not isinstance(hypotheses, list) or len(hypotheses) < 2:
         raise AdmissionDenied("no-competing-hypotheses")
     for h in hypotheses:
-        if not isinstance(h, dict) or any(not h.get(k) for k in ("statement", "falsified_by", "discriminating_probe")):
+        if not isinstance(h, dict) or any(
+            not h.get(k) for k in ("statement", "falsified_by", "discriminating_probe")
+        ):
             raise AdmissionDenied("unfalsifiable-hypothesis")
     if len({h.get("statement") for h in hypotheses}) < 2:
         raise AdmissionDenied("duplicate-hypotheses")
@@ -241,9 +255,15 @@ def admit(
         _fresh(p, now, start, end)
         if p.get("tier") != EvidenceTier.TIER_0_RAW_MACHINE_RECEIPT.value:
             raise AdmissionDenied("epistemic-laundering")
-        if role != "execution" and p.get("plane") != ExecutionPlane.PLANE_PRODUCTION_RUNTIME.value:
+        if (
+            role != "execution"
+            and p.get("plane") != ExecutionPlane.PLANE_PRODUCTION_RUNTIME.value
+        ):
             raise AdmissionDenied("proxy-green-substitution")
-        if p.get("capture_authority") != proofs[index]["key_id"] or p.get("capture_authority") == claim["actor_id"]:
+        if (
+            p.get("capture_authority") != proofs[index]["key_id"]
+            or p.get("capture_authority") == claim["actor_id"]
+        ):
             raise AdmissionDenied("self-attested-claim")
         uri = p.get("evidence_uri")
         if uri in proof_uris:
@@ -251,7 +271,11 @@ def admit(
         proof_uris.add(uri)
         obs = _independent_evidence(p, role, read_evidence)
         if role == "execution":
-            if obs.get("actor_id") != claim["actor_id"] or not obs.get("operation") or not obs.get("output_sha256"):
+            if (
+                obs.get("actor_id") != claim["actor_id"]
+                or not obs.get("operation")
+                or not obs.get("output_sha256")
+            ):
                 raise AdmissionDenied("unauthenticated-execution")
         else:
             if (
@@ -265,15 +289,23 @@ def admit(
         proof_payloads.append(p)
         proof_hashes.append(digest(_canonical(p)))
     _diagnosis(claim, proof_payloads)
-    certificate, root, key = _authenticate(claim.get("certificate"), trust_roots, "certifier")
+    certificate, root, key = _authenticate(
+        claim.get("certificate"), trust_roots, "certifier"
+    )
     if key in root_keys or root["control_plane"] in root_planes:
         raise AdmissionDenied("self-certified-outcome")
     _fresh(certificate, now, start, end)
-    if certificate.get("decision") != "ALLOW" or any(certificate.get(k) != claim[k] for k in BINDING):
+    if certificate.get("decision") != "ALLOW" or any(
+        certificate.get(k) != claim[k] for k in BINDING
+    ):
         raise AdmissionDenied("certificate-denied-or-mismatched")
     # The certifier commits to the original instruction, whole claim, fresh discovery
     # and all three exact proof payloads, never only their role names.
-    original = {k: v for k, v in claim.items() if k not in {"certificate", "original_instruction_bytes"}}
+    original = {
+        k: v
+        for k, v in claim.items()
+        if k not in {"certificate", "original_instruction_bytes"}
+    }
     if (
         certificate.get("claim_digest") != digest(_canonical(original))
         or certificate.get("discovery_digest") != digest(_canonical(d))
@@ -303,13 +335,27 @@ def send_checked(
     if not callable(conserve_obligation):
         raise AdmissionDenied("no-durable-obligation-conservation")
     try:
-        admit(claim, discovery, proofs, now=now, trust_roots=trust_roots, read_evidence=read_evidence)
+        admit(
+            claim,
+            discovery,
+            proofs,
+            now=now,
+            trust_roots=trust_roots,
+            read_evidence=read_evidence,
+        )
     except AdmissionDenied as exc:
-        conserve_obligation({
-            "verdict": "DENY", "reason": str(exc),
-            "instruction_id": claim.get("instruction_id") if isinstance(claim, dict) else None,
-            "obligation_id": claim.get("obligation_id") if isinstance(claim, dict) else None,
-            "claim_id": claim.get("claim_id") if isinstance(claim, dict) else None,
-        })
+        conserve_obligation(
+            {
+                "verdict": "DENY",
+                "reason": str(exc),
+                "instruction_id": claim.get("instruction_id")
+                if isinstance(claim, dict)
+                else None,
+                "obligation_id": claim.get("obligation_id")
+                if isinstance(claim, dict)
+                else None,
+                "claim_id": claim.get("claim_id") if isinstance(claim, dict) else None,
+            }
+        )
         raise
     return sender(payload)
