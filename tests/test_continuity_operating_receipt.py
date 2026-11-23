@@ -273,15 +273,81 @@ def test_not_started_and_unknown_effects_are_not_false_success(tmp_path):
         {"expected": "ok"},
     )
     eid = intent["effect_id"]
-    first = store.reconcile_effect(eid, "negative-observation", "NOT_STARTED")
-    assert first["state"] == "ABANDONED" and not first["duplicate"]
-    again = store.reconcile_effect(eid, "negative-observation", "NOT_STARTED")
-    assert again["duplicate"] is True
+    with pytest.raises(DuplicateEffect, match="independent record_receipt"):
+        store.reconcile_effect(eid, "I say nothing happened", "NOT_STARTED")
+    assert store.pending_effects("m-test")[0]["effect_id"] == eid
+    with pytest.raises(RecordRejected, match="signature required"):
+        store.record_receipt(
+            eid, {"external": "negative-observation"}, "observer-b",
+            observed_state="ABANDONED",
+        )
+    assert store.pending_effects("m-test")[0]["reconciliation_status"] == "PENDING"
+    negative = signed_receipt(
+        store, eid, {"external": "negative-observation"},
+        verified_by="observer-b", observed_state="ABANDONED",
+    )
+    assert negative["state"] == "ABANDONED" and not negative["duplicate"]
+    assert store.pending_effects("m-test") == []
+    assert signed_receipt(
+        store, eid, {"external": "negative-observation"},
+        observed_state="ABANDONED",
+    )["duplicate"] is True
     with pytest.raises(InvalidTransition):
         operating(store, lease, "effect:" + eid)
-    for outcome in ("NOT_STARTED", "AMBIGUOUS"):
-        with pytest.raises(DuplicateEffect, match="unknown effect"):
-            store.reconcile_effect("e-missing", "", outcome)
+    with pytest.raises(DuplicateEffect, match="independent record_receipt"):
+        store.reconcile_effect("e-missing", "", "NOT_STARTED")
+    with pytest.raises(DuplicateEffect, match="unknown effect"):
+        store.reconcile_effect("e-missing", "", "AMBIGUOUS")
+    store.close()
+
+
+def test_legacy_unsigned_negative_receipt_remains_an_obligation(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "legacy-unverified",
+        {"expected": "ok"},
+    )
+    eid = intent["effect_id"]
+    store.db.execute(
+        "UPDATE external_effects SET state='ABANDONED',"
+        " reconciliation_status='RECONCILED',"
+        " external_receipt=?, verified_by=? WHERE effect_id=?",
+        (json.dumps({"external": "agent said not started"}), "observer-b", eid),
+    )
+    pending = store.pending_effects("m-test")
+    assert len(pending) == 1
+    assert pending[0]["reconciliation_status"] == "UNVERIFIED"
+    with pytest.raises(InvalidTransition):
+        operating(store, lease, "effect:" + eid)
+    verified = signed_receipt(
+        store, eid, {"external": "independent absence check"},
+        observed_state="ABANDONED",
+    )
+    assert verified["state"] == "ABANDONED" and not verified["duplicate"]
+    assert store.pending_effects("m-test") == []
+    store.close()
+
+
+def test_unsigned_reconciliation_status_cannot_erase_pending_effect(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "negative-no-proof",
+        {"expected": "ok"},
+    )
+    eid = intent["effect_id"]
+    with pytest.raises(RecordRejected, match="signature required"):
+        store.record_receipt(
+            eid, {"external": "I said it ended"}, "observer-b",
+            observed_state="ABANDONED", reconciliation_status="RECONCILED",
+        )
+    with pytest.raises(RecordRejected, match="verified observation or abandonment"):
+        store.record_receipt(
+            eid, {"external": "I said it ended"}, "observer-b",
+            observed_state="INTENDED", reconciliation_status="RECONCILED",
+        )
+    assert store.pending_effects("m-test")[0]["effect_id"] == eid
     store.close()
 
 
