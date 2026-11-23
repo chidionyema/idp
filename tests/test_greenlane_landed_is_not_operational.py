@@ -222,11 +222,12 @@ def test_a_reading_short_of_its_target_is_not_a_pass(monkeypatch):
     assert verdict == "pending" and "=46 (target 44)" in why
 
 
-def test_probe_and_a_reading_at_target_pass(monkeypatch):
+def test_probe_and_metric_cannot_self_certify_operational(monkeypatch):
     be = _backend(monkeypatch, 200, {"estate.platform_dirs_never_applied": 42})
-    rec = {"head": "h"}
+    rec = {"head": "h", "tip": "a" * 40}
     verdict, why = be.verify_operational("lane/a", rec)
-    assert verdict == "pass", why
+    assert verdict == "pending", why
+    assert "ERR_INSUFFICIENT_RUNTIME_PROOFS" in why
     assert rec["claim"] == "o/r#7" and rec["deadline_min"] == 30.0
 
 
