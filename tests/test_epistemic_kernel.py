@@ -393,7 +393,6 @@ class TestEpistemicFalsificationKernel(unittest.TestCase):
         self.assertIn("rcpt-old:ERR_STALE_RECEIPT", d.error_codes)
 
     def test_18_cli_gate_fail_closed_and_pass_exit_codes(self) -> None:
-        cli_path = Path(__file__).resolve().parent.parent / "bin" / "epistemic_gate.py"
         with tempfile.TemporaryDirectory() as td:
             td_path = Path(td)
             contract_file = td_path / "contract.json"
@@ -427,13 +426,13 @@ class TestEpistemicFalsificationKernel(unittest.TestCase):
                 "ESTATE_RECEIPT_KEY": TEST_KEY.decode("utf-8"),
             }
             p_bad = subprocess.run(
-                [sys.executable, str(cli_path), "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_bad)],
+                [sys.executable, "-m", "epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_bad)],
                 capture_output=True, text=True, env=env,
             )
             self.assertEqual(p_bad.returncode, 42, p_bad.stdout + p_bad.stderr)
 
             p_good = subprocess.run(
-                [sys.executable, str(cli_path), "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_good)],
+                [sys.executable, "-m", "epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_good)],
                 capture_output=True, text=True, env=env,
             )
             self.assertEqual(p_good.returncode, 0, p_good.stdout + p_good.stderr)
