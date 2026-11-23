@@ -325,7 +325,9 @@ class Engine:
                 # A successful probe must also have a durable verdict receipt.
                 # If the GitHub write is refused, preserve custody and retry it.
                 if self.b.report_operational(name, rec, verdict, evidence) is False:
-                    rec["last"] = f"verified but verdict receipt unavailable: {evidence}"
+                    rec["last"] = (
+                        f"verified but verdict receipt unavailable: {evidence}"
+                    )
                     continue
                 self.log.append(f"pass {name} ({rec.get('batch')}): {evidence}")
                 del self.s.verifying[name]
@@ -338,9 +340,13 @@ class Engine:
             rec.setdefault("failed_at", round(now, 2))
             rec["next_action"] = "recover_via_authorised_executor"
             if not rec.get("failure_reported"):
-                if self.b.report_operational(name, rec, "failed", evidence) is not False:
+                if (
+                    self.b.report_operational(name, rec, "failed", evidence) is not False
+                ):
                     rec["failure_reported"] = True
-            self.log.append(f"recovery_required {name} ({rec.get('batch')}): {evidence}")
+            self.log.append(
+                f"recovery_required {name} ({rec.get('batch')}): {evidence}"
+            )
 
     def _retire_stale_lanes(self) -> None:
         """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
