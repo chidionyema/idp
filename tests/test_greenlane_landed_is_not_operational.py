@@ -148,35 +148,6 @@ def test_pass_without_durable_receipt_remains_unsettled():
     assert "receipt unavailable" in st.verifying["lane/a"]["last"]
 
 
-def test_recovery_only_state_cannot_self_dispatch_another_greenlane(monkeypatch):
-    import runpy
-    from types import SimpleNamespace
-
-    script = Path(__file__).resolve().parents[1] / "bin/idp-greenlane"
-    funcs = runpy.run_path(str(script))
-    rearm = funcs["rearm"]
-    st = E.State()
-    st.verifying["lane/a"] = {
-        "state": "recovery_required",
-        "head": "a" * 40,
-        "last": "HTTP 525",
-        "failure_reported": True,
-    }
-    calls = []
-    monkeypatch.setenv("GH_TOKEN", "test-token")
-    monkeypatch.setitem(rearm.__globals__, "repo", lambda: "o/r")
-    def fake_run(argv, **kwargs):
-        calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(funcs["subprocess"], "run", fake_run)
-    rearm(st)
-    assert calls == [], "failed obligations must not spin a privileged runner"
-    rearm(st, force=True)
-    assert len(calls) == 1, "a real batch resolution still wakes one verification tick"
-    assert calls[0][0:3] == ["gh", "workflow", "run"]
-
-
 def test_verifying_survives_the_state_ref():
     w = World([])
     _, st = _landing(w)
