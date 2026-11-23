@@ -1,7 +1,6 @@
 """GitHub Actions acceptance proofs require trusted, host-bound API reads."""
 
 import urllib.request
-from pathlib import Path
 
 import greenlane.github as G
 
