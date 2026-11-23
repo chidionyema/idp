@@ -378,7 +378,7 @@ jobs:
       always() && (
         (needs.admit.result == 'success' && needs.agent.result == 'success' && needs.firewall.result == 'success') ||
         (github.event_name == 'issues' && github.event.action == 'labeled' &&
-         github.event.label.name == 'legion-replay' &&
+         github.event.label.name == 'P0' &&
          github.actor == vars.ESTATE_FOUNDER_LOGIN &&
          github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
          github.event.issue.number == 8461)
@@ -391,7 +391,7 @@ jobs:
       issues: write # the claim: an issue and its CLAIM comment (bin/claim-gate reads both)
     steps:
       - name: Verify original #8461 agent and firewall before sealed replay
-        if: github.event_name == 'issues' && github.event.label.name == 'legion-replay'
+        if: github.event_name == 'issues' && github.event.label.name == 'P0'
         env:
           GH_TOKEN: ${{ github.token }}
           FOUNDER: ${{ vars.ESTATE_FOUNDER_LOGIN }}
@@ -436,7 +436,7 @@ jobs:
       # The original scope record and sealed patch are read from the successful
       # upstream jobs; no new model or alternate submission principal is invoked.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: github.event_name == 'issues' && github.event.label.name == 'legion-replay'
+        if: github.event_name == 'issues' && github.event.label.name == 'P0'
         with:
           name: legion-admission
           path: ${{ runner.temp }}/admission
@@ -447,7 +447,7 @@ jobs:
         with:
           name: agent-work
           path: ${{ runner.temp }}/sealed
-          run-id: ${{ github.event.label.name == 'legion-replay' && 45106948958 || github.run_id }}
+          run-id: ${{ github.event.label.name == 'P0' && 45106948958 || github.run_id }}
           github-token: ${{ github.token }}
 
       - name: Apply the patch to main, refusing what an agent may not change
@@ -455,7 +455,7 @@ jobs:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
           SCOPE_JSON: ${{ needs.admit.outputs.scope_json }}
           SCOPE_SHA256: ${{ needs.admit.outputs.scope_sha256 }}
-          REPLAY: ${{ github.event.label.name == 'legion-replay' && '1' || '0' }}
+          REPLAY: ${{ github.event.label.name == 'P0' && '1' || '0' }}
         run: |
           set -euo pipefail
           bash bin/agent-sandbox-age
