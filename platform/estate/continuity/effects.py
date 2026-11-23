@@ -127,8 +127,11 @@ class EffectsMixin(FenceMixin):
             ).fetchone()
             if row is None:
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if reconciliation_status == "RECONCILED":
-                actors = cur.execute(
+            if (
+                reconciliation_status == "RECONCILED"
+                or row["reconciliation_status"] == "RECONCILED"
+            ):
+                actors = cur.execute;
                     "SELECT actor FROM mission_events WHERE mission_id=?"
                     " AND attempt_id=?"
                     " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
@@ -140,7 +143,7 @@ class EffectsMixin(FenceMixin):
                 }
                 if row["executor_adapter"]:
                     executors.add(row["executor_adapter"].strip().casefold())
-                if (
+                if reconciliation_status == "RECONCILED" and (
                     not row["executor_adapter"]
                     or verified_by.strip().casefold() in executors
                 ):
