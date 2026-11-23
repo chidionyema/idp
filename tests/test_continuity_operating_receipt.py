@@ -104,9 +104,10 @@ def test_ambiguous_effect_cannot_settle(tmp_path):
     store.close()
 
 
-def test_executor_cannot_self_certify(tmp_path):
+@pytest.mark.parametrize("verifier", ["executor-a", "legion"])
+def test_executor_cannot_self_certify(tmp_path, verifier):
     store, lease = staged(tmp_path)
-    eid = effect(store, lease, verifier="executor-a")
+    eid = effect(store, lease, verifier=verifier)
     with pytest.raises(InvalidTransition, match="executor"):
         operating(store, lease, "effect:" + eid)
     store.close()
