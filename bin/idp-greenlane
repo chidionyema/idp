@@ -131,16 +131,16 @@ def _tick_once(judge_only: bool = False) -> int:
     # already provide native callbacks; a completed batch needs one full
     # formation tick, even when the verdict was RED/bisected rather than landed.
     resolved = bool(batch_before and (st.batch is None or st.batch.id != batch_before))
-    # A landed lane awaiting its operational verdict needs the next full tick too, and nothing
-    # else will send one (2026-11-20). The chain is finite: every entry leaves `verifying` with a
-    # verdict by its contract deadline (Engine.VERIFY_DEADLINE_MIN when the contract gives none).
-    if resolved or getattr(st, "verifying", None):
-        rearm(st)
+    # One post-resolution wake for the next batch or fresh verifier.
+    # RECOVERY_REQUIRED entries are durable and never justify self-dispatch:
+    # re-running the same probe cannot repair the failed external effect.
+    if resolved:
+        rearm(st, force=True)
     return 0
 
 
-def rearm(st: State) -> None:
-    """Chain one more tick if a lane is still unproven (2026-10-11).
+def rearm(st: State, *, force: bool = False) -> None:
+    """Chain a single tick on real progress, not on unchanged failed effects.
 
     A lane push fires `push` exactly once, and it competes for the single
     `greenlane` concurrency slot with the continuous stream of `workflow_run`
@@ -157,11 +157,10 @@ def rearm(st: State) -> None:
     work outstanding -- which is why the chain has to be self-sustaining rather
     than relying on the event that establishes the work.
 
-    Re-arming is safe to repeat because a tick is idempotent: the engine persists
-    `state.json` in git (bin/idp-greenlane.tick saves it in a `finally`), and a
-    run killed mid-flight is requeued from that state rather than stranded. The
-    guard is only against a runaway loop: a tick with no lane outstanding
-    dispatches nothing, so the chain terminates as soon as the estate is clean.
+    The caller passes force=True only on a newly resolved batch. Operational
+    verification remains on the canonical state ref, but identical failed
+    observations cannot recursively dispatch themselves. Native workflow/issue
+    events drive later verification after a real change in the external world.
     """
     if not os.environ.get("GH_TOKEN"):
         return  # no credential to dispatch with; the next event-triggered tick covers it
@@ -177,8 +176,8 @@ def rearm(st: State) -> None:
         for name, lane in st.lanes.items()
         if lane.status != LANDED and not Engine.final(lane)
     )
-    if not outstanding and not st.queued and not getattr(st, "verifying", None):
-        return  # nothing unproven: let the chain end here, as it must to stay finite
+    if not outstanding and not st.queued and not force:
+        return  # an unresolved effect alone cannot cause an endless workflow storm
     proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
         [  # noqa: S607
             "gh",
