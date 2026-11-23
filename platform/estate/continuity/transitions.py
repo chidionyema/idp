@@ -64,6 +64,21 @@ def _require_verified_operational_effect(
         raise InvalidTransition(
             "OPERATING refused: executor cannot attest its own outcome"
         )
+    # The transition actor is a caller-supplied label. Compare the verifier
+    # with the actual leased harness identity too, or an agent can pass a
+    # different actor label and count its own observation as independent.
+    holder = cur.execute(
+        "SELECT agent_adapter FROM mission_attempts WHERE attempt_id=?"
+        " AND mission_id=? AND lease_epoch=?",
+        (attempt_id, mission_id, lease_epoch),
+    ).fetchone()
+    if holder is None or (
+        effect["verified_by"].strip().casefold()
+        == holder["agent_adapter"].strip().casefold()
+    ):
+        raise InvalidTransition(
+            "OPERATING refused: leased executor cannot attest its own outcome"
+        )
     try:
         receipt = json.loads(effect["external_receipt"])
     except (TypeError, ValueError):
