@@ -25,7 +25,40 @@ import sys
 import time
 from pathlib import Path
 
-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "http://127.0.0.1:4000/v1")
+# Project cloud routing into clients. The Mac never hosts inference or fallback.
+# An explicit override must also be a remote HTTPS endpoint (#8061).
+DEFAULT_ROUTER = "https://llm.mumchimp.com/v1"
+
+
+def cloud_router_url(raw: str) -> str:
+    """Require a remote TLS router before writing client configuration."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    url = raw.strip().rstrip("/")
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or host == "localhost"
+        or host.endswith(".localhost")
+    ):
+        raise ValueError("estate router must use an HTTPS cloud endpoint")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if not ip.is_global:
+            raise ValueError("estate router cannot be a non-global IP")
+    return url
+
+
+ROUTER = cloud_router_url(os.environ.get("ESTATE_ROUTER_URL") or DEFAULT_ROUTER)
 KEY_ENV = "LITELLM_API_KEY"  # the one key every harness presents to the router
 DISCOVER_TIMEOUT_S = 30
 
@@ -208,7 +241,7 @@ def pi_listed() -> dict[str, dict[str, int]] | None:
         "PATH": str(Path(exe).parent) + os.pathsep + os.environ.get("PATH", ""),
     }
     try:
-        r = subprocess.run(
+        r = subprocess.run(  # noqa: S603 -- configured pi CLI, fixed --list-models argv, no shell
             [exe, "--list-models"],
             capture_output=True,
             text=True,
