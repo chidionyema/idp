@@ -9,12 +9,13 @@ retrying — at-least-once delivery never becomes exactly-once side effects.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 
 from .fence import FenceMixin
-from .fields import DuplicateEffect, StaleFenceError
-from .util import canonical, digest_of
+from .fields import DuplicateEffect, RecordRejected, StaleFenceError
+from .util import VERIFIER_FIELD, canonical, digest_of, verify_effect_receipt
 
 
 class EffectsMixin(FenceMixin):
@@ -100,7 +101,18 @@ class EffectsMixin(FenceMixin):
         observed_state: str = "OBSERVED",
         reconciliation_status: str = "RECONCILED",
         now: float | None = None,
+        *,
+        verifier_signature: str | None = None,
     ) -> dict:
+        """Persist an outcome only when a trusted independent observer signed it.
+
+        A caller-chosen verified_by label is NOT identity. Only an Ed25519
+        signature bound to a key configured by the trusted store host can
+        certify OBSERVED+RECONCILED. The signed envelope is persisted so
+        that terminal transitions re-verify the proof across sessions.
+        """
+        if not isinstance(verified_by, str) or not verified_by.strip():
+            raise RecordRejected("verifier identity must be nonempty")
         t = time.time() if now is None else now
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
@@ -110,20 +122,27 @@ class EffectsMixin(FenceMixin):
                 (effect_id,),
             ).fetchone()
             if row is None:
-                cur.execute("ROLLBACK")
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            # Compare the STORED reconciliation state, never the caller's desired
-            # state. An OBSERVED/AMBIGUOUS receipt must remain correctable after
-            # an independent external reconciliation; otherwise a task can
-            # remain permanently stuck despite genuine observed success.
             if (
                 row["state"] == "OBSERVED"
                 and row["reconciliation_status"] == "RECONCILED"
             ):
+                # Idempotent repeats cannot rewrite a certified observation.
+                # Re-verify the proof already in custody before trusting it.
+                try:
+                    previous = json.loads(row["external_receipt"])
+                    original = verify_effect_receipt(
+                        effect_id, previous, row["verified_by"],
+                        self._trusted_verifier_keys,
+                    )
+                except (ValueError, TypeError) as exc:
+                    raise RecordRejected(
+                        "stored reconciled receipt lacks authenticated witness"
+                    ) from exc
                 if (
                     observed_state != "OBSERVED"
                     or reconciliation_status != "RECONCILED"
-                    or canonical(receipt) != row["external_receipt"]
+                    or canonical(receipt) != canonical(original)
                     or verified_by != row["verified_by"]
                 ):
                     raise DuplicateEffect(
@@ -135,13 +154,43 @@ class EffectsMixin(FenceMixin):
                     "state": row["state"],
                     "duplicate": True,
                 }
+            stored_receipt = receipt
+            if observed_state == "OBSERVED" and reconciliation_status == "RECONCILED":
+                if (
+                    not isinstance(receipt, dict)
+                    or not receipt
+                    or VERIFIER_FIELD in receipt
+                    or not isinstance(verifier_signature, str)
+                    or not verifier_signature
+                ):
+                    raise RecordRejected(
+                        "authenticated independent receipt signature required"
+                    )
+                stored_receipt = {
+                    **receipt,
+                    VERIFIER_FIELD: {
+                        "key_id": verified_by,
+                        "signature": verifier_signature,
+                    },
+                }
+                try:
+                    verify_effect_receipt(
+                        effect_id, stored_receipt, verified_by,
+                        self._trusted_verifier_keys,
+                    )
+                except (ValueError, TypeError) as exc:
+                    raise RecordRejected(
+                        "external observation signature not accepted"
+                    ) from exc
+            elif isinstance(receipt, dict) and VERIFIER_FIELD in receipt:
+                raise RecordRejected("unverified state cannot embed a verifier seal")
             cur.execute(
                 "UPDATE external_effects SET state=?, external_receipt=?,"
                 " observed_at=?, verified_by=?, reconciliation_status=?"
                 " WHERE effect_id=?",
                 (
                     observed_state,
-                    canonical(receipt),
+                    canonical(stored_receipt),
                     t,
                     verified_by,
                     reconciliation_status,
