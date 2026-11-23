@@ -51,12 +51,24 @@ log = logging.getLogger(__name__)
 
 # idp#8061: cloud governed execution. The Mac is a thin client only.
 CLOUD_INTENT_URL_ENV = "ESTATE_CLOUD_INTENT_URL"
+CLOUD_INTENT_URL_FILE_ENV = "ESTATE_CLOUD_INTENT_URL_FILE"
 CLOUD_INTENT_TOKEN_FILE_ENV = "ESTATE_CLOUD_INTENT_TOKEN_FILE"  # noqa: S105
 CLOUD_INTENT_TOKEN_ENV = "ESTATE_CLOUD_INTENT_TOKEN"  # noqa: S105
 
 
 def _local_executor() -> Path:
     return HOME / ".estate" / "bin" / "estate-execute"
+
+
+def _cloud_intent_url() -> str:
+    """Read a mounted cloud URL first; an unreadable file refuses rather than falling back."""
+    file_path = (os.environ.get(CLOUD_INTENT_URL_FILE_ENV) or "").strip()
+    if file_path:
+        try:
+            return Path(file_path).read_text().strip()
+        except OSError:
+            return ""
+    return (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip()
 
 
 def _cloud_intent_token() -> str:
@@ -81,7 +93,7 @@ def _invoke_cloud(name, arg_items, session, timeout):
     import ipaddress
     import urllib.parse
 
-    url = (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip()
+    url = _cloud_intent_url()
     if not url:
         return "BLIND: no governed cloud intent door configured."
     parsed = urllib.parse.urlsplit(url)
