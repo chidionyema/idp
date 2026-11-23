@@ -9,6 +9,7 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
+  id-token: write
 concurrency:
   group: zone-b-router-release
   cancel-in-progress: false
@@ -34,6 +35,39 @@ jobs:
           npm test
           node --test tests/release.falsifier.mjs
           echo "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"
+      # Reuse the existing OIDC->OCI vault reader identity; no GitHub Actions secret copy.
+      # Root token and R2 provisioning are NOT needed for a normal router release.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: OCI CLI for existing vault reader
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from GitHub OIDC
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: Bind existing Workers token from OCI vault without printing its value
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          set +x
+          token="$(bin/idp-cloud secret get cloudflare-workers-token)" || {
+            echo "::error::trusted Workers token not readable from OCI vault"
+            exit 2
+          }
+          if [[ ! "$token" =~ ^[A-Za-z0-9_-]{40,}$ ]]; then
+            echo "::error::trusted Workers token empty or malformed"
+            exit 2
+          fi
+          printf '::add-mask::%s\n' "$token"
+          printf 'CLOUDFLARE_API_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token
       - name: Release with bounded probes and rollback
         working-directory: platform/router-edge
         env:
@@ -42,7 +76,6 @@ jobs:
           RELEASE_RECEIPT_PATH: ${{ runner.temp }}/router-release-receipt.json
           RELEASE_PREFLIGHT_FILE: ${{ runner.temp }}/router-preflight.sha
           MERIDIAN_ROUTER_URL: https://llm.meridianlabs.cloud
-          CLOUDFLARE_API_TOKEN: ${{ secrets.SEED_CLOUDFLARE_WORKERS_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
           MERIDIAN_CLIENT_KEY: ${{ secrets.SEED_MERIDIAN_CLIENT_KEY }}
           MERIDIAN_ADMIN_KEY: ${{ secrets.SEED_MERIDIAN_ADMIN_KEY }}
