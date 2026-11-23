@@ -109,8 +109,13 @@ class FenceMixin:
                 (attempt_id,),
             ).fetchone()
             _require_verified_operational_effect(
-                cur, mission_id, attempt_id, lease_epoch,
-                m["mandate_version"], attempt["agent_adapter"], evidence,
+                cur,
+                mission_id,
+                attempt_id,
+                lease_epoch,
+                m["mandate_version"],
+                attempt["agent_adapter"],
+                evidence,
                 now=t,
             )
             used = cur.execute(
@@ -135,9 +140,14 @@ class FenceMixin:
                 (t, mission_id),
             )
             self._event(
-                mission_id, m["state"], "estate",
-                "verified external progress", evidence,
-                attempt_id=attempt_id, lease_epoch=lease_epoch,
-                from_state=m["state"], cur=cur,
+                mission_id,
+                m["state"],
+                "estate",
+                "verified external progress",
+                evidence,
+                attempt_id=attempt_id,
+                lease_epoch=lease_epoch,
+                from_state=m["state"],
+                cur=cur,
             )
             return {"progress_at": t, "evidence": evidence}
