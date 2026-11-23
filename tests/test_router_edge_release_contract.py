@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 import subprocess
 from pathlib import Path
 
@@ -17,7 +19,7 @@ NEGATIVE = ROOT / "platform/router-edge/tests/release.falsifier.mjs"
 
 def test_trusted_main_only_deployment_and_receipt():
     flow = yaml.safe_load(WORKFLOW.read_text())
-    assert flow["permissions"] == {"contents": "read"}
+    assert flow["permissions"] == {"contents": "read", "id-token": "write"}
     assert flow["concurrency"]["cancel-in-progress"] is False
     assert flow["jobs"]["release"]["if"] == "github.ref == 'refs/heads/main'"
     steps = flow["jobs"]["release"]["steps"]
@@ -68,3 +70,50 @@ def test_three_negative_release_tests_execute_without_credentials():
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "# tests 3" in result.stdout
+
+
+def _vault_binding_step():
+    flow = yaml.safe_load(WORKFLOW.read_text())
+    steps = flow["jobs"]["release"]["steps"]
+    matched = [s for s in steps if "bin/idp-cloud secret get cloudflare-workers-token" in s.get("run", "")]
+    assert len(matched) == 1
+    binding = matched[0]
+    exchange = [s for s in steps if "oci-token-exchange-action@" in s.get("uses", "")]
+    assert len(exchange) == 1
+    assert steps.index(exchange[0]) < steps.index(binding)
+    assert binding["env"]["OCI_CLI_AUTH"] == "security_token"
+    release = next(s for s in steps if "node scripts/release.mjs" in s.get("run", ""))
+    assert "CLOUDFLARE_API_TOKEN" not in release["env"]
+    assert "SEED_CLOUDFLARE_ROOT_TOKEN" not in WORKFLOW.read_text()
+    assert "::add-mask::" in binding["run"]
+    return binding["run"]
+
+
+@pytest.mark.parametrize("token,expected", [
+    (None, False),
+    ("not-a-valid-token", False),
+    ("a" * 40, True),
+])
+def test_oidc_vault_release_binding_fails_closed_and_injects_only_valid_token(token, expected):
+    script = _vault_binding_step()
+    with tempfile.TemporaryDirectory() as root:
+        secret_dir = Path(root) / "secrets"
+        secret_dir.mkdir()
+        if token is not None:
+            (secret_dir / "cloudflare-workers-token").write_text(token)
+        output = Path(root) / "github_env"
+        output.touch()
+        env = {**os.environ, "IDP_CLOUD_BACKEND": "file",
+               "IDP_CLOUD_FILE_ROOT": root, "GITHUB_ENV": str(output)}
+        run = subprocess.run(
+            ["bash", "-c", script], cwd=ROOT, env=env,
+            capture_output=True, text=True, check=False, timeout=12,
+        )
+        assert (run.returncode == 0) == expected
+        contents = output.read_text()
+        if expected:
+            assert contents == f"CLOUDFLARE_API_TOKEN={token}\\n".replace("\\n", "\n")
+            assert f"::add-mask::{token}" in run.stdout
+        else:
+            assert not contents, "failed custody must not export a credential"
+            assert token is None or token not in run.stdout + run.stderr
