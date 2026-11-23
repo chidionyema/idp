@@ -152,7 +152,8 @@ def test_recovery_only_state_cannot_self_dispatch_another_greenlane(monkeypatch)
     import runpy
     from types import SimpleNamespace
 
-    funcs = runpy.run_path(str(Path(__file__).resolve().parents[1] / "bin/idp-greenlane"))
+    script = Path(__file__).resolve().parents[1] / "bin/idp-greenlane"
+    funcs = runpy.run_path(str(script))
     rearm = funcs["rearm"]
     st = E.State()
     st.verifying["lane/a"] = {
@@ -164,13 +165,11 @@ def test_recovery_only_state_cannot_self_dispatch_another_greenlane(monkeypatch)
     calls = []
     monkeypatch.setenv("GH_TOKEN", "test-token")
     monkeypatch.setitem(rearm.__globals__, "repo", lambda: "o/r")
-    monkeypatch.setattr(
-        funcs["subprocess"],
-        "run",
-        lambda argv, **kwargs: (
-            calls.append(argv) or SimpleNamespace(returncode=0, stdout="", stderr="")
-        ),
-    )
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(funcs["subprocess"], "run", fake_run)
     rearm(st)
     assert calls == [], "failed obligations must not spin a privileged runner"
     rearm(st, force=True)
