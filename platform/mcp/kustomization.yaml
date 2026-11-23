@@ -9,9 +9,8 @@ resources:
   - availability.yaml
   - github-mcp.yaml
   - estate-mcp.yaml
-  # idp#7579: the pod's credential for the laptop's programmatic intent door. Listed explicitly
-  # because this kustomization enumerates its resources: a file that is not named here is not
-  # applied, and the pod would silently fall back to having no door.
+  # idp#8061: cloud-only intent URL and scoped credential from estate-vault.
+  # List the declared secret so Flux applies it; absent credentials stay BLIND.
   - intent-secret.yaml
   - httproute.yaml
   - edge-manners.yaml
