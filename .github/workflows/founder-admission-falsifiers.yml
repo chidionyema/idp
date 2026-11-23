@@ -1,0 +1,30 @@
+name: founder-admission-falsifiers
+on:
+  pull_request:
+    paths:
+      - 'lib/founder_admission.py'
+      - 'tests/test_founder_admission.py'
+      - '.github/workflows/founder-admission-falsifiers.yml'
+  push:
+    branches: [main, 'queue/**']
+    paths:
+      - 'lib/founder_admission.py'
+      - 'tests/test_founder_admission.py'
+      - '.github/workflows/founder-admission-falsifiers.yml'
+permissions:
+  contents: read
+jobs:
+  signed-proof-falsifiers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install cryptographic verifier
+        run: python -m pip install 'cryptography==44.0.3'
+      - name: Compile
+        run: python -m compileall -q lib/founder_admission.py tests/test_founder_admission.py
+      - name: Run adversarial admission tests
+        run: python -m unittest discover -s tests -p test_founder_admission.py -v
