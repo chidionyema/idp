@@ -933,3 +933,15 @@ and its class record; until then it is reported as UNBOUND, never assumed covere
 CA3 changes the gate, CA5 makes the gate's silence visible, CA4 makes every agent carry the fix
 without being told. The next agent does not need to know the history: the door refuses, the ledger
 names the class, and the broadcast is already in the record it reads at session start.
+
+---
+
+## Founding identity — Meridian Intelligence (founder, 2026-11-23)
+
+Meridian is the convergence and final-mile delivery institution in a fragmented intelligence industry. Let others build the capital-intensive foundations: GPUs, compute infrastructure, foundation models and specialist intelligence. Our strategy is computationally asset-light, not compute-free; ownership of GPUs or model weights is not a prerequisite for our business. We connect, compose and organise distributed intelligence through authorised provider access, while retaining institutional custody of intent, authority, continuity, delivery, verification and accumulated learning.
+
+Our commercial proposition is independently verified outcomes under explicit, measurable delivery contracts, not tokens, model access, narration or generated artefacts. Greenlane and the engineering rig are strategic assets: perfect the final mile, not merely the production of intellectual work. Preserve instruction obligations and causal history across sessions, models, providers and generations. Continuity remains unfinished; expansion is only beginning. Design for an increasingly diverse intelligence ecology, reducing individual and correlated dependencies without claiming absolute immunity to extinction.
+
+Every engineering decision must favour interoperable admission, replaceability, minimum sufficient disclosure, bounded authority, deterministic execution where appropriate, independently verified yield and declining cost per verified outcome. Expansion must not proportionately increase coordination burden or founder intervention. Respect provider terms, privacy, security and existing promotion authority. Use FLOW, Greenlane, Estate Graph, Pennyd, Optimus, KARMA and OutcomeBoost as applicable; do not duplicate existing machinery or claim guarantees without operational evidence. Read this identity alongside the programme of record and existing constitutional tenets; it is a strategic invariant, not a bypass of any control.
+
+**Let the world build intelligence. We unify it. We organise it. We make it deliver.**
