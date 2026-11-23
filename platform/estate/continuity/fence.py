@@ -111,6 +111,7 @@ class FenceMixin:
             _require_verified_operational_effect(
                 cur, mission_id, attempt_id, lease_epoch,
                 m["mandate_version"], attempt["agent_adapter"], evidence,
+                now=t,
             )
             used = cur.execute(
                 "SELECT 1 FROM mission_events"
@@ -122,14 +123,6 @@ class FenceMixin:
             if used is not None:
                 raise InvalidTransition(
                     "same external effect cannot reset the progress clock twice"
-                )
-            observed_at = cur.execute(
-                "SELECT observed_at FROM external_effects WHERE effect_id=?",
-                (evidence[7:],),
-            ).fetchone()["observed_at"]
-            if observed_at > t:
-                raise InvalidTransition(
-                    "future-dated external effect cannot count as progress"
                 )
             cur.execute(
                 "UPDATE mission_attempts SET last_progress_at=?,"
