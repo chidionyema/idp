@@ -107,11 +107,20 @@ spec:
             # proposal's manifest references against the real catalogue graph. Its own default
             # is the repository's `backstage/` tree, which is not what this image carries.
             - { name: ESTATE_BLAST_CATALOG_DIR, value: /data }
-            # idp#8061: thin client. No laptop door, no laptop token file.
+            # idp#8061: the issuer-verified cloud intent door is optional until
+            # ESO has a cloud-only URL/token. No laptop route or token fallback.
+            - name: ESTATE_CLOUD_INTENT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-intent
+                  key: url
+                  optional: true
+            - { name: ESTATE_CLOUD_INTENT_TOKEN_FILE, value: /run/secrets/cloud-intent/token }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem
             - { name: unified-memory, mountPath: /run/secrets/unified-memory, readOnly: true }
+            - { name: cloud-intent, mountPath: /run/secrets/cloud-intent, readOnly: true }
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { cpu: 300m, memory: 256Mi }
@@ -181,6 +190,13 @@ spec:
         # optional: a token the vault has not synced yet is a memory tool that answers
         # "no surface token", never a server that cannot start.
         - name: unified-memory
+          secret:
+            secretName: unified-memory-surface
+            optional: true
+        - name: cloud-intent
+          secret:
+            secretName: cloud-intent
+            optional: true
 ---
 apiVersion: v1
 kind: Service
