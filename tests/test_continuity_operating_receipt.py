@@ -677,3 +677,39 @@ def test_legacy_reconciled_receipt_rejects_unsigned_ambiguous_rewrite(tmp_path):
         )
     assert store.pending_effects("m-test")[0]["reconciliation_status"] == "UNVERIFIED"
     store.close()
+
+
+def test_nonterminal_state_with_valid_signature_cannot_hide_effect(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "signed-but-not-observed",
+        {"expected": "real outcome"},
+    )
+    eid = intent["effect_id"]
+    historical = {"claim": "pending"}
+    subject = effect_receipt_subject(
+        eid, historical, "observer-b", observed_state="INTENDED"
+    )
+    signature = base64.b64encode(
+        store._test_signers["observer-b"].sign(subject)
+    ).decode()
+    envelope = {
+        **historical,
+        "_meridian_verifier": {"key_id": "observer-b", "signature": signature},
+    }
+    store.db.execute(
+        "UPDATE external_effects SET state='INTENDED',"
+        " reconciliation_status='RECONCILED',"
+        " external_receipt=?, observed_at=?, verified_by=? WHERE effect_id=?",
+        (json.dumps(envelope), time.time(), "observer-b", eid),
+    )
+    assert store.pending_effects("m-test")[0]["reconciliation_status"] == "UNVERIFIED"
+    with pytest.raises(InvalidTransition):
+        operating(store, lease, "effect:" + eid)
+    repaired = signed_receipt(
+        store, eid, {"observed": "independent external success"}
+    )
+    assert repaired["state"] == "OBSERVED"
+    assert store.pending_effects("m-test") == []
+    store.close()
