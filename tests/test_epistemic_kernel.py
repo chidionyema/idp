@@ -17,7 +17,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from epistemic_kernel import (
+from lib.epistemic_kernel import (
     EpistemicKernel,
     EvidenceTier,
     ExecutionPlane,
@@ -25,7 +25,7 @@ from epistemic_kernel import (
     canonical_json,
     sign_receipt,
 )
-from epistemic_kernel.kernel import sha256_hex
+from lib.epistemic_kernel.kernel import sha256_hex
 
 TEST_KEY = b"isolated-verifier-key-never-exposed-to-agent-32b"
 TRUSTED = ("gh-actions-prober", "cloudflare-prober", "oci-blackbox-prober")
@@ -605,14 +605,14 @@ class TestEpistemicFalsificationKernel(unittest.TestCase):
 
             env = {
                 "PATH": "/usr/bin:/bin",
-                "PYTHONPATH": str(Path(__file__).resolve().parent.parent / "lib"),
+                "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
                 "ESTATE_RECEIPT_KEY": TEST_KEY.decode("utf-8"),
             }
             p_bad = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "epistemic_kernel.cli",
+                    "lib.epistemic_kernel.cli",
                     "--mode",
                     "operational",
                     "--input",
@@ -630,7 +630,7 @@ class TestEpistemicFalsificationKernel(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "epistemic_kernel.cli",
+                    "lib.epistemic_kernel.cli",
                     "--mode",
                     "operational",
                     "--input",
