@@ -716,3 +716,28 @@ def test_remote_legacy_model_probe_is_refused_before_network():
         result = mod.probe("google", "gemini-test")
     assert result["verdict"] == "cost-unverified"
     remote.assert_not_called()
+
+
+def test_auto_agent_postflight_refuses_runaway_and_untracked_changes(repo, monkeypatch):
+    """The untrusted worker cannot pass 1,070 files to a three-file submit."""
+    mod = _auto_module()
+    monkeypatch.chdir(repo)
+    (repo / "web/f0.txt").write_text("authorised edit\n")
+    mod.verify_agent_scope(["web/f0.txt"])
+    with pytest.raises(ValueError, match="AGENT_SCOPE_ESCAPE: 1"):
+        mod.verify_agent_scope(["web/f2.txt"])
+    (repo / "web/rogue.txt").write_text("untracked escape\n")
+    with pytest.raises(ValueError, match="AGENT_SCOPE_ESCAPE: 1"):
+        mod.verify_agent_scope(["web/f0.txt"])
+    git(repo, "add", "web/rogue.txt")
+    with pytest.raises(ValueError, match="AGENT_SCOPE_ESCAPE: 1"):
+        mod.verify_agent_scope(["web/f0.txt"])
+
+
+def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
+    mod = _auto_module()
+    monkeypatch.chdir(repo)
+    with pytest.raises(ValueError, match="AGENT_EMPTY_PATCH"):
+        mod.verify_agent_scope(["web/f0.txt"])
+    with pytest.raises(ValueError, match="AGENT_SCOPE_EMPTY"):
+        mod.verify_agent_scope([])
