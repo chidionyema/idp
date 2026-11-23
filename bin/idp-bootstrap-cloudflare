@@ -95,6 +95,12 @@ if [ "$MODE" = mint ]; then
   unset dns eng
 fi
 if [ "$MODE" = --preflight ]; then
+  # Measure the road the live run uses. Lane 3 already supplies its standing
+  # root; dashboard reachability says nothing about that API-only credential.
+  if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+    verify "$CLOUDFLARE_ROOT_TOKEN" || fail root "standing root token failed API verification"
+    say ok preflight "vault and standing root token verified through the API; nothing written"; exit 0
+  fi
   code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
   case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
