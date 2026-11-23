@@ -19,7 +19,7 @@ jobs:
       - name: Canonicalize only exact E1-E4 Python source with pinned Ruff
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check -q ruff==0.15.18
+          python -m pip install --disable-pip-version-check -q ruff==0.15.18 cryptography==46.0.4
           python -m ruff --version
           python -m ruff format lib/founder_admission.py tests/test_founder_admission.py
           python -m ruff check --fix lib/founder_admission.py tests/test_founder_admission.py
