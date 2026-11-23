@@ -41,16 +41,24 @@ class EffectsMixin(FenceMixin):
                 cur.execute("ROLLBACK")
                 raise StaleFenceError("mandate version mismatch")
             existing = cur.execute(
-                "SELECT effect_id, intent_digest, state FROM external_effects"
+                "SELECT effect_id, mission_id, operation, target,"
+                " intent_digest, state FROM external_effects"
                 " WHERE idempotency_key=?",
                 (idempotency_key,),
             ).fetchone()
             if existing is not None:
-                if existing["intent_digest"] != intent_digest:
-                    cur.execute("ROLLBACK")
+                # Retry is permitted only for the SAME mission, operation,
+                # target, and payload. The key is global, but an identical
+                # payload under a different mission is not shared custody.
+                if (
+                    existing["mission_id"] != mission_id
+                    or existing["operation"] != operation
+                    or existing["target"] != target
+                    or existing["intent_digest"] != intent_digest
+                ):
                     raise DuplicateEffect(
-                        f"idempotency key {idempotency_key} already bound to a"
-                        " different intent"
+                        f"idempotency key {idempotency_key} already bound to"
+                        " another mission, operation, target or intent"
                     )
                 cur.execute("ROLLBACK")
                 return {
