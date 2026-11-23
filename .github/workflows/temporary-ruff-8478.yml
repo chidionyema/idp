@@ -33,3 +33,11 @@ jobs:
             tests/test_epistemic_kernel.py
           if-no-files-found: error
           retention-days: 1
+      - name: Emit exact canonical public-source bytes in bounded base64 log chunks
+        run: |
+          set -euo pipefail
+          for source in lib/epistemic_kernel/kernel.py lib/epistemic_kernel/cli.py tests/test_epistemic_kernel.py; do
+            echo "MERIDIAN_CANONICAL_BEGIN:$source"
+            base64 -w 128 "$source"
+            echo "MERIDIAN_CANONICAL_END:$source"
+          done
