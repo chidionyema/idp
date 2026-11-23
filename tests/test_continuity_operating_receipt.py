@@ -205,7 +205,9 @@ def test_ambiguous_recovery_can_observe_real_completion(tmp_path):
     eid = intent["effect_id"]
     store.reconcile_effect(eid, "unmeasured", "AMBIGUOUS")
     assert store.pending_effects("m-test")[0]["effect_id"] == eid
-    completed = store.reconcile_effect(eid, "observed-external-transaction", "COMPLETED")
+    completed = store.reconcile_effect(
+        eid, "observed-external-transaction", "COMPLETED"
+    )
     assert completed["state"] == "OBSERVED" and not completed["duplicate"]
     assert store.pending_effects("m-test") == []
     assert operating(store, lease, "effect:" + eid)["state"] == "OPERATING"
