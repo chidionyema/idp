@@ -45,7 +45,10 @@ def _setup(monkeypatch, *, same_keys=False, bad_quad=False, expired=False):
         ).isoformat(),
         "authorities": {
             "observer-oci": {"principal": "oci-read-only", "control_plane": "oci"},
-            "observer-edge": {"principal": "cloudflare-prober", "control_plane": "edge"},
+            "observer-edge": {
+                "principal": "cloudflare-prober",
+                "control_plane": "edge",
+            },
             "observer-remote": {
                 "principal": "remote-third-party",
                 "control_plane": "independent",
@@ -161,9 +164,7 @@ def test_duplicate_production_receipt_deny(monkeypatch):
     assert "ERR_DUPLICATE_OR_EMPTY_RECEIPT_ID" in reason
 
 
-def test_independently_signed_fresh_matching_receipts_satisfy_verifier(
-    monkeypatch,
-):
+def test_independently_signed_fresh_matching_receipts_satisfy_verifier(monkeypatch):
     rec = _setup(monkeypatch)
     assert G.GitHubBackend._epistemic_operational_proof(rec, URL, 200, NEEDLE) == ""
 
