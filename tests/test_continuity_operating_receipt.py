@@ -717,3 +717,105 @@ def test_nonterminal_state_with_valid_signature_cannot_hide_effect(tmp_path):
     assert repaired["state"] == "OBSERVED"
     assert store.pending_effects("m-test") == []
     store.close()
+
+
+def _takeover_after_verified_predecessor(store, lease):
+    store.begin_recovery("m-test", "EXECUTOR_LOST", "sealed-takeover")
+    store.transition("m-test", "REASSIGNING", "recovery", "takeover")
+    successor = store.acquire_lease(
+        "m-test",
+        {
+            "agent_adapter": "successor",
+            "provider": "test",
+            "model": "test",
+            "execution_host": "cloud",
+            "failure_domain": "other-cloud",
+            "worktree_id": "successor-worktree",
+            "base_sha": "b" * 40,
+        },
+        lease_seconds=600,
+    )
+    for state in ("EXECUTING", "VERIFYING", "PROMOTING", "DEPLOY_VERIFY"):
+        store.transition(
+            "m-test",
+            state,
+            "executor-b",
+            "recover work without replay",
+            attempt_id=successor["attempt_id"],
+            lease_epoch=successor["lease_epoch"],
+        )
+    assert successor["lease_epoch"] > lease["lease_epoch"]
+    return successor
+
+
+def test_verified_predecessor_effect_survives_fenced_takeover(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    successor = _takeover_after_verified_predecessor(store, lease)
+    with pytest.raises(StaleFenceError):
+        operating(store, lease, "effect:" + eid)
+    terminal = operating(
+        store, successor, "effect:" + eid, actor="executor-b"
+    )
+    assert terminal["state"] == "OPERATING"
+    assert store.get_mission("m-test")["current_attempt_id"] == successor["attempt_id"]
+    store.close()
+
+
+def test_progress_receipt_cannot_reset_clock_in_second_attempt(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    first = store.report_progress(
+        "m-test", lease["attempt_id"], lease["lease_epoch"], "effect:" + eid
+    )
+    successor = _takeover_after_verified_predecessor(store, lease)
+    with pytest.raises(InvalidTransition, match="same external effect"):
+        store.report_progress(
+            "m-test", successor["attempt_id"], successor["lease_epoch"],
+            "effect:" + eid, now=first["progress_at"] + 1,
+        )
+    assert operating(
+        store, successor, "effect:" + eid, actor="executor-b"
+    )["state"] == "OPERATING"
+    store.close()
+
+
+def test_successor_cannot_inherit_prior_mandate_effect(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    successor = _takeover_after_verified_predecessor(store, lease)
+    store.db.execute(
+        "UPDATE missions SET mandate_version=mandate_version+1"
+        " WHERE mission_id='m-test'"
+    )
+    with pytest.raises(InvalidTransition, match="reconciled"):
+        operating(store, successor, "effect:" + eid, actor="executor-b")
+    assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
+    store.close()
+
+
+def test_predecessor_actors_cannot_become_observer_after_takeover(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    successor = _takeover_after_verified_predecessor(store, lease)
+    # Simulate an old, signed, stored receipt made by an executor identity
+    # before signed-receipt admission enforced separation of duties.
+    forged = {"observed": "ok"}
+    subject = effect_receipt_subject(eid, forged, "executor-a")
+    signer = store._test_signers["executor-a"]
+    signed = {
+        **forged,
+        "_meridian_verifier": {
+            "key_id": "executor-a",
+            "signature": base64.b64encode(signer.sign(subject)).decode(),
+        },
+    }
+    store.db.execute(
+        "UPDATE external_effects SET external_receipt=?, verified_by=?"
+        " WHERE effect_id=?",
+        (json.dumps(signed), "executor-a", eid),
+    )
+    with pytest.raises(InvalidTransition, match="predecessor executor"):
+        operating(store, successor, "effect:" + eid, actor="executor-b")
+    assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
+    store.close()
