@@ -372,12 +372,43 @@ jobs:
 
   submit-lane:
     needs: [admit, agent, firewall]
+    # Label-triggered replay is restricted to the original founder-owned #8461
+    # source run; admit, agent and firewall do not execute again.
+    if: >-
+      always() && (
+        (needs.admit.result == 'success' && needs.agent.result == 'success' && needs.firewall.result == 'success') ||
+        (github.event_name == 'issues' && github.event.action == 'labeled' &&
+         github.event.label.name == 'legion-replay' &&
+         github.actor == vars.ESTATE_FOUNDER_LOGIN &&
+         github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
+         github.event.issue.number == 8461)
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read # read ONLY the original age-sealed job artifacts on replay
       issues: write # the claim: an issue and its CLAIM comment (bin/claim-gate reads both)
     steps:
+      - name: Verify original #8461 agent and firewall before sealed replay
+        if: github.event_name == 'issues' && github.event.label.name == 'legion-replay'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOUNDER: ${{ vars.ESTATE_FOUNDER_LOGIN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45106948958" |
+            jq -e --arg founder "$FOUNDER" '
+              .event == "issues" and
+              .path == ".github/workflows/agent-sandbox.yml" and
+              .actor.login == $founder and
+              (.display_title | contains("#8461"))
+            '
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45106948958/jobs?per_page=100" |
+            jq -e '
+              ([.jobs[] | select(.name == "admit" or .name == "agent" or .name == "firewall") |
+                select(.conclusion == "success")] | length) == 3
+            '
       - name: Decode the App key
         id: pem
         env:
@@ -402,16 +433,29 @@ jobs:
           # Sealed agent patch is relative to its original base, not HEAD at submission.
           fetch-depth: 0
 
+      # The original scope record and sealed patch are read from the successful
+      # upstream jobs; no new model or alternate submission principal is invoked.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: github.event_name == 'issues' && github.event.label.name == 'legion-replay'
+        with:
+          name: legion-admission
+          path: ${{ runner.temp }}/admission
+          run-id: 45106948958
+          github-token: ${{ github.token }}
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: agent-work
           path: ${{ runner.temp }}/sealed
+          run-id: ${{ github.event.label.name == 'legion-replay' && 45106948958 || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Apply the patch to main, refusing what an agent may not change
         env:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
           SCOPE_JSON: ${{ needs.admit.outputs.scope_json }}
           SCOPE_SHA256: ${{ needs.admit.outputs.scope_sha256 }}
+          REPLAY: ${{ github.event.label.name == 'legion-replay' && '1' || '0' }}
         run: |
           set -euo pipefail
           bash bin/agent-sandbox-age
@@ -424,6 +468,10 @@ jobs:
           # ancestry against current main. The agent's work must not disappear when
           # another lane advances main while the model is working.
           # The Greenlane, not this stage, rebases and independently proves promotion.
+          if [ "$REPLAY" = 1 ]; then
+            SCOPE_JSON="$(cat "$RUNNER_TEMP/admission/scope.json")"
+            SCOPE_SHA256="$(sha256sum "$RUNNER_TEMP/admission/scope.json" | cut -d' ' -f1)"
+          fi
           : "${SCOPE_JSON:?trusted scope required}" "${SCOPE_SHA256:?trusted digest required}"
           printf %s "$SCOPE_JSON" > "$work/scope.json"
           python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch" --scope-file "$work/scope.json" --scope-sha256 "$SCOPE_SHA256"
@@ -439,11 +487,17 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with: { python-version: "3.12" }
 
+      # The applicator intentionally checks out the agent's historical base.
+      # Install trusted runner dependencies OUTSIDE that worktree before pre-push.
+      - uses: ./.github/actions/estate-tools
+
       - name: Install and execute the exact estate push-readiness dependencies
         run: |
           set -euo pipefail
-          python3 -m pip install -q ruff==0.15.18 yamllint==1.37.1 pytest==8.4.2
+          python3 -m pip install -q ruff==0.15.18 yamllint==1.37.1 pytest==8.4.2 pydantic==2.12.4
           sudo apt-get install -y -qq shellcheck
+          command -v kubeconform
+          python3 -c 'import pydantic; assert pydantic.__version__ == "2.12.4"'
           # Refuse before claim/commit when the hook's interpreter is incomplete.
           python3 -m pytest --version
           bin/idp-production-readiness
