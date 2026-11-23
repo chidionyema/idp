@@ -72,9 +72,30 @@ def _http_get(url: str, timeout: float = 20.0) -> tuple[int, str]:
     """One bounded GET; (status, first 64 KiB). A transport failure is status 0."""
     import urllib.error
     import urllib.request
+    from urllib.parse import urlsplit
 
     if not url.startswith("https://"):
         return 0, "refused: only https:// probes are run"
+    target = urlsplit(url)
+    # Only this repository's Actions API can receive an authenticated read.
+    # The URL comes from a claim issue, so never attach GH_TOKEN to its
+    # arbitrary host, redirects, or a lookalike API domain.
+    if (
+        target.scheme == "https"
+        and target.netloc == "api.github.com"
+        and target.path.startswith("/repos/chidionyema/idp/actions/")
+        and not target.fragment
+    ):
+        if not os.environ.get("GH_TOKEN"):
+            return 0, "BLIND: no trusted GitHub Actions read token"
+        endpoint = target.path.lstrip("/")
+        if target.query:
+            endpoint += "?" + target.query
+        try:
+            response = _run("gh", "api", endpoint)
+        except RuntimeError:
+            return 0, "BLIND: authenticated GitHub Actions read refused"
+        return 200, response[:65536]
     req = urllib.request.Request(  # noqa: S310 - https only, checked above and by ACCEPT
         url, headers={"User-Agent": "greenlane-operational/1"}
     )
