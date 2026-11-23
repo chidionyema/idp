@@ -444,6 +444,36 @@ def auto_select(
     return None, observations
 
 
+def verify_agent_scope(paths: list[str]) -> None:
+    """Refuse runaway model edits before downstream sealing and CI.
+
+    Admission constrains the intended paths; this checks the *actual* working
+    tree, including untracked files, before the workflow runs git add -A.
+    The independent trusted submit stage repeats the boundary check.
+    """
+    allowed = set(paths)
+    if not allowed:
+        raise ValueError("REFUSED: AGENT_SCOPE_EMPTY")
+    changed = set()
+    for argv in (
+        ("git", "diff", "--name-only", "--no-renames", "-z", "HEAD"),
+        ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+    ):
+        result = subprocess.run(argv, check=True, capture_output=True)
+        changed.update(
+            name.decode("utf-8", errors="surrogateescape")
+            for name in result.stdout.split(b"\0")
+            if name
+        )
+    if not changed:
+        raise ValueError("REFUSED: AGENT_EMPTY_PATCH")
+    outside = changed - allowed
+    if outside:
+        raise ValueError(
+            f"REFUSED: AGENT_SCOPE_ESCAPE: {len(outside)} file(s) outside admitted scope"
+        )
+
+
 def auto_launch(
     directory: Path, record: dict, task: str, session_dir: Path, env: dict
 ) -> int:
@@ -510,7 +540,7 @@ def auto_launch(
             }
         )
     )
-    return subprocess.run(
+    rc = subprocess.run(
         [
             "pi",
             "-p",
@@ -526,6 +556,9 @@ def auto_launch(
         stdin=subprocess.DEVNULL,
         check=False,
     ).returncode
+    if rc == 0:
+        verify_agent_scope(record["paths"])
+    return rc
 
 
 def main() -> int:

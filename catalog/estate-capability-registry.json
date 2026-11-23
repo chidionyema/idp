@@ -55914,11 +55914,15 @@
       "contract": {
         "inputs": [
           "--cooldown-file",
+          "--exclude-standard",
           "--failover",
           "--harness",
           "--launch-admitted",
           "--mission-env",
           "--model",
+          "--name-only",
+          "--no-renames",
+          "--others",
           "--out",
           "--provider",
           "--session-dir",
