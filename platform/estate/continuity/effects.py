@@ -123,39 +123,40 @@ class EffectsMixin(FenceMixin):
             ).fetchone()
             if row is None:
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if (
-                row["state"] == "OBSERVED"
-                and row["reconciliation_status"] == "RECONCILED"
-            ):
-                # Idempotent repeats cannot rewrite a certified observation.
-                # Re-verify the proof already in custody before trusting it.
+            if row["reconciliation_status"] == "RECONCILED":
+                # Historical optimistic settlements may have no signed
+                # witness. They stay unverified until externally reattested.
                 try:
                     previous = json.loads(row["external_receipt"])
                     original = verify_effect_receipt(
                         effect_id, previous, row["verified_by"],
                         self._trusted_verifier_keys,
+                        observed_state=row["state"],
                     )
-                except (ValueError, TypeError) as exc:
-                    raise RecordRejected(
-                        "stored reconciled receipt lacks authenticated witness"
-                    ) from exc
-                if (
-                    observed_state != "OBSERVED"
-                    or reconciliation_status != "RECONCILED"
-                    or canonical(receipt) != canonical(original)
-                    or verified_by != row["verified_by"]
-                ):
-                    raise DuplicateEffect(
-                        f"effect {effect_id} already has an immutable "
-                        "reconciled receipt"
-                    )
-                return {
-                    "effect_id": effect_id,
-                    "state": row["state"],
-                    "duplicate": True,
-                }
+                except (ValueError, TypeError):
+                    original = None
+                if original is not None:
+                    if (
+                        observed_state != row["state"]
+                        or reconciliation_status != "RECONCILED"
+                        or canonical(receipt) != canonical(original)
+                        or verified_by != row["verified_by"]
+                    ):
+                        raise DuplicateEffect(
+                            f"effect {effect_id} already has an immutable "
+                            "reconciled receipt"
+                        )
+                    return {
+                        "effect_id": effect_id,
+                        "state": row["state"],
+                        "duplicate": True,
+                    }
             stored_receipt = receipt
-            if observed_state == "OBSERVED" and reconciliation_status == "RECONCILED":
+            if reconciliation_status == "RECONCILED":
+                if observed_state not in ("OBSERVED", "ABANDONED"):
+                    raise RecordRejected(
+                        "reconciliation needs verified observation or abandonment"
+                    )
                 if (
                     not isinstance(receipt, dict)
                     or not receipt
@@ -176,7 +177,7 @@ class EffectsMixin(FenceMixin):
                 try:
                     verify_effect_receipt(
                         effect_id, stored_receipt, verified_by,
-                        self._trusted_verifier_keys,
+                        self._trusted_verifier_keys, observed_state=observed_state,
                     )
                 except (ValueError, TypeError) as exc:
                     raise RecordRejected(
@@ -205,71 +206,60 @@ class EffectsMixin(FenceMixin):
             }
 
     def pending_effects(self, mission_id: str) -> list:
+        # Unsigned old rows that claim RECONCILED are still unsettled.
+        # The next worker never silently loses obligations during migration.
         rows = self.db.execute(
             "SELECT effect_id, operation, target, idempotency_key, state,"
-            " reconciliation_status FROM external_effects WHERE mission_id=?"
-            " AND reconciliation_status != 'RECONCILED'",
+            " reconciliation_status, external_receipt, verified_by"
+            " FROM external_effects WHERE mission_id=?",
             (mission_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        pending = []
+        for row in rows:
+            item = {
+                key: row[key]
+                for key in (
+                    "effect_id", "operation", "target", "idempotency_key",
+                    "state", "reconciliation_status",
+                )
+            }
+            if row["reconciliation_status"] != "RECONCILED":
+                pending.append(item)
+                continue
+            try:
+                receipt = json.loads(row["external_receipt"])
+                verify_effect_receipt(
+                    row["effect_id"], receipt, row["verified_by"],
+                    self._trusted_verifier_keys, observed_state=row["state"],
+                )
+            except (ValueError, TypeError):
+                item["reconciliation_status"] = "UNVERIFIED"
+                pending.append(item)
+        return pending
 
     def reconcile_effect(
         self, effect_id: str, external_state: str, outcome: str
     ) -> dict:
-        """Reconcile-before-retry from a measured external outcome.
-
-        Once an OBSERVED effect is RECONCILED, all paths, including ambiguous
-        retries and NOT_STARTED, must preserve that settled observation.
-        """
-        if outcome == "COMPLETED":
-            # This caller supplies BOTH the outcome and external_state.
-            # Neither is an independent witness. The old path minted an
-            # OBSERVED/RECONCILED receipt with verified_by="reconciler"
-            # without any observer having inspected the external target.
-            # Only the separate trusted receipt-admission path may certify
-            # success; reconciliation must never authenticate itself.
+        """Only independently signed positive/negative receipts settle effects."""
+        if outcome in ("COMPLETED", "NOT_STARTED"):
             raise DuplicateEffect(
-                "COMPLETED claim requires independent record_receipt admission"
+                f"{outcome} claim requires independent record_receipt admission"
             )
-        if outcome not in ("NOT_STARTED", "AMBIGUOUS"):
+        if outcome != "AMBIGUOUS":
             raise DuplicateEffect(f"unknown external outcome {outcome}")
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
             row = cur.execute(
-                "SELECT state, reconciliation_status FROM external_effects"
+                "SELECT reconciliation_status FROM external_effects"
                 " WHERE effect_id=?",
                 (effect_id,),
             ).fetchone()
             if row is None:
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if (
-                row["state"] == "OBSERVED"
-                and row["reconciliation_status"] == "RECONCILED"
-            ):
+            if row["reconciliation_status"] == "RECONCILED":
                 raise DuplicateEffect(
-                    f"effect {effect_id} already has an immutable "
-                    "reconciled receipt"
+                    f"effect {effect_id} already claims a reconciled receipt"
                 )
-            if outcome == "NOT_STARTED":
-                if (
-                    row["state"] == "ABANDONED"
-                    and row["reconciliation_status"] == "RECONCILED"
-                ):
-                    return {
-                        "effect_id": effect_id,
-                        "state": "ABANDONED",
-                        "duplicate": True,
-                    }
-                cur.execute(
-                    "UPDATE external_effects SET state='ABANDONED',"
-                    " reconciliation_status='RECONCILED' WHERE effect_id=?",
-                    (effect_id,),
-                )
-                return {
-                    "effect_id": effect_id,
-                    "state": "ABANDONED",
-                    "duplicate": False,
-                }
             cur.execute(
                 "UPDATE external_effects SET reconciliation_status='AMBIGUOUS'"
                 " WHERE effect_id=?",
