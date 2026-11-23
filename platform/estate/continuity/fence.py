@@ -117,6 +117,7 @@ class FenceMixin:
                 attempt["agent_adapter"],
                 evidence,
                 now=t,
+                trusted_keys=self._trusted_verifier_keys,
             )
             used = cur.execute(
                 "SELECT 1 FROM mission_events"
