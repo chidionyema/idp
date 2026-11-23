@@ -26,7 +26,7 @@ def digest(raw: bytes) -> str:
 
 
 def preserve_instruction(raw: bytes, recorded_digest: str) -> None:
-    if not isinstance(raw, bytes) or not hmac.compare_digest(digest(raw), recorded_digest):
+    if not isinstance(raw, bytes) or not isinstance(recorded_digest, str) or not hmac.compare_digest(digest(raw), recorded_digest):
         raise AdmissionDenied("instruction-integrity")
 
 
@@ -72,7 +72,7 @@ def admit(claim: dict, discovery: dict, proofs: list[dict], *, now: datetime, tr
     """
     if now.tzinfo is None:
         raise AdmissionDenied("naive-now")
-    if any(not claim.get(k) for k in BINDING):
+    if not isinstance(claim, dict) or any(not claim.get(k) for k in BINDING):
         raise AdmissionDenied("missing-claim-binding")
     d = _authenticate(discovery, trust_roots, "discovery")
     if not d.get("searched_sources") or d.get("contradictions"):
@@ -81,7 +81,7 @@ def admit(claim: dict, discovery: dict, proofs: list[dict], *, now: datetime, tr
         raise AdmissionDenied("stale-discovery")
     if any(d.get(k) != claim[k] for k in BINDING):
         raise AdmissionDenied("discovery-binding-mismatch")
-    if len(proofs) != 3:
+    if not isinstance(proofs, list) or len(proofs) != 3:
         raise AdmissionDenied("three-proofs-required")
     required = {"execution", "effect", "independent_verification"}
     kinds, key_ids, digests = set(), set(), set()
@@ -102,7 +102,7 @@ def admit(claim: dict, discovery: dict, proofs: list[dict], *, now: datetime, tr
         digests.add(evidence)
     if kinds != required or len(key_ids) != 3 or len(digests) != 3:
         raise AdmissionDenied("correlated-or-incomplete-proofs")
-    if discovery["key_id"] in key_ids:
+    if discovery.get("key_id") in key_ids:
         raise AdmissionDenied("discovery-proof-shared-key")
     cert = _authenticate(claim.get("certificate"), trust_roots, "certifier")
     if any(cert.get(k) != claim[k] for k in BINDING):
