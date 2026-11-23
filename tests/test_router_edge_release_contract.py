@@ -131,7 +131,7 @@ def test_oidc_vault_release_binding_fails_closed_and_injects_only_valid_token(
         assert (run.returncode == 0) == expected
         contents = output.read_text()
         if expected:
-            assert contents == f"CLOUDFLARE_API_TOKEN={token}\\n"
+            assert contents == f"CLOUDFLARE_API_TOKEN={token}\n"
             assert f"::add-mask::{token}" in run.stdout
         else:
             assert not contents, "failed custody must not export a credential"
