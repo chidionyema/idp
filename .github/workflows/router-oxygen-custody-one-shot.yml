@@ -22,6 +22,13 @@ jobs:
         run: |
           node --check scripts/with-workers-lease.mjs
           node --test tests/with-workers-lease.test.mjs
+      - name: Full router test suite before any release promotion
+        working-directory: platform/router-edge
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0
+          npm test
+          node --test tests/release.falsifier.mjs
       - name: Observe binding presence at same secret names as production release
         env:
           CF_ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
