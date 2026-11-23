@@ -155,8 +155,11 @@ class EffectsMixin(FenceMixin):
     def reconcile_effect(
         self, effect_id: str, external_state: str, outcome: str
     ) -> dict:
-        """Reconcile-before-retry: classify an ambiguous effect from
-        authoritative external state without blind re-execution."""
+        """Reconcile-before-retry from a measured external outcome.
+
+        Once an OBSERVED effect is RECONCILED, all paths, including ambiguous
+        retries and NOT_STARTED, must preserve that settled observation.
+        """
         if outcome == "COMPLETED":
             return self.record_receipt(
                 effect_id,
@@ -165,9 +168,24 @@ class EffectsMixin(FenceMixin):
                 "OBSERVED",
                 "RECONCILED",
             )
-        if outcome == "NOT_STARTED":
-            with self.db:
-                cur = self.db.execute("BEGIN IMMEDIATE")
+        if outcome not in ("NOT_STARTED", "AMBIGUOUS"):
+            raise DuplicateEffect(f"unknown external outcome {outcome}")
+        with self.db:
+            cur = self.db.execute("BEGIN IMMEDIATE")
+            row = cur.execute(
+                "SELECT state, reconciliation_status FROM external_effects"
+                " WHERE effect_id=?",
+                (effect_id,),
+            ).fetchone()
+            if row is None:
+                raise DuplicateEffect(f"unknown effect {effect_id}")
+            if row["state"] == "OBSERVED" and row["reconciliation_status"] == "RECONCILED":
+                raise DuplicateEffect(
+                    f"effect {effect_id} already has an immutable reconciled receipt"
+                )
+            if outcome == "NOT_STARTED":
+                if row["state"] == "ABANDONED" and row["reconciliation_status"] == "RECONCILED":
+                    return {"effect_id": effect_id, "state": "ABANDONED", "duplicate": True}
                 cur.execute(
                     "UPDATE external_effects SET state='ABANDONED',"
                     " reconciliation_status='RECONCILED' WHERE effect_id=?",
@@ -178,8 +196,6 @@ class EffectsMixin(FenceMixin):
                     "state": "ABANDONED",
                     "duplicate": False,
                 }
-        with self.db:
-            cur = self.db.execute("BEGIN IMMEDIATE")
             cur.execute(
                 "UPDATE external_effects SET reconciliation_status='AMBIGUOUS'"
                 " WHERE effect_id=?",
