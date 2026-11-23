@@ -32,8 +32,13 @@ def metric_script() -> str:
     return rows[0]["measure"][2]
 
 
-def fixture(tmp_path: Path, *, source_run: bool, source_auto: bool = True,
-            landing_auto: bool = True) -> Path:
+def fixture(
+    tmp_path: Path,
+    *,
+    source_run: bool,
+    source_auto: bool = True,
+    landing_auto: bool = True,
+) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -54,9 +59,9 @@ def fixture(tmp_path: Path, *, source_run: bool, source_auto: bool = True,
     git(repo, "checkout", "-q", "main")
     (repo / "f").write_text("landed\n")
     git(repo, "add", ".")
-    landing = ("agent-sandbox (auto): " if landing_auto else "agent-sandbox (gemini): ")
-    git(repo, "commit", "-q", "-m",
-        landing + "real candidate\n\nGreenlane-Head: " + sha + "\n")
+    landing = "agent-sandbox (auto): " if landing_auto else "agent-sandbox (gemini): "
+    message = landing + "real candidate\n\nGreenlane-Head: " + sha + "\n"
+    git(repo, "commit", "-q", "-m", message)
     return repo
 
 
@@ -100,8 +105,8 @@ def test_non_auto_source_does_not_count(tmp_path):
 
 def test_malformed_head_cannot_be_counted(tmp_path):
     repo = fixture(tmp_path, source_run=True)
-    git(repo, "commit", "--amend", "-q", "-m",
-        "agent-sandbox (auto): forged\n\nGreenlane-Head: not-a-commit\n")
+    message = "agent-sandbox (auto): forged\n\nGreenlane-Head: not-a-commit\n"
+    git(repo, "commit", "--amend", "-q", "-m", message)
     result = measure(repo)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "optimus.legion.missions_landed=0"
