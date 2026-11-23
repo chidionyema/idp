@@ -121,10 +121,10 @@ class FenceMixin:
             )
             used = cur.execute(
                 "SELECT 1 FROM mission_events"
-                " WHERE mission_id=? AND attempt_id=?"
+                " WHERE mission_id=?"
                 " AND cause='verified external progress' AND evidence=?"
                 " LIMIT 1",
-                (mission_id, attempt_id, evidence),
+                (mission_id, evidence),
             ).fetchone()
             if used is not None:
                 raise InvalidTransition(
