@@ -1871,7 +1871,6 @@ class GitHubBackend:
             [issue.get("body") or ""] + [str(c.get("body") or "") for c in comments]
         )
 
-
     @staticmethod
     def _epistemic_operational_proof(
         rec: dict, url: str, status: int, needle: str | None
@@ -1930,7 +1929,9 @@ class GitHubBackend:
                 return "ERR_QUAD_CUSTODY_SIGNATURE"
             if custody["revision"] != revision or custody["target"] != url:
                 return "ERR_QUAD_CUSTODY_BINDING"
-            expires = datetime.fromisoformat(custody["expires_at"].replace("Z", "+00:00"))
+            expires = datetime.fromisoformat(
+                custody["expires_at"].replace("Z", "+00:00")
+            )
             if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
                 return "ERR_QUAD_CUSTODY_EXPIRED"
             owners = custody["authorities"]
