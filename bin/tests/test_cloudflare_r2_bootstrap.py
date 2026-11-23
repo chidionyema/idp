@@ -80,5 +80,39 @@ class R2BootstrapTests(unittest.TestCase):
         self.assertNotIn('cf "$ROOT" POST "/accounts/$ACCOUNT_ID/r2/buckets"', source)
 
 
+    def test_cleanup_revokes_only_unescrowed_children(self):
+        source = SOURCE.read_text()
+        first = source.index("cleanup() {")
+        last = source.index("trap cleanup EXIT", first) + len("trap cleanup EXIT")
+        cleanup = source[first:last]
+        with tempfile.TemporaryDirectory() as directory:
+            for escrow_started, expected_deletions in [(0, 3), (1, 0)]:
+                with self.subTest(escrow_started=escrow_started):
+                    log = Path(directory) / f"cleanup-{escrow_started}.log"
+                    scratch = Path(directory) / f"scratch-{escrow_started}"
+                    scratch.mkdir()
+                    runner = r'''set -euo pipefail
+cf() { echo "$2 $3" >> "$CALL_LOG"; }
+MINTED_DNS_ID=dns-id; MINTED_R2_ID=r2-id; MINTED_WRK_ID=wrk-id
+ROOT=ROOT_TOKEN
+''' + f'ESCROW_STARTED={escrow_started}\n' + cleanup + "\n"
+                    result = subprocess.run(
+                        ["bash", "-c", runner],
+                        env={
+                            **os.environ,
+                            "CALL_LOG": str(log),
+                            "P": str(scratch),
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    calls = log.read_text().splitlines() if log.exists() else []
+                    self.assertEqual(len(calls), expected_deletions)
+                    self.assertTrue(all(s.startswith("DELETE /user/tokens/") for s in calls))
+                    self.assertFalse(scratch.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
