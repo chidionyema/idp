@@ -42,7 +42,73 @@
       "measure": [
         "python3",
         "-c",
-        "import re, subprocess, sys\n\ndef run(*args):\n    p=subprocess.run(['git',*args],capture_output=True,text=True,timeout=35,check=True)\n    return p.stdout.strip()\n\ntry:\n    if run('rev-parse','--is-shallow-repository')!='false':\n        sys.exit('BLIND: history is shallow')\n    records=run('log','--format=%B%x00','HEAD').split('\\x00')\n    count=0\n    for message in records:\n        lines=message.strip().splitlines()\n        if not lines or not lines[0].startswith('agent-sandbox (auto): '):\n            continue\n        if not re.search(r'(?m)^Run: https://github\\.com/chidionyema/idp/actions/runs/[0-9]+\\s*$', message):\n            continue\n        if not re.search(r'(?m)^Greenlane-Head: [0-9a-f]{40}\\s*$', message):\n            continue\n        count+=1\nexcept (OSError,subprocess.SubprocessError) as exc:\n    sys.exit('BLIND: cannot verify reachable main history: '+str(exc))\nprint('optimus.legion.missions_landed='+str(count))\n"
+        "import re, subprocess, sys\n\nRUN = re.compile(r'(?m)^Run: https://github\\.com/chidionyema/idp/actions/runs/[0-9]+\\s*
+      ],
+      "unit": "missions",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
+    },
+    {
+      "name": "greenlane.cross_main_failure_cap",
+      "measure": [
+        "python3",
+        "-m",
+        "greenlane.cross_main_breaker",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Independent trusted-main execution of the actual Engine two-main unchanged-head identical-cause suppression, durable restart, changed-head re-admission, and UNKNOWN refusal (#8289); not a claim of external service availability"
+    }
+  ]
+}
+)\nHEAD = re.compile(r'(?m)^Greenlane-Head: ([0-9a-f]{40})\\s*
+      ],
+      "unit": "missions",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
+    },
+    {
+      "name": "greenlane.cross_main_failure_cap",
+      "measure": [
+        "python3",
+        "-m",
+        "greenlane.cross_main_breaker",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Independent trusted-main execution of the actual Engine two-main unchanged-head identical-cause suppression, durable restart, changed-head re-admission, and UNKNOWN refusal (#8289); not a claim of external service availability"
+    }
+  ]
+}
+)\n\ndef command(argv):\n    try:\n        p = subprocess.run(argv, capture_output=True, text=True, timeout=35, check=False)\n    except (OSError, subprocess.TimeoutExpired) as exc:\n        raise RuntimeError(str(exc)) from exc\n    if p.returncode:\n        raise RuntimeError((p.stderr or p.stdout or str(p.returncode)).strip()[:180])\n    return p.stdout.strip()\n\ndef source_message(sha):\n    try:\n        return command(['git', 'show', '-s', '--format=%B', sha])\n    except RuntimeError:\n        # Squash-landed producer commits may be unreachable from main's Git graph;\n        # the exact SHA remains an immutable GitHub object. Never guess its contents.\n        return command(['gh', 'api',\n            'repos/chidionyema/idp/commits/' + sha, '--jq', '.commit.message'])\n\ntry:\n    if command(['git', 'rev-parse', '--is-shallow-repository']) != 'false':\n        raise RuntimeError('history is shallow')\n    records = command(['git', 'log', '--format=%B%x00', 'HEAD']).split('\\x00')\n    count = 0\n    seen = set()\n    for landing in records:\n        lines = landing.strip().splitlines()\n        if not lines or not lines[0].startswith('agent-sandbox (auto): '):\n            continue\n        marker = HEAD.search(landing)\n        if marker is None or marker.group(1) in seen:\n            continue\n        sha = marker.group(1)\n        source = source_message(sha)\n        src_lines = source.strip().splitlines()\n        if (src_lines and src_lines[0].startswith('agent-sandbox (auto): ')\n                and RUN.search(source) and re.search(r'(?m)^Agent: auto\\s*
+      ],
+      "unit": "missions",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Conservative count of reachable merged agent-sandbox (auto) commits containing both GitHub Actions Run: and Greenlane-Head: receipts; this is landed source, not live inference certification (idp#8283/#8405)"
+    },
+    {
+      "name": "greenlane.cross_main_failure_cap",
+      "measure": [
+        "python3",
+        "-m",
+        "greenlane.cross_main_breaker",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Independent trusted-main execution of the actual Engine two-main unchanged-head identical-cause suppression, durable restart, changed-head re-admission, and UNKNOWN refusal (#8289); not a claim of external service availability"
+    }
+  ]
+}
+, source)):\n            seen.add(sha)\n            count += 1\nexcept (RuntimeError, ValueError) as exc:\n    sys.exit('BLIND: cannot verify exact auto landing source: ' + str(exc))\nprint('optimus.legion.missions_landed=' + str(count))\n"
       ],
       "unit": "missions",
       "better": "higher",
