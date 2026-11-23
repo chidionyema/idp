@@ -1,0 +1,74 @@
+name: Router oxygen custody one-shot (read-only)
+# P0 #8416: measure actual secret delivery and vault identity, no rotation/Workers deployment.
+on:
+  push:
+    branches:
+      - research/8416-router-vault-custody-20261123
+    paths:
+      - .github/workflows/router-oxygen-custody-one-shot.yml
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  custody:
+    if: github.ref == 'refs/heads/research/8416-router-vault-custody-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: OCI CLI
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: Authenticate existing OCI federated machine identity
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: Independent custody and release-input presence proof without values
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          CF_ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          CF_WORKERS_GH: ${{ secrets.SEED_CLOUDFLARE_WORKERS_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          CLIENT_GH: ${{ secrets.SEED_MERIDIAN_CLIENT_KEY }}
+          ADMIN_GH: ${{ secrets.SEED_MERIDIAN_ADMIN_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'schema=meridian/router-custody-v1\nsha=%s\n' "$GITHUB_SHA"
+          for var in CF_ROOT CF_WORKERS_GH CF_ACCOUNT CLIENT_GH ADMIN_GH; do
+            if [ -n "${!var:-}" ]; then printf '%s=BOUND\n' "$var"; else printf '%s=UNBOUND\n' "$var"; fi
+          done
+          if ! names=$(bin/idp-cloud secret list 2>/dev/null); then
+            echo 'oci_vault_names=UNREADABLE'
+            exit 75
+          fi
+          echo 'oci_vault_names=READABLE'
+          for name in cloudflare-workers-token cloudflare-api-token prospector-engine-env meridian-client-key meridian-admin-key meridian-router-env router-edge-env meridian-router-edge-env; do
+            if grep -Fxq -- "$name" <<< "$names"; then echo "vault.${name}=PRESENT"; else echo "vault.${name}=NOT_LISTED"; fi
+          done
+          # R2 is intentionally NOT invoked: this router has zero R2 bindings.
+          if grep -Fxq -- cloudflare-workers-token <<< "$names"; then
+            worker_token=$(bin/idp-cloud secret get cloudflare-workers-token 2>/dev/null || true)
+            if [ -n "$worker_token" ]; then
+              # Verify the actual vault-held Workers token using Cloudflare without printing value.
+              verified=$(curl -fsS --max-time 12 -H "Authorization: Bearer $worker_token" https://api.cloudflare.com/client/v4/user/tokens/verify 2>/dev/null | jq -r 'if .success == true and .result.status == "active" then "ACTIVE" else "NOT_ACTIVE" end' 2>/dev/null || true)
+              echo "vault.workers_token_api_status=${verified:-UNVERIFIED}"
+              if [ "$verified" = ACTIVE ] && [ -n "$CF_ACCOUNT" ]; then
+                status=$(curl -fsS --max-time 12 -H "Authorization: Bearer $worker_token" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/workers/scripts/meridian-router-edge/deployments" 2>/dev/null | jq -r 'if .success == true then "READABLE" else "REFUSED" end' 2>/dev/null || true)
+                echo "cloudflare.worker_deployment_metadata=${status:-UNVERIFIED}"
+              fi
+            else
+              echo 'vault.workers_token_api_status=EMPTY_OR_UNREADABLE'
+            fi
+            unset worker_token
+          fi
+          echo 'verdict=READ_ONLY_CUSTODY_PROBE_COMPLETE_NOT_DEPLOYED'
