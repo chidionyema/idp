@@ -214,6 +214,35 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # Zero paid inference: reuse the existing Chronos execution slot to
+      # gather failure intelligence even when no agent/model capacity is available.
+      # Findings are observations, not automatically verified causal failures.
+      - name: unattended assurance -- read-only recurrence and failure-mode census
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          python3 bin/idp-unattended-assurance --json | tee assurance.json
+          code=${PIPESTATUS[0]}
+          if [ "$code" -eq 0 ]; then
+            echo '### Unattended assurance: evidence snapshot collected' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '### Unattended assurance: BLIND — do not certify this period' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo 'A bounded, read-only 100-run census; no paid model inference or proof of production yield.' >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+      - name: preserve failure-intelligence evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: failure-intelligence
+          path: assurance.json
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: refuse an unmeasurable time plane
         if: always() && steps.chronos.outputs.exit_code == '2'
         run: |
