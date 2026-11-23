@@ -49,6 +49,10 @@ class MissionStore(
             raise ValueError(
                 "trusted verifier keys must be Ed25519 32-byte public keys"
             )
+        if len(set(keys.values())) != len(keys):
+            raise ValueError(
+                "one public key cannot represent multiple independent verifiers"
+            )
         self._trusted_verifier_keys = MappingProxyType(keys)
         self.path = str(path)
         self.db = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
