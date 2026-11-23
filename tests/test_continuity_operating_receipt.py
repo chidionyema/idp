@@ -318,6 +318,11 @@ def test_legacy_unsigned_negative_receipt_remains_an_obligation(tmp_path):
     pending = store.pending_effects("m-test")
     assert len(pending) == 1
     assert pending[0]["reconciliation_status"] == "UNVERIFIED"
+    with pytest.raises(RecordRejected, match="signed reattestation"):
+        store.record_receipt(
+            eid, {"external": "erase old record"}, "observer-b",
+            observed_state="OBSERVED", reconciliation_status="AMBIGUOUS",
+        )
     with pytest.raises(InvalidTransition):
         operating(store, lease, "effect:" + eid)
     verified = signed_receipt(
