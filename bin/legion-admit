@@ -529,8 +529,8 @@ def auto_launch(
                             {
                                 "id": selected["model"],
                                 "name": selected["model"],
-                                "contextWindow": selected["context"],
-                                "maxTokens": 8192,
+                                "contextWindow": min(selected["context"], 32768),
+                                "maxTokens": 4096,
                                 "input": ["text"],
                                 "reasoning": False,
                             }
@@ -554,6 +554,7 @@ def auto_launch(
         ],
         env=child,
         stdin=subprocess.DEVNULL,
+        timeout=240,
         check=False,
     ).returncode
     if rc == 0:

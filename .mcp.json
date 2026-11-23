@@ -1,8 +1,3 @@
 {
-  "mcpServers": {
-    "growmos": {
-      "args": ["mcp"],
-      "command": "growmos"
-    }
-  }
+  "mcpServers": {}
 }
