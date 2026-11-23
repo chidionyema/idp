@@ -99,7 +99,7 @@ def test_source_plane_can_never_claim_operational_even_when_get_200(monkeypatch)
     backend._contract = lambda *_: {
         "accept": (
             "GET https://raw.githubusercontent.com/chidionyema/idp/main/greenlane/"
-            "github.py expect 200 contains \"verify_operational\" within 180m"
+            'github.py expect 200 contains "verify_operational" within 180m'
         ),
         "optimus": "claims.ship_contract_enforced baseline=UNKNOWN target=1",
     }
