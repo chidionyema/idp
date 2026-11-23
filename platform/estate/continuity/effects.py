@@ -258,7 +258,8 @@ class EffectsMixin(FenceMixin):
         rows = self.db.execute(
             "SELECT e.effect_id, e.operation, e.target, e.idempotency_key,"
             " e.state, e.reconciliation_status, e.external_receipt,"
-            " e.verified_by, a.agent_adapter AS executor_adapter"
+            " e.verified_by, e.observed_at,"
+            " a.agent_adapter AS executor_adapter"
             " FROM external_effects e LEFT JOIN mission_attempts a"
             " ON a.attempt_id=e.attempt_id AND a.mission_id=e.mission_id"
             " WHERE e.mission_id=?",
@@ -276,6 +277,8 @@ class EffectsMixin(FenceMixin):
             if (
                 row["reconciliation_status"] != "RECONCILED"
                 or row["state"] not in ("OBSERVED", "ABANDONED")
+                or row["observed_at"] is None
+                or row["observed_at"] > time.time()
             ):
                 if row["reconciliation_status"] == "RECONCILED":
                     item["reconciliation_status"] = "UNVERIFIED"
