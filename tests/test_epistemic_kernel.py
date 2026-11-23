@@ -17,7 +17,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from epistemic_kernel import (
+from lib.epistemic_kernel import (
     EpistemicKernel,
     EvidenceTier,
     ExecutionPlane,
@@ -25,7 +25,7 @@ from epistemic_kernel import (
     canonical_json,
     sign_receipt,
 )
-from epistemic_kernel.kernel import sha256_hex
+from lib.epistemic_kernel.kernel import sha256_hex
 
 TEST_KEY = b"isolated-verifier-key-never-exposed-to-agent-32b"
 TRUSTED = ("gh-actions-prober", "cloudflare-prober", "oci-blackbox-prober")
@@ -422,17 +422,17 @@ class TestEpistemicFalsificationKernel(unittest.TestCase):
 
             env = {
                 "PATH": "/usr/bin:/bin",
-                "PYTHONPATH": str(Path(__file__).resolve().parent.parent / "lib"),
+                "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
                 "ESTATE_RECEIPT_KEY": TEST_KEY.decode("utf-8"),
             }
             p_bad = subprocess.run(
-                [sys.executable, "-m", "epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_bad)],
+                [sys.executable, "-m", "lib.epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_bad)],
                 capture_output=True, text=True, env=env,
             )
             self.assertEqual(p_bad.returncode, 42, p_bad.stdout + p_bad.stderr)
 
             p_good = subprocess.run(
-                [sys.executable, "-m", "epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_good)],
+                [sys.executable, "-m", "lib.epistemic_kernel.cli", "--mode", "operational", "--input", str(contract_file), "--receipts", str(receipts_good)],
                 capture_output=True, text=True, env=env,
             )
             self.assertEqual(p_good.returncode, 0, p_good.stdout + p_good.stderr)
