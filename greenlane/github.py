@@ -1963,7 +1963,11 @@ class GitHubBackend:
             min_fencing_token=min_fence,
         )
         if not decision.allowed:
-            return "E1-E4: " + ", ".join(decision.error_codes[:5])
+            return "E1/E3/E4: " + ", ".join(decision.error_codes[:5])
+        rec["epistemic_verified_receipts"] = decision.verified_receipt_ids
+        rec["epistemic_custody_sha256"] = hashlib.sha256(
+            canonical_json(custody).encode()
+        ).hexdigest()
         return ""
 
     def verify_operational(self, lane: str, rec: dict) -> tuple[str, str]:
@@ -2022,7 +2026,13 @@ class GitHubBackend:
         read = ", ".join(f"{k}={v:g}" for k, v in sorted(readings.items()))
         if short:
             return "pending", f"probe ok ({code}); Optimus short: {', '.join(short)}"
-        return "pass", f"GET {m.group('url')} -> {code}; Optimus {read}"
+        ids = ",".join(rec["epistemic_verified_receipts"])
+        custody_sha = rec["epistemic_custody_sha256"]
+        return (
+            "pass",
+            f"GET {m.group('url')} -> {code}; Optimus {read}; "
+            f"independent T0 receipts={ids}; QUAD custody sha256={custody_sha}",
+        )
 
     def _optimus_readings(self, names: list[str]) -> dict[str, float]:
         """Each declared metric's reading, measured now by its registered measure.
