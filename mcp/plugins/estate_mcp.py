@@ -49,31 +49,18 @@ ESTATE_DB = HOME / ".estate" / "estate.db"
 MAX_MATCHES = 12
 log = logging.getLogger(__name__)
 
-# THE POD'S PATH TO THE GOVERNED DOOR (idp#7579 R2).
-#
-# The estate-mcp image ships the intent LIBRARY and no executor: `~/.estate/bin/estate-execute`
-# and the plan ledger are absent from it, so the production `estate_invoke` had no gate at all
-# -- the production intent path was not the governed door. The laptop owns the gate, the
-# ledger and the audit, so a pod WITHOUT a local executor asks the laptop over ONE
-# authenticated, intent-scoped route. A pod WITH a local executor keeps using it: that is the
-# laptop's own path and it must not change.
-LAPTOP_INTENT_URL_ENV = "ESTATE_LAPTOP_INTENT_URL"
-LAPTOP_INTENT_TOKEN_FILE_ENV = "ESTATE_LAPTOP_INTENT_TOKEN_FILE"  # noqa: S105 -- a path
-LAPTOP_INTENT_TOKEN_ENV = "ESTATE_LAPTOP_INTENT_TOKEN"  # noqa: S105 -- an env var NAME
+# idp#8061: cloud governed execution. The Mac is a thin client only.
+CLOUD_INTENT_URL_ENV = "ESTATE_CLOUD_INTENT_URL"
+CLOUD_INTENT_TOKEN_FILE_ENV = "ESTATE_CLOUD_INTENT_TOKEN_FILE"  # noqa: S105
+CLOUD_INTENT_TOKEN_ENV = "ESTATE_CLOUD_INTENT_TOKEN"  # noqa: S105
 
 
 def _local_executor() -> Path:
-    """This host's own door, if it has one. The pod does not; the laptop does."""
     return HOME / ".estate" / "bin" / "estate-execute"
 
 
-def _remote_intent_token() -> str:
-    """The credential for the laptop's intent door: a mounted file first, then the environment.
-
-    A file is preferred because a token in an environment variable is a token in every crash
-    dump and every `/proc` of the pod.
-    """
-    path = (os.environ.get(LAPTOP_INTENT_TOKEN_FILE_ENV) or "").strip()
+def _cloud_intent_token() -> str:
+    path = (os.environ.get(CLOUD_INTENT_TOKEN_FILE_ENV) or "").strip()
     if path:
         try:
             token = Path(path).read_text().strip()
@@ -81,22 +68,48 @@ def _remote_intent_token() -> str:
             token = ""
         if token:
             return token
-    return (os.environ.get(LAPTOP_INTENT_TOKEN_ENV) or "").strip()
+    return (os.environ.get(CLOUD_INTENT_TOKEN_ENV) or "").strip()
 
 
-def _invoke_remote(name, arg_items, session, timeout):
-    """Run one intent on the laptop's governed door, from a host that has no door of its own."""
-    url = (os.environ.get(LAPTOP_INTENT_URL_ENV) or "").strip()
-    token = _remote_intent_token()
-    if not url or not token:
-        return (
-            "ERROR: this gateway has no local executor and no laptop intent door. Set {} and "
-            "{}.".format(LAPTOP_INTENT_URL_ENV, LAPTOP_INTENT_TOKEN_FILE_ENV)
-        )
+class _RefuseIntentRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _invoke_cloud(name, arg_items, session, timeout):
+    """Invoke the existing authenticated cloud door. Never guess a local fallback."""
+    import ipaddress
+    import urllib.parse
+
+    url = (os.environ.get(CLOUD_INTENT_URL_ENV) or "").strip()
+    if not url:
+        return "BLIND: no governed cloud intent door configured."
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        return "REFUSED: cloud intent URL must be HTTPS without credentials."
+    if host == "localhost" or host.endswith(".localhost"):
+        return "REFUSED: loopback intent door."
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+            return "REFUSED: host-local intent door."
+    token = _cloud_intent_token()
+    if not token:
+        return "BLIND: no cloud intent credential configured."
     payload = json.dumps(
         {"intent": name, "args": dict(arg_items), "session_id": session or ""}
     )
-    request = urllib.request.Request(  # noqa: S310 -- operator-supplied door URL only
+    request = urllib.request.Request(  # noqa: S310 -- HTTPS cloud door only
         url,
         data=payload.encode("utf-8"),
         headers={
@@ -106,17 +119,17 @@ def _invoke_remote(name, arg_items, session, timeout):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.build_opener(_RefuseIntentRedirect).open(
+            request, timeout=timeout
+        ) as response:
             body = json.loads(response.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:400]
         return "ERROR (HTTP {}): {}".format(exc.code, detail)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        return "ERROR: the laptop intent door did not answer: {}".format(exc)
+        return "ERROR: cloud intent door did not answer: {}".format(exc)
     if not isinstance(body, dict):
-        return (
-            "ERROR: the laptop intent door answered with something that is not a result"
-        )
+        return "ERROR: cloud intent door returned a non-result."
     out = str(body.get("stdout") or "").strip()
     err = str(body.get("stderr") or "").strip()
     try:
@@ -125,7 +138,7 @@ def _invoke_remote(name, arg_items, session, timeout):
         code = 1
     if body.get("ok") and code == 0:
         return out if out else "ok"
-    return "ERROR (exit {}):\n{}\n{}".format(code, out, err)
+    return "ERROR (exit {}):\\n{}\\n{}".format(code, out, err)
 
 
 # The plan contract, loaded only to RESOLVE A SESSION (who is calling). The gate itself lives in
@@ -521,12 +534,13 @@ def _estate_invoke(args):
         if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
             return "ERROR: invalid arg name: {}".format(k)
         arg_items.append((str(k), v))
+    # Only an expressly provisioned cloud worker may execute a local intent.
+    # A workstation with an old executor still calls the governed cloud.
+    if os.environ.get("ESTATE_EXECUTOR_ROLE") != "cloud-worker":
+        return _invoke_cloud(name, arg_items, session, timeout)
     exe = _local_executor()
     if not exe.exists():
-        # No executor on this host (the estate-mcp pod): the door is on the laptop, and the
-        # session travels there UNCHANGED -- a programmatic session is not a voice session and
-        # is never namespaced as one (idp#7579 R2).
-        return _invoke_remote(name, arg_items, session, timeout)
+        return "BLIND: cloud worker executor unavailable."
     cmd = [sys.executable, str(exe), name]
     if session:
         cmd.extend(["--session", session])
