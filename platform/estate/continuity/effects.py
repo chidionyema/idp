@@ -117,12 +117,34 @@ class EffectsMixin(FenceMixin):
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
             row = cur.execute(
-                "SELECT state, reconciliation_status, external_receipt, verified_by"
-                " FROM external_effects WHERE effect_id=?",
+                "SELECT e.state, e.reconciliation_status, e.external_receipt,"
+                " e.verified_by, e.mission_id, e.attempt_id,"
+                " a.agent_adapter AS executor_adapter"
+                " FROM external_effects e"
+                " LEFT JOIN mission_attempts a ON a.attempt_id=e.attempt_id"
+                " AND a.mission_id=e.mission_id WHERE e.effect_id=?",
                 (effect_id,),
             ).fetchone()
             if row is None:
                 raise DuplicateEffect(f"unknown effect {effect_id}")
+            if reconciliation_status == "RECONCILED":
+                actors = cur.execute(
+                    "SELECT actor FROM mission_events WHERE mission_id=?"
+                    " AND attempt_id=?",
+                    (row["mission_id"], row["attempt_id"]),
+                ).fetchall()
+                executors = {
+                    a["actor"].strip().casefold() for a in actors if a["actor"]
+                }
+                if row["executor_adapter"]:
+                    executors.add(row["executor_adapter"].strip().casefold())
+                if (
+                    not row["executor_adapter"]
+                    or verified_by.strip().casefold() in executors
+                ):
+                    raise RecordRejected(
+                        "leased executor cannot certify its own external effect"
+                    )
             if row["reconciliation_status"] == "RECONCILED":
                 # Historical optimistic settlements may have no signed
                 # witness. They stay unverified until externally reattested.
@@ -212,12 +234,15 @@ class EffectsMixin(FenceMixin):
             }
 
     def pending_effects(self, mission_id: str) -> list:
-        # Unsigned old rows that claim RECONCILED are still unsettled.
-        # The next worker never silently loses obligations during migration.
+        # Reverify both signed witness and separation from the executor.
+        # An unsigned/tampered/self-certified historical outcome stays owed.
         rows = self.db.execute(
-            "SELECT effect_id, operation, target, idempotency_key, state,"
-            " reconciliation_status, external_receipt, verified_by"
-            " FROM external_effects WHERE mission_id=?",
+            "SELECT e.effect_id, e.operation, e.target, e.idempotency_key,"
+            " e.state, e.reconciliation_status, e.external_receipt,"
+            " e.verified_by, a.agent_adapter AS executor_adapter"
+            " FROM external_effects e LEFT JOIN mission_attempts a"
+            " ON a.attempt_id=e.attempt_id AND a.mission_id=e.mission_id"
+            " WHERE e.mission_id=?",
             (mission_id,),
         ).fetchall()
         pending = []
@@ -230,6 +255,25 @@ class EffectsMixin(FenceMixin):
                 )
             }
             if row["reconciliation_status"] != "RECONCILED":
+                pending.append(item)
+                continue
+            actors = self.db.execute(
+                "SELECT actor FROM mission_events WHERE mission_id=?"
+                " AND attempt_id=(SELECT attempt_id FROM external_effects"
+                " WHERE effect_id=?)",
+                (mission_id, row["effect_id"]),
+            ).fetchall()
+            executors = {
+                a["actor"].strip().casefold() for a in actors if a["actor"]
+            }
+            if row["executor_adapter"]:
+                executors.add(row["executor_adapter"].strip().casefold())
+            if (
+                not row["executor_adapter"]
+                or not isinstance(row["verified_by"], str)
+                or row["verified_by"].strip().casefold() in executors
+            ):
+                item["reconciliation_status"] = "UNVERIFIED"
                 pending.append(item)
                 continue
             try:
