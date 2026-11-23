@@ -174,3 +174,59 @@ def test_certified_effect_receipt_is_immutable_and_idempotent(tmp_path):
     ).fetchone()
     assert tuple(final) == tuple(original)
     store.close()
+
+
+def test_recovery_must_not_erase_observed_and_reconciled_yield(tmp_path):
+    store, lease = staged(tmp_path)
+    eid = effect(store, lease)
+    original = tuple(store.db.execute(
+        "SELECT state, reconciliation_status, external_receipt, verified_by"
+        " FROM external_effects WHERE effect_id=?", (eid,)
+    ).fetchone())
+    for outcome in ("NOT_STARTED", "AMBIGUOUS", "UNRECOGNISED"):
+        with pytest.raises(DuplicateEffect):
+            store.reconcile_effect(eid, "ignored", outcome)
+    final = tuple(store.db.execute(
+        "SELECT state, reconciliation_status, external_receipt, verified_by"
+        " FROM external_effects WHERE effect_id=?", (eid,)
+    ).fetchone())
+    assert final == original
+    assert operating(store, lease, "effect:" + eid)["state"] == "OPERATING"
+    store.close()
+
+
+def test_ambiguous_recovery_can_observe_real_completion(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "recover-once",
+        {"expected": "ok"},
+    )
+    eid = intent["effect_id"]
+    store.reconcile_effect(eid, "unmeasured", "AMBIGUOUS")
+    assert store.pending_effects("m-test")[0]["effect_id"] == eid
+    completed = store.reconcile_effect(eid, "observed-external-transaction", "COMPLETED")
+    assert completed["state"] == "OBSERVED" and not completed["duplicate"]
+    assert store.pending_effects("m-test") == []
+    assert operating(store, lease, "effect:" + eid)["state"] == "OPERATING"
+    store.close()
+
+
+def test_not_started_and_unknown_effects_are_not_false_success(tmp_path):
+    store, lease = staged(tmp_path)
+    intent = store.record_effect_intent(
+        "m-test", lease["attempt_id"], lease["lease_epoch"],
+        "external-test", "example.invalid", "not-started-once",
+        {"expected": "ok"},
+    )
+    eid = intent["effect_id"]
+    first = store.reconcile_effect(eid, "negative-observation", "NOT_STARTED")
+    assert first["state"] == "ABANDONED" and not first["duplicate"]
+    again = store.reconcile_effect(eid, "negative-observation", "NOT_STARTED")
+    assert again["duplicate"] is True
+    with pytest.raises(InvalidTransition):
+        operating(store, lease, "effect:" + eid)
+    for outcome in ("NOT_STARTED", "AMBIGUOUS"):
+        with pytest.raises(DuplicateEffect, match="unknown effect"):
+            store.reconcile_effect("e-missing", "", outcome)
+    store.close()
