@@ -1,6 +1,7 @@
 """Falsify the Cloudflare R2 bucket decision with the real bootstrap shell block."""
 
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -58,8 +59,8 @@ class R2BootstrapTests(unittest.TestCase):
                 with self.subTest(scenario=scenario):
                     log = str(Path(directory) / (scenario + ".log"))
                     script = HARNESS + "\n" + bucket_block() + "\necho PASS\n"
-                    outcome = subprocess.run(
-                        ["bash", "-c", script],
+                    outcome = subprocess.run(  # noqa: S603 - trusted fixed Bash argv
+                        [shutil.which("bash"), "-c", script],
                         env={**os.environ, "SCENARIO": scenario, "CALL_LOG": log},
                         text=True,
                         capture_output=True,
@@ -79,7 +80,6 @@ class R2BootstrapTests(unittest.TestCase):
         self.assertIn('MINTED_R2_ID=$(jq -r .id <<<"$r2tok")', source)
         self.assertNotIn('cf "$ROOT" POST "/accounts/$ACCOUNT_ID/r2/buckets"', source)
 
-
     def test_cleanup_revokes_only_unescrowed_children(self):
         source = SOURCE.read_text()
         first = source.index("cleanup() {")
@@ -96,8 +96,8 @@ cf() { echo "$2 $3" >> "$CALL_LOG"; }
 MINTED_DNS_ID=dns-id; MINTED_R2_ID=r2-id; MINTED_WRK_ID=wrk-id
 ROOT=ROOT_TOKEN
 ''' + f'ESCROW_STARTED={escrow_started}\n' + cleanup + "\n"
-                    result = subprocess.run(
-                        ["bash", "-c", runner],
+                    result = subprocess.run(  # noqa: S603 - trusted fixed Bash argv
+                        [shutil.which("bash"), "-c", runner],
                         env={
                             **os.environ,
                             "CALL_LOG": str(log),
