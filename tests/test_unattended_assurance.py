@@ -97,9 +97,7 @@ def test_over_budget_sample_refuses_unbounded_scan():
 
 def test_offline_cli_is_deterministic_and_explicit_about_effect(tmp_path):
     (tmp_path / "registry.json").write_text(json.dumps(registry()))
-    (tmp_path / "runs.json").write_text(
-        json.dumps([event(1, SHA_A), event(2, SHA_B)])
-    )
+    (tmp_path / "runs.json").write_text(json.dumps([event(1, SHA_A), event(2, SHA_B)]))
     cmd = [
         sys.executable,
         str(TOOL),
