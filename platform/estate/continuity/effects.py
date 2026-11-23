@@ -173,12 +173,14 @@ class EffectsMixin(FenceMixin):
         retries and NOT_STARTED, must preserve that settled observation.
         """
         if outcome == "COMPLETED":
-            return self.record_receipt(
-                effect_id,
-                {"external": external_state},
-                "reconciler",
-                "OBSERVED",
-                "RECONCILED",
+            # This caller supplies BOTH the outcome and external_state.
+            # Neither is an independent witness. The old path minted an
+            # OBSERVED/RECONCILED receipt with verified_by="reconciler"
+            # without any observer having inspected the external target.
+            # Only the separate trusted receipt-admission path may certify
+            # success; reconciliation must never authenticate itself.
+            raise DuplicateEffect(
+                "COMPLETED claim requires independent record_receipt admission"
             )
         if outcome not in ("NOT_STARTED", "AMBIGUOUS"):
             raise DuplicateEffect(f"unknown external outcome {outcome}")
