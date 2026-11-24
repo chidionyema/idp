@@ -1887,7 +1887,10 @@ class GitHubBackend:
 
         try:
             if urlsplit(url).hostname in PROXY_SOURCE_HOSTS:
-                return [], "ERR_PROXY_GREEN_SUBSTITUTION: source/GitHub is not production"
+                return (
+                    [],
+                    "ERR_PROXY_GREEN_SUBSTITUTION: source/GitHub is not production",
+                )
         except ValueError:
             return [], "ERR_INVALID_RUNTIME_TARGET"
         prefix = "EPISTEMIC-EFFECT-V1\n"
