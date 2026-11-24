@@ -142,5 +142,29 @@ class FastGateCallerPermissionTests(unittest.TestCase):
                     )
 
 
+class ContinuityFormatterReadOnlyDiagnostic(unittest.TestCase):
+    def test_print_canonical_ruff_diff_without_modifying_sources(self) -> None:
+        import subprocess
+
+        files = [
+            "platform/estate/continuity/checkpoints.py",
+            "platform/estate/continuity/effects.py",
+            "platform/estate/continuity/fence.py",
+            "platform/estate/continuity/transitions.py",
+            "tests/test_continuity_operating_receipt.py",
+        ]
+        result = subprocess.run(
+            ["ruff", "format", "--diff", *files],
+            cwd=WORKFLOW.parents[2],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        print("RUFF_EXACT_DIFF_BEGIN")
+        print(result.stdout)
+        print("RUFF_EXACT_DIFF_END")
+        self.assertIn(result.returncode, (0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
