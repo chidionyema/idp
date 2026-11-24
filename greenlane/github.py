@@ -1871,6 +1871,74 @@ class GitHubBackend:
             [issue.get("body") or ""] + [str(c.get("body") or "") for c in comments]
         )
 
+    def _epistemic_receipts_from_claim(
+        self, claim_repo: str, number: str, lane: str, rec: dict, url: str
+    ) -> tuple[list[dict], str]:
+        """Read E1-E4 signed T0 receipts from the ORIGINAL issue, not lane state.
+
+        This is a read-only join over existing GitHub evidence. Every comment
+        is UNTRUSTED input: the kernel verifies each independent signature;
+        the QUAD verifier verifies the separate signer-custody attestation.
+        No raw receipt is persisted back into the Greenlane state ref.
+        """
+        prefix = "EPISTEMIC-EFFECT-V1\n"
+        expected = {
+            "issue": f"{claim_repo}#{number}",
+            "lane": lane,
+            "head": rec.get("head"),
+            "tip": rec.get("tip"),
+            "target": url,
+        }
+        try:
+            meta = json.loads(
+                _run("gh", "api", f"repos/{claim_repo}/issues/{number}") or "{}"
+            )
+            count = meta.get("comments")
+            if type(count) is not int or count < 0:
+                return [], "BLIND: claim issue comment count unavailable"
+            last_page = max(1, (count + 99) // 100)
+            comments: list[dict] = []
+            for page in range(max(1, last_page - 1), last_page + 1):
+                page_comments = json.loads(
+                    _run(
+                        "gh",
+                        "api",
+                        f"repos/{claim_repo}/issues/{number}/comments"
+                        f"?per_page=100&page={page}",
+                    )
+                    or "[]"
+                )
+                if not isinstance(page_comments, list):
+                    return [], "BLIND: claim issue comment page malformed"
+                comments.extend(page_comments)
+        except (RuntimeError, ValueError, TypeError):
+            return [], "BLIND: signed effect comments unreadable"
+
+        for comment in reversed(comments):
+            if not isinstance(comment, dict):
+                return [], "BLIND: claim issue comment malformed"
+            body = comment.get("body")
+            if not isinstance(body, str) or not body.startswith(prefix):
+                continue
+            if len(body) > 131072:
+                return [], "ERR_EFFECT_RECEIPT_OVERSIZE"
+            try:
+                envelope = json.loads(body[len(prefix) :])
+            except (ValueError, TypeError):
+                return [], "ERR_MALFORMED_EFFECT_RECEIPT"
+            if not isinstance(envelope, dict):
+                return [], "ERR_MALFORMED_EFFECT_RECEIPT"
+            if any(envelope.get(key) != value for key, value in expected.items()):
+                # Another immutable lane/revision/target is not evidence for this lane.
+                continue
+            receipts = envelope.get("receipts")
+            if not isinstance(receipts, list) or len(receipts) != 3:
+                return [], "ERR_EFFECT_RECEIPT_CARDINALITY"
+            if not all(isinstance(item, dict) for item in receipts):
+                return [], "ERR_MALFORMED_EFFECT_RECEIPT"
+            return receipts, ""
+        return [], "ERR_NO_SIGNED_EFFECT_RECEIPT_FOR_EXACT_LANE"
+
     @staticmethod
     def _epistemic_operational_proof(
         rec: dict, url: str, status: int, needle: str | None
@@ -2024,11 +2092,21 @@ class GitHubBackend:
         read = ", ".join(f"{k}={v:g}" for k, v in sorted(readings.items()))
         if short:
             return "pending", f"probe ok ({code}); Optimus short: {', '.join(short)}"
+        receipts, missing = self._epistemic_receipts_from_claim(
+            claim_repo, number, lane, rec, m.group("url")
+        )
+        if missing:
+            return "pending", missing
+        ephemeral = dict(rec)
+        ephemeral["epistemic_receipts"] = receipts
         epistemic_defect = self._epistemic_operational_proof(
-            rec, m.group("url"), code, needle
+            ephemeral, m.group("url"), code, needle
         )
         if epistemic_defect:
             return "pending", epistemic_defect
+        # Conserve only proof IDs and custody digest; never persist public raw bodies.
+        rec["epistemic_verified_receipts"] = ephemeral["epistemic_verified_receipts"]
+        rec["epistemic_custody_sha256"] = ephemeral["epistemic_custody_sha256"]
         ids = ",".join(rec["epistemic_verified_receipts"])
         custody_sha = rec["epistemic_custody_sha256"]
         return (
