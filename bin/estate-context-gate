@@ -61,6 +61,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Mapping
 
@@ -98,6 +99,17 @@ RANKER_SIGNALS = (
 # have none of them, and the manifests that could give it one live under platform/.
 ROUTE_KINDS = ("Service", "Ingress", "HTTPRoute", "Route", "VirtualService", "EndpointSlice")
 ENGINE_WORDS = ("gortex", "engine")
+
+# THE GATE HAS A CLOCK. A gate that cannot answer inside the estate's foreground ceiling
+# (AGENTS.md P0: 20 s for one command) is a gate nobody runs -- this one was measured at 47.8 s
+# and was killed mid-run, printing NOTHING. Every engine stage carries its own budget, and the
+# run carries a total one: past the budget the gate stops asking and says what it could not
+# ask; past the ceiling it fails itself out loud. Both sit inside the estate's 20 s cap.
+GATE_BUDGET_SECONDS = 15.0
+GATE_CEILING_SECONDS = 19.0
+CATALOGUE_TIMEOUT_SECONDS = 8.0
+PROBE_TIMEOUT_SECONDS = 1.5
+INDEX_TIMEOUT_SECONDS = 3.0
 
 
 # --- helpers -----------------------------------------------------------------------------------
@@ -144,21 +156,51 @@ def _read(path: str) -> str:
         return ""
 
 
-def _yaml_documents(text: str) -> list:
-    """The YAML documents in a manifest, or an empty list when PyYAML is not there."""
+def _yaml_loader():
+    """The fastest SAFE loader PyYAML offers, or None when PyYAML is not there at all.
+
+    libyaml's CSafeLoader parses the same documents as the pure-python SafeLoader -- it is the
+    same safe loader with a C parser in front of it -- and over this estate's 779 platform
+    manifests it is ~22x faster. Measured on 2026-11-23: the pure loader's parse of the 92
+    manifests that mention the engine took 47 s of the gate's 47.8 s; the C loader takes 0.67 s
+    and produces byte-identical documents (0 differences over all 779 files).
+    """
     try:
         import yaml  # noqa: PLC0415 -- optional; the gate degrades to text checks without it
     except ImportError:
+        return None
+    return getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+def _yaml_documents(text: str) -> list:
+    """The YAML documents in a manifest, or an empty list when PyYAML is not there."""
+    loader = _yaml_loader()
+    if loader is None:
         return []
+    import yaml  # noqa: PLC0415 -- local, used once
+
     try:
-        docs = yaml.safe_load_all(text)
+        # `load_all` is LAZY: a malformed document raises while it is being iterated, not at
+        # the call. So the iteration is inside the try -- measured this session: the gate
+        # crashed with a raw ParserError on a malformed manifest otherwise.
+        docs = list(yaml.load_all(text, Loader=loader))
     except Exception:  # noqa: BLE001 -- a manifest that does not parse is a failure, not a crash
         return []
-    out = []
-    for doc in docs:
-        if isinstance(doc, dict):
-            out.append(doc)
-    return out
+    return [doc for doc in docs if isinstance(doc, dict)]
+
+
+def _can_hold_a_route(text: str) -> bool:
+    """Can this manifest hold a document whose `kind` is one of ROUTE_KINDS?
+
+    The kind is compared with `==` against those literal strings, so a manifest that can
+    produce one MUST contain one of them. The one way to hide the literal is a double-quoted
+    escape (kind: "\\x53ervice"), so a manifest carrying a backslash is never skipped. This is
+    a superset test: it can only keep a file the parser would have judged, never drop one --
+    a gate that skips a route is a gate that fails open.
+    """
+    if "\\" in text:
+        return True
+    return any(kind in text for kind in ROUTE_KINDS)
 
 
 # --- 1. one ranker ----------------------------------------------------------------------------
@@ -271,6 +313,13 @@ def check_tool_existence(answers: Mapping[str, str]) -> list:
     return failures
 
 
+def probe_timeouts(answers: Mapping[str, str]) -> int:
+    """How many probes ran out of time. A timed-out probe is NOT evidence the tool is there."""
+    return sum(
+        1 for output in answers.values() if PROBE_TIMEOUT_OUTPUT in (output or "")
+    )
+
+
 def _probe_one(name: str, repo: str, timeout: float, binary: str) -> tuple:
     """Ask the engine about one tool. Returns (name, the engine's words, reason_it_could_not_ask)."""
     try:
@@ -286,19 +335,25 @@ def _probe_one(name: str, repo: str, timeout: float, binary: str) -> tuple:
         # The engine took the name and is working on it. A name it does not have is refused
         # with "unknown tool" at once, so a call that is still running is evidence the tool is
         # there. The work itself is the engine's business, not the gate's.
-        return name, "the engine was still working on it", ""
+        return name, PROBE_TIMEOUT_OUTPUT, ""
     except OSError as exc:
         return name, None, "the engine could not be run: {}".format(exc)
     return name, (proc.stdout or "") + (proc.stderr or ""), ""
 
 
 def probe_read_only_existence(
-    names, repo: str, timeout: float = 4.0, binary: str = "gortex", workers: int = 8
+    names,
+    repo: str,
+    timeout: float = PROBE_TIMEOUT_SECONDS,
+    binary: str = "gortex",
+    workers: int = 8,
+    deadline: float | None = None,
 ) -> tuple:
     """Ask the engine about every allowlisted name. Returns (answers, reason_it_could_not_ask).
 
     The probes run concurrently: the engine answers one at a time, but the latency of a call is
     mostly the daemon's queue, and a gate that takes a minute to say "yes" is a gate nobody runs.
+    `deadline` is the run's last moment: past it the gate stops asking and says it could not.
     """
     answers: dict = {}
     todo: list = []
@@ -309,6 +364,17 @@ def probe_read_only_existence(
             todo.append(name)
     if not todo:
         return answers, ""
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return answers, (
+                "the gate's deadline passed before the engine could be asked about "
+                "{} name(s)".format(len(todo))
+            )
+        # Every probe is one job on the engine's single queue. The rounds are how many times
+        # the pool has to go round, so a per-call ceiling that fits the rounds fits the budget.
+        rounds = max(1, (len(todo) + workers - 1) // workers)
+        timeout = min(timeout, remaining / rounds)
     reason = ""
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for name, output, why in pool.map(
@@ -334,7 +400,7 @@ def probe_read_only_existence(
     return answers, ""
 
 
-def engine_catalogue(repo: str, timeout: float = 30.0):
+def engine_catalogue(repo: str, timeout: float = CATALOGUE_TIMEOUT_SECONDS):
     """The engine's own tool catalogue, or (None, the reason it could not be read)."""
     from shutil import which  # noqa: PLC0415 -- local, used once
 
@@ -366,6 +432,94 @@ def engine_catalogue(repo: str, timeout: float = 30.0):
     if not catalogue:
         return None, "the engine's catalogue was empty"
     return catalogue, ""
+
+
+# --- 6b. the engine's index, when there IS an engine ---------------------------------------------
+# The compiler refuses an index it cannot tie to a commit (UNPROVEN_INDEX, STALE_REJECT). The
+# gate is the same truth one layer up: when the engine answers, the index it would answer from
+# must be the index of THIS tree. When there is no engine to answer -- CI has no daemon -- the
+# check degrades to a warning, because "no engine" is not "a bad index", and a gate that turned
+# CI red for the absence of a daemon would be a gate everybody switched off.
+INDEX_UNPROVEN = "UNPROVEN_INDEX"
+INDEX_STALE = "STALE_INDEX"
+PROBE_TIMEOUT_OUTPUT = "the engine was still working on it"
+
+
+def engine_index_record(
+    repo: str, timeout: float = INDEX_TIMEOUT_SECONDS, binary: str = "gortex"
+) -> tuple:
+    """The engine's record of this tree's index, or (None, why it could not be read)."""
+    from shutil import which  # noqa: PLC0415 -- local, used once
+
+    if which(binary) is None:
+        return None, "the engine's binary is not on PATH"
+    try:
+        proc = subprocess.run(  # noqa: S603 -- list form, no shell
+            [binary, "repos", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, "the engine's index list could not be read: {}".format(exc)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = detail[-1] if detail else "the engine refused"
+        return None, "the engine's index list could not be read: {}".format(tail[:200])
+    try:
+        rows = json.loads(proc.stdout)
+    except ValueError:
+        return None, "the engine's index list was not JSON"
+    if not isinstance(rows, list):
+        return None, "the engine's index list had an unexpected shape"
+    wanted = os.path.realpath(repo)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or "")
+        if path and os.path.realpath(path) == wanted:
+            return row, ""
+    return None, "the engine does not track this tree"
+
+
+def check_index_freshness(record, repo: str, engine_answered: bool, reason: str = "") -> tuple:
+    """Is the index the engine would answer from the index of THIS tree?
+
+    `engine_answered` says whether there was an engine to ask at all. With no engine there is
+    nothing to prove, so the check warns. With an engine, a READ index that is absent,
+    uncommitted or behind the tree is a refusal carrying a named verdict -- the same verdict
+    the compiler returns for the same condition. An index that could not be READ is not a bad
+    index: it is a measurement the gate could not take, and it says so as a warning.
+    """
+    failures: list = []
+    warnings: list = []
+    if not engine_answered:
+        warnings.append("no engine answered, so the index was not checked against this tree")
+        return failures, warnings
+    if record is None:
+        if reason.startswith("the engine does not track this tree"):
+            failures.append(
+                "{}: the engine answered, and it holds no index for this tree".format(
+                    INDEX_UNPROVEN
+                )
+            )
+        else:
+            warnings.append("the engine's index could not be read: {}".format(reason))
+        return failures, warnings
+    indexed = str(record.get("indexed_commit") or "")
+    head = str(record.get("head_commit") or "")
+    if not record.get("indexed") or not indexed:
+        failures.append(
+            "{}: the engine's index carries no commit it can be tied to".format(INDEX_UNPROVEN)
+        )
+        return failures, warnings
+    if record.get("stale") or (head and indexed != head):
+        failures.append(
+            "{}: the engine's index is at {} and this tree is at {}".format(
+                INDEX_STALE, indexed[:12], head[:12]
+            )
+        )
+    return failures, warnings
 
 
 # --- 7. the recorded surface -----------------------------------------------------------------
@@ -452,18 +606,27 @@ def check_engine_private(docs: list) -> list:
 def check_no_public_engine(platform_dir: str) -> list:
     """No manifest in platform/ gives the engine a route."""
     failures: list = []
+    paths: list = []
     for dirpath, dirs, files in os.walk(platform_dir):
         if "node_modules" in dirs:
             dirs.remove("node_modules")
         for name in files:
-            if not name.endswith((".yaml", ".yml")):
-                continue
-            path = os.path.join(dirpath, name)
-            rel = os.path.relpath(path, ROOT)
-            text = _read(path)
+            if name.endswith((".yaml", ".yml")):
+                paths.append(os.path.join(dirpath, name))
+    if not paths:
+        return failures
+    # 779 manifests read one after another were measured at 8.5 s and the same 779 read across
+    # 8 threads at 1.1 s (2026-11-23). The check is I/O bound, so the threads are free speed.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for path, text in zip(paths, pool.map(_read, paths)):
             lowered = text.lower()
             if "gortex" not in lowered and "engine" not in lowered:
                 continue
+            # A route is the only thing this check cares about, and a route's kind is a
+            # literal. A manifest that cannot hold one is not parsed at all.
+            if not _can_hold_a_route(text):
+                continue
+            rel = os.path.relpath(path, ROOT)
             for doc in _yaml_documents(text):
                 if doc.get("kind") not in ROUTE_KINDS:
                     continue
@@ -628,7 +791,12 @@ def check_plan_contract(assemble, repo_root: str) -> list:
 
 
 # --- the run ----------------------------------------------------------------------------------
-def run_all(root: str = ROOT, catalogue=None, catalogue_reason: str = "") -> list:
+def run_all(
+    root: str = ROOT,
+    catalogue=None,
+    catalogue_reason: str = "",
+    deadline: float | None = None,
+) -> list:
     """Run every check against the tree at `root` and return one result per check."""
     context_dir = os.path.join(root, "platform", "estate", "context")
     package_texts: dict = {}
@@ -673,12 +841,59 @@ def run_all(root: str = ROOT, catalogue=None, catalogue_reason: str = "") -> lis
             "warnings": [],
         }
     )
-    answers, unreachable = probe_read_only_existence(set(BROKER.READ_ONLY_TOOLS), root)
+    # A name the engine's own catalogue publishes is present by the catalogue's own word. The
+    # probe exists for the names the catalogue does not publish -- the engine's CLI serves a
+    # preset-filtered surface, and the broker's allowlist names tools outside that preset. The
+    # engine answers one job at a time, so every probe is work the next gate run waits behind.
+    read_only = set(BROKER.READ_ONLY_TOOLS)
+    if catalogue is not None:
+        unpublished = read_only - set(catalogue)
+    else:
+        unpublished = read_only
+    answers, unreachable = probe_read_only_existence(
+        unpublished, root, deadline=deadline
+    )
+    warnings = [unreachable] if unreachable else []
+    if not unreachable and catalogue is not None:
+        # A probe that ran out of time is not evidence the tool is there -- the engine was
+        # busy. Say so, so a green run that did not look does not pass as "checked".
+        late = probe_timeouts(answers)
+        if late:
+            warnings.append(
+                "{} of {} probe(s) ran out of time; the engine was busy, so those names were "
+                "not checked".format(late, len(answers))
+            )
     results.append(
         {
             "check": "read-only-existence",
             "failures": check_tool_existence(answers),
-            "warnings": [unreachable] if unreachable else [],
+            "warnings": warnings,
+        }
+    )
+    # The engine answered if its catalogue was read, or if any probe came back with words that
+    # are not "there was no engine". Only then is there an index to check.
+    engine_answered = catalogue is not None or any(
+        classify_probe(output) != "unreachable" for output in answers.values()
+    )
+    record = None
+    index_reason = ""
+    if not engine_answered:
+        index_reason = "no engine answered, so the index was not checked against this tree"
+    elif deadline is not None and time.monotonic() >= deadline:
+        index_reason = "the gate's deadline passed before the index could be checked"
+    else:
+        budget = INDEX_TIMEOUT_SECONDS
+        if deadline is not None:
+            budget = min(budget, max(0.5, deadline - time.monotonic()))
+        record, index_reason = engine_index_record(root, timeout=budget)
+    index_failures, index_warnings = check_index_freshness(
+        record, root, engine_answered, index_reason
+    )
+    results.append(
+        {
+            "check": "index-freshness",
+            "failures": index_failures,
+            "warnings": index_warnings,
         }
     )
     results.append(
@@ -842,6 +1057,63 @@ def _self_test() -> list:
         problems.append("the surface check did not notice an image pinned to another engine")
     if not check_recorded_surface({"smart_context"}, {}, "ARG GORTEX_VERSION=v0.64.11\n"):
         problems.append("the surface check passed a broker that records no surface")
+
+    # 8. an index the engine cannot prove, and one that is behind the tree.
+    failures, warnings = check_index_freshness(None, ROOT, True, "the engine does not track this tree")
+    if not failures:
+        problems.append("the index check did not notice an index that is not there")
+    failures, warnings = check_index_freshness(None, ROOT, True, "the engine's index list could not be read: timeout")
+    if failures or not warnings:
+        problems.append("the index check turned an unreadable index into a bad index")
+    failures, warnings = check_index_freshness(None, ROOT, False)
+    if failures or not warnings:
+        problems.append("the index check failed a tree with no engine to ask")
+    stale = {
+        "indexed": True,
+        "indexed_commit": "a" * 40,
+        "head_commit": "b" * 40,
+        "stale": True,
+    }
+    if not check_index_freshness(stale, ROOT, True)[0]:
+        problems.append("the index check did not notice a stale index")
+    fresh = {
+        "indexed": True,
+        "indexed_commit": "b" * 40,
+        "head_commit": "b" * 40,
+        "stale": False,
+    }
+    if check_index_freshness(fresh, ROOT, True)[0]:
+        problems.append("the index check failed an index that is at the tree's commit")
+    unproven = {
+        "indexed": False,
+        "indexed_commit": "",
+        "head_commit": "b" * 40,
+        "stale": False,
+    }
+    if not check_index_freshness(unproven, ROOT, True)[0]:
+        problems.append("the index check did not notice an index with no commit")
+
+    # 9. the route prefilter must never hide a route, and must drop what cannot be one.
+    if not _can_hold_a_route("kind: Service\n"):
+        problems.append("the route prefilter hid a Service")
+    if not _can_hold_a_route('kind: "\\x53ervice"\n'):
+        problems.append("the route prefilter hid a kind written as an escape")
+    if _can_hold_a_route("kind: ConfigMap\n"):
+        problems.append("the route prefilter kept a manifest that cannot hold a route")
+
+    # 10. the loader the gate parses with must refuse python-specific tags.
+    loader = _yaml_loader()
+    if loader is None:
+        problems.append("the gate has no YAML loader at all")
+    else:
+        import yaml  # noqa: PLC0415 -- local, used once
+
+        try:
+            list(yaml.load_all("!!python/object/apply:os.system ['true']", Loader=loader))
+        except Exception:  # noqa: BLE001 -- any refusal is a refusal
+            pass
+        else:
+            problems.append("the gate's YAML loader would construct a python object")
     return problems
 
 
@@ -865,14 +1137,50 @@ def main(argv=None) -> int:
         print("PASS  self-test  every check fails on a broken input")
         return 0
 
-    catalogue, reason = engine_catalogue(args.repo)
-    results = run_all(args.repo, catalogue=catalogue, catalogue_reason=reason)
+    started = time.monotonic()
+    deadline = started + GATE_BUDGET_SECONDS
+    results: list = []
+    catalogue = None
+    reason = ""
+    try:
+        catalogue, reason = engine_catalogue(
+            args.repo, timeout=min(CATALOGUE_TIMEOUT_SECONDS, max(0.5, deadline - time.monotonic()))
+        )
+        results = run_all(
+            args.repo, catalogue=catalogue, catalogue_reason=reason, deadline=deadline
+        )
+    except Exception as exc:  # noqa: BLE001 -- a gate that dies must still say something
+        results.append(
+            {
+                "check": "gate",
+                "failures": ["the gate could not complete: {}".format(exc)],
+                "warnings": [],
+            }
+        )
+    elapsed = time.monotonic() - started
+    if elapsed > GATE_CEILING_SECONDS:
+        # A gate that cannot answer inside its ceiling is not a gate. Say so rather than
+        # letting the ceiling kill it silently -- which is exactly what used to happen.
+        results.append(
+            {
+                "check": "gate",
+                "failures": [
+                    "the gate took {:.1f}s, over its {:.1f}s ceiling".format(
+                        elapsed, GATE_CEILING_SECONDS
+                    )
+                ],
+                "warnings": [],
+            }
+        )
     failed = [r for r in results if r["failures"]]
     payload = {
         "gate": "estate-context-gate",
         "repo": args.repo,
         "verdict": "FAIL" if failed else "PASS",
         "engine_catalogue": "read" if catalogue is not None else reason,
+        "elapsed_seconds": round(elapsed, 3),
+        "budget_seconds": GATE_BUDGET_SECONDS,
+        "ceiling_seconds": GATE_CEILING_SECONDS,
         "checks": [
             {
                 "check": r["check"],
@@ -892,7 +1200,7 @@ def main(argv=None) -> int:
                 print("WARN  {}  {}".format(result["check"], warning))
             if not result["failures"]:
                 print("PASS  {}".format(result["check"]))
-        print("estate-context-gate: {}".format(payload["verdict"]))
+        print("estate-context-gate: {} ({:.2f}s)".format(payload["verdict"], elapsed))
     return 1 if failed else 0
 
 

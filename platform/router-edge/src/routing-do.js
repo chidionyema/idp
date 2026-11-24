@@ -11,11 +11,11 @@ state;
   }
 
   async getRoles() {
-    return (await this.state.storage.get<Record<string, RolePool>>(ROLES_KEY)) ?? {};
+    return (await this.state.storage.get(ROLES_KEY)) ?? {};
   }
 
   async getCircuits() {
-    return (await this.state.storage.get<Record<string, CircuitRecord>>(CIRCUITS_KEY)) ?? {};
+    return (await this.state.storage.get(CIRCUITS_KEY)) ?? {};
   }
 
   async fetch(request) {
@@ -28,14 +28,31 @@ state;
     }
 
     if (request.method === "PUT" && url.pathname === "/roles") {
-      const body = (await request.json()) as { roles: Record<string, RolePool> };
+      const body = (await request.json());
       if (!body || typeof body.roles !== "object") {
         return Response.json({ error: "invalid_roles_payload" }, { status: 400 });
       }
       for (const [roleName, pool] of Object.entries(body.roles)) {
+        if (!Array.isArray(pool.candidates) || pool.candidates.length === 0) {
+          return Response.json({ error: `role_${roleName}_requires_candidates` }, { status: 400 });
+        }
+        for (const c of pool.candidates) {
+          if (!c.id || !c.baseUrl || !c.apiKeySecretName || !c.upstreamModel || c.maxContextTokens <= 0) {
+            return Response.json({ error: `invalid_candidate_${c.id || "unknown"}` }, { status: 400 });
+          }
+        }
+      }
+      await this.state.storage.put(ROLES_KEY, body.roles);
+      return Response.json({ ok: true, roleCount: Object.keys(body.roles).length });
+    }
+
+    if (request.method === "GET" && url.pathname === "/circuits") {
+      const circuits = await this.getCircuits();
+      return Response.json({ circuits, nowMs });
+    }
 
     if (request.method === "POST" && url.pathname === "/plan") {
-      const req = (await request.json()) as PlanRequest;
+      const req = (await request.json());
       const roles = await this.getRoles();
       const pool = roles[req.role] ?? roles["role:default"];
       if (!pool) {
@@ -47,8 +64,8 @@ state;
       const effectiveOutputTokens = Math.max(req.requestedOutputTokens, pool.minOutputFloor || 2048);
       const requiredTotalTokens = req.estimatedInputTokens + effectiveOutputTokens;
 
-      const [];
-      const [];
+      const eligible = [];
+      const rejected = [];
 
       const sorted = [...pool.candidates].sort((a, b) => a.priority - b.priority);
 
@@ -93,7 +110,7 @@ state;
         eligible.push(candidate);
       }
 
-      const {
+      const response = {
         role: pool.role,
         effectiveOutputTokens,
         eligible,
@@ -103,15 +120,10 @@ state;
     }
 
     if (request.method === "POST" && url.pathname === "/record") {
-      const body = (await request.json()) as {
-backendId;
-        outcome: "success" | "payload_too_large" | "transient_failure";
-        statusCode?: number;
-        observedTokens?: number;
-      };
+      const body = (await request.json());
 
       const circuits = await this.getCircuits();
-      const circuits[body.backendId] ?? { failures: 0, openUntilMs: 0 };
+      const prev = circuits[body.backendId] ?? { failures: 0, openUntilMs: 0 };
 
       if (body.outcome === "success") {
         circuits[body.backendId] = {
@@ -151,20 +163,3 @@ backendId;
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 }
-        if (!Array.isArray(pool.candidates) || pool.candidates.length === 0) {
-          return Response.json({ error: `role_${roleName}_requires_candidates` }, { status: 400 });
-        }
-        for (const c of pool.candidates) {
-          if (!c.id || !c.baseUrl || !c.apiKeySecretName || !c.upstreamModel || c.maxContextTokens <= 0) {
-            return Response.json({ error: `invalid_candidate_${c.id || "unknown"}` }, { status: 400 });
-          }
-        }
-      }
-      await this.state.storage.put(ROLES_KEY, body.roles);
-      return Response.json({ ok: true, roleCount: Object.keys(body.roles).length });
-    }
-
-    if (request.method === "GET" && url.pathname === "/circuits") {
-      const circuits = await this.getCircuits();
-      return Response.json({ circuits, nowMs });
-    }

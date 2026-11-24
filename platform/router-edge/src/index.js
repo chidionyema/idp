@@ -21,6 +21,25 @@ async function timingSafeTokenEqual(provided, expected) {
 }
 
 function extractBearer(request) {
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.toLowerCase().startsWith("bearer ")) return "";
+  return header.slice(7).trim();
+}
+
+export function estimateRequestInputTokens(req) {
+  const encoder = new TextEncoder();
+  const payloadBytes =
+    encoder.encode(JSON.stringify(req.messages ?? [])).byteLength +
+    (req.tools ? encoder.encode(JSON.stringify(req.tools)).byteLength : 0);
+  // Conservative 3.2 bytes/token + fixed framing overhead
+  return Math.ceil(payloadBytes / 3.2) + 128;
+}
+
+function estimateCostUsd(candidate, inputTokens, outputTokens) {
+  return (inputTokens / 1000) * candidate.costPer1kInputUsd + (outputTokens / 1000) * candidate.costPer1kOutputUsd;
+}
+
+function resolveRole(modelField) {
   if (!modelField || !modelField.trim()) return "role:default";
   const normalized = modelField.trim();
   if (normalized.startsWith("role:")) return normalized;
@@ -28,6 +47,19 @@ function extractBearer(request) {
 }
 
 function getLedgerStub(env) {
+  return env.BUDGET_LEDGER.get(env.BUDGET_LEDGER.idFromName("global-ledger-v1"));
+}
+
+function getRoutingStub(env) {
+  return env.ROUTING_STATE.get(env.ROUTING_STATE.idFromName("global-routing-v1"));
+}
+
+async function recordOutcome(
+  routingStub,
+  backendId,
+  outcome,
+  statusCode,
+  observedTokens) {
   await routingStub.fetch("https://routing.internal/record", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -63,7 +95,7 @@ async function probeFirstStreamChunk(
   upstreamBody) {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
-  const [];
+  const buffered = [];
 
   try {
     while (true) {
@@ -93,7 +125,7 @@ async function probeFirstStreamChunk(
     return { ok: false, reason: err instanceof Error ? err.message : "stream_read_error" };
   }
 
-  const reassembled = new ReadableStream<Uint8Array>({
+  const reassembled = new ReadableStream({
     start(controller) {
       for (const chunk of buffered) {
         controller.enqueue(chunk);
@@ -134,7 +166,7 @@ export default {
           .catch(() => false),
         getRoutingStub(env)
           .fetch("https://routing.internal/roles")
-          .then(async (r) => (r.ok ? Object.keys(((await r.json()) as { roles: Record<string, unknown> }).roles).length : -1))
+          .then(async (r) => (r.ok ? Object.keys(((await r.json())).roles).length : -1))
           .catch(() => -1),
       ]);
 
@@ -192,7 +224,9 @@ export default {
         return Response.json({ error: { type: "unauthorized", detail: "invalid_api_key" } }, { status: 401 });
       }
 
-      let (await request.json()) as ChatCompletionRequest;
+      let body;
+      try {
+        body = (await request.json());
       } catch {
         return Response.json({ error: { type: "invalid_request", detail: "malformed_json" } }, { status: 400 });
       }
@@ -229,7 +263,7 @@ export default {
         );
       }
 
-      const plan = (await planRes.json()) as PlanResponse;
+      const plan = (await planRes.json());
       if (plan.eligible.length === 0) {
         return Response.json(
           {
@@ -250,7 +284,9 @@ export default {
       const reservationId = crypto.randomUUID();
       const ttlMs = Number(env.RESERVATION_TTL_MS || "120000");
 
-      let await ledgerStub.fetch("https://ledger.internal/reserve", {
+      let reserveRes;
+      try {
+        reserveRes = await ledgerStub.fetch("https://ledger.internal/reserve", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -273,7 +309,7 @@ export default {
       }
 
       if (reserveRes.status === 429) {
-        const detail = (await reserveRes.json()) as ReserveResponse;
+        const detail = (await reserveRes.json());
         return Response.json({ error: { type: "budget_exhausted", ...detail } }, { status: 429 });
       }
 
@@ -285,7 +321,7 @@ export default {
       }
 
       // Step C: Execute with Automatic Failover Across Eligible Pool
-      const [];
+      const attemptErrors = [];
       const timeoutMs = Number(env.UPSTREAM_TIMEOUT_MS || "45000");
 
       for (let i = 0; i < plan.eligible.length; i++) {
@@ -297,14 +333,16 @@ export default {
         }
 
         const boundedOutput = Math.min(plan.effectiveOutputTokens, candidate.maxOutputTokens);
-        const {
+        const upstreamPayload = {
           ...body,
           model: candidate.upstreamModel,
           max_tokens: boundedOutput,
         };
         delete upstreamPayload.max_completion_tokens;
 
-        let await fetch(candidate.baseUrl, {
+        let upstreamRes;
+        try {
+          upstreamRes = await fetch(candidate.baseUrl, {
             method: "POST",
             headers: {
               "content-type": "application/json",
@@ -366,7 +404,7 @@ export default {
         ctx.waitUntil(recordOutcome(routingStub, candidate.id, "success", 200));
 
         // Settle conservative streaming cost when stream finishes
-        const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+        const { readable, writable } = new TransformStream();
         const streamCost = estimateCostUsd(candidate, estimatedInputTokens, boundedOutput);
         ctx.waitUntil(
           probed.stream
@@ -394,9 +432,7 @@ export default {
       const rawText = await upstreamRes.text();
       let actualUsd = estimateCostUsd(candidate, estimatedInputTokens, boundedOutput);
       try {
-        const parsed = JSON.parse(rawText) as {
-          usage?: { prompt_tokens?: number; completion_tokens?: number };
-        };
+        const parsed = JSON.parse(rawText);
         if (parsed.usage?.prompt_tokens != null && parsed.usage?.completion_tokens != null) {
           actualUsd = estimateCostUsd(candidate, parsed.usage.prompt_tokens, parsed.usage.completion_tokens);
         }
