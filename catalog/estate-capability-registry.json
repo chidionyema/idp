@@ -7362,7 +7362,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7589,6 +7594,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-continuity-transitions",
             "edge": "imports"
           }
         ]
@@ -8062,6 +8071,14 @@
           {
             "id": "cap:layer/platform-estate-continuity-transitions",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-ground-truth-src-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
           }
         ]
       },
@@ -8131,6 +8148,10 @@
             "edge": "imports"
           },
           {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
             "edge": "imports"
           }
@@ -8149,6 +8170,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-continuity-fence",
         "cap:layer/platform-estate-continuity-store"
       ],
       "cost": {
@@ -8202,8 +8224,10 @@
         "cap:layer/platform-estate-continuity-accept",
         "cap:layer/platform-estate-continuity-accept_txn",
         "cap:layer/platform-estate-continuity-canary",
+        "cap:layer/platform-estate-continuity-canary_stage2",
         "cap:layer/platform-estate-continuity-checkpoints",
         "cap:layer/platform-estate-continuity-effects",
+        "cap:layer/platform-estate-continuity-transitions",
         "cap:layer/platform-estate-governance-checks",
         "cap:layer/platform-estate-governance-executor_permission",
         "cap:layer/platform-estate-governance-plan_links",
@@ -15113,6 +15137,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-continuity-store",
         "cap:layer/platform-estate-governance-checks",
         "cap:layer/platform-ground-truth-src-api",
         "cap:layer/platform-ground-truth-src-classifier",
@@ -19718,6 +19743,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-continuity-store",
         "cap:layer/platform-estate-governance-checks",
         "cap:layer/platform-ground-truth-src-api",
         "cap:layer/platform-ground-truth-src-classifier",

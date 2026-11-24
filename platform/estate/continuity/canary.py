@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
@@ -29,7 +31,13 @@ def main() -> int:
     work_dir = tempfile.mkdtemp(prefix="estate-p0-canary-")
     db = os.path.join(work_dir, "custody.sqlite")
     receipt = {"goal": GOAL, "db": db, "work_dir": work_dir}
-    store = MissionStore(db)
+    signer = Ed25519PrivateKey.generate()
+    store = MissionStore(
+        db,
+        trusted_verifier_keys={
+            "canary-artifact-check": signer.public_key().public_bytes_raw()
+        },
+    )
     acc = store.accept_mission(
         {
             "mission_id": "m-canary",
@@ -84,7 +92,7 @@ def main() -> int:
     if child.returncode != -signal.SIGKILL:
         print(json.dumps(receipt))
         return 2
-    return stage_two(store, receipt, work_dir, lease_a, LINES)
+    return stage_two(store, receipt, work_dir, lease_a, LINES, signer)
 
 
 if __name__ == "__main__":
