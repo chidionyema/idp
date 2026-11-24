@@ -1871,6 +1871,108 @@ class GitHubBackend:
             [issue.get("body") or ""] + [str(c.get("body") or "") for c in comments]
         )
 
+    @staticmethod
+    def _epistemic_operational_proof(
+        rec: dict, url: str, status: int, needle: str | None
+    ) -> str:
+        """Return the falsification reason, or empty only after isolated T0 proofs.
+
+        The Greenlane's own GET and Optimus metric are observations, not three
+        independently signed production effects. Its main-source CI can
+        never certify its own deployment. No verifier keys in this job: BLIND.
+        """
+        import hashlib
+        import hmac
+        from urllib.parse import urlsplit
+
+        from lib.epistemic_kernel import (
+            EpistemicKernel,
+            SignedReceipt,
+            canonical_json,
+        )
+        from lib.epistemic_kernel.kernel import PROXY_SOURCE_HOSTS
+
+        parsed = urlsplit(url)
+        if parsed.hostname in PROXY_SOURCE_HOSTS:
+            return "ERR_PROXY_GREEN_SUBSTITUTION: source/GitHub is not production"
+        if not needle:
+            return "ERR_INVALID_OPERATIONAL_CONTRACT: body invariant absent"
+        revision = rec.get("tip")
+        if not isinstance(revision, str) or not re.fullmatch("[0-9a-f]{40}", revision):
+            return "ERR_INVALID_EXPECTED_REVISION: exact landed SHA missing"
+        raw_receipts = rec.get("epistemic_receipts")
+        if not isinstance(raw_receipts, list):
+            return "ERR_INSUFFICIENT_RUNTIME_PROOFS: no signed producer receipts"
+        try:
+            key_hex = json.loads(os.environ["EPISTEMIC_AUTHORITY_KEYS_JSON"])
+            quad_key = bytes.fromhex(os.environ["EPISTEMIC_QUAD_KEY_HEX"])
+            signed_custody = json.loads(os.environ["EPISTEMIC_QUAD_CUSTODY_JSON"])
+            min_fence = int(os.environ["EPISTEMIC_MIN_FENCE"])
+            keys = {name: bytes.fromhex(value) for name, value in key_hex.items()}
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return (
+                "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN: verifier custody unavailable"
+            )
+        if (
+            min_fence < 1
+            or len(keys) < 3
+            or len(set(keys.values())) != len(keys)
+            or not quad_key
+            or quad_key in keys.values()
+        ):
+            return "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN"
+        try:
+            custody = signed_custody["payload"]
+            signature = signed_custody["signature"]
+            expected = hmac.new(
+                quad_key, canonical_json(custody).encode(), hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(expected, signature):
+                return "ERR_QUAD_CUSTODY_SIGNATURE"
+            if custody["revision"] != revision or custody["target"] != url:
+                return "ERR_QUAD_CUSTODY_BINDING"
+            expires = datetime.fromisoformat(
+                custody["expires_at"].replace("Z", "+00:00")
+            )
+            if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
+                return "ERR_QUAD_CUSTODY_EXPIRED"
+            owners = custody["authorities"]
+            principals = [owners[name]["principal"] for name in keys]
+            planes = [owners[name]["control_plane"] for name in keys]
+            if (
+                len(set(principals)) != len(keys)
+                or len(set(planes)) != len(keys)
+                or any(not p for p in principals + planes)
+            ):
+                return "ERR_QUAD_CUSTODY_NOT_ISOLATED"
+            receipts = [SignedReceipt(**item) for item in raw_receipts]
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return "ERR_INVALID_EPISTEMIC_RECEIPT_OR_CUSTODY"
+        kernel = EpistemicKernel(
+            secret_key=b"unused-with-isolated-authority-keys",
+            trusted_authorities=keys,
+            authority_keys=keys,
+        )
+        decision = kernel.evaluate_operational_transition(
+            {
+                "expected_host": parsed.hostname,
+                "expected_path": parsed.path,
+                "expected_http_status": status,
+                "expected_body_contains": needle,
+                "expected_revision": revision,
+                "min_independent_proofs": 3,
+            },
+            receipts,
+            min_fencing_token=min_fence,
+        )
+        if not decision.allowed:
+            return "E1/E3/E4: " + ", ".join(decision.error_codes[:5])
+        rec["epistemic_verified_receipts"] = decision.verified_receipt_ids
+        rec["epistemic_custody_sha256"] = hashlib.sha256(
+            canonical_json(custody).encode()
+        ).hexdigest()
+        return ""
+
     def verify_operational(self, lane: str, rec: dict) -> tuple[str, str]:
         """(pass | pending | failed, evidence) for one landed lane, against the live estate.
 
@@ -1922,7 +2024,18 @@ class GitHubBackend:
         read = ", ".join(f"{k}={v:g}" for k, v in sorted(readings.items()))
         if short:
             return "pending", f"probe ok ({code}); Optimus short: {', '.join(short)}"
-        return "pass", f"GET {m.group('url')} -> {code}; Optimus {read}"
+        epistemic_defect = self._epistemic_operational_proof(
+            rec, m.group("url"), code, needle
+        )
+        if epistemic_defect:
+            return "pending", epistemic_defect
+        ids = ",".join(rec["epistemic_verified_receipts"])
+        custody_sha = rec["epistemic_custody_sha256"]
+        return (
+            "pass",
+            f"GET {m.group('url')} -> {code}; Optimus {read}; "
+            f"independent T0 receipts={ids}; QUAD custody sha256={custody_sha}",
+        )
 
     def _optimus_readings(self, names: list[str]) -> dict[str, float]:
         """Each declared metric's reading, measured now by its registered measure.
