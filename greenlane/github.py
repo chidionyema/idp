@@ -1863,9 +1863,12 @@ class GitHubBackend:
         )
         # The same paginated original-issue reader used by claim-gate.
         # Page one is the OLDEST 100, never a valid latest-contract witness.
-        comments = gate.gh_json(
-            f"repos/{claim_repo}/issues/{number}/comments?per_page=100"
-        )
+        try:
+            comments = gate.gh_json(
+                f"repos/{claim_repo}/issues/{number}/comments?per_page=100"
+            )
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            return None
         if not isinstance(comments, list):
             return None
         if any(not isinstance(c, dict) for c in comments):
