@@ -1,0 +1,28 @@
+name: Router direct external health falsifier (one-shot)
+on:
+  push:
+    branches: [research/8416-external-health-probe-20261124]
+    paths: [.github/workflows/router-health-falsifier-one-shot.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Real public TLS and HTTP statuses, zero credentials
+        shell: bash
+        run: |
+          set -uo pipefail
+          for name in llm.meridianlabs.cloud lifeboat-llm.meridianlabs.cloud; do
+            url="https://$name/health"
+            status=$(curl --silent --show-error --max-time 12 --connect-timeout 5 --max-redirs 0 \
+              --output /dev/null --write-out '%{http_code}' "$url" 2>/dev/null) || status=000
+            printf 'EXTERNAL_PROBE host=%s status=%s type=health source=gha_cloud_runner\n' "$name" "$status"
+            if [ "$status" = 200 ]; then echo "AVAILABLE_HTTP_200 $name"; else echo "NOT_PROVEN_HEALTH_200 $name"; fi
+          done
+          name=passkey.meridianlabs.cloud
+          status=$(curl --silent --show-error --max-time 12 --connect-timeout 5 --max-redirs 0 \
+            --output /dev/null --write-out '%{http_code}' "https://$name/healthz" 2>/dev/null) || status=000
+          printf 'EXTERNAL_PROBE host=%s status=%s type=healthz source=gha_cloud_runner\n' "$name" "$status"
+          echo 'Independent anonymous public-only probe; HTTP 200 is not authenticated inference or signed admission.'
