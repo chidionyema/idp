@@ -282,3 +282,14 @@ def test_unreadable_paginated_contract_never_certifies(monkeypatch):
         G._claim_gate_module(), "gh_json", lambda _: {"error": "truncated"}
     )
     assert backend._contract("o/r", "7") is None
+
+def test_paginated_contract_api_error_fails_closed_without_crashing(monkeypatch):
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    monkeypatch.setattr(G, "_run", lambda *_: json.dumps({"body": ""}))
+
+    def refused(_):
+        raise G.subprocess.CalledProcessError(1, "gh api")
+
+    monkeypatch.setattr(G._claim_gate_module(), "gh_json", refused)
+    assert backend._contract("o/r", "7") is None
+
