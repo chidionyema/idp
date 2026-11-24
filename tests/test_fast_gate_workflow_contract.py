@@ -143,6 +143,29 @@ class FastGateCallerPermissionTests(unittest.TestCase):
 
 
 class ContinuityFormatterReadOnlyDiagnostic(unittest.TestCase):
+    def test_cross_process_kill_takeover_and_operating_canary(self) -> None:
+        import json
+        import subprocess
+
+        result = subprocess.run(
+            ["python3", "platform/estate/continuity/canary.py"],
+            cwd=WORKFLOW.parents[2],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=75,
+        )
+        print("CONTINUITY_CLOUD_CANARY_BEGIN")
+        print(result.stdout)
+        print(result.stderr)
+        print("CONTINUITY_CLOUD_CANARY_END")
+        self.assertEqual(result.returncode, 0)
+        receipt = json.loads(result.stdout.strip().splitlines()[-1])
+        for key in ("artifact_complete", "no_duplicate_lines", "zombie_rejected"):
+            self.assertIs(receipt[key], True)
+        self.assertEqual(receipt["operational_verdict"], "OPERATING")
+
+
     def test_execute_actual_continuity_sqlite_regressions(self) -> None:
         import subprocess
 
