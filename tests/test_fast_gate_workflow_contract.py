@@ -143,6 +143,33 @@ class FastGateCallerPermissionTests(unittest.TestCase):
 
 
 class ContinuityFormatterReadOnlyDiagnostic(unittest.TestCase):
+    def test_execute_actual_continuity_sqlite_regressions(self) -> None:
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "pytest",
+                "-q",
+                "-o",
+                "addopts=",
+                "tests/test_continuity_operating_receipt.py",
+                "tests/test_continuity_retry_budget.py",
+            ],
+            cwd=WORKFLOW.parents[2],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=100,
+        )
+        print("CONTINUITY_SQLITE_PROOF_BEGIN")
+        print(result.stdout)
+        print(result.stderr)
+        print("CONTINUITY_SQLITE_PROOF_END")
+        self.assertEqual(result.returncode, 0)
+
+
     def test_print_canonical_ruff_diff_without_modifying_sources(self) -> None:
         import subprocess
 
