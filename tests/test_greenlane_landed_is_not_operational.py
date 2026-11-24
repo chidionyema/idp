@@ -197,9 +197,7 @@ def _backend(monkeypatch, code, readings, comments=()):
         return json.dumps({"body": CONTRACT})
 
     monkeypatch.setattr(G, "_run", run)
-    monkeypatch.setattr(
-        G._claim_gate_module(), "gh_json", lambda _: list(comments)
-    )
+    monkeypatch.setattr(G._claim_gate_module(), "gh_json", lambda _: list(comments))
     monkeypatch.setattr(G, "_http_get", lambda url, timeout=20.0: (code, "ok"))
     monkeypatch.setattr(
         be, "_optimus_readings", lambda names: dict(readings), raising=False
@@ -270,9 +268,7 @@ def test_latest_ship_contract_after_100_comments_wins(monkeypatch):
     assert len(comments) == 120
 
     monkeypatch.setattr(G, "_run", lambda *_: json.dumps(issue))
-    monkeypatch.setattr(
-        G._claim_gate_module(), "gh_json", lambda _: list(comments)
-    )
+    monkeypatch.setattr(G._claim_gate_module(), "gh_json", lambda _: list(comments))
     selected = backend._contract("o/r", "7")
     assert selected is not None
     assert "latest.example.test" in selected["accept"]
@@ -286,4 +282,3 @@ def test_unreadable_paginated_contract_never_certifies(monkeypatch):
         G._claim_gate_module(), "gh_json", lambda _: {"error": "truncated"}
     )
     assert backend._contract("o/r", "7") is None
-
