@@ -174,6 +174,7 @@ def test_no_body_invariant_cannot_settle(monkeypatch):
     reason = G.GitHubBackend._epistemic_operational_proof(rec, URL, 200, None)
     assert "ERR_INVALID_OPERATIONAL_CONTRACT" in reason
 
+
 def _signed_issue_evidence(monkeypatch, rec, *, target=URL, lane="lane/proof"):
     envelope = {
         "issue": "chidionyema/idp#8415",
