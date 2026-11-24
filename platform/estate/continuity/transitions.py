@@ -13,6 +13,7 @@ import time
 from .fence import FenceMixin
 from .fields import InvalidTransition, StaleFenceError
 from .model import TRANSITIONS
+from .util import verify_effect_receipt
 
 UNFENCED_TRANSITIONS = {
     "ACCEPTED->READY": "estate",
@@ -21,12 +22,22 @@ UNFENCED_TRANSITIONS = {
 
 
 def _require_verified_operational_effect(
-    cur, mission_id, attempt_id, lease_epoch, mandate_version, actor, evidence
+    cur,
+    mission_id,
+    attempt_id,
+    lease_epoch,
+    mandate_version,
+    actor,
+    evidence,
+    now=None,
+    trusted_keys=None,
 ):
-    """Require a dated, reconciled effect from this exact mission attempt.
+    """Require an independent effect from this mission and mandate.
 
-    This enforces evidence custody, not the external observer's integrity.
-    External verifier authentication must be enforced at receipt admission.
+    A successor may inherit a verified effect from a fenced predecessor,
+    but never acquire the previous worker's authority. The CURRENT lease
+    is checked by the transition caller; the effect's source custody,
+    mandate, signature and non-executor observer remain independently bound.
     """
     if (
         not isinstance(evidence, str)
@@ -37,11 +48,15 @@ def _require_verified_operational_effect(
             "OPERATING requires evidence='effect:<reconciled-effect-id>'"
         )
     effect = cur.execute(
-        "SELECT state, reconciliation_status, external_receipt, observed_at,"
-        " verified_by"
-        " FROM external_effects WHERE effect_id=? AND mission_id=? AND attempt_id=?"
-        " AND lease_epoch=? AND mandate_version=?",
-        (evidence[7:], mission_id, attempt_id, lease_epoch, mandate_version),
+        "SELECT e.state, e.reconciliation_status, e.external_receipt,"
+        " e.observed_at, e.verified_by, e.attempt_id AS source_attempt,"
+        " e.lease_epoch AS source_epoch, src.agent_adapter AS source_adapter"
+        " FROM external_effects e JOIN mission_attempts src"
+        " ON src.attempt_id=e.attempt_id AND src.mission_id=e.mission_id"
+        " AND src.lease_epoch=e.lease_epoch"
+        " WHERE e.effect_id=? AND e.mission_id=? AND e.mandate_version=?"
+        " AND e.lease_epoch<=?",
+        (evidence[7:], mission_id, mandate_version, lease_epoch),
     ).fetchone()
     if (
         effect is None
@@ -55,9 +70,45 @@ def _require_verified_operational_effect(
         raise InvalidTransition(
             "OPERATING refused: effect has no dated verifier observation"
         )
+    if effect["observed_at"] > (time.time() if now is None else now):
+        raise InvalidTransition(
+            "OPERATING refused: verifier observation is dated in the future"
+        )
     if effect["verified_by"].strip().casefold() == actor.strip().casefold():
         raise InvalidTransition(
             "OPERATING refused: executor cannot attest its own outcome"
+        )
+    # The transition actor is a caller-supplied label. Compare the verifier
+    # with the actual leased harness identity too, or an agent can pass a
+    # different actor label and count its own observation as independent.
+    holder = cur.execute(
+        "SELECT agent_adapter FROM mission_attempts WHERE attempt_id=?"
+        " AND mission_id=? AND lease_epoch=?",
+        (attempt_id, mission_id, lease_epoch),
+    ).fetchone()
+    if holder is None or (
+        effect["verified_by"].strip().casefold()
+        == holder["agent_adapter"].strip().casefold()
+    ):
+        raise InvalidTransition(
+            "OPERATING refused: leased executor cannot attest its own outcome"
+        )
+    # A former worker cannot be promoted into its own verifier by fencing
+    # that worker and assigning a different executor. Independence is judged
+    # against BOTH historical and current execution identities.
+    source_actors = cur.execute(
+        "SELECT actor FROM mission_events WHERE mission_id=?"
+        " AND attempt_id=? AND to_state IN ('EXECUTING',"
+        " 'CHECKPOINTING', 'VERIFYING', 'PROMOTING', 'DEPLOY_VERIFY')",
+        (mission_id, effect["source_attempt"]),
+    ).fetchall()
+    source_identities = {
+        item["actor"].strip().casefold() for item in source_actors if item["actor"]
+    }
+    source_identities.add(effect["source_adapter"].strip().casefold())
+    if effect["verified_by"].strip().casefold() in source_identities:
+        raise InvalidTransition(
+            "OPERATING refused: predecessor executor cannot self-certify"
         )
     try:
         receipt = json.loads(effect["external_receipt"])
@@ -65,6 +116,17 @@ def _require_verified_operational_effect(
         receipt = None
     if not isinstance(receipt, dict) or not receipt:
         raise InvalidTransition("OPERATING refused: effect receipt is missing or empty")
+    try:
+        verify_effect_receipt(
+            evidence[7:],
+            receipt,
+            effect["verified_by"],
+            trusted_keys or {},
+        )
+    except (ValueError, TypeError) as exc:
+        raise InvalidTransition(
+            "OPERATING refused: external receipt has no trusted observer seal"
+        ) from exc
 
 
 class TransitionMixin(FenceMixin):
@@ -126,6 +188,8 @@ class TransitionMixin(FenceMixin):
                     m["mandate_version"],
                     actor,
                     evidence,
+                    now=t,
+                    trusted_keys=self._trusted_verifier_keys,
                 )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
