@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -9,8 +10,9 @@ import os
 CLOSING = ("EXECUTING", "VERIFYING", "PROMOTING", "DEPLOY_VERIFY", "OPERATING")
 
 
-def stage_two(store, receipt, work_dir, lease_a, lines) -> int:
+def stage_two(store, receipt, work_dir, lease_a, lines, verifier_signer) -> int:
     from continuity import StaleFenceError
+    from continuity.util import effect_receipt_subject
 
     import time as _time
 
@@ -75,10 +77,23 @@ def stage_two(store, receipt, work_dir, lease_a, lines) -> int:
         print(json.dumps(receipt))
         return 4
     receipt["artifact_sha256"] = hashlib.sha256("\n".join(final).encode()).hexdigest()
+    observed = {
+        "sha256": receipt["artifact_sha256"],
+        "complete": True,
+        "no_duplicates": True,
+    }
+    signature = base64.b64encode(
+        verifier_signer.sign(
+            effect_receipt_subject(
+                effect["effect_id"], observed, "canary-artifact-check"
+            )
+        )
+    ).decode()
     store.record_receipt(
         effect["effect_id"],
-        {"sha256": receipt["artifact_sha256"], "complete": True, "no_duplicates": True},
+        observed,
         verified_by="canary-artifact-check",
+        verifier_signature=signature,
     )
     for to in CLOSING:
         store.transition(
