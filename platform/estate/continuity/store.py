@@ -8,6 +8,7 @@ inside a conversation. Workers propose; this store decides.
 from __future__ import annotations
 
 import json
+from types import MappingProxyType
 import sqlite3
 import time
 from typing import Any, Dict, Optional
@@ -33,7 +34,26 @@ class MissionStore(
     AcceptMixin,
     RecoveryMixin,
 ):
-    def __init__(self, path) -> None:
+    def __init__(self, path, *, trusted_verifier_keys=None) -> None:
+        # This registry must come from the host's independently admitted
+        # configuration, never from a worker's receipt. An unconfigured host
+        # may retain pending intents but cannot certify operational effects.
+        keys = dict(trusted_verifier_keys or {})
+        if any(
+            not isinstance(name, str)
+            or not name.strip()
+            or not isinstance(key, bytes)
+            or len(key) != 32
+            for name, key in keys.items()
+        ):
+            raise ValueError(
+                "trusted verifier keys must be Ed25519 32-byte public keys"
+            )
+        if len(set(keys.values())) != len(keys):
+            raise ValueError(
+                "one public key cannot represent multiple independent verifiers"
+            )
+        self._trusted_verifier_keys = MappingProxyType(keys)
         self.path = str(path)
         self.db = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
         self.db.row_factory = sqlite3.Row
