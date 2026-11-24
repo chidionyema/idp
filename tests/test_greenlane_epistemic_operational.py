@@ -317,4 +317,3 @@ def test_greenlane_invalid_signature_keeps_original_obligation(monkeypatch):
     assert "ERR_PAYLOAD_TAMPERED" in why
     assert rec["claim"] == "chidionyema/idp#8415"
     assert "epistemic_verified_receipts" not in rec
-
