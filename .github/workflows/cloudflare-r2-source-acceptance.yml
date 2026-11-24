@@ -1,0 +1,26 @@
+name: Cloudflare R2 scoped-principal acceptance (one-shot)
+on:
+  push:
+    branches: [research/8416-r2-principal-fixed-20261123]
+    paths: [.github/workflows/cloudflare-r2-source-acceptance.yml]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Prove scoped R2 principal and all failure branches without secrets
+        run: |
+          set -euo pipefail
+          bash -n bin/idp-bootstrap-cloudflare
+          python3 -m unittest discover -s bin/tests -p test_cloudflare_r2_bootstrap.py -v
+          python3 -m pip install -q ruff==0.15.18
+          ruff check bin/tests/test_cloudflare_r2_bootstrap.py
+          ruff format --check bin/tests/test_cloudflare_r2_bootstrap.py
