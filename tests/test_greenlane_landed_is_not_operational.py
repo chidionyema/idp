@@ -197,6 +197,9 @@ def _backend(monkeypatch, code, readings, comments=()):
         return json.dumps({"body": CONTRACT})
 
     monkeypatch.setattr(G, "_run", run)
+    monkeypatch.setattr(
+        G._claim_gate_module(), "gh_json", lambda _: list(comments)
+    )
     monkeypatch.setattr(G, "_http_get", lambda url, timeout=20.0: (code, "ok"))
     monkeypatch.setattr(
         be, "_optimus_readings", lambda names: dict(readings), raising=False
@@ -254,3 +257,33 @@ def test_the_registered_measures_really_measure(monkeypatch):
     assert got.get("claims.ship_contract_enforced") == 1.0
     assert isinstance(got.get("estate.platform_dirs_never_applied"), float)
     assert "no.such" not in got
+
+
+def test_latest_ship_contract_after_100_comments_wins(monkeypatch):
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    issue = {"body": "", "comments": 120}
+    early = CONTRACT
+    latest = CONTRACT.replace("x.example.test", "latest.example.test")
+    comments = [{"body": early}]
+    comments.extend({"body": "unrelated"} for _ in range(118))
+    comments.append({"body": latest})
+    assert len(comments) == 120
+
+    monkeypatch.setattr(G, "_run", lambda *_: json.dumps(issue))
+    monkeypatch.setattr(
+        G._claim_gate_module(), "gh_json", lambda _: list(comments)
+    )
+    selected = backend._contract("o/r", "7")
+    assert selected is not None
+    assert "latest.example.test" in selected["accept"]
+    assert "x.example.test" not in selected["accept"]
+
+
+def test_unreadable_paginated_contract_never_certifies(monkeypatch):
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    monkeypatch.setattr(G, "_run", lambda *_: json.dumps({"body": ""}))
+    monkeypatch.setattr(
+        G._claim_gate_module(), "gh_json", lambda _: {"error": "truncated"}
+    )
+    assert backend._contract("o/r", "7") is None
+
