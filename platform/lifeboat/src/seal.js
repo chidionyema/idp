@@ -16,7 +16,8 @@ const TRAILER_REASON_LIMIT = 200;
 /** The exact bytes bin/idp-auth signs. Kept identical on purpose: a signature is only useful
  *  if the verifier reconstructs the same string. */
 export function sealPayload({ ts, head, reason, paths }) {
-  return `${ts}\n${head}\n${reason}\n${paths.join("\n")}\n`;
+  // Shell signer and verifier both remove trailing newlines via command substitution.
+  return `${ts}\n${head}\n${reason}\n${paths.join("\n")}`;
 }
 
 export function utf8(s) {
