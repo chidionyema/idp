@@ -9,12 +9,13 @@ retrying — at-least-once delivery never becomes exactly-once side effects.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 
 from .fence import FenceMixin
-from .fields import DuplicateEffect, StaleFenceError
-from .util import canonical, digest_of
+from .fields import DuplicateEffect, RecordRejected, StaleFenceError
+from .util import VERIFIER_FIELD, canonical, digest_of, verify_effect_receipt
 
 
 class EffectsMixin(FenceMixin):
@@ -41,16 +42,24 @@ class EffectsMixin(FenceMixin):
                 cur.execute("ROLLBACK")
                 raise StaleFenceError("mandate version mismatch")
             existing = cur.execute(
-                "SELECT effect_id, intent_digest, state FROM external_effects"
+                "SELECT effect_id, mission_id, operation, target,"
+                " intent_digest, state FROM external_effects"
                 " WHERE idempotency_key=?",
                 (idempotency_key,),
             ).fetchone()
             if existing is not None:
-                if existing["intent_digest"] != intent_digest:
-                    cur.execute("ROLLBACK")
+                # Retry is permitted only for the SAME mission, operation,
+                # target, and payload. The key is global, but an identical
+                # payload under a different mission is not shared custody.
+                if (
+                    existing["mission_id"] != mission_id
+                    or existing["operation"] != operation
+                    or existing["target"] != target
+                    or existing["intent_digest"] != intent_digest
+                ):
                     raise DuplicateEffect(
-                        f"idempotency key {idempotency_key} already bound to a"
-                        " different intent"
+                        f"idempotency key {idempotency_key} already bound to"
+                        " another mission, operation, target or intent"
                     )
                 cur.execute("ROLLBACK")
                 return {
@@ -92,31 +101,144 @@ class EffectsMixin(FenceMixin):
         observed_state: str = "OBSERVED",
         reconciliation_status: str = "RECONCILED",
         now: float | None = None,
+        *,
+        verifier_signature: str | None = None,
     ) -> dict:
+        """Persist an outcome only when a trusted independent observer signed it.
+
+        A caller-chosen verified_by label is NOT identity. Only an Ed25519
+        signature bound to a key configured by the trusted store host can
+        certify OBSERVED+RECONCILED. The signed envelope is persisted so
+        that terminal transitions re-verify the proof across sessions.
+        """
+        if not isinstance(verified_by, str) or not verified_by.strip():
+            raise RecordRejected("verifier identity must be nonempty")
         t = time.time() if now is None else now
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
             row = cur.execute(
-                "SELECT state FROM external_effects WHERE effect_id=?",
+                "SELECT e.state, e.reconciliation_status, e.external_receipt,"
+                " e.verified_by, e.mission_id, e.attempt_id,"
+                " a.agent_adapter AS executor_adapter"
+                " FROM external_effects e"
+                " LEFT JOIN mission_attempts a ON a.attempt_id=e.attempt_id"
+                " AND a.mission_id=e.mission_id WHERE e.effect_id=?",
                 (effect_id,),
             ).fetchone()
             if row is None:
-                cur.execute("ROLLBACK")
                 raise DuplicateEffect(f"unknown effect {effect_id}")
-            if row["state"] == "OBSERVED" and reconciliation_status == "RECONCILED":
-                cur.execute("ROLLBACK")
-                return {
-                    "effect_id": effect_id,
-                    "state": row["state"],
-                    "duplicate": True,
+            if (
+                reconciliation_status == "RECONCILED"
+                or row["reconciliation_status"] == "RECONCILED"
+            ):
+                actors = cur.execute(
+                    "SELECT actor FROM mission_events WHERE mission_id=?"
+                    " AND attempt_id=?"
+                    " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
+                    " 'VERIFYING', 'PROMOTING', 'DEPLOY_VERIFY')",
+                    (row["mission_id"], row["attempt_id"]),
+                ).fetchall()
+                executors = {
+                    a["actor"].strip().casefold() for a in actors if a["actor"]
                 }
+                if row["executor_adapter"]:
+                    executors.add(row["executor_adapter"].strip().casefold())
+                if reconciliation_status == "RECONCILED" and (
+                    not row["executor_adapter"]
+                    or verified_by.strip().casefold() in executors
+                ):
+                    raise RecordRejected(
+                        "leased executor cannot certify its own external effect"
+                    )
+            if row["reconciliation_status"] == "RECONCILED":
+                # Historical optimistic settlements may have no signed
+                # witness. They stay unverified until externally reattested.
+                try:
+                    previous = json.loads(row["external_receipt"])
+                    original = verify_effect_receipt(
+                        effect_id, previous, row["verified_by"],
+                        self._trusted_verifier_keys,
+                        observed_state=row["state"],
+                    )
+                except (ValueError, TypeError):
+                    original = None
+                if original is not None and row["state"] not in (
+                    "OBSERVED", "ABANDONED"
+                ):
+                    # Even a valid signature on INTENDED is not a terminal
+                    # external outcome and cannot hide a live obligation.
+                    original = None
+                if (
+                    original is not None
+                    and row["verified_by"].strip().casefold() in executors
+                ):
+                    # A correctly formed signature from the actual executor
+                    # is NOT independent evidence; it can be superseded only
+                    # by a new authenticated third-party observation.
+                    original = None
+                if original is not None:
+                    if (
+                        observed_state != row["state"]
+                        or reconciliation_status != "RECONCILED"
+                        or canonical(receipt) != canonical(original)
+                        or verified_by != row["verified_by"]
+                    ):
+                        raise DuplicateEffect(
+                            f"effect {effect_id} already has an immutable "
+                            "reconciled receipt"
+                        )
+                    return {
+                        "effect_id": effect_id,
+                        "state": row["state"],
+                        "duplicate": True,
+                    }
+                if reconciliation_status != "RECONCILED":
+                    # Historical untrusted claims must be reattested, not
+                    # overwritten with another unauthenticated claim.
+                    raise RecordRejected(
+                        "legacy unverified settlement needs signed reattestation"
+                    )
+            stored_receipt = receipt
+            if reconciliation_status == "RECONCILED":
+                if observed_state not in ("OBSERVED", "ABANDONED"):
+                    raise RecordRejected(
+                        "reconciliation needs verified observation or abandonment"
+                    )
+                if (
+                    not isinstance(receipt, dict)
+                    or not receipt
+                    or VERIFIER_FIELD in receipt
+                    or not isinstance(verifier_signature, str)
+                    or not verifier_signature
+                ):
+                    raise RecordRejected(
+                        "authenticated independent receipt signature required"
+                    )
+                stored_receipt = {
+                    **receipt,
+                    VERIFIER_FIELD: {
+                        "key_id": verified_by,
+                        "signature": verifier_signature,
+                    },
+                }
+                try:
+                    verify_effect_receipt(
+                        effect_id, stored_receipt, verified_by,
+                        self._trusted_verifier_keys, observed_state=observed_state,
+                    )
+                except (ValueError, TypeError) as exc:
+                    raise RecordRejected(
+                        "external observation signature not accepted"
+                    ) from exc
+            elif isinstance(receipt, dict) and VERIFIER_FIELD in receipt:
+                raise RecordRejected("unverified state cannot embed a verifier seal")
             cur.execute(
                 "UPDATE external_effects SET state=?, external_receipt=?,"
                 " observed_at=?, verified_by=?, reconciliation_status=?"
                 " WHERE effect_id=?",
                 (
                     observed_state,
-                    canonical(receipt),
+                    canonical(stored_receipt),
                     t,
                     verified_by,
                     reconciliation_status,
@@ -131,42 +253,92 @@ class EffectsMixin(FenceMixin):
             }
 
     def pending_effects(self, mission_id: str) -> list:
+        # Reverify both signed witness and separation from the executor.
+        # An unsigned/tampered/self-certified historical outcome stays owed.
         rows = self.db.execute(
-            "SELECT effect_id, operation, target, idempotency_key, state,"
-            " reconciliation_status FROM external_effects WHERE mission_id=?"
-            " AND reconciliation_status != 'RECONCILED'",
+            "SELECT e.effect_id, e.operation, e.target, e.idempotency_key,"
+            " e.state, e.reconciliation_status, e.external_receipt,"
+            " e.verified_by, e.observed_at,"
+            " a.agent_adapter AS executor_adapter"
+            " FROM external_effects e LEFT JOIN mission_attempts a"
+            " ON a.attempt_id=e.attempt_id AND a.mission_id=e.mission_id"
+            " WHERE e.mission_id=?",
             (mission_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        pending = []
+        for row in rows:
+            item = {
+                key: row[key]
+                for key in (
+                    "effect_id", "operation", "target", "idempotency_key",
+                    "state", "reconciliation_status",
+                )
+            }
+            if (
+                row["reconciliation_status"] != "RECONCILED"
+                or row["state"] not in ("OBSERVED", "ABANDONED")
+                or row["observed_at"] is None
+                or row["observed_at"] > time.time()
+            ):
+                if row["reconciliation_status"] == "RECONCILED":
+                    item["reconciliation_status"] = "UNVERIFIED"
+                pending.append(item)
+                continue
+            actors = self.db.execute(
+                "SELECT actor FROM mission_events WHERE mission_id=?"
+                " AND attempt_id=(SELECT attempt_id FROM external_effects"
+                " WHERE effect_id=?)"
+                " AND to_state IN ('EXECUTING', 'CHECKPOINTING',"
+                " 'VERIFYING', 'PROMOTING', 'DEPLOY_VERIFY')",
+                (mission_id, row["effect_id"]),
+            ).fetchall()
+            executors = {
+                a["actor"].strip().casefold() for a in actors if a["actor"]
+            }
+            if row["executor_adapter"]:
+                executors.add(row["executor_adapter"].strip().casefold())
+            if (
+                not row["executor_adapter"]
+                or not isinstance(row["verified_by"], str)
+                or row["verified_by"].strip().casefold() in executors
+            ):
+                item["reconciliation_status"] = "UNVERIFIED"
+                pending.append(item)
+                continue
+            try:
+                receipt = json.loads(row["external_receipt"])
+                verify_effect_receipt(
+                    row["effect_id"], receipt, row["verified_by"],
+                    self._trusted_verifier_keys, observed_state=row["state"],
+                )
+            except (ValueError, TypeError):
+                item["reconciliation_status"] = "UNVERIFIED"
+                pending.append(item)
+        return pending
 
     def reconcile_effect(
         self, effect_id: str, external_state: str, outcome: str
     ) -> dict:
-        """Reconcile-before-retry: classify an ambiguous effect from
-        authoritative external state without blind re-execution."""
-        if outcome == "COMPLETED":
-            return self.record_receipt(
-                effect_id,
-                {"external": external_state},
-                "reconciler",
-                "OBSERVED",
-                "RECONCILED",
+        """Only independently signed positive/negative receipts settle effects."""
+        if outcome in ("COMPLETED", "NOT_STARTED"):
+            raise DuplicateEffect(
+                f"{outcome} claim requires independent record_receipt admission"
             )
-        if outcome == "NOT_STARTED":
-            with self.db:
-                cur = self.db.execute("BEGIN IMMEDIATE")
-                cur.execute(
-                    "UPDATE external_effects SET state='ABANDONED',"
-                    " reconciliation_status='RECONCILED' WHERE effect_id=?",
-                    (effect_id,),
-                )
-                return {
-                    "effect_id": effect_id,
-                    "state": "ABANDONED",
-                    "duplicate": False,
-                }
+        if outcome != "AMBIGUOUS":
+            raise DuplicateEffect(f"unknown external outcome {outcome}")
         with self.db:
             cur = self.db.execute("BEGIN IMMEDIATE")
+            row = cur.execute(
+                "SELECT reconciliation_status FROM external_effects"
+                " WHERE effect_id=?",
+                (effect_id,),
+            ).fetchone()
+            if row is None:
+                raise DuplicateEffect(f"unknown effect {effect_id}")
+            if row["reconciliation_status"] == "RECONCILED":
+                raise DuplicateEffect(
+                    f"effect {effect_id} already claims a reconciled receipt"
+                )
             cur.execute(
                 "UPDATE external_effects SET reconciliation_status='AMBIGUOUS'"
                 " WHERE effect_id=?",

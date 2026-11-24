@@ -114,10 +114,13 @@ class CheckpointMixin:
                 "UPDATE missions SET last_checkpoint_digest=? WHERE mission_id=?",
                 (content_digest, mission_id),
             )
+            # Custody is not independent evidence of progress. In particular,
+            # a worker must not extend its own lease stagnation clock by
+            # repeatedly writing a new checkpoint containing more narration.
             cur.execute(
-                "UPDATE mission_attempts SET checkpoint_digest=?,"
-                " last_progress_at=? WHERE attempt_id=?",
-                (content_digest, t, attempt_id),
+                "UPDATE mission_attempts SET checkpoint_digest=?"
+                " WHERE attempt_id=?",
+                (content_digest, attempt_id),
             )
             return {
                 "checkpoint_id": checkpoint_id,
