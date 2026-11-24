@@ -208,9 +208,12 @@ def test_signed_receipt_join_reads_existing_claim_issue_not_state(monkeypatch):
     )
     assert error == ""
     assert len(payload) == 3
-    assert G.GitHubBackend._epistemic_operational_proof(
-        {**rec, "epistemic_receipts": payload}, URL, 200, NEEDLE
-    ) == ""
+    assert (
+        G.GitHubBackend._epistemic_operational_proof(
+            {**rec, "epistemic_receipts": payload}, URL, 200, NEEDLE
+        )
+        == ""
+    )
 
 
 def test_signed_receipts_from_other_lane_never_replay(monkeypatch):
