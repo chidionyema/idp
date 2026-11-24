@@ -227,7 +227,7 @@ def test_probe_and_metric_cannot_self_certify_operational(monkeypatch):
     rec = {"head": "h", "tip": "a" * 40}
     verdict, why = be.verify_operational("lane/a", rec)
     assert verdict == "pending", why
-    assert "ERR_INSUFFICIENT_RUNTIME_PROOFS" in why
+    assert "BLIND: claim issue comment count unavailable" in why
     assert rec["claim"] == "o/r#7" and rec["deadline_min"] == 30.0
 
 
