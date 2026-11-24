@@ -13,11 +13,13 @@ SOURCE = Path(__file__).resolve().parents[1] / "idp-bootstrap-cloudflare"
 def bucket_block():
     source = SOURCE.read_text()
     first = source.index("# Use the scoped R2 principal.")
-    last = source.index("unset R2_VAL bk created", first) + len("unset R2_VAL bk created")
+    last = source.index("unset R2_VAL bk created", first) + len(
+        "unset R2_VAL bk created"
+    )
     return source[first:last]
 
 
-HARNESS = r'''set -euo pipefail
+HARNESS = r"""set -euo pipefail
 R2_VAL=R2_NARROW_TOKEN; ROOT=ROOT_TOKEN; ACCOUNT_ID=ACC; BUCKET=prospector-meridianlabs
 fail() { echo "FAIL $1 $2"; exit 1; }
 cf() {
@@ -42,7 +44,7 @@ cf() {
     *) return 55;;
   esac
 }
-'''
+"""
 
 
 class R2BootstrapTests(unittest.TestCase):
@@ -67,9 +69,13 @@ class R2BootstrapTests(unittest.TestCase):
                         check=False,
                     )
                     calls = Path(log).read_text().splitlines()
-                    self.assertEqual(outcome.returncode, rc, outcome.stdout + outcome.stderr)
+                    self.assertEqual(
+                        outcome.returncode, rc, outcome.stdout + outcome.stderr
+                    )
                     self.assertEqual(len(calls), count)
-                    self.assertTrue(all(s.startswith("R2_NARROW_TOKEN ") for s in calls))
+                    self.assertTrue(
+                        all(s.startswith("R2_NARROW_TOKEN ") for s in calls)
+                    )
                     self.assertIn(marker, outcome.stdout)
                     self.assertNotIn("ROOT_TOKEN", outcome.stdout + outcome.stderr)
 
@@ -91,11 +97,16 @@ class R2BootstrapTests(unittest.TestCase):
                     log = Path(directory) / f"cleanup-{escrow_started}.log"
                     scratch = Path(directory) / f"scratch-{escrow_started}"
                     scratch.mkdir()
-                    runner = r'''set -euo pipefail
+                    runner = (
+                        r"""set -euo pipefail
 cf() { echo "$2 $3" >> "$CALL_LOG"; }
 MINTED_DNS_ID=dns-id; MINTED_R2_ID=r2-id; MINTED_WRK_ID=wrk-id
 ROOT=ROOT_TOKEN
-''' + f'ESCROW_STARTED={escrow_started}\n' + cleanup + "\n"
+"""
+                        + f"ESCROW_STARTED={escrow_started}\n"
+                        + cleanup
+                        + "\n"
+                    )
                     result = subprocess.run(  # noqa: S603 - trusted fixed Bash argv
                         [shutil.which("bash"), "-c", runner],
                         env={
@@ -110,7 +121,9 @@ ROOT=ROOT_TOKEN
                     self.assertEqual(result.returncode, 0, result.stderr)
                     calls = log.read_text().splitlines() if log.exists() else []
                     self.assertEqual(len(calls), expected_deletions)
-                    self.assertTrue(all(s.startswith("DELETE /user/tokens/") for s in calls))
+                    self.assertTrue(
+                        all(s.startswith("DELETE /user/tokens/") for s in calls)
+                    )
                     self.assertFalse(scratch.exists())
 
 
