@@ -28,14 +28,21 @@ import os
 import re
 import subprocess
 import sys
+import time
+from functools import cache
 
 OWNER = os.environ.get("ESTATE_GH_OWNER", "chidionyema")
 BLOCKED_RE = re.compile(r"(?im)^\s*Blocked-by:\s*(.+?)\s*$")
 REF_RE = re.compile(r"^(?:([\w.-]+)/)?([\w.-]+)#(\d+)$")
 
 
-def gh(*args: str) -> str:
-    r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60, check=False)
+def gh(*args: str, timeout: float = 60) -> str:
+    try:
+        r = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"gh {' '.join(args[:3])}: timed out") from exc
     if r.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args[:3])}: {r.stderr.strip()[:200]}")
     return r.stdout
@@ -43,6 +50,37 @@ def gh(*args: str) -> str:
 
 def keys_of(body: str) -> list[str]:
     return [k.strip() for m in BLOCKED_RE.findall(body or "") for k in m.split(",") if k.strip()]
+
+
+def closed_blocked_prs(repo: str, budget_s: float = 360) -> list[dict]:
+    """Page the authoritative PR inventory; never act on an incomplete census."""
+    deadline = time.monotonic() + budget_s
+    page = 1
+    seen = set()
+    candidates = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("closed PR inventory exceeded its time budget")
+        endpoint = (
+            f"repos/{repo}/pulls?state=closed&sort=created&direction=asc"
+            f"&per_page=100&page={page}"
+        )
+        batch = json.loads(gh("api", endpoint, timeout=min(60, remaining)))
+        if not isinstance(batch, list) or len(batch) > 100:
+            raise RuntimeError("invalid closed PR inventory page")
+        for pr in batch:
+            if not isinstance(pr, dict) or not isinstance(pr.get("number"), int):
+                raise RuntimeError("invalid PR record in closed inventory")
+            number = pr["number"]
+            if number in seen:
+                raise RuntimeError("closed PR inventory shifted during pagination")
+            seen.add(number)
+            if not pr.get("merged_at") and keys_of(pr.get("body") or ""):
+                candidates.append(pr)
+        if len(batch) < 100:
+            return candidates
+        page += 1
 
 
 def ref_landed(key: str) -> bool | None:
@@ -119,10 +157,13 @@ def main() -> int:
         if not a.repo:
             print("BLOCKED: no --repo and no GH_REPO", file=sys.stderr)
             return 2
-        closed = json.loads(gh("api", "--paginate", "--slurp", f"repos/{a.repo}/pulls?state=closed&per_page=100"))
-        closed = [pr for page in closed for pr in page]
-        open_count = len(json.loads(gh("api", f"repos/{a.repo}/pulls?state=open&per_page=100")))
-        landed = ref_landed
+        try:
+            closed = closed_blocked_prs(a.repo)
+            open_count = len(json.loads(gh("api", f"repos/{a.repo}/pulls?state=open&per_page=100")))
+        except (RuntimeError, ValueError) as exc:
+            print(f"BLIND wake-blocked: {exc}", file=sys.stderr)
+            return 2
+        landed = cache(ref_landed)
     actions = plan(closed, landed, open_count, set(a.resolved))
     for act in actions:
         if act["action"] == "wake" and not a.dry_run and not offline:
@@ -134,7 +175,7 @@ def main() -> int:
     woke = sum(1 for x in actions if x["action"] == "wake")
     print(f"wake-blocked: {len(actions)} sleeping, {woke} woke, "
           f"{sum(1 for x in actions if x['action'] == 'error')} errors, open={open_count}")
-    return 0
+    return 1 if any(x["action"] == "error" for x in actions) else 0
 
 
 if __name__ == "__main__":
