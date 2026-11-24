@@ -1881,6 +1881,15 @@ class GitHubBackend:
         the QUAD verifier verifies the separate signer-custody attestation.
         No raw receipt is persisted back into the Greenlane state ref.
         """
+        from urllib.parse import urlsplit
+
+        from lib.epistemic_kernel.kernel import PROXY_SOURCE_HOSTS
+
+        try:
+            if urlsplit(url).hostname in PROXY_SOURCE_HOSTS:
+                return [], "ERR_PROXY_GREEN_SUBSTITUTION: source/GitHub is not production"
+        except ValueError:
+            return [], "ERR_INVALID_RUNTIME_TARGET"
         prefix = "EPISTEMIC-EFFECT-V1\n"
         expected = {
             "issue": f"{claim_repo}#{number}",
