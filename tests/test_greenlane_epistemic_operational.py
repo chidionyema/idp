@@ -173,3 +173,150 @@ def test_no_body_invariant_cannot_settle(monkeypatch):
     rec = _setup(monkeypatch)
     reason = G.GitHubBackend._epistemic_operational_proof(rec, URL, 200, None)
     assert "ERR_INVALID_OPERATIONAL_CONTRACT" in reason
+
+
+def _signed_issue_evidence(monkeypatch, rec, *, target=URL, lane="lane/proof"):
+    envelope = {
+        "issue": "chidionyema/idp#8415",
+        "lane": lane,
+        "head": rec["head"],
+        "tip": rec["tip"],
+        "target": target,
+        "receipts": rec["epistemic_receipts"],
+    }
+    body = "EPISTEMIC-EFFECT-V1\n" + json.dumps(envelope, sort_keys=True)
+
+    def run(*argv, **_kwargs):
+        endpoint = argv[2]
+        if endpoint.endswith("/issues/8415"):
+            return json.dumps({"comments": 1})
+        if "/issues/8415/comments?per_page=100&page=1" in endpoint:
+            return json.dumps([{"body": body}])
+        raise AssertionError(f"unexpected read: {endpoint}")
+
+    monkeypatch.setattr(G, "_run", run)
+    return envelope
+
+
+def test_signed_receipt_join_reads_existing_claim_issue_not_state(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    _signed_issue_evidence(monkeypatch, rec)
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    payload, error = backend._epistemic_receipts_from_claim(
+        "chidionyema/idp", "8415", "lane/proof", rec, URL
+    )
+    assert error == ""
+    assert len(payload) == 3
+    assert (
+        G.GitHubBackend._epistemic_operational_proof(
+            {**rec, "epistemic_receipts": payload}, URL, 200, NEEDLE
+        )
+        == ""
+    )
+
+
+def test_signed_receipts_from_other_lane_never_replay(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    _signed_issue_evidence(monkeypatch, rec, lane="lane/other")
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    payload, error = backend._epistemic_receipts_from_claim(
+        "chidionyema/idp", "8415", "lane/proof", rec, URL
+    )
+    assert payload == []
+    assert "ERR_NO_SIGNED_EFFECT_RECEIPT_FOR_EXACT_LANE" in error
+
+
+def test_signed_receipts_from_other_target_never_replay(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    _signed_issue_evidence(
+        monkeypatch, rec, target="https://different.example.test/health"
+    )
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    payload, error = backend._epistemic_receipts_from_claim(
+        "chidionyema/idp", "8415", "lane/proof", rec, URL
+    )
+    assert payload == []
+    assert "ERR_NO_SIGNED_EFFECT_RECEIPT_FOR_EXACT_LANE" in error
+
+
+def test_incorrect_claim_comment_cannot_supply_independent_proofs(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    envelope = _signed_issue_evidence(monkeypatch, rec)
+    envelope["receipts"] = envelope["receipts"][:1]
+    original = G._run
+
+    def read(*argv, **kwargs):
+        endpoint = argv[2]
+        if "/comments?" in endpoint:
+            body = "EPISTEMIC-EFFECT-V1\n" + json.dumps(envelope)
+            return json.dumps([{"body": body}])
+        return original(*argv, **kwargs)
+
+    monkeypatch.setattr(G, "_run", read)
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    payload, error = backend._epistemic_receipts_from_claim(
+        "chidionyema/idp", "8415", "lane/proof", rec, URL
+    )
+    assert payload == []
+    assert error == "ERR_EFFECT_RECEIPT_CARDINALITY"
+
+
+def test_greenlane_positive_uses_exact_signed_issue_evidence(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    _signed_issue_evidence(monkeypatch, rec)
+    rec.pop("epistemic_receipts")
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    backend._claim_of = lambda _: ("chidionyema/idp", "8415")
+    backend._contract = lambda *_: {
+        "accept": (
+            "GET https://production.example.test/health expect 200 "
+            'contains "service-ready" within 180m'
+        ),
+        "optimus": "claims.ship_contract_enforced baseline=UNKNOWN target=1",
+    }
+    backend._optimus_readings = lambda _: {"claims.ship_contract_enforced": 1.0}
+    monkeypatch.setattr(G, "_http_get", lambda *_: (200, NEEDLE))
+    verdict, why = backend.verify_operational("lane/proof", rec)
+    assert verdict == "pass", why
+    assert "independent T0 receipts=" in why
+    assert "QUAD custody sha256=" in why
+    assert "epistemic_receipts" not in rec
+    assert len(rec["epistemic_verified_receipts"]) == 3
+
+
+def test_greenlane_invalid_signature_keeps_original_obligation(monkeypatch):
+    rec = _setup(monkeypatch)
+    rec["head"] = "b" * 40
+    envelope = _signed_issue_evidence(monkeypatch, rec)
+    envelope["receipts"][0]["raw_payload"] = "tampered after capture"
+    previous = G._run
+
+    def changed(*argv, **kwargs):
+        if "/comments?" in argv[2]:
+            body = "EPISTEMIC-EFFECT-V1\n" + json.dumps(envelope)
+            return json.dumps([{"body": body}])
+        return previous(*argv, **kwargs)
+
+    monkeypatch.setattr(G, "_run", changed)
+    rec.pop("epistemic_receipts")
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    backend._claim_of = lambda _: ("chidionyema/idp", "8415")
+    backend._contract = lambda *_: {
+        "accept": (
+            "GET https://production.example.test/health expect 200 "
+            'contains "service-ready" within 180m'
+        ),
+        "optimus": "claims.ship_contract_enforced baseline=UNKNOWN target=1",
+    }
+    backend._optimus_readings = lambda _: {"claims.ship_contract_enforced": 1.0}
+    monkeypatch.setattr(G, "_http_get", lambda *_: (200, NEEDLE))
+    verdict, why = backend.verify_operational("lane/proof", rec)
+    assert verdict == "pending", why
+    assert "ERR_PAYLOAD_TAMPERED" in why
+    assert rec["claim"] == "chidionyema/idp#8415"
+    assert "epistemic_verified_receipts" not in rec
