@@ -23,4 +23,4 @@ jobs:
           python3 -m unittest discover -s bin/tests -p test_cloudflare_r2_bootstrap.py -v
           python3 -m pip install -q ruff==0.15.18
           ruff check bin/tests/test_cloudflare_r2_bootstrap.py
-          ruff format --diff bin/tests/test_cloudflare_r2_bootstrap.py
+          ruff format --check bin/tests/test_cloudflare_r2_bootstrap.py
