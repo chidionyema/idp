@@ -1,0 +1,733 @@
+{
+  "observed_at_utc": "2026-11-23T19:22:33Z",
+  "decision": {
+    "branch": "BRANCH_2_BOOTSTRAP_DISPATCH_NEEDED",
+    "reason": "Neither SEED_CLOUDFLARE_WORKERS_TOKEN nor CLOUDFLARE_API_TOKEN appears in repo or environment secrets; PR #8474 bootstrap preflight is already merged on main.",
+    "next_action": "Dispatch the Cloudflare bootstrap workflow on main (or inspect bitwarden_sync_failure tail to restore secret delivery) before minting any new credential."
+  },
+  "live_edge": {
+    "url": "https://llm.meridianlabs.cloud/health",
+    "http_status": 525,
+    "cf_ray": "a5f288debdff1237-LHR",
+    "has_expected_marker": false,
+    "body_preview": "error code: 525\n"
+  },
+  "workflows": {
+    "workflow_dir_found": true,
+    "matches": [
+      {
+        "file": ".github/workflows/advisory-remediation.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_COMPARTMENT_OCID",
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/agent-sandbox.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_DEEPSEEK_API_KEY",
+          "SEED_GEMINI_API_KEY",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_GROQ_API_KEY",
+          "SEED_MINIMAX_API_KEY",
+          "SEED_OPENROUTER_API_KEY",
+          "SEED_ZAI_API_KEY"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/argon-guardian-relay.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/bytesync-web-deploy.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_CLOUDFLARE_ROOT_TOKEN",
+          "SEED_R2_ACCOUNT_ID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": true,
+        "wiring_suspects": [
+          "wrangler_workflow_references_zero_cloudflare_secrets"
+        ]
+      },
+      {
+        "file": ".github/workflows/catalog-render.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_HERMES_TELEGRAM_BOT_TOKEN",
+          "SEED_HERMES_TELEGRAM_HOME_CHANNEL",
+          "SEED_LITELLM_API_KEY",
+          "SEED_R2_ACCESS_KEY_ID",
+          "SEED_R2_ACCOUNT_ID",
+          "SEED_R2_BUCKET",
+          "SEED_R2_SECRET_ACCESS_KEY"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "environments": [],
+        "relevant_secrets": [],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/concierge-deploy.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_MINIMAX_API_KEY",
+          "SEED_MODAL_TOKEN_ID",
+          "SEED_MODAL_TOKEN_SECRET",
+          "SEED_OPENAI_API_KEY",
+          "SEED_R2_ACCESS_KEY_ID",
+          "SEED_R2_ACCOUNT_ID",
+          "SEED_R2_BUCKET",
+          "SEED_R2_SECRET_ACCESS_KEY"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/deploy-when-green.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-bootstrap.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_CLOUDFLARE_ROOT_TOKEN"
+        ],
+        "uses_bootstrap_script": true,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-db-backup.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-escrow.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-homes-drill.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-inventory.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-progress.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-secret-prune.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-state.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_HERMES_LITELLM_API_KEY",
+          "SEED_R2_ACCESS_KEY_ID",
+          "SEED_R2_ACCOUNT_ID",
+          "SEED_R2_BUCKET",
+          "SEED_R2_SECRET_ACCESS_KEY"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/estate-watch.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/feature-request-enable.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/flux-board-reconcile.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/forge-collect-ci-runs.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_FLUX_WRITER_IDENTITY_B64",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/forge-train-kaggle.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/forge-train.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_MODAL_TOKEN_ID",
+          "SEED_MODAL_TOKEN_SECRET"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/founder-passkey-deploy.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_CLOUDFLARE_ROOT_TOKEN",
+          "SEED_R2_ACCOUNT_ID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/genesis-aistudio-source-intake.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/greenlane.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/image-update-pr.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_FLUX_WRITER_IDENTITY_B64",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/incident-loop.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_HERMES_TELEGRAM_BOT_TOKEN",
+          "SEED_HERMES_TELEGRAM_HOME_CHANNEL"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/kini-finish.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_FLUX_WRITER_IDENTITY_B64",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/login-drill.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/mac-salvage.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/merge-when-green.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/name-drift.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/objective-miner.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/oidc-trust.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/op-verify.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/otto-homes.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_S3_ACCESS_KEY",
+          "OCI_S3_SECRET_KEY",
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/otto-lifeboat.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_CLOUDFLARE_ROOT_TOKEN"
+        ],
+        "uses_bootstrap_script": true,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/otto-parity.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_HERMES_TELEGRAM_BOT_TOKEN",
+          "SEED_HERMES_TELEGRAM_HOME_CHANNEL"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/ping.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_HERMES_TELEGRAM_BOT_TOKEN",
+          "SEED_HERMES_TELEGRAM_HOME_CHANNEL"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": true,
+        "wiring_suspects": [
+          "wrangler_invoked_without_CLOUDFLARE_API_TOKEN_env",
+          "wrangler_workflow_references_zero_cloudflare_secrets"
+        ]
+      },
+      {
+        "file": ".github/workflows/pr-age.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/quad-issue.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/reconcile-backstage.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/recovery-data.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/router-catalog-gate.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_DEEPSEEK_API_KEY",
+          "SEED_GEMINI_API_KEY",
+          "SEED_KIMI_API_KEY",
+          "SEED_MINIMAX_API_KEY",
+          "SEED_OPENROUTER_API_KEY"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/router-edge-release.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_CLOUDFLARE_WORKERS_TOKEN",
+          "SEED_MERIDIAN_ADMIN_KEY",
+          "SEED_MERIDIAN_CLIENT_KEY",
+          "SEED_R2_ACCOUNT_ID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": true,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/router-recovery.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_S3_ACCESS_KEY",
+          "OCI_S3_SECRET_KEY",
+          "OCI_TENANCY_OCID",
+          "SEED_CLOUDFLARE_ROOT_TOKEN",
+          "SEED_DEEPSEEK_API_KEY",
+          "SEED_GEMINI_API_KEY",
+          "SEED_KIMI_API_KEY",
+          "SEED_MINIMAX_API_KEY",
+          "SEED_OPENROUTER_API_KEY",
+          "SEED_R2_ACCOUNT_ID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/submit-gate.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/ticket-verification.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/vault-bootstrap.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/vault-reads.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/vault-seed.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_S3_ACCESS_KEY",
+          "OCI_S3_SECRET_KEY",
+          "OCI_TENANCY_OCID",
+          "SEED_DEEPSEEK_API_KEY",
+          "SEED_GEMINI_API_KEY",
+          "SEED_GITHUB_APP_CLIENT_ID",
+          "SEED_GITHUB_APP_ID",
+          "SEED_GITHUB_APP_PEM_B64",
+          "SEED_GITHUB_APP_SLUG",
+          "SEED_KIMI_API_KEY",
+          "SEED_MINIMAX_API_KEY",
+          "SEED_OPENROUTER_API_KEY"
+        ],
+        "uses_bootstrap_script": true,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/verdict-backstage.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/verdict-langfuse.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/verdict-signoz.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/verdict-surfaces.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/webhook-diagnose-v2.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/webhook-diagnose.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "OCI_TENANCY_OCID"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      },
+      {
+        "file": ".github/workflows/zone-bind.yml",
+        "environments": [],
+        "relevant_secrets": [
+          "SEED_CLOUDFLARE_ROOT_TOKEN"
+        ],
+        "uses_bootstrap_script": false,
+        "uses_wrangler": false,
+        "wiring_suspects": []
+      }
+    ]
+  },
+  "github_state": {
+    "gh_available": true,
+    "repo": "chidionyema/idp",
+    "repo_secrets": {
+      "OCI_S3_ACCESS_KEY": "2026-08-26T01:01:37Z",
+      "OCI_S3_SECRET_KEY": "2026-08-26T01:01:38Z",
+      "OCI_TENANCY_OCID": "2026-08-31T00:47:37Z",
+      "SEED_CLOUDFLARE_ROOT_TOKEN": "2026-09-10T13:02:58Z",
+      "SEED_MERIDIAN_ADMIN_KEY": "2026-11-22T20:38:09Z",
+      "SEED_MERIDIAN_CLIENT_KEY": "2026-11-22T20:38:08Z"
+    },
+    "environment_secrets": {
+      "ship": []
+    },
+    "recent_router_runs": [],
+    "bitwarden_sync_failure": {
+      "run_id": "45221446895",
+      "created_at": "2026-11-23T16:52:51Z",
+      "tail_15_lines": [
+        "log not found: 137856471573"
+      ]
+    }
+  }
+}
