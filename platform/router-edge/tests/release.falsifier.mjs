@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
-import { activeRollbackId, failureCause, firstBootDeployArgs, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs, workerSecrets } from "../scripts/release.mjs";
+import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, liveCommitSha, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, uploadArgs, workerSecrets } from "../scripts/release.mjs";
 import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -28,11 +29,13 @@ test("immutable tags use full reviewed source SHA", () => {
 });
 test("first boot never asks Wrangler to keep vars from a deployment that does not exist", () => {
   const first = uploadArgs(SHA, immutableTag(SHA), false);
+  assert.ok(!first.includes("--secrets-file"), "a version upload never carries a secret");
   assert.ok(!first.includes("--keep-vars"), "first boot must not pass --keep-vars");
   assert.ok(first.includes("--strict"));
   assert.deepEqual(first.slice(0, 2), ["versions", "upload"]);
   assert.ok(first.includes("COMMIT_SHA:" + SHA));
   const later = uploadArgs(SHA, immutableTag(SHA), true);
+  assert.ok(!first.includes("--secrets-file"));
   assert.ok(later.includes("--keep-vars"), "a re-deploy keeps the dashboard vars");
   assert.ok(later.includes("--strict"));
 });
@@ -44,8 +47,29 @@ test("a first boot deploys, because only deploy may create a Durable Object clas
   assert.ok(args.includes("COMMIT_SHA:" + SHA));
   assert.ok(args.includes(immutableTag(SHA)));
   assert.ok(!args.includes("--secrets-file"), "no secret file, no flag");
-  const withSecrets = firstBootDeployArgs(SHA, immutableTag(SHA), "/tmp/w.json");
-  assert.deepEqual(withSecrets.slice(-2), ["--secrets-file", "/tmp/w.json"]);
+});
+
+test("a Worker secret is set at script scope, so a rollback target authenticates too", () => {
+  // Measured 2026-11-25 (run 45685741113): `--secrets-file` on an upload bound the admin key
+  // to one version, the run reported upload_ok, the next admin call answered
+  // 401 invalid_admin_key, and /health served commit 820bc8a34 while main was 0064d55f2.
+  assert.deepEqual(secretBulkArgs("/tmp/w.json"), ["secret", "bulk", "/tmp/w.json"]);
+  for (const args of [uploadArgs(SHA, immutableTag(SHA), true), firstBootDeployArgs(SHA, immutableTag(SHA))]) {
+    assert.ok(!args.includes("--secrets-file"), "secrets are never bound to a single version");
+  }
+});
+
+test("a deploy is proved by the version that answers, not by an upload that said ok", async () => {
+  assert.equal(await liveCommitSha("https://llm.meridianlabs.cloud", async () =>
+    new Response(JSON.stringify({ status: "ok", commit_sha: SHA }), { status: 200 })), SHA);
+  await assert.rejects(
+    liveCommitSha("https://llm.meridianlabs.cloud", async () => new Response("{}", { status: 503 })),
+    /health refused 503/,
+  );
+  await assert.rejects(
+    liveCommitSha("https://llm.meridianlabs.cloud", async () => new Response("{}", { status: 200 })),
+    /BLIND: \/health carries no commit_sha/,
+  );
 });
 test("the Worker is given its own keys, because a deploy never carries them", () => {
   assert.deepEqual(
@@ -54,8 +78,9 @@ test("the Worker is given its own keys, because a deploy never carries them", ()
   );
   assert.deepEqual(workerSecrets({ MERIDIAN_CLIENT_KEY: "c" }), { MERIDIAN_CLIENT_KEY: "c" });
   assert.deepEqual(workerSecrets({}), {});
-  const args = uploadArgs(SHA, immutableTag(SHA), true, "/tmp/w.json");
-  assert.deepEqual(args.slice(-3), ["--secrets-file", "/tmp/w.json", "--strict"]);
+  const args = uploadArgs(SHA, immutableTag(SHA), true);
+  assert.deepEqual(args.slice(-2), ["--keep-vars", "--strict"]);
+  assert.ok(!args.includes("--secrets-file"), "secrets go through `secret bulk`, at script scope");
 });
 test("a failed child carries its own cause, never a credential", () => {
   assert.equal(failureCause("some noise\nError: Cannot use --keep-vars\n"), "some noise / Error: Cannot use --keep-vars");
@@ -152,4 +177,23 @@ test("seeding the pool is an idempotent PUT that names a refusal and is proved b
     liveRoles("https://llm.meridianlabs.cloud", "k", async () => new Response("{}", { status: 401 })),
     /role read refused 401/,
   );
+});
+
+test("the serve window is a budget, not a single look", () => {
+  // Run 45685741113 measured the old 3x3s window too short: /health still reported the
+  // rollback target after an upload that said ok. The wait is bounded so a stuck deploy
+  // fails the release instead of hanging it.
+  assert.ok(SERVE_ATTEMPTS >= 5, "at least five looks at /health");
+  assert.ok(SERVE_ATTEMPTS * SERVE_PAUSE_MS <= 30_000, "the whole window stays under 30s");
+});
+
+test("secrets are set before the pool is seeded, because a version without them refuses the seed", () => {
+  // Measured 2026-11-25 (run 45685741113): role seed refused 401 invalid_admin_key because
+  // the version answering held no admin key. The script-scoped secret must land first.
+  const src = fs.readFileSync(new URL("../scripts/release.mjs", import.meta.url), "utf8");
+  const bulkAt = src.indexOf("secretBulkArgs(secretsFile)");
+  const seedAt = src.indexOf("seedRolePool(process.env");
+  assert.ok(bulkAt > 0, "the release applies script-scoped secrets");
+  assert.ok(seedAt > 0, "the release seeds the pool");
+  assert.ok(bulkAt < seedAt, "secrets before seed");
 });
