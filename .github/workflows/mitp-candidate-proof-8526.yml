@@ -13,11 +13,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Verify candidate file hashes and run original Rust tests
+      - name: Verify candidate file hashes and run corrected candidate Rust tests
         run: |
           set -euo pipefail
           test "$(git hash-object platform/mitp-core/Cargo.toml)" = bbe15c180a736878aee8c69fc2b4c9a0d064f644
-          test "$(git hash-object platform/mitp-core/src/lib.rs)" = 0e9ece9304d2c9efbfe299bc4de77ded07d34f64
+          test "$(git hash-object platform/mitp-core/src/lib.rs)" = a75a4041473e2938cee7ba307654ca14116d3807
           test "$(git hash-object platform/mitp-core/tests/switching_gate_proptest.rs)" = df9434fd4ffba2cf5d4801d0f5d7dd2352441f27
           rustc --version
           cargo --version

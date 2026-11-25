@@ -515,8 +515,21 @@ impl HysteresisSequencer {
         self.spent_minor += actual_spend_minor;
 
         if let Some(j_id) = pinned_challenger {
-            let cost_j = self.envelopes[&j_id].cost_minor;
-            if next_pool >= cost_j {
+            let challenger = &self.envelopes[&j_id];
+            let cost_j = challenger.cost_minor;
+            // The pin reserves a logical slot, not irrevocable admission authority.
+            // Re-evaluate the current valuation and mandate at the settlement boundary.
+            let can_activate = challenger.state == EnvelopeState::PendingDrain
+                && challenger.parent_mandate_digest == self.mandate_digest
+                && self.reserved_slots() <= self.policy.max_active_slots
+                && challenger.latest_proposal.as_ref().is_some_and(|proposal| {
+                    proposal.target_envelope_digest == j_id
+                        && proposal.parent_mandate_digest == self.mandate_digest
+                        && !proposal.unsupported_constraints
+                        && proposal.is_fresh(self.now_ms)
+                        && proposal.priority >= self.policy.admit_floor
+                });
+            if can_activate && next_pool >= cost_j {
                 self.free_minor = next_pool - cost_j;
                 let j_mut = self.envelopes.get_mut(&j_id).unwrap();
                 j_mut.state = EnvelopeState::Active;
@@ -524,7 +537,7 @@ impl HysteresisSequencer {
                 j_mut.admitted_at_ms = self.now_ms;
                 j_mut.pinned_to = None;
             } else {
-                // Switching loss exhausted headroom: fail closed back to STAGED.
+                // No current admission authority or insufficient headroom: restage.
                 self.free_minor = next_pool;
                 let j_mut = self.envelopes.get_mut(&j_id).unwrap();
                 j_mut.state = EnvelopeState::Staged;
