@@ -17,6 +17,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 18
+    # Zone B edge is a production deploy: waits on exactly one founder approval tap.
+    environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,6 +36,45 @@ jobs:
           npm test
           node --test tests/release.falsifier.mjs
           echo "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"
+      - name: Mint the ephemeral Workers token (R52 - one root, code mints the rest)
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          ZONE_NAME: meridianlabs.cloud
+        run: |
+          set -euo pipefail
+          API=https://api.cloudflare.com/client/v4
+          cf() { curl -sS -H "Authorization: Bearer $1" -H 'Content-Type: application/json' "${@:2}"; }
+          groups=$(cf "$ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
+          WS=$(gid "Workers Scripts Write" com.cloudflare.api.account)
+          WR=$(gid "Workers Routes Write" com.cloudflare.api.account.zone)
+          ZREAD=$(gid "Zone Read" com.cloudflare.api.account.zone.read) || true
+          [ -n "$ZREAD" ] || ZREAD=$(jq -r '.result[] | select((.scopes|index("com.cloudflare.api.account.zone.read")) or (.name|test("Zone Read";"i"))) | .id' <<<"$groups" | head -1)
+          [ -n "$WS" ] && [ -n "$WR" ] && [ -n "$ZREAD" ] || { echo "FAIL    cloudflare  missing permission group(s):"; jq -r '.result[] | select((.name|test("Workers")) or (.name|test("Zone";"i"))) | "        " + .name + "  " + (.scopes|join(","))' <<<"$groups"; exit 1; }
+          # The root is pinned to a zone set that predates the meridianlabs.cloud cutover (measured
+          # 2026-11-18, run 44183564083): resolve the zone through a zone-read child, then delete it.
+          probe=$(cf "$ROOT" -X POST -d "$(jq -nc --arg n "router-edge-release zone-read $GITHUB_RUN_ID" --arg g "$ZREAD" '{name:$n,policies:[{effect:"allow",resources:{"com.cloudflare.api.account.zone.*":"*"},permission_groups:[{id:$g}]}]}')" "$API/user/tokens")
+          jq -e '.success' <<<"$probe" >/dev/null || { echo "FAIL    cloudflare  zone-read child refused:"; jq -c '.errors' <<<"$probe"; exit 1; }
+          probe_id=$(jq -r .result.id <<<"$probe"); probe_value=$(jq -r .result.value <<<"$probe")
+          echo "::add-mask::$probe_value"
+          zone=$(cf "$probe_value" "$API/zones?name=$ZONE_NAME" | jq -r '.result[0] // empty')
+          cf "$ROOT" -X DELETE "$API/user/tokens/$probe_id" >/dev/null
+          [ -n "$zone" ] || { echo "FAIL    cloudflare  $ZONE_NAME is not a zone of the account this root can reach"; exit 1; }
+          zid=$(jq -r .id <<<"$zone")
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "router-edge-release $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg ws "$WS" --arg wr "$WR" --arg zr "$ZREAD" --arg e "$expires" \
+            '{name:$n, expires_on:$e, policies:[
+               {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:[{id:$ws}]},
+               {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$zr},{id:$wr}]}]}')
+          out=$(cf "$ROOT" -X POST -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  Workers token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          value=$(jq -r .result.value <<<"$out")
+          echo "::add-mask::$value"
+          echo "token=$value" >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Workers token minted (Scripts@account + ZoneRead/Routes@$ZONE_NAME), expires $expires"
+
       - name: Release with bounded probes and rollback
         working-directory: platform/router-edge
         env:
@@ -42,7 +83,7 @@ jobs:
           RELEASE_RECEIPT_PATH: ${{ runner.temp }}/router-release-receipt.json
           RELEASE_PREFLIGHT_FILE: ${{ runner.temp }}/router-preflight.sha
           MERIDIAN_ROUTER_URL: https://llm.meridianlabs.cloud
-          CLOUDFLARE_API_TOKEN: ${{ secrets.SEED_CLOUDFLARE_WORKERS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.mint.outputs.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
           MERIDIAN_CLIENT_KEY: ${{ secrets.SEED_MERIDIAN_CLIENT_KEY }}
           MERIDIAN_ADMIN_KEY: ${{ secrets.SEED_MERIDIAN_ADMIN_KEY }}
