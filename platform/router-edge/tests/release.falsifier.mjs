@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeRollbackId, requireMainSha, immutableTag, pinnedWranglerVersion } from "../scripts/release.mjs";
+import { activeRollbackId, failureCause, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs } from "../scripts/release.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -24,4 +24,20 @@ test("immutable tags use full reviewed source SHA", () => {
   assert.equal(pinnedWranglerVersion(" ⛅️ wrangler 4.131.0"), true);
   assert.equal(pinnedWranglerVersion("4.131.0"), true);
   assert.equal(pinnedWranglerVersion("4.130.0"), false);
+});
+test("first boot never asks Wrangler to keep vars from a deployment that does not exist", () => {
+  const first = uploadArgs(SHA, immutableTag(SHA), false);
+  assert.ok(!first.includes("--keep-vars"), "first boot must not pass --keep-vars");
+  assert.ok(first.includes("--strict"));
+  assert.deepEqual(first.slice(0, 2), ["versions", "upload"]);
+  assert.ok(first.includes("COMMIT_SHA:" + SHA));
+  const later = uploadArgs(SHA, immutableTag(SHA), true);
+  assert.ok(later.includes("--keep-vars"), "a re-deploy keeps the dashboard vars");
+  assert.ok(later.includes("--strict"));
+});
+test("a failed child carries its own cause, never a credential", () => {
+  assert.equal(failureCause("some noise\nError: Cannot use --keep-vars\n"), "Error: Cannot use --keep-vars");
+  assert.equal(failureCause("Bearer abcdefghijklmnopqrstuvwxyz0123456789"), "Bearer <redacted>");
+  assert.ok(!failureCause("token sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF").includes("abcdefghijklmnopqrstuvwxyz0123456789"));
+  assert.equal(failureCause(""), "");
 });
