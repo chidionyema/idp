@@ -61,6 +61,14 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "Independent trusted-main execution of the actual Engine two-main unchanged-head identical-cause suppression, durable restart, changed-head re-admission, and UNKNOWN refusal (#8289); not a claim of external service availability"
+    },
+    {
+      "name": "bootstrap.r2_scoped_failures",
+      "measure": ["python3", "tests/test_r2_decouple.py"],
+      "unit": "fatal_r2_fails_in_bootstrap_path",
+      "better": "lower",
+      "owner": "greenlane",
+      "description": "Fatal R2 failure points in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (I-8455 Stage 1: R2 gates only R2); baseline 2 (mint + bucket proof), target 0"
     }
   ]
 }
