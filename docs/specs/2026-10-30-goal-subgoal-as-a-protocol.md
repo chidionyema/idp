@@ -126,9 +126,10 @@ calls do not live inside -- the daemon's own words.
 The door consults the **plan state** before accepting anything that mutates state, spends money or
 runs code. Three cases:
 
-- a plan exists for the presented session, and the active subgoal has a `Scenario` -> accept;
-- no plan, or no scenario for the active subgoal -> **refuse** with `refused: true`,
-  `fatal: true`, `reason: "plan_not_declared"` / `"subgoal_scenario_missing"`;
+- a plan exists for the presented session -> **accept**. A DECLARED PLAN IS LIVE: the scenario,
+  the edge cases and the effects are required before a goal is CLAIMED DONE (`complete_goal` is
+  refused without them), not before every command -- idp#8558;
+- no plan -> **refuse** with `refused: true`, `fatal: true`, `reason: "plan_not_declared"`;
 - read-only commands (reads, searches, `git status`) are allowed without a plan, because reading is
   how a plan is made -- the same carve-out the existing `NEVER_BLOCKED`/`MEMORY_READS` lists in
   `extensions/pi-plan-lock/plan.ts` already make.

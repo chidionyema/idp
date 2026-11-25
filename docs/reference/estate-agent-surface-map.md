@@ -128,7 +128,7 @@ measured_at: 2026-10-26T21:51:57+00:00
          so:    A context compiler or a policy inserted at 'the gateway' has nowhere universal to sit. Enforcement is per-surface and therefore uneven.
          proof: extensions/estate-capabilities/index.ts; ~/.estate/harness/cc/settings.json (PreToolUse catch-all)
      G2  The Claude Code shell is gated by session discipline, not by policy
-         what:  The catch-all PreToolUse hook runs estate-memory-enforce's plan gate: it refuses a shell call when the session has no declared plan or no BDD scenario for the active sub-goal. That is a discipline gate. Nothing inspects WHICH command runs, and permissions.deny is empty while autoMode.allow carries 10 broad grants (read any file, run python3, git, gh, merge).
+         what:  The catch-all PreToolUse hook runs estate-memory-enforce's plan gate: it refuses a shell call when the session has no declared plan. A DECLARED PLAN IS LIVE: the scenario, the edge cases and the effects are required before a goal is CLAIMED DONE, not before every command (idp#8558). That is a discipline gate. Nothing inspects WHICH command runs, and permissions.deny is empty while autoMode.allow carries 10 broad grants (read any file, run python3, git, gh, merge).
          so:    The estate's central law (intents only) does not hold on this runtime. Any invariant enforced only at a door is unenforced here.
          proof: ~/.estate/harness/cc/settings.json (permissions, autoMode); platform/estate/memory/plan.py:271
      G3  The Pi door has a free-form command entrance

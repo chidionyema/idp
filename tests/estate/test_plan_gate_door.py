@@ -114,12 +114,18 @@ def test_a_declared_plan_with_its_scenario_lets_the_work_through(contract):
     assert gate["goal_id"] == "goal_1"
 
 
-def test_a_subgoal_without_a_scenario_is_refused(contract):
+def test_a_declared_plan_without_a_scenario_is_live(contract):
+    """One shot: a declared plan starts the session and the work runs.
+
+    The scenario, the edge cases and the effects are required before a goal is CLAIMED DONE
+    (apply refuses complete_goal without them), not before every command: the toll made a
+    session ceremonial and made the repair call unreachable (founder, 2026-11-25).
+    """
     contract.append_plan_event("sess-under-test", "declare_plan", DECLARE)
     gate = door._plan_gate("git push origin lane/x")
-    assert gate["ok"] is False
-    assert gate["reason"] == "subgoal_scenario_missing"
-    assert "goal_1" in gate["detail"]
+    assert gate["ok"] is True
+    assert gate["reason"] == "plan_active"
+    assert gate["goal_id"] == "goal_1"
 
 
 def test_automation_that_presents_no_session_is_let_through(contract, monkeypatch):

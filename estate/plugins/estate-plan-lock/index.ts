@@ -2,7 +2,7 @@
 // allow is refused. Fails open, ESTATE_PLAN_LOCK=off opts out.
 import { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
-import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs"
+import { existsSync, readFileSync, appendFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 
@@ -22,65 +22,42 @@ const TIMEOUT_MS = 8000
 // which plan.py reads as "no plan declared" -- so a founder who declared a plan, added a BDD and
 // completed a goal still had every tool refused, because the gate was judging an empty plan while
 // the real one sat on disk. Read that file and replay it into plan.py.
-const PLAN_TOOL_NAMES = [
-  "declare_plan", "revise_plan", "add_bdd", "address_edgecases",
-  "address_2nd_order_effects", "complete_goal",
-] as const
+// The gate does NOT reconstruct plan calls from the agent's source text.
+//
+// MEASURED 2026-11-25: this hook used to read the FIRST plan-tool call out of the code payload
+// by brace matching and rewrite the object literal as JSON. A payload it could not read -- an
+// apostrophe, a nested literal, a second plan call -- was never recorded, so the plan never
+// advanced, and the gate then refused every tool, including the add_bdd that would have
+// repaired it: a session could brick itself with one apostrophe, and the refusal pointed at
+// the one call the gate could not see.
+//
+// The ledger has ONE writer now: the estate-memory bridge, which records the STRUCTURED call it
+// applied -- the tool name and the arguments it was given, not a guess about the agent's source.
+// A call the bridge refuses is not recorded, so the ledger holds only calls that applied. The
+// gate reads that ledger and judges. This is the same rule the other opencode plugin already
+// follows (platform/estate/memory/opencode-estate-memory.js): the plugin publishes identity,
+// never a second plan model.
 
-// Measured 2026-11-20 on the live hook: the tool string is `estate-memory_declare_plan`, so the
-// canonical name is the segment after the last underscore. This is the ONLY hook OpenCode runs —
-// the other plugin's tool.execute.after never fires — so this is where the session ledger is written.
-function canonicalPlanTool(tool: string): string | null {
-  const name = String(tool ?? "").split("_").pop() ?? ""
-  return (PLAN_TOOL_NAMES as readonly string[]).includes(name) ? name : null
-}
-
-// The agent also reaches the plan tools through the `execute` tool:
-//   execute { code: 'const m = tools["estate-memory"]; await m.declare_plan({ goal: "…" })' }
-// and the inner MCP call never reaches this hook, so the session ledger stays empty and every
-// later tool is refused for "no plan declared" while the plan exists in the MCP's own file.
-// This reads the FIRST plan-tool call out of that code payload by brace matching, converts the
-// object literal to JSON (bare keys quoted, single quotes normalised), and records it.
-function planCallFromCode(code: string): { tool: string; args: unknown } | null {
-  const m = /\b(declare_plan|revise_plan|add_bdd|address_edgecases|address_2nd_order_effects|complete_goal)\s*\(/.exec(code)
-  if (!m) return null
-  const tool = m[1]
-  const open = code.indexOf("{", m.index + m[0].length)
-  if (open < 0) return null
-  let depth = 0, inStr: string | null = null, esc = false
-  for (let i = open; i < code.length; i++) {
-    const ch = code[i]
-    if (inStr) {
-      if (esc) esc = false
-      else if (ch === "\\") esc = true
-      else if (ch === inStr) inStr = null
-      continue
-    }
-    if (ch === '"' || ch === "'" || ch === "`") { inStr = ch; continue }
-    if (ch === "{") depth++
-    else if (ch === "}" && --depth === 0) {
-      const literal = code.slice(open, i + 1)
-      try {
-        const asJson = literal
-          .replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":')
-          .replace(/'/g, '"')
-          .replace(/,\s*([}\]])/g, "$1")
-        return { tool, args: JSON.parse(asJson) }
-      } catch { return null }
-    }
-  }
-  return null
-}
-
-function recordPlanCall(sid: string, canonical: string, args: unknown): void {
+// The CLI door (bin/estate-plan) resolves the session from the caller's own process tree, and
+// the pointer for the runtime that owns this session is what it reads. Without it the sanctioned
+// fallback landed on another session's ledger (measured 2026-11-25: "goal_diag_release is not on
+// this plan"), so the gate publishes the pointer for the process that owns the session.
+function publishSessionPointer(sid: string): void {
+  if (!sid) return
+  const pid = process.pid
+  const pointer = path.join(homedir(), ".estate", "plans", `session-${pid}.json`)
   try {
-    const dir = path.join(homedir(), ".estate", "plans")
-    mkdirSync(dir, { recursive: true })
-    appendFileSync(
-      path.join(dir, `${safeId(sid)}.jsonl`),
-      JSON.stringify({ tool: canonical, args: args ?? {} }) + "\n",
+    const current = JSON.parse(readFileSync(pointer, "utf8"))
+    if (current && current.session_id === sid) return
+  } catch { /* no pointer yet: publish one */ }
+  try {
+    execFile(
+      "python3",
+      [PLAN, "publish", "--session", sid, "--pid", String(pid), "--overwrite"],
+      { timeout: TIMEOUT_MS },
+      () => {},
     )
-  } catch { /* a broken ledger must not take a session down */ }
+  } catch { /* a pointer that cannot be written is not a crash */ }
 }
 
 function safeId(sid?: string): string {
@@ -137,12 +114,7 @@ export default Plugin.define({
       const tool = t?.tool ?? ""
       const sid = t?.sessionID ?? t?.sessionId ?? ""
       const args = t?.input ?? t?.args
-      const direct = canonicalPlanTool(tool)
-      if (direct) recordPlanCall(sid, direct, args)
-      else if (String(tool ?? "") === "execute" && typeof (args as any)?.code === "string") {
-        const inner = planCallFromCode((args as any).code)
-        if (inner) recordPlanCall(sid, inner.tool, inner.args)
-      }
+      publishSessionPointer(sid)
       const v = await authorize(tool, args, sid)
       if (v && v.ok === false) throw new Error(v.reason ?? "plan lock refused")
     })
