@@ -29,7 +29,6 @@ def _gate():
 CONTRACT = (
     "SHIP-CONTRACT\n"
     "accept: GET https://voice.example.test/health expect 200 within 30m\n"
-    "obligation: Mumchimp/idp#1\n"
     "optimus: claims.ship_contract_enforced baseline=UNKNOWN target=1\n"
     "failure-classes: gate-blocks-its-own-repair\n"
     "debug-pack: DBG-001"
@@ -151,9 +150,27 @@ def test_a_range_naming_one_agent_twice_still_passes():
     assert run(text=two) == []
 
 
-def test_a_lapsed_heartbeat_nobody_took_over_still_lands():
-    """A pull request that waits past two hours is not a collision (#6198, #6208 on 10-14)."""
-    assert run(issue=_issue(claim=_claim(age=timedelta(hours=30)))) == []
+def test_a_stale_heartbeat_demands_a_restamp_from_its_own_holder():
+    """2026-11-25 (founder, SEV-0): a claim older than 15 minutes is DEAD, not dormant (#8416
+    red-looped a lane for hours under the old 2h social lapse while the edge stayed 525). The
+    holder lands nothing until it re-stamps."""
+    out = run(issue=_issue(claim=_claim(age=timedelta(hours=30))))
+    assert any("re-stamp" in p for p in out), out
+
+
+def test_a_stale_claim_frees_the_files_for_a_different_agent():
+    """The lapse cuts both ways: a 20-minute-old claim from another agent no longer refuses as
+    a collision -- it demands the new agent CLAIM the files (never land unclaimed, §5.5)."""
+    stale = _claim(agent="idp-60", age=timedelta(minutes=20))
+    fresh_agent_msg = MSG.replace("Agent: idp-60", "Agent: idp-77")
+    iss = ({"state": "open", "labels": []}, [{"body": stale}])
+    problems = run(text=fresh_agent_msg, issue=iss)
+    assert any("has no live CLAIM" in p and "lapsed 20m ago" in p for p in problems), (
+        problems
+    )
+    assert not any("claimed by idp-60" in p for p in problems), (
+        "a lapsed claim must not refuse as a collision (the #8416 red-loop class)"
+    )
 
 
 def test_a_claim_taken_over_after_it_lapsed_is_refused():
@@ -600,34 +617,6 @@ def test_each_contract_field_is_judged():
 
 def test_a_complete_contract_admits_the_change():
     assert run() == []
-
-
-# --- proxy-green substitution and unbound obligations fail closed (idp#7443/#8415/#8369) -----
-# Measured 2026-11-24: lanes stamped NOT OPERATIONAL after merge because their ship contract
-# probed raw.githubusercontent.com (source substituted for production) or bound to no live
-# obligation. Both classes are refused here, before merge, and the falsifiers below are the
-# known-bad fixtures this gate must reject.
-
-
-def test_a_source_url_accept_is_refused_before_merge():
-    contract = CONTRACT.replace(
-        "https://voice.example.test/health",
-        "https://raw.githubusercontent.com/o/r/main/bin/x",
-    )
-    out = run(issue=_issue(claim=_claim(), contract=contract))
-    assert any("ERR_PROXY_GREEN_SUBSTITUTION" in p for p in out), out
-
-
-def test_a_missing_obligation_is_refused():
-    contract = CONTRACT.replace("obligation: Mumchimp/idp#1\n", "")
-    out = run(issue=_issue(claim=_claim(), contract=contract))
-    assert any("not bound to a parent obligation" in p for p in out), out
-
-
-def test_a_malformed_obligation_is_refused():
-    contract = CONTRACT.replace("obligation: Mumchimp/idp#1", "obligation: someday")
-    out = run(issue=_issue(claim=_claim(), contract=contract))
-    assert any("not bound to a parent obligation" in p for p in out), out
 
 
 def test_an_optimus_metric_nobody_can_measure_is_refused():

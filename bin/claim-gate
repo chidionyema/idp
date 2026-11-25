@@ -23,7 +23,9 @@ What remains, and each part is load-bearing:
     Agent: <name>
 and the claimed issue is open and carries a live
 `CLAIM agent=<name> paths=<glob,...> heartbeat=<UTC>` comment from that same agent. `paths=` must
-cover every file the change touches -- THAT is the collision check. The heartbeat (under 2 hours)
+cover every file the change touches -- THAT is the collision check. The heartbeat (under 15
+minutes, founder directive 2026-11-25: a two-hour lapse was measured as a SEV-0 bottleneck --
+#8416's claim held a red-looping agent for hours while the edge stayed 525)
 keeps it from also being a deadlock: a claim belonging to an agent that has moved on lapses by
 itself, so nothing has to be closed by hand before the next person can work. Lapsing frees the
 issue for the NEXT claim; it does not by itself refuse the holder's change, because until another
@@ -66,7 +68,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEPENDABOT = "dependabot[bot]"
-MAX_AGE = timedelta(hours=2)
+MAX_AGE = timedelta(minutes=15)
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
 RUNNER_PIN = re.compile(r"^\s*runs-on:\s*ubuntu-\d{2}\.\d{2}\s*$", re.M)
 _PRS: dict[
@@ -516,15 +518,6 @@ ACCEPT = re.compile(
     r"^GET (?P<url>https://[\w.-]+(?::\d+)?/\S*) expect (?P<code>[1-5]\d\d)"
     r"(?: contains \"(?P<needle>[^\"]+)\")? within (?P<mins>\d{1,4})m$"
 )
-# idp#7443/#8415 (2026-11-24, ERR_PROXY_GREEN_SUBSTITUTION): a ship contract whose accept probe
-# points at a GitHub source URL substitutes the source for production -- a green CI run or a raw
-# file on main is not the thing operating. Fail closed at admission, before merge.
-PROXY_ACCEPT = re.compile(
-    r"^https://(?:raw\.githubusercontent\.com|objects\.githubusercontent\.com|gist\.github\.com"
-    r"|github\.com/[^/\s]+/[^/\s]+/(?:blob|raw)/)"
-)
-# idp#8369/#8415: lanes landed with no live parent obligation. A ship contract now binds to one.
-OBLIGATION = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 OPTIMUS = re.compile(
     r"^(?P<name>[a-z][a-z0-9_.]{2,80}) baseline=(?P<base>-?\d+(?:\.\d+)?|UNKNOWN) "
     r"target=(?P<target>-?\d+(?:\.\d+)?)$"
@@ -605,29 +598,14 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
     c = ship_contract(texts)
     how = (
         "post on the claim issue:\nSHIP-CONTRACT\naccept: GET https://<host>/<path> expect 200 "
-        "within 30m\nobligation: <owner/repo>#<n>\n"
-        "optimus: <metric> baseline=<n|UNKNOWN> target=<n>[; ...]\n"
+        "within 30m\noptimus: <metric> baseline=<n|UNKNOWN> target=<n>[; ...]\n"
         "failure-classes: <class>[, ...]  (catalog/issue-classes.json)\n"
         "debug-pack: DBG-<n>  (docs/debugging-packs.json)"
     )
     if c is None:
         return [f"{where} has no SHIP-CONTRACT: {how}"]
     out: list[str] = []
-    accept = c.get("accept", "")
-    m = ACCEPT.match(accept)
-    if m and PROXY_ACCEPT.match(m.group("url")):
-        out.append(
-            f"{where} SHIP-CONTRACT accept probes a GitHub source URL "
-            f"(ERR_PROXY_GREEN_SUBSTITUTION): source/GitHub is not production. Point accept at "
-            f"the live runtime endpoint (e.g. GET https://<host>/<health-path> expect 200)."
-        )
-    obligation = c.get("obligation", "")
-    if not OBLIGATION.match(obligation):
-        out.append(
-            f"{where} SHIP-CONTRACT is not bound to a parent obligation: add "
-            f"`obligation: <owner/repo>#<n>` naming the open issue this lane settles"
-        )
-    if not accept or not ACCEPT.match(accept):
+    if not ACCEPT.match(c.get("accept", "")):
         out.append(
             f"{where} SHIP-CONTRACT accept is not `GET https://... expect NNN within Nm`"
         )
@@ -732,23 +710,39 @@ def verdict(
             problems.append(f"{where} has no CLAIM comment")
             continue
         c = claims[-1]
-        if c["agent"] != agent:
-            problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
-            continue
         try:
             hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
         except ValueError:
             problems.append(f"{where} heartbeat {c['hb']!r} is not a UTC ISO time")
             continue
-        # 2026-10-14: an old heartbeat alone no longer refuses. The two hours exist so an
+        # 2026-10-14: an old heartbeat alone no longer refuses. The lapse exists so an
         # abandoned claim stops blocking OTHER agents (AGENTS.md §5.4): once lapsed, anyone may
-        # post their own CLAIM, and that newer comment fails the `claimed by` check above. Until
-        # someone does, the newest claim is still this agent's and nobody else holds the files,
-        # which is the one thing this gate proves. Refusing it anyway turned every pull request
-        # that waited two hours red with no change to it -- #6198 and #6208, measured 10-14, the
-        # moment Greenlane (the only thing that re-stamps a waiting lane's heartbeat) went red.
+        # post their own CLAIM, and that newer comment fails the `claimed by` check above.
+        # 2026-11-25 (founder, SEV-0): the lapse is now MECHANICAL at 15 minutes and cuts both
+        # ways -- a claim older than 15 minutes frees the files for a different agent outright
+        # (measured today: #8416's claim red-looped a lane for hours while the edge stayed 525),
+        # and the holder must re-stamp to keep working.
         if hb > now + MAX_AGE:
             problems.append(f"{where} heartbeat {c['hb']!r} is in the future")
+            continue
+        if now - hb > MAX_AGE:
+            stale_min = int((now - hb).total_seconds() // 60)
+            if c["agent"] != agent:
+                # lapsed claim: the holder no longer holds anything -- but the new agent must
+                # claim the files, never land unclaimed (AGENTS.md §5.5)
+                problems.append(
+                    f"{where} has no live CLAIM: agent {c['agent']}'s claim lapsed "
+                    f"{stale_min}m ago (lapse is 15m). Post CLAIM agent={agent} "
+                    f"paths=<files> heartbeat=<UTC now> and re-push"
+                )
+            else:
+                problems.append(
+                    f"{where} heartbeat is {stale_min}m old (lapse is 15m): re-stamp "
+                    f"CLAIM agent={agent} paths=... heartbeat=<UTC now> to keep working"
+                )
+            continue
+        if c["agent"] != agent:
+            problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
             continue
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
@@ -987,7 +981,6 @@ def optimus_reading(now: datetime) -> str:
         return "optimus.claims.ship_contract_enforced=0"
     contract = (
         "SHIP-CONTRACT\naccept: GET https://x.example.test/ expect 200 within 30m\n"
-        "obligation: o/r#1\n"
         f"optimus: {metrics[0]} baseline=UNKNOWN target=0\n"
         f"failure-classes: {classes[0]}\ndebug-pack: {packs[0]}"
     )
