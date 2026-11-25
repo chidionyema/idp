@@ -1,0 +1,112 @@
+{
+  "schema": "meridian.spec/1",
+  "id": "TOP-001",
+  "instruction": "Founder instruction to elevate operational topology",
+  "class": "governance",
+  "founder": {
+    "why": "Recurring systemic failures expose missing dependency assurance.",
+    "proposal": "Make topology a first-class planning and admission requirement.",
+    "value": "Reduce preventable cascades and preserve recoverability.",
+    "alternatives": [
+      {
+        "option": "Retain incident-driven repair",
+        "tradeoff": "Low initial effort but recurring systemic exposure."
+      },
+      {
+        "option": "Progressive topology admission",
+        "tradeoff": "Engineering effort and bounded validation before enforcement."
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Incomplete graph or unavailable verifier",
+        "control": "Scoped shadow evaluation and independently authorised repair."
+      }
+    ],
+    "decision": "Approve principle and bounded canary, not blanket production enforcement.",
+    "recommendation": "Use existing graph and effect gates; prove safe recovery first."
+  },
+  "scope": {
+    "owner": "Existing Living Intelligence Graph programme",
+    "affected": [
+      "IDP #8184 and #7819 planning and assurance"
+    ],
+    "excluded": [
+      "New control plane, laptop execution or paid service"
+    ],
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "outcomes": [
+    {
+      "id": "OUTCOME-01",
+      "effect": "Admission refuses structurally infeasible work.",
+      "acceptance": "Independent canary proves legitimate work and refusal of unsafe plan.",
+      "falsifier": "Remove mandatory dependency and prove refusal before inference.",
+      "independent_verifier": "Existing Optimus authorised independent reviewer"
+    }
+  ],
+  "topology": {
+    "snapshot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dependencies": [
+      {
+        "id": "CAPABILITY-REGISTRY",
+        "kind": "required",
+        "evidence": "Existing capability-index and graph provenance, pending current pin.",
+        "failure_domain": "Canonical graph projection and source custody"
+      }
+    ],
+    "unknowns": [
+      {
+        "question": "Actual full runtime topology coverage?",
+        "resolution": "Measure existing capability census and independent probes.",
+        "owner": "Existing graph programme owner"
+      }
+    ],
+    "blast_radius": "Planning and admission paths; preserve unrelated work.",
+    "fault_model": "Declared single dependency faults and specified common causes."
+  },
+  "resources": {
+    "max_incremental_pence": 0,
+    "max_duration_seconds": 600,
+    "basis": "Synthetic reference fixture only; no production budget authorised.",
+    "uncertainties": [
+      "Engineering effort and full runtime coverage unmeasured."
+    ]
+  },
+  "delivery": [
+    {
+      "id": "WP00-CENSUS",
+      "owner": "Existing graph programme owner",
+      "action": "Pin sources and inventory dependency contracts.",
+      "exit_evidence": "Independent source and coverage receipt.",
+      "requires": []
+    },
+    {
+      "id": "WP01-CANARY",
+      "owner": "Existing admission programme owner",
+      "action": "Replay bounded historical failure and validate candidate.",
+      "exit_evidence": "Positive and negative independent receipt.",
+      "requires": [
+        "WP00-CENSUS"
+      ]
+    }
+  ],
+  "assurance": {
+    "authority_boundary": "Existing founder scope approval and trusted effect gates.",
+    "proof_plan": "Bind exact revision and independent positive and negative evidence.",
+    "negative_tests": [
+      "Reject missing dependency and stale policy receipt."
+    ],
+    "settlement": "Only independently verified operational effect settles obligation."
+  },
+  "recovery": {
+    "rollback": "Withdraw candidate and retain previous trusted admission policy.",
+    "independent_path": "Use authorised existing cloud recovery route independent of graph service.",
+    "custody": "KARMA retains original obligation and fenced successor.",
+    "deadline": "Route substantive stagnation at existing 600-second deadline."
+  },
+  "annex": {
+    "ref": "MERIDIAN_TOP_001_Constitutional_Topology_Specification.md",
+    "sha256": "1d4a2ae065d6b387cd43c7d8d807d451b1acb3cb7e3f7117b58f4290c20faa98"
+  }
+}
