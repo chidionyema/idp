@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeRollbackId, failureCause, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs } from "../scripts/release.mjs";
+import { activeRollbackId, failureCause, firstBootDeployArgs, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs } from "../scripts/release.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -35,9 +35,24 @@ test("first boot never asks Wrangler to keep vars from a deployment that does no
   assert.ok(later.includes("--keep-vars"), "a re-deploy keeps the dashboard vars");
   assert.ok(later.includes("--strict"));
 });
+test("a first boot deploys, because only deploy may create a Durable Object class", () => {
+  const args = firstBootDeployArgs(SHA, immutableTag(SHA));
+  assert.equal(args[0], "deploy", "first boot must use `wrangler deploy`");
+  assert.ok(!args.includes("--keep-vars"));
+  assert.ok(args.includes("--strict"));
+  assert.ok(args.includes("COMMIT_SHA:" + SHA));
+  assert.ok(args.includes(immutableTag(SHA)));
+});
 test("a failed child carries its own cause, never a credential", () => {
-  assert.equal(failureCause("some noise\nError: Cannot use --keep-vars\n"), "Error: Cannot use --keep-vars");
+  assert.equal(failureCause("some noise\nError: Cannot use --keep-vars\n"), "some noise / Error: Cannot use --keep-vars");
   assert.equal(failureCause("Bearer abcdefghijklmnopqrstuvwxyz0123456789"), "Bearer <redacted>");
   assert.ok(!failureCause("token sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF").includes("abcdefghijklmnopqrstuvwxyz0123456789"));
   assert.equal(failureCause(""), "");
+  const wrangler = "\u001b[31m✘ [ERROR] A request to the Cloudflare API failed.\u001b[0m\n"
+    + "  Authentication error [code: 10000]\n"
+    + "🪵  Logs were written to \"/home/runner/.config/.wrangler/logs/x.log\"\n";
+  assert.equal(
+    failureCause(wrangler),
+    "✘ [ERROR] A request to the Cloudflare API failed. / Authentication error [code: 10000]",
+  );
 });
