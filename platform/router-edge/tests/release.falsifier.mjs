@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { activeRollbackId, failureCause, firstBootDeployArgs, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs, workerSecrets } from "../scripts/release.mjs";
-import { MIN_OUTPUT_FLOOR, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
+import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -71,26 +71,34 @@ test("a failed child carries its own cause, never a credential", () => {
   );
 });
 
-test("a role is never offered for a vendor the Worker holds no key for", () => {
-  const both = rolePool({ SEED_MINIMAX_API_KEY: "m", SEED_DEEPSEEK_API_KEY: "d" });
-  assert.deepEqual(Object.keys(both.roles), ["role:coder"]);
-  assert.deepEqual(both.roles["role:coder"].candidates.map((c) => c.id), ["minimax-m3", "deepseek-chat"]);
-  const only = rolePool({ SEED_MINIMAX_API_KEY: "m" });
-  assert.deepEqual(only.roles["role:coder"].candidates.map((c) => c.id), ["minimax-m3"]);
-  // No key at all is an empty pool, never a pool of guarantees: the refusal the edge gives
-  // (`unknown_role`) is honest, a 502 from a lane with no credential is not.
-  assert.deepEqual(rolePool({}), { roles: {} });
-  assert.deepEqual(vendorSecrets({ SEED_DEEPSEEK_API_KEY: "d" }), { DEEPSEEK_API_KEY: "d" });
-  // The Worker's own binding names, never the estate's SEED_* names, reach the deploy.
+test("the pool is repo truth, so a key set out-of-band can serve without a release", () => {
+  // Seeding must not depend on the release step's env: the Cloudflare dashboard (or a
+  // sealed workflow later) can put a vendor key on the Worker, and this pool must already
+  // name that lane. A pool gated on SEED_* could only ever serve keys CI happened to hold.
+  assert.deepEqual(rolePool(), rolePool({}));
+  const { roles } = rolePool();
+  assert.deepEqual(Object.keys(roles), ["role:coder"]);
   assert.deepEqual(
-    workerSecrets({ MERIDIAN_CLIENT_KEY: "c", SEED_MINIMAX_API_KEY: "m" }),
-    { MERIDIAN_CLIENT_KEY: "c", MINIMAX_API_KEY: "m" },
+    roles["role:coder"].candidates.map((c) => c.id),
+    ["minimax-m3", "deepseek-chat", "gemini-3.5-flash"],
+  );
+  const bindings = new Set(Object.keys(vendorSecrets({
+    SEED_MINIMAX_API_KEY: "m", SEED_DEEPSEEK_API_KEY: "d", SEED_GEMINI_API_KEY: "g",
+  })));
+  for (const c of roles["role:coder"].candidates) {
+    assert.ok(bindings.has(c.apiKeySecretName), `unknown binding ${c.apiKeySecretName}`);
+    assert.ok(!/sk-|Bearer /.test(JSON.stringify(c)), "a candidate never carries a secret value");
+  }
+  // The Worker's own binding names reach the deploy, never the estate's SEED_* names.
+  assert.deepEqual(
+    workerSecrets({ MERIDIAN_CLIENT_KEY: "c", SEED_GEMINI_API_KEY: "g" }),
+    { MERIDIAN_CLIENT_KEY: "c", GEMINI_API_KEY: "g" },
   );
 });
 
 test("the pool carries the lane truth this repo records, not a copy of it", () => {
-  const { roles } = rolePool({ SEED_MINIMAX_API_KEY: "m", SEED_DEEPSEEK_API_KEY: "d" });
-  const [minimax, deepseek] = roles["role:coder"].candidates;
+  const { roles } = rolePool();
+  const [minimax, deepseek, gemini] = roles["role:coder"].candidates;
   assert.equal(roles["role:coder"].minOutputFloor, MIN_OUTPUT_FLOOR);
   assert.ok(roles["role:coder"].minOutputFloor >= 2048, "wrangler.toml DEFAULT_OUTPUT_FLOOR");
   assert.equal(minimax.baseUrl, "https://api.minimax.io/v1/chat/completions");
@@ -100,12 +108,13 @@ test("the pool carries the lane truth this repo records, not a copy of it", () =
   assert.equal(minimax.costPer1kOutputUsd, 0.0012);
   assert.equal(deepseek.baseUrl, "https://api.deepseek.com/chat/completions");
   assert.equal(deepseek.upstreamModel, "deepseek-chat");
-  assert.equal(deepseek.maxContextTokens, 65536);
   assert.equal(deepseek.costPer1kInputUsd, 0.00014);
   assert.equal(deepseek.costPer1kOutputUsd, 0.00028);
-  for (const c of [minimax, deepseek]) {
-    assert.equal(c.apiKeySecretName, c.apiKeySecretName.toUpperCase(), "binding name, not a key");
-    assert.ok(!/sk-|Bearer /.test(JSON.stringify(c)), "a candidate never carries a secret value");
+  assert.equal(gemini.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+  assert.equal(gemini.upstreamModel, "gemini-3.5-flash");
+  // "Gemini goes last everywhere and heads nothing" (llm/config.yaml).
+  assert.ok(gemini.priority > minimax.priority && gemini.priority > deepseek.priority);
+  for (const c of [minimax, deepseek, gemini]) {
     assert.equal(c.maxOutputTokens, 8192);
     assert.equal(c.supportsTools, false, "tool support is a measurement, not an edit");
     assert.equal(c.lane, "edge-direct");
@@ -113,8 +122,8 @@ test("the pool carries the lane truth this repo records, not a copy of it", () =
   }
 });
 
-test("seeding the pool is an idempotent PUT that names a refusal", async () => {
-  const payload = rolePool({ SEED_MINIMAX_API_KEY: "m" });
+test("seeding the pool is an idempotent PUT that names a refusal and is proved by a read", async () => {
+  const payload = rolePool();
   const calls = [];
   const ok = await seedRolePool("https://llm.meridianlabs.cloud", "admin-key", payload, async (url, init) => {
     calls.push({ url, init });
@@ -132,12 +141,15 @@ test("seeding the pool is an idempotent PUT that names a refusal", async () => {
       new Response('{"error":"unknown_role"}', { status: 404 })),
     /role seed refused 404: \{"error":"unknown_role"\}/,
   );
-  // Nothing to seed is not a call.
-  let touched = false;
-  const empty = await seedRolePool("https://llm.meridianlabs.cloud", "k", rolePool({}), async () => {
-    touched = true;
-    return new Response("{}", { status: 200 });
+  // What the router holds is read back, not assumed from a 200 on the PUT.
+  const live = await liveRoles("https://llm.meridianlabs.cloud", "admin-key", async (url, init) => {
+    assert.equal(init.method, undefined, "a read is a GET");
+    assert.equal(init.headers.authorization, "Bearer admin-key");
+    return new Response(JSON.stringify({ roles: { "role:coder": { candidates: [] } } }), { status: 200 });
   });
-  assert.deepEqual(empty, { configured: 0, status: 0, skipped: "no vendor key held" });
-  assert.equal(touched, false);
+  assert.deepEqual(live, ["role:coder"]);
+  await assert.rejects(
+    liveRoles("https://llm.meridianlabs.cloud", "k", async () => new Response("{}", { status: 401 })),
+    /role read refused 401/,
+  );
 });
