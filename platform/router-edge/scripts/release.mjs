@@ -126,7 +126,12 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // A deployment that answers with its OWN structured refusal is working: it routed, tried each
 // candidate in priority order, and named each cause. The lanes are down, not the deploy.
 export function isAllBackendsFailed(text) {
-  return /"type"\s*:\s*"all_pool_backends_failed"/.test(String(text ?? ""));
+  // The measured body arrives ESCAPED: the prober's failure is a JSON string inside the JSON
+  // line the child printed, so the receipt holds \"type\":\"all_pool_backends_failed\".
+  // Matching only the unescaped form is why run 45693773697 still rolled back after this
+  // decision landed -- the falsifier had pinned a shape the estate never actually emits.
+  const flat = String(text ?? "").replace(/\\"/g, '"');
+  return /"type"\s*:\s*"all_pool_backends_failed"/.test(flat);
 }
 
 export function shouldRollback({ liveSha, releasedSha, probeError }) {
