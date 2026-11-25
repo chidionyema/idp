@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+import {TextDecoder} from "node:util";
 // Research candidate: pure common-spec contract predicate; no deployment or authority grant.
 function validateSpec(s) {
   const errors=[];
@@ -52,12 +54,41 @@ function founderView(s) {
   if(errors.length)throw Error("INVALID_SPEC");
   return {id:s.id,instruction:s.instruction,...s.founder,resource_cap_pence:s.resources.max_incremental_pence,time_cap_seconds:s.resources.max_duration_seconds,uncertainties:s.resources.uncertainties,unknown_dependencies:s.topology.unknowns,outcomes:s.outcomes.map(x=>({effect:x.effect,acceptance:x.acceptance})),disposition:"PROPOSAL_ONLY"};
 }
-function prestart(s, trusted) {
-  const errors=validateSpec(s);
-  if(errors.length)return {decision:"DENY",errors};
-  // trusted must be assembled by existing authorised admission machinery, never from the spec or user input.
-  // This reference predicate is not a cryptographic verifier or a grant of authority.
-  if(!trusted||trusted.verified!==true||trusted.specDigest!==trusted.actualDigest||!(/^[a-f0-9]{64}$/.test(trusted.actualDigest??""))||trusted.instruction!==s.instruction||trusted.base!==s.scope.base||trusted.topology!==s.topology.snapshot||trusted.annexDigest!==s.annex.sha256||trusted.decision!=="SCOPE_AUTHORIZED"||trusted.policyCurrent!==true||!Number.isSafeInteger(trusted.now)||!Number.isSafeInteger(trusted.expires)||trusted.expires<=trusted.now||!Number.isSafeInteger(trusted.reservedPence)||trusted.reservedPence<s.resources.max_incremental_pence||!Number.isSafeInteger(trusted.reservedSeconds)||trusted.reservedSeconds<s.resources.max_duration_seconds)return {decision:"DENY",errors:["TRUSTED_ADMISSION_BINDING_REQUIRED"]};
-  return {decision:"ELIGIBLE_FOR_EXISTING_AUTHORITY_GATE",errors:[]};
+// Canonical JSON is recursively key-sorted ECMAScript JSON, without whitespace.
+function canonicalSpec(value) {
+  if (Array.isArray(value)) return "[" + value.map(canonicalSpec).join(",") + "]";
+  if (value !== null && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonicalSpec(value[k])).join(",") + "}";
+  }
+  return JSON.stringify(value);
 }
-export {validateSpec,founderView,prestart};
+function prestart(raw, annexBytes, trusted) {
+  const deny = (...errors) => ({decision:"DENY",errors});
+  if (!Buffer.isBuffer(raw) || raw.length === 0 || raw.length > 262144 ||
+      !Buffer.isBuffer(annexBytes) || annexBytes.length === 0 || annexBytes.length > 8388608)
+    return deny("INVALID_INPUT_BYTES");
+  let s;
+  try {
+    s = JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(raw));
+    if (!raw.equals(Buffer.from(canonicalSpec(s),"utf8"))) return deny("NON_CANONICAL_SPEC");
+  } catch { return deny("INVALID_SPEC_JSON"); }
+  const errors = validateSpec(s);
+  if (errors.length) return deny(...errors);
+  const digest = createHash("sha256").update(raw).digest("hex");
+  const annexDigest = createHash("sha256").update(annexBytes).digest("hex");
+  // Trusted context comes ONLY from the existing authenticated admission
+  // boundary. This predicate does not authenticate callers or grant authority.
+  if (!trusted || trusted.verified !== true || trusted.specDigest !== digest ||
+      trusted.instruction !== s.instruction || trusted.base !== s.scope.base ||
+      trusted.topology !== s.topology.snapshot || trusted.annexDigest !== annexDigest ||
+      s.annex.sha256 !== annexDigest || trusted.decision !== "SCOPE_AUTHORIZED" ||
+      trusted.policyCurrent !== true || trusted.materialDependenciesVerified !== true ||
+      !Number.isSafeInteger(trusted.now) || !Number.isSafeInteger(trusted.expires) ||
+      trusted.expires <= trusted.now || !Number.isSafeInteger(trusted.reservedPence) ||
+      trusted.reservedPence < s.resources.max_incremental_pence ||
+      !Number.isSafeInteger(trusted.reservedSeconds) ||
+      trusted.reservedSeconds < s.resources.max_duration_seconds)
+    return deny("TRUSTED_ADMISSION_BINDING_REQUIRED");
+  return {decision:"ELIGIBLE_FOR_EXISTING_AUTHORITY_GATE",errors:[],specDigest:digest,annexDigest};
+}
+export {validateSpec,founderView,canonicalSpec,prestart};
