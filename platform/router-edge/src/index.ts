@@ -10,7 +10,12 @@ import type {
 
 export { BudgetLedgerDO, RoutingStateDO };
 
-const FAILOVER_STATUS_CODES = new Set([408, 413, 429, 500, 502, 503, 504, 520, 522, 524, 525, 530]);
+// 401/402/403 are LANE state, not caller errors: a vendor key that was revoked or a wallet
+// that ran dry must fail over like a 429 and never reach the caller. Measured 2026-11-25,
+// run 45680655819: MiniMax answered 402 insufficient_balance_error and the router returned
+// that 402 to probe 3 instead of walking to the next candidate, so one exhausted plan took
+// the whole role down while two other lanes sat in the pool.
+const FAILOVER_STATUS_CODES = new Set([401, 402, 403, 408, 413, 429, 500, 502, 503, 504, 520, 522, 524, 525, 530]);
 
 async function timingSafeTokenEqual(provided: string, expected: string): Promise<boolean> {
   if (!provided || !expected) return false;

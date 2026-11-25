@@ -57,11 +57,7 @@ async function drain() {
 }
 
 // Seed live Role pool via Admin API (zero static TOML)
-const seedRes = await worker.fetch(
-  new Request("https://llm.meridianlabs.cloud/admin/v1/roles", {
-    method: "PUT",
-    headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
-    body: JSON.stringify({
+const rolePayload = {
       roles: {
         "role:coder": {
           role: "role:coder",
@@ -100,7 +96,13 @@ const seedRes = await worker.fetch(
           ],
         },
       },
-    }),
+    };
+
+const seedRes = await worker.fetch(
+  new Request("https://llm.meridianlabs.cloud/admin/v1/roles", {
+    method: "PUT",
+    headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
+    body: JSON.stringify(rolePayload),
   }),
   env,
   ctx
@@ -108,12 +110,20 @@ const seedRes = await worker.fetch(
 assert.equal(seedRes.status, 200);
 
 // Mock upstream fetch
+let groqMode = "413";
 const calls = [];
 globalThis.fetch = async (url, init) => {
   const parsed = JSON.parse(init.body);
   calls.push({ url: String(url), max_tokens: parsed.max_tokens, model: parsed.model });
 
   if (String(url).includes("mock.groq.local")) {
+    // Lane state, not payload state: an exhausted wallet answers 402 and a revoked key 401.
+    if (groqMode === "402") {
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "insufficient_balance_error" } }),
+        { status: 402 }
+      );
+    }
     return new Response(JSON.stringify({ error: "request too large" }), { status: 413 });
   }
   return new Response(
@@ -194,4 +204,37 @@ const res4 = await worker.fetch(
 );
 assert.equal(res4.status, 401);
 
-console.log("ALL 4 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)");
+// Test 5: an exhausted wallet (402) fails over instead of reaching the caller.
+// A fresh routing namespace means no circuit is open for groq, so the 402 path is the one
+// exercised — the measured failure of run 45680655819, where MiniMax's 402 was returned to
+// probe 3 while two lanes sat idle in the pool.
+groqMode = "402";
+const env5 = { ...env, ROUTING_STATE: makeNamespace(RoutingStateDO), BUDGET_LEDGER: makeNamespace(BudgetLedgerDO) };
+const seed5 = await worker.fetch(
+  new Request("https://llm.meridianlabs.cloud/admin/v1/roles", {
+    method: "PUT",
+    headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
+    body: JSON.stringify(rolePayload),
+  }),
+  env5,
+  ctx
+);
+assert.equal(seed5.status, 200);
+calls.length = 0;
+const res5 = await worker.fetch(
+  new Request("https://llm.meridianlabs.cloud/v1/chat/completions", {
+    method: "POST",
+    headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
+    body: JSON.stringify({ model: "role:coder", messages: [{ role: "user", content: "x".repeat(4000) }] }),
+  }),
+  env5,
+  ctx
+);
+await drain();
+assert.equal(res5.status, 200, "a 402 from one lane must never be the caller's answer");
+assert.equal(res5.headers.get("x-meridian-backend"), "deepseek-wide-context");
+assert.equal(res5.headers.get("x-meridian-failover-count"), "1");
+assert.equal(calls.length, 2, "groq was tried once, then the next lane served");
+assert.equal(calls[0].model, "openai/gpt-oss-120b");
+
+console.log("ALL 5 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)");
