@@ -64,11 +64,27 @@
     },
     {
       "name": "bootstrap.r2_scoped_failures",
-      "measure": ["python3", "tests/test_r2_decouple.py"],
+      "measure": [
+        "python3",
+        "tests/test_r2_decouple.py"
+      ],
       "unit": "fatal_r2_fails_in_bootstrap_path",
       "better": "lower",
       "owner": "greenlane",
       "description": "Fatal R2 failure points in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (I-8455 Stage 1: R2 gates only R2); baseline 2 (mint + bucket proof), target 0"
+    },
+    {
+      "name": "pr_age.red_runs_baseline_break",
+      "measure": [
+        "python3",
+        "bin/idp-pr-age",
+        "--json",
+        "/dev/null"
+      ],
+      "unit": "runs",
+      "better": "lower",
+      "owner": "greenlane",
+      "description": "scheduled pr-age sweeps that exit BLIND/2 on a dead repo in the default --repos list (run 45595449643, idp#8537)"
     }
   ]
 }
