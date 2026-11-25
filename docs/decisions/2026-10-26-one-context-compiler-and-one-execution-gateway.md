@@ -2,6 +2,11 @@
 
 **Date:** 2026-10-26
 **Status:** accepted (founder, 2026-10-26 — "document this as very important")
+**Amended:** 2026-11-25 (idp#8558) — the plan gate no longer refuses a shell call for a missing
+BDD scenario: a declared plan is LIVE, and the scenario, the edge cases and the effects are
+required before a goal is CLAIMED DONE. The measurement below is kept as it was measured on
+2026-10-26; the current contract is `platform/estate/memory/plan.py` and
+`extensions/pi-plan-lock/cases.json`.
 **Spec:** [`docs/specs/2026-10-26-context-compiler-and-execution-gateway.md`](../specs/2026-10-26-context-compiler-and-execution-gateway.md)
 **Evidence:** [`docs/reference/estate-agent-surface-map.md`](../reference/estate-agent-surface-map.md) ·
 measured by `bin/estate-surface-map`

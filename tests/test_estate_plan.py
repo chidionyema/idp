@@ -203,9 +203,14 @@ def test_the_hook_refuses_work_with_no_plan_and_names_declare_plan(tmp_path):
     assert "declare_plan" in _hook(tmp_path, "Bash", [])
 
 
-def test_the_hook_refuses_work_until_the_active_sub_goal_has_a_bdd(tmp_path):
+def test_the_hook_lets_work_through_once_a_plan_is_declared(tmp_path):
+    """One shot: a declared plan starts the session.
+
+    The scenario is required before a goal is CLAIMED DONE, not before every command
+    (founder, 2026-11-25: "starting session should be one shot live").
+    """
     declared = [("mcp__estate-memory__declare_plan", GOAL)]
-    assert "add_bdd" in _hook(tmp_path, "Edit", declared)
+    assert _hook(tmp_path, "Edit", declared) is None
     assert (
         _hook(tmp_path, "Edit", declared + [("mcp__estate-memory__add_bdd", BDD)])
         is None
@@ -328,7 +333,9 @@ def test_opencode_refuses_work_until_the_sessions_plan_allows_it():
     out = json.loads(r.stdout)
     assert out["none"].startswith("refused") and "declare_plan" in out["none"]
     assert out["declare"] == "allowed"
-    assert out["nobdd"].startswith("refused") and "add_bdd" in out["nobdd"]
+    # a declared plan is LIVE: the scenario is required before the goal is CLAIMED DONE, not
+    # before ordinary work (founder, 2026-11-25: one shot live).
+    assert out["nobdd"] == "allowed"
     assert out["bdd"] == "allowed"
     assert out["other"].startswith("refused"), (
         "one session's plan must not open another's"
