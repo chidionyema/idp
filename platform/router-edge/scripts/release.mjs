@@ -61,10 +61,14 @@ function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false
   // Never echo process output: it could contain credentials or provider responses.
   if (p.error || p.status !== 0) {
     const cause = failureCause(p.stderr || p.stdout);
-    throw new Error(
+    const err = new Error(
       path.basename(cmd) + " " + args.slice(0, 2).join(" ") + " failed rc=" + (p.status ?? "signal")
       + (cause ? ": " + cause : ""),
     );
+    // A 300-character last line is a SUMMARY, not a cause. The error carries the whole child
+    // message so the receipt can name which lane failed how, not a prefix of it.
+    err.detail = failureCause(p.stderr || p.stdout, 4000);
+    throw err;
   }
   return p.stdout;
 }
@@ -111,6 +115,15 @@ export function workerSecrets(env) {
   return Object.assign(secrets, vendorSecrets(env));
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// What a failed release writes down. Measured 2026-11-25 (run 45688808353): the pool answered
+// 503 all_pool_backends_failed and the receipt stopped inside the FIRST attempt
+// ("backendId":"minimax-m3","status":402 ...), so which lane failed how -- the whole point of
+// the receipt -- was unreadable. The summary line stays short; the detail carries the cause.
+export function receiptError(e) {
+  const message = String(e?.message ?? e);
+  const detail = String(e?.detail ?? message);
+  return { error: message.slice(0, 400), error_detail: detail.slice(0, 4000) };
+}
 // A new Cloudflare deployment propagates in seconds, and a 3x3s window was measured too
 // short on run 45685741113, where /health still answered the rollback target afterwards.
 // The window is a named budget so a falsifier can assert it rather than guess it.
@@ -131,7 +144,7 @@ export async function release() {
     schema: "meridian/zone-b-release-v1", sha: process.env.RELEASE_SHA ?? null,
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
-    role_seed: null, live_commit_sha: null, secrets_applied: false,
+    role_seed: null, live_commit_sha: null, secrets_applied: false, error_detail: null,
     started_at: new Date().toISOString(),
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
@@ -242,7 +255,7 @@ export async function release() {
     r.status = "OPERATIONAL";
   } catch (e) {
     r.status = "NOT_OPERATIONAL";
-    r.error = String(e?.message ?? e).slice(0, 400);
+    Object.assign(r, receiptError(e));
     if (r.deploy_attempted && r.previous_version_id) {
       r.rollback_attempted = true;
       try {
