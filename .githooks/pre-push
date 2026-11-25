@@ -109,9 +109,28 @@ fi
 # `Claim: <owner>/<repo>#<n>` and `Agent: <name>`, and the issue a live CLAIM comment.
 # When the gate cannot judge (offline, no gh) the push goes through BLIND; CI is the guarantee.
 _claim_guard() {
-  local root out rc repo base
+  local root out rc repo base gate
   root="$(git rev-parse --show-toplevel)"
   [ -x "$root/bin/claim-gate" ] || { echo "BLIND claim-gate: not in this checkout"; return 0; }
+  # FULL SHIFT-LEFT (2026-11-25, the idp#8543/#8494 class): CI always runs MAIN's claim-gate,
+  # while this hook used to run the CHECKOUT's copy -- whatever version the pushing agent's
+  # stale clone had. Measured today: PR #8543's push passed a pre-obligation local gate at
+  # 13:27Z and died in CI 26s later on the obligation rule that had merged at 13:10Z. A gate
+  # judged from a stale copy is not shift-left; it is shift-somewhere-else. So the push is now
+  # judged with MAIN's gate bytes, fetched at push time -- identical to CI by construction.
+  # The checkout copy is only the offline fallback (BLIND, CI remains the guarantee).
+  gate="$root/bin/claim-gate"
+  if git fetch -q origin main 2>/dev/null; then
+    gate="$(mktemp "${TMPDIR:-/tmp}/claim-gate.main.XXXXXX")"
+    if git show origin/main:bin/claim-gate >"$gate" 2>/dev/null && chmod +x "$gate" 2>/dev/null; then
+      echo "ok    claim-gate judged with origin/main's bytes (full shift-left)"
+    else
+      rm -f "$gate"; gate="$root/bin/claim-gate"
+      echo "BLIND claim-gate: origin/main unreadable; judging with the checkout copy"
+    fi
+  else
+    echo "BLIND claim-gate: offline; judging with the checkout copy"
+  fi
   repo="${GITHUB_REPOSITORY:-$(git remote get-url origin 2>/dev/null | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')}"
   while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     # Every branch, not only lane/*: CI runs claim-gate on every pull request. Measured 2026-10-14:
@@ -126,7 +145,7 @@ _claim_guard() {
       continue
     }
     rc=0
-    out="$(GITHUB_REPOSITORY="$repo" "$root/bin/claim-gate" "$base" "$local_sha" 2>&1)" || rc=$?
+    out="$(GITHUB_REPOSITORY="$repo" "$gate" "$base" "$local_sha" 2>&1)" || rc=$?
     if [ "$rc" = 0 ]; then
       echo "$out"
     elif grep -q '^FAIL  claim-gate' <<<"$out"; then
