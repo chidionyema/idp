@@ -29,7 +29,7 @@ start litellm) leaves the PR UNSTABLE -- mergeable -- and the old any-failure ru
 red, so none was armed and the pile grew behind one advisory check. GitHub's mergeStateStatus is the
 verdict; the rollup only names the check when that verdict is a refusal.
 
-Usage: bin/idp-pr-age [--repos idp,crew,claude-guards] [--act] [--json FILE ...]   (--json: test injection)
+Usage: bin/idp-pr-age [--repos idp,crew] [--act] [--json FILE ...]   (--json: test injection)
 """
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def act(repo: str, n: int, age_h: float, why: str, max_h: float, head: str = "")
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repos", default="idp,crew,claude-guards")
+    ap.add_argument("--repos", default="idp,crew")
     ap.add_argument("--json", nargs="*", help="files of `gh pr list --json` output, with a `repo` key per PR (tests)")
     ap.add_argument("--now", help="ISO timestamp (tests); otherwise GitHub's clock")
     ap.add_argument("--act", action="store_true", help="auto-merge green rows, comment PR AGE: on rows over the bound")
