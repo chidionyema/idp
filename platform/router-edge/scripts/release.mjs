@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
+import { liveRoles, rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -169,7 +169,10 @@ export async function release() {
     // 200 with configured_roles 0. The pool is seeded through the admin API (zero static
     // TOML) from the estate's recorded lane truth, and only for vendors the Worker holds.
     // Seeding is idempotent, so it is retried while the new version propagates.
-    const pool = rolePool(process.env);
+    // Repo truth, not release env: the pool names every lane the estate records, and the
+    // router fails over across them, so a key set out-of-band (dashboard) serves with no
+    // code change and an exhausted wallet costs one attempt instead of the role.
+    const pool = rolePool();
     if (Object.keys(pool.roles).length) {
       for (let n = 1; n <= 3; n++) {
         try {
@@ -182,7 +185,13 @@ export async function release() {
         }
       }
     } else {
-      r.role_seed = { configured: 0, status: 0, skipped: "no vendor key held" };
+      r.role_seed = { configured: 0, status: 0, skipped: "no enabled candidate" };
+    }
+    // The receipt proves what the ROUTER holds, not what this script sent.
+    try {
+      r.role_seed.live = await liveRoles(process.env.MERIDIAN_ROUTER_URL, process.env.MERIDIAN_ADMIN_KEY);
+    } catch (e) {
+      r.role_seed.live_read_error = String(e?.message ?? e).slice(0, 160);
     }
     await pause(3000);
     for (let n = 1; n <= 3; n++) {
