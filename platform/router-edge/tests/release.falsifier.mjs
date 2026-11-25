@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, liveCommitSha, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, uploadArgs, workerSecrets } from "../scripts/release.mjs";
+import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, uploadArgs, workerSecrets } from "../scripts/release.mjs";
 import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -196,4 +196,25 @@ test("secrets are set before the pool is seeded, because a version without them 
   assert.ok(bulkAt > 0, "the release applies script-scoped secrets");
   assert.ok(seedAt > 0, "the release seeds the pool");
   assert.ok(bulkAt < seedAt, "secrets before seed");
+});
+
+test("a failed release carries the whole cause, not the first 400 characters of it", () => {
+  // The measured receipt of run 45688808353 cut the 503 body mid-JSON, inside the FIRST
+  // attempt: the estate could see all_pool_backends_failed and could not see which lane
+  // answered 402 and which answered 401. A cause you cannot read is not a receipt.
+  const body = 'failed rc=1: {"error":{"type":"all_pool_backends_failed","role":"role:coder","attempts":['
+    + '{"backendId":"minimax-m3","status":402,"detail":"insufficient_balance_error"},'
+    + '{"backendId":"deepseek-chat","status":401,"detail":"authentication_error"},'
+    + '{"backendId":"gemini-3.5-flash","status":500,"detail":"missing_secret_GEMINI_API_KEY"}]}}';
+  const e = Object.assign(new Error(body), { detail: body });
+  const r = receiptError(e);
+  assert.equal(r.error.length, Math.min(400, body.length), "the summary line stays bounded");
+  assert.equal(r.error_detail, body);
+  for (const lane of ["minimax-m3", "deepseek-chat", "gemini-3.5-flash", "missing_secret_GEMINI_API_KEY"]) {
+    assert.ok(r.error_detail.includes(lane), `receipt names ${lane}`);
+  }
+  // A bounded detail, so a pathological child cannot fill the artifact.
+  assert.equal(receiptError(Object.assign(new Error("x"), { detail: "y".repeat(9000) })).error_detail.length, 4000);
+  // An error with no detail of its own degrades to its own message.
+  assert.equal(receiptError(new Error("plain")).error_detail, "plain");
 });
