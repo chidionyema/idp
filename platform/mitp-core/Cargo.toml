@@ -1,0 +1,10 @@
+[package]
+name = "mitp-core-switching-gate"
+version = "0.1.0"
+edition = "2021"
+description = "MITP Plane 2 -> Plane 3 deterministic hysteresis switching gate with atomic escrow conservation"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1.5"
