@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, uploadArgs, workerSecrets } from "../scripts/release.mjs";
+import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, isAllBackendsFailed, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, shouldRollback, uploadArgs, workerSecrets } from "../scripts/release.mjs";
 import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -217,4 +217,23 @@ test("a failed release carries the whole cause, not the first 400 characters of 
   assert.equal(receiptError(Object.assign(new Error("x"), { detail: "y".repeat(9000) })).error_detail.length, 4000);
   // An error with no detail of its own degrades to its own message.
   assert.equal(receiptError(new Error("plain")).error_detail, "plain");
+});
+
+test("a deployment whose own pool failed is kept, not rolled back onto a version that cannot route", () => {
+  // Measured 2026-11-25 (run 45691317108): minimax 402, deepseek 401, gemini
+  // missing_secret_GEMINI_API_KEY, and the release rolled back to 031b134f, whose post-rollback
+  // probe ALSO failed because that version holds no role pool. The surface it restored answers
+  // `unknown_role` to every caller, and it defeats the design that a key set out-of-band starts
+  // serving with no release.
+  const poolFailed = '{"error":{"type":"all_pool_backends_failed","role":"role:coder","attempts":[]}}';
+  assert.ok(isAllBackendsFailed(poolFailed));
+  assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: poolFailed }), false);
+  assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: "x " + poolFailed + " y" }), false);
+  // The deploy being wrong IS a rollback: no answer, or the wrong version answering.
+  assert.equal(shouldRollback({ liveSha: null, releasedSha: SHA, probeError: "anything" }), true);
+  assert.equal(shouldRollback({ liveSha: "b".repeat(40), releasedSha: SHA, probeError: poolFailed }), true);
+  // Any other probe failure with the right version live still rolls back: that is our own
+  // defect (auth, payload, 5xx), not a vendor wallet.
+  assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: '{"probe":"auth","status":"FAIL"}' }), true);
+  assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: "" }), false);
 });

@@ -115,6 +115,27 @@ export function workerSecrets(env) {
   return Object.assign(secrets, vendorSecrets(env));
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// WHEN TO ROLL BACK IS A DECISION, NOT A REFLEX. Measured 2026-11-25 (run 45691317108): every
+// lane failed with its own named vendor error (minimax 402, deepseek 401, gemini
+// missing_secret_GEMINI_API_KEY), the release rolled back to 031b134f anyway, and the
+// post-rollback probe failed too -- because that version holds no role pool at all, so the
+// surface it restored answered `unknown_role` to every caller. A rollback to a strictly worse
+// version is not safety; it is a second regression, and it defeats the design that a key set
+// out-of-band (dashboard) starts serving with no release.
+//
+// A deployment that answers with its OWN structured refusal is working: it routed, tried each
+// candidate in priority order, and named each cause. The lanes are down, not the deploy.
+export function isAllBackendsFailed(text) {
+  return /"type"\s*:\s*"all_pool_backends_failed"/.test(String(text ?? ""));
+}
+
+export function shouldRollback({ liveSha, releasedSha, probeError }) {
+  // No answer at all, or the wrong version answering: the deploy is the problem.
+  if (!liveSha || liveSha !== releasedSha) return true;
+  if (!probeError) return false;
+  // The release's own answer from its own pool: keep the version that can route.
+  return !isAllBackendsFailed(probeError);
+}
 // What a failed release writes down. Measured 2026-11-25 (run 45688808353): the pool answered
 // 503 all_pool_backends_failed and the receipt stopped inside the FIRST attempt
 // ("backendId":"minimax-m3","status":402 ...), so which lane failed how -- the whole point of
@@ -145,6 +166,7 @@ export async function release() {
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
     role_seed: null, live_commit_sha: null, secrets_applied: false, error_detail: null,
+    rollback_skipped: null,
     started_at: new Date().toISOString(),
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
@@ -256,7 +278,14 @@ export async function release() {
   } catch (e) {
     r.status = "NOT_OPERATIONAL";
     Object.assign(r, receiptError(e));
-    if (r.deploy_attempted && r.previous_version_id) {
+    const canRollback = Boolean(r.deploy_attempted && r.previous_version_id);
+    const rollback = canRollback && shouldRollback({
+      liveSha: r.live_commit_sha, releasedSha: r.sha, probeError: r.error_detail ?? r.error,
+    });
+    if (canRollback && !rollback) {
+      r.rollback_skipped = "deploy answered with its own all_pool_backends_failed: the lanes are down, the deployment is not";
+    }
+    if (rollback) {
       r.rollback_attempted = true;
       try {
         run(wrangler, ["rollback", r.previous_version_id, "--message", "restore:" + r.sha]);
