@@ -229,6 +229,13 @@ test("a deployment whose own pool failed is kept, not rolled back onto a version
   assert.ok(isAllBackendsFailed(poolFailed));
   assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: poolFailed }), false);
   assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: "x " + poolFailed + " y" }), false);
+  // The shape the estate ACTUALLY emits: the prober's failure is a JSON string nested inside
+  // the line the child printed, so every quote is escaped. Run 45693773697 rolled back because
+  // the first version of this matcher only understood the unescaped form.
+  const escaped = 'AssertionError: expected 200, got 503: {\"error\":{\"type\":\"all_pool_backends_failed\",'
+    + '\"role\":\"role:coder\",\"attempts\":[{\"backendId\":\"minimax-m3\",\"status\":402}]}}\n\n503 !== 200';
+  assert.ok(isAllBackendsFailed(escaped), "the escaped body is the measured one");
+  assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: escaped }), false);
   // The deploy being wrong IS a rollback: no answer, or the wrong version answering.
   assert.equal(shouldRollback({ liveSha: null, releasedSha: SHA, probeError: "anything" }), true);
   assert.equal(shouldRollback({ liveSha: "b".repeat(40), releasedSha: SHA, probeError: poolFailed }), true);
