@@ -1,0 +1,27 @@
+# Isolated evidence branch only. Never promote this workflow or branch to main.
+name: MITP candidate proof 8526
+on:
+  push:
+    branches: ["research/8526-mitp-cargo-proof"]
+permissions:
+  contents: read
+jobs:
+  cargo-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify candidate file hashes and run original Rust tests
+        run: |
+          set -euo pipefail
+          test "$(git hash-object platform/mitp-core/Cargo.toml)" = bbe15c180a736878aee8c69fc2b4c9a0d064f644
+          test "$(git hash-object platform/mitp-core/src/lib.rs)" = 0e9ece9304d2c9efbfe299bc4de77ded07d34f64
+          test "$(git hash-object platform/mitp-core/tests/switching_gate_proptest.rs)" = df9434fd4ffba2cf5d4801d0f5d7dd2352441f27
+          rustc --version
+          cargo --version
+          cargo test --manifest-path platform/mitp-core/Cargo.toml --lib --test switching_gate_proptest
+      - name: Independent stale pending-drain falsifier
+        if: always()
+        run: cargo test --manifest-path platform/mitp-core/Cargo.toml --test stale_pending_falsifier
