@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "estate_name": "Meridian / IDP Sovereign Estate",
+  "primary_repo": "chidionyema/idp",
+  "default_branch": "main",
+  "invariants": {
+    "max_context_tokens": 1500,
+    "max_wip_directives": 3,
+    "max_tier0_endpoints": 5,
+    "secret_warn_days": 14,
+    "secret_critical_days": 7
+  },
+  "rule_files_to_audit": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".cursorrules",
+    "ops/desired_state.json"
+  ],
+  "tier0_endpoints": [
+    {
+      "id": "llm-edge",
+      "name": "Cloudflare LLM Edge",
+      "url": "https://llm.meridianlabs.cloud/health",
+      "expected_status": 200,
+      "timeout_sec": 8,
+      "owner": "infra",
+      "required": true
+    },
+    {
+      "id": "founder-surface",
+      "name": "Founder Surface Pages",
+      "url": "https://genesis-founder-surface.pages.dev",
+      "expected_status": 200,
+      "timeout_sec": 8,
+      "owner": "control-plane",
+      "required": true
+    }
+  ],
+  "allowed_workflows": [
+    "sovereign-reconciler",
+    "portal-app",
+    "fast-gate"
+  ],
+  "secrets_watchlist": [
+    {
+      "name": "argon-sync",
+      "scope": "GitHub Fine-Grained PAT (chidionyema/argon)",
+      "expires_on": "2026-12-02",
+      "owner": "founder"
+    }
+  ],
+  "directives": [
+    {
+      "id": "P0-1",
+      "title": "Restore Tier-0 Edge & Quarantine Zombie Crons",
+      "owner": "cloud-agent",
+      "status": "IN_PROGRESS",
+      "acceptance_check": "llm.meridianlabs.cloud/health returns HTTP 200 (or explicitly retired) AND zero allowlisted workflows failing on main"
+    },
+    {
+      "id": "P0-2",
+      "title": "Rotate argon-sync PAT & Lock Thin-Client Mac",
+      "owner": "founder",
+      "status": "BLOCKED_MANUAL",
+      "acceptance_check": "argon-sync expiry > 30 days in desired_state.json AND zero local Mac launchd/worktree loops running"
+    },
+    {
+      "id": "P0-3",
+      "title": "Compress Auto-Injected Context to <= 1,500 Tokens",
+      "owner": "cloud-agent",
+      "status": "IN_PROGRESS",
+      "acceptance_check": "sovereign_reconciler.py reports context_tokens <= 1500 and emits ops/agent_brief.md"
+    }
+  ]
+}
