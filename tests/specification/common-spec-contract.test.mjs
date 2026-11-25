@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {test} from "node:test";
+import {validateSpec,founderView,prestart} from "../../platform/estate/specification-contract.mjs";
+const spec=JSON.parse(readFileSync(new URL("../../docs/specs/common-spec-template.example.json",import.meta.url),"utf8"));
+const ctx={verified:true,specDigest:"c".repeat(64),actualDigest:"c".repeat(64),instruction:spec.instruction,base:spec.scope.base,topology:spec.topology.snapshot,annexDigest:spec.annex.sha256,decision:"SCOPE_AUTHORIZED",policyCurrent:true,now:100,expires:200,reservedPence:0,reservedSeconds:600};
+const clone=x=>JSON.parse(JSON.stringify(x));
+test("valid shape",()=>assert.deepEqual(validateSpec(spec),[]));
+test("founder projection derived",()=>{assert.equal(founderView(spec).decision,spec.founder.decision);assert.equal(founderView(spec).disposition,"PROPOSAL_ONLY")});
+for(const k of Object.keys(spec))test("deny missing "+k,()=>{let s=clone(spec);delete s[k];assert.equal(prestart(s,ctx).decision,"DENY")});
+for(const [name,mutate] of [["empty founder view",s=>s.founder.why="TODO"],["one alternative",s=>s.founder.alternatives.pop()],["no falsifier",s=>delete s.outcomes[0].falsifier],["invalid budget",s=>s.resources.max_incremental_pence=-1],["cyclic delivery",s=>s.delivery[0].requires=["WP01-CANARY"]],["spoof approval",s=>s.approved=true],["bad annex digest",s=>s.annex.sha256="fake"]])test(name,()=>{let s=clone(spec);mutate(s);assert.equal(prestart(s,ctx).decision,"DENY")});
+for(const [name,patch] of [["missing authority",null],["unverified",{verified:false}],["stale base",{base:"d".repeat(40)}],["stale graph",{topology:"d".repeat(64)}],["changed spec",{actualDigest:"d".repeat(64)}],["changed annex",{annexDigest:"d".repeat(64)}],["expired",{expires:100}],["insufficient time",{reservedSeconds:599}],["stale policy",{policyCurrent:false}],["no approval",{decision:"PROPOSED"}]])test(name,()=>assert.equal(prestart(spec,patch===null?null:{...ctx,...patch}).decision,"DENY"));
+test("positive synthetic authority fixture",()=>assert.equal(prestart(spec,ctx).decision,"ELIGIBLE_FOR_EXISTING_AUTHORITY_GATE"));
