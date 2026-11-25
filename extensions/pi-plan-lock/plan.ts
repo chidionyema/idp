@@ -5,10 +5,14 @@
 //      sub-goal, every tool except the plan tools and estate-memory reads is refused. This is the
 //      first mechanism of docs/onboarding/trajectory-lock.md, enforced at the one place pi lets us
 //      refuse: the tool_call event. The contract has an order:
-//        declare_plan -> add_bdd (before any work on the sub-goal) -> address_edgecases and
-//        address_2nd_order_effects -> complete_goal.
-//      The behaviour is pinned down before it is built; the edges and knock-on effects are of that
-//      behaviour, so they come after it and before the sub-goal may be called done.
+//        declare_plan -> work -> add_bdd (the behaviour, pinned down when it is known) ->
+//        address_edgecases and address_2nd_order_effects -> complete_goal.
+//      A DECLARED PLAN IS LIVE: the scenario, the edge cases and the effects are required before a
+//      goal is COMPLETE, not before every tool call. The toll made a session ceremonial and made
+//      the repair call unreachable (founder, 2026-11-25: "starting session should be one shot
+//      live"). The behaviour is pinned down before it is claimed done; the edges and knock-on
+//      effects are of that behaviour, so they come after it and before the sub-goal may be called
+//      done.
 //   2. NO TOOL RESULT WITHOUT A SIZE. A result above MAX_RESULT_CHARS is cut to head + tail and the
 //      whole thing is spilled to a file the agent can read in ranges.
 //
@@ -212,12 +216,9 @@ export function authorize(tool: string, plan: Plan | undefined): Checked<{}> {
   if (!active) {
     return refuse(`Every sub-goal of "${plan.goal}" is done, so ${tool} is refused. Call revise_plan to declare what is next.`);
   }
-  if (!plan.bdd[active.id]) {
-    return refuse(
-      `${active.id} ("${active.text}") has no BDD scenario, so ${tool} is refused. Pin the behaviour down ` +
-        `before building it: add_bdd({goal_id: "${active.id}", given: "<state>", when: "<action>", then: "<observable result>"}).`,
-    );
-  }
+  // A DECLARED PLAN IS LIVE: the scenario, the edge cases and the effects are required before a
+  // goal is COMPLETE -- apply() refuses complete_goal without them -- not before every tool
+  // call. One declaration, then work. Same rule as platform/estate/memory/plan.py (authorize).
   return { ok: true };
 }
 

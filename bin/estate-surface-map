@@ -532,8 +532,10 @@ def gaps(s: dict) -> list[dict]:
             "id": "G2",
             "title": "The Claude Code shell is gated by session discipline, not by policy",
             "detail": "The catch-all PreToolUse hook runs estate-memory-enforce's plan gate: it "
-            "refuses a shell call when the session has no declared plan or no BDD scenario for "
-            "the active sub-goal. That is a discipline gate. Nothing inspects WHICH command runs, "
+            "refuses a shell call when the session has no declared plan. A DECLARED PLAN IS LIVE: "
+            "the scenario, the edge cases and the effects are required before a goal is CLAIMED "
+            "DONE, not before every command (idp#8558). That is a discipline gate. Nothing "
+            "inspects WHICH command runs, "
             "and permissions.deny is empty while autoMode.allow carries "
             f"{cc['auto_mode_allow_count']} broad grants (read any file, run python3, git, gh, "
             "merge).",

@@ -1,8 +1,14 @@
 """The plan contract for every agent runtime that is not pi (idp#6675).
 
-    declare_plan -> add_bdd (before any work on the sub-goal)
+    declare_plan -> work -> add_bdd (the behaviour, pinned down when it is known)
                  -> address_edgecases + address_2nd_order_effects -> complete_goal
     revise_plan  the escape hatch when the work changes
+
+A DECLARED PLAN IS LIVE. The scenario, the edge cases and the effects are required before a
+goal is COMPLETE -- apply() refuses complete_goal without them -- not before every tool call.
+The toll made a session ceremonial and made the repair call unreachable: the gate refused the
+add_bdd that would have satisfied it, so a session could brick itself (founder, 2026-11-25:
+"starting session should be one shot live").
 
 The same rules as extensions/pi-plan-lock/plan.ts, in Python because the bridge and the hooks are
 Python. extensions/pi-plan-lock/cases.json is the contract between the two copies: both test
@@ -379,6 +385,39 @@ def _is_plan_bootstrap(tool: str, args) -> bool:
     return "declare_plan" in blob
 
 
+def _plan_call_in_code(tool: str, args) -> bool:
+    """True when this tool call carries a plan-tool call inside a code payload.
+
+    The harness reaches the plan tools through its execute tool, so the plan call is a name in
+    a code payload rather than the tool name. This looks for the NAME only and never rebuilds
+    the arguments: a gate that reconstructs the agent's source text cannot trust what it
+    reconstructed, and a payload it could not read used to be invisible to the gate -- which then
+    refused the one call that could repair the plan (measured 2026-11-25: a session with a
+    declared plan had every tool refused because the text parser could not read the payload).
+
+    The shell command path is NOT here: the shell door is exact by construction
+    (shell_plan_call takes one `estate-plan <tool> '<json>'` command and nothing else), and a
+    command that merely mentions a plan tool is ordinary work.
+    """
+    if not isinstance(args, dict):
+        return False
+    code = args.get("code")
+    if not isinstance(code, str) or not code:
+        return False
+    return any(re.search(r"\b%s\s*\(" % re.escape(name), code) for name in PLAN_TOOLS)
+
+
+def _session_hint() -> str:
+    """The `--session <id>` the CLI door needs to land on THIS session's ledger.
+
+    Measured 2026-11-25: the sanctioned fallback door resolved a different session (the process
+    tree pointer named someone else's plan), so a legitimate call was refused as "not on this
+    plan". A refusal that names the session it is refusing is a door the agent can walk through.
+    """
+    sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
+    return (" --session " + sid) if sid else ""
+
+
 def authorize(tool: str, plan: dict | None, args=None) -> dict:
     name = bare(tool)
     if (
@@ -396,6 +435,11 @@ def authorize(tool: str, plan: dict | None, args=None) -> dict:
         # skipped on replay anyway; refusing it now tells the agent why.
         r = apply(plan, *call)
         return {"ok": True} if r["ok"] else r
+    if _plan_call_in_code(tool, args):
+        # A plan call inside a code payload answers ITSELF: the bridge applies it and says why
+        # if it is refused. The gate used to judge it as ordinary work, so the one call that
+        # could repair the plan was the one call the gate refused.
+        return {"ok": True}
     if not plan:
         return _refuse(
             f"No plan declared, so {tool} is refused. Call declare_plan first with a goal and at "
@@ -403,6 +447,7 @@ def authorize(tool: str, plan: dict | None, args=None) -> dict:
             '[{id: "goal_1", text: "<first step>"}]}). Nothing else runs until you do. If the '
             "plan tools are not in your tool list, run the same call as one shell command: "
             + ESTATE_PLAN
+            + _session_hint()
             + ' declare_plan \'{"goal": "...", "subgoals": [{"id": "goal_1", '
             '"text": "..."}]}\' (every plan tool works this way).'
         )
@@ -412,12 +457,9 @@ def authorize(tool: str, plan: dict | None, args=None) -> dict:
             f'Every sub-goal of "{plan["goal"]}" is done, so {tool} is refused. Call revise_plan '
             "to declare what is next."
         )
-    if active["id"] not in plan["bdd"]:
-        return _refuse(
-            f'{active["id"]} ("{active["text"]}") has no BDD scenario, so {tool} is refused. Pin '
-            f'the behaviour down before building it: add_bdd({{goal_id: "{active["id"]}", given: '
-            '"<state>", when: "<action>", then: "<observable result>"}).'
-        )
+    # A DECLARED PLAN IS LIVE. The scenario, the edge cases and the effects are required before
+    # a goal is COMPLETE -- apply() refuses complete_goal without them -- not before every tool
+    # call. One declaration, then work.
     return {"ok": True}
 
 
@@ -1236,6 +1278,8 @@ def door_plan_gate(command: str, session_id=None) -> dict:
                     + ") has declared no goal and no sub-goal, so this command is refused. "
                     "Declare the plan first -- one command, no adapter needed: "
                     + ESTATE_PLAN
+                    + " --session "
+                    + sid
                     + ' declare_plan \'{"goal": "<what done looks like>", "subgoals": '
                     '[{"id": "goal_1", "text": "<first step>"}]}\''
                 ),
@@ -1247,9 +1291,11 @@ def door_plan_gate(command: str, session_id=None) -> dict:
                 "this session has declared no goal and no sub-goal, so this command is refused. "
                 "Declare the plan first: "
                 + ESTATE_PLAN
+                + " --session "
+                + sid
                 + ' declare_plan \'{"goal": "<what done looks like>", "subgoals": '
-                '[{"id": "goal_1", "text": "<first step>"}]}\' -- then add_bdd for the '
-                "sub-goal you are on, and the door lets the work through."
+                '[{"id": "goal_1", "text": "<first step>"}]}\' -- then the door lets the work '
+                "through."
             ),
         }
     active = next((s for s in plan["subgoals"] if s["id"] not in plan["done"]), None)
@@ -1262,20 +1308,10 @@ def door_plan_gate(command: str, session_id=None) -> dict:
                 "to declare what is next."
             ),
         }
-    if active["id"] not in plan["bdd"]:
-        return {
-            "ok": False,
-            "reason": "subgoal_scenario_missing",
-            "detail": (
-                active["id"]
-                + " ("
-                + active["text"]
-                + ") has no BDD scenario, so this command is refused. Pin the behaviour down "
-                'before building it: add_bdd({goal_id: "'
-                + active["id"]
-                + '", given: "<state>", when: "<action>", then: "<observable result>"}).'
-            ),
-        }
+    # A DECLARED PLAN IS LIVE: the door admits the work. The scenario, the edge cases and the
+    # effects are required before a goal is COMPLETE (apply() refuses complete_goal without
+    # them), not before every command. The same rule as the opencode gate (authorize): one
+    # declaration, then work.
     return {"ok": True, "reason": "plan_active", "goal_id": active["id"]}
 
 
