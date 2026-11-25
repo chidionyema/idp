@@ -30,6 +30,19 @@ export function immutableTag(sha) {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("BLIND: SHA must be a full commit identifier");
   return "meridian-" + sha;
 }
+// A failed child's own words, made safe to carry into the receipt: opaque strings and
+// bearer tokens are replaced, and only the last non-empty line is kept. Without this a
+// failure reads `rc=1` and the cause lives only in a log nobody can act on.
+export function redact(text) {
+  return String(text ?? "")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "<redacted>")
+    .replace(/Bearer\s+\S+/gi, "Bearer <redacted>")
+    .trim();
+}
+export function failureCause(text, max = 300) {
+  const lines = redact(text).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  return (lines.pop() ?? "").slice(0, max);
+}
 function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false) {
   const childEnv = { ...process.env, ...env };
   if (stripWorkerAuthority) {
@@ -40,8 +53,26 @@ function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false
     cwd: ROOT, env: childEnv, encoding: "utf8", timeout, maxBuffer: 1024 * 1024,
   });
   // Never echo process output: it could contain credentials or provider responses.
-  if (p.error || p.status !== 0) throw new Error(path.basename(cmd) + " " + args.slice(0, 2).join(" ") + " failed rc=" + (p.status ?? "signal"));
+  if (p.error || p.status !== 0) {
+    const cause = failureCause(p.stderr || p.stdout);
+    throw new Error(
+      path.basename(cmd) + " " + args.slice(0, 2).join(" ") + " failed rc=" + (p.status ?? "signal")
+      + (cause ? ": " + cause : ""),
+    );
+  }
   return p.stdout;
+}
+// `--keep-vars` retains the vars of the PREVIOUS deployment. On a worker with no
+// deployment there is nothing to keep and Wrangler refuses the upload, so first boot
+// uploads without it (I-8455 Stage 1, founder waiver 2026-11-25).
+export function uploadArgs(sha, tag, hasPreviousVersion) {
+  const args = [
+    "versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
+    "--var", "COMMIT_SHA:" + sha,
+  ];
+  if (hasPreviousVersion) args.push("--keep-vars");
+  args.push("--strict");
+  return args;
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -82,8 +113,7 @@ export async function release() {
     }
     const tag = immutableTag(sha);
     // DO migrations must not be silently converted to an unversioned initial deploy.
-    run(wrangler, ["versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
-      "--var", "COMMIT_SHA:" + sha, "--keep-vars", "--strict"]);
+    run(wrangler, uploadArgs(sha, tag, Boolean(r.previous_version_id)));
     r.upload_ok = true;
     r.deploy_attempted = true;
     run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
@@ -95,7 +125,7 @@ export async function release() {
     r.status = "OPERATIONAL";
   } catch (e) {
     r.status = "NOT_OPERATIONAL";
-    r.error = String(e?.message ?? e).slice(0, 240);
+    r.error = String(e?.message ?? e).slice(0, 400);
     if (r.deploy_attempted && r.previous_version_id) {
       r.rollback_attempted = true;
       try {
