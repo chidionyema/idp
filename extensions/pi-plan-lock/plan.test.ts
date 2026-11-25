@@ -28,11 +28,10 @@ test("no plan: the plan tools, escalate and memory reads are never refused", () 
   }
 });
 
-test("a declared plan with no BDD for the active sub-goal still refuses work, naming add_bdd", () => {
+test("a declared plan is live: work runs before the scenario is pinned", () => {
   const plan = run(["declare_plan", good]);
   const r = authorize("estate_execute", plan);
-  assert.equal(r.ok, false);
-  assert.match((r as any).reason, /add_bdd/);
+  assert.equal(r.ok, true);
 });
 
 test("a BDD scenario for the active sub-goal unlocks work", () => {
@@ -80,7 +79,7 @@ test("complete_goal is refused until BDD, edge cases and 2nd-order effects are a
   assert.equal(apply(run(...steps), "complete_goal", { goal_id: "zzz" }).ok, false);
 });
 
-test("after a sub-goal is done, work is refused again until the next one has its BDD", () => {
+test("after a sub-goal is done, the next one is live too, and its completion needs its own BDD", () => {
   const plan = run(
     ["declare_plan", two],
     ["add_bdd", bdd("a")],
@@ -88,8 +87,10 @@ test("after a sub-goal is done, work is refused again until the next one has its
     ["address_2nd_order_effects", { goal_id: "a", effects: ["none, because only pi loads it"] }],
     ["complete_goal", { goal_id: "a" }],
   );
-  assert.match((authorize("edit", plan) as any).reason, /b \("second step"\) has no BDD/);
-  assert.equal(authorize("edit", run(...([] as any), ["declare_plan", two])).ok, false);
+  assert.equal(authorize("edit", plan).ok, true);
+  // the next sub-goal still needs its own scenario before it may be called done
+  assert.equal(apply(plan, "complete_goal", { goal_id: "b" }).ok, false);
+  assert.equal(authorize("edit", run(...([] as any), ["declare_plan", two])).ok, true);
 });
 
 test("revise_plan keeps what was recorded for the sub-goals it keeps and drops the rest", () => {

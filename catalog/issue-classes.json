@@ -7,19 +7,22 @@
       "first_seen": "2026-11-06",
       "instances": [
         "dof-gate refused PR #7834 which would suspend it",
-        "main ruleset named no bypass actor"
+        "main ruleset named no bypass actor",
+        "the plan gate refused the add_bdd that would have satisfied it, so a session could brick itself behind a ritual with no exit (idp#8558, measured 2026-11-25)"
       ],
       "gap": "a required check with no named break-glass actor and no receipt on bypass",
-      "compensating_action": "every required check names a break-glass actor; every use writes a receipt",
+      "compensating_action": "every required check names a break-glass actor; every use writes a receipt; a gate that refuses the call that would repair its own state admits the plan repair instead of the work",
       "falsifier": "attempt the gate change with no approval -> expect an auditable bypass or a refusal naming it",
       "owner": "governance",
       "surfaces": [
         "ci",
-        "rulesets"
+        "rulesets",
+        "plan-gate"
       ],
       "status": "open",
       "recurrence_checks": [
-        "2026-11-09"
+        "2026-11-09",
+        "2026-11-25"
       ]
     },
     {
