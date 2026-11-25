@@ -85,6 +85,19 @@
       "better": "lower",
       "owner": "greenlane",
       "description": "scheduled pr-age sweeps that exit BLIND/2 on a dead repo in the default --repos list (run 45595449643, idp#8537)"
+    },
+    {
+      "name": "plan_lock.live_plan_refusals",
+      "measure": [
+        "python3",
+        "-c",
+        "import sys\nsys.path.insert(0, \"platform/estate/memory\")\nimport plan as P\n\nr = P.apply(None, \"declare_plan\", {\"goal\": \"ship the feature\", \"subgoals\": [{\"id\": \"g1\", \"text\": \"first step\"}]})\nok = bool(P.authorize(\"Edit\", r.get(\"plan\")).get(\"ok\"))\nprint(\"optimus.plan_lock.live_plan_refusals=%d\" % (0 if ok else 1))\n"
+      ],
+      "unit": "refusals",
+      "better": "lower",
+      "owner": "estate",
+      "description": "ordinary tool calls the plan gate refuses after a plan is declared: 1 before idp#8558, 0 after (a declared plan is LIVE; the scenario is required before the goal is claimed done)"
     }
+
   ]
 }
