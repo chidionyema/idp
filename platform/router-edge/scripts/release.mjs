@@ -71,26 +71,32 @@ function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false
 // `--keep-vars` retains the vars of the PREVIOUS deployment. On a worker with no
 // deployment there is nothing to keep and Wrangler refuses the upload, so first boot
 // uploads without it (I-8455 Stage 1, founder waiver 2026-11-25).
-export function uploadArgs(sha, tag, hasPreviousVersion, secretsFile) {
+export function uploadArgs(sha, tag, hasPreviousVersion) {
   const args = [
     "versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
     "--var", "COMMIT_SHA:" + sha,
   ];
   if (hasPreviousVersion) args.push("--keep-vars");
-  if (secretsFile) args.push("--secrets-file", secretsFile);
   args.push("--strict");
   return args;
 }
 // First boot creates the Worker and applies the Durable Object migration, which only
 // `wrangler deploy` may do. It also creates the 100% deployment directly, so there is
 // nothing for `versions deploy` to promote afterwards.
-export function firstBootDeployArgs(sha, tag, secretsFile) {
-  const args = [
+export function firstBootDeployArgs(sha, tag) {
+  return [
     "deploy", "--var", "COMMIT_SHA:" + sha, "--tag", tag,
     "--message", "meridian:" + sha, "--strict",
   ];
-  if (secretsFile) args.push("--secrets-file", secretsFile);
-  return args;
+}
+// A Worker secret is SCRIPT-scoped, and `--secrets-file` on an upload binds the value to
+// that one version. Measured 2026-11-25, run 45685741113: the deploy "succeeded", the very
+// next admin call answered 401 invalid_admin_key, and /health reported commit 820bc8a34
+// while main was 0064d55f2 — the version being served was a rollback target, so the keys in
+// that file never reached the code that answered. `secret bulk` sets the script-level secret
+// once, so every version — including a rollback target — authenticates the same caller.
+export function secretBulkArgs(secretsFile) {
+  return ["secret", "bulk", secretsFile];
 }
 // The Worker compares a caller's bearer against ITS OWN secret, and a deploy never
 // uploads one: a Worker deployed without this rejects every real caller with 401
@@ -105,13 +111,27 @@ export function workerSecrets(env) {
   return Object.assign(secrets, vendorSecrets(env));
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// A new Cloudflare deployment propagates in seconds, and a 3x3s window was measured too
+// short on run 45685741113, where /health still answered the rollback target afterwards.
+// The window is a named budget so a falsifier can assert it rather than guess it.
+export const SERVE_ATTEMPTS = 5;
+export const SERVE_PAUSE_MS = 3000;
+
+// What the deployment says about itself, read from the deployment.
+export async function liveCommitSha(baseUrl, fetchImpl = fetch) {
+  const res = await fetchImpl(baseUrl + "/health");
+  if (!res.ok) throw new Error(`health refused ${res.status}`);
+  const data = await res.json();
+  if (typeof data?.commit_sha !== "string") throw new Error("BLIND: /health carries no commit_sha");
+  return data.commit_sha;
+}
 
 export async function release() {
   const r = {
     schema: "meridian/zone-b-release-v1", sha: process.env.RELEASE_SHA ?? null,
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
-    role_seed: null,
+    role_seed: null, live_commit_sha: null, secrets_applied: false,
     started_at: new Date().toISOString(),
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
@@ -156,13 +176,34 @@ export async function release() {
     // must be applied through wrangler deploy" (Workers docs, deployment management).
     // wrangler.toml declares new_sqlite_classes v1, so first boot IS that change.
     if (r.previous_version_id === null) {
-      run(wrangler, firstBootDeployArgs(sha, tag, secretsFile));
+      run(wrangler, firstBootDeployArgs(sha, tag));
     } else {
-      run(wrangler, uploadArgs(sha, tag, true, secretsFile));
+      run(wrangler, uploadArgs(sha, tag, true));
       r.upload_ok = true;
       run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     }
     r.deploy_attempted = true;
+    // "uploaded" and "serving" are different facts. A rollback from an earlier failed run
+    // leaves the OLD version answering while this run says upload_ok; the receipt must not
+    // call that a deploy. Retried because a new deployment propagates in seconds.
+    for (let n = 1; n <= SERVE_ATTEMPTS; n++) {
+      try {
+        r.live_commit_sha = await liveCommitSha(process.env.MERIDIAN_ROUTER_URL);
+        if (r.live_commit_sha === sha) break;
+      } catch (e) {
+        r.live_commit_sha = null;
+      }
+      if (n === SERVE_ATTEMPTS) {
+        throw new Error(`deploy not serving: /health reports ${r.live_commit_sha ?? "BLIND"}, released ${sha}`);
+      }
+      await pause(SERVE_PAUSE_MS);
+    }
+    // Script-scoped secrets, applied after the deploy so the version that answers holds them.
+    if (secretsFile) {
+      run(wrangler, secretBulkArgs(secretsFile));
+      r.secrets_applied = true;
+      await pause(2000);
+    }
     // A deployed router with no role pool refuses every routing call: measured on run
     // 45675424976, probe 3 answered 404 {"error":{"type":"admission_refused",
     // "detail":"{\"error\":\"unknown_role\",\"role\":\"role:coder\"}"}} while /health was
