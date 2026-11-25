@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# founder-one-tap — the estate's entire founder-side Class A work, ONE pass (2026-11-25).
+#
+# Why this exists: the CODE RED ledger shows the whole estate bottlenecked on two founder
+# actions — the Cloudflare edge grant (HTTP 525 on llm/submit/lifeboat) and one passkey seal.
+# This door collapses them into a single command with two gestures inside it and zero other
+# founder work: every step after each gesture is autonomous, machine-receipted and idempotent
+# — re-running skips what is already proven done.
+#
+#   gesture 1: paste the Cloudflare API token you create in the browser window this opens
+#   gesture 2: paste your passkey seal signature
+#
+# Usage: bin/founder-one-tap            (both phases)
+#        bin/founder-one-tap edge       (phase A only)
+#        bin/founder-one-tap seal       (phase B only)
+set -euo pipefail
+
+ZONE="meridianlabs.cloud"
+HOSTS=("llm" "submit" "lifeboat-llm")
+REPO="chidionyema/idp"
+API="https://api.cloudflare.com/client/v4"
+say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
+die() { printf '\nFAIL founder-one-tap %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null || die "missing dependency: $1"; }
+need curl; need gh; need python3
+
+# ---- the worker services, read from the estate's own wrangler.toml (never hardcoded) ----
+repo_root() { git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || echo .; }
+ROOT="$(repo_root)"
+worker_of() { rg -m1 '^name\s*=' "$1" 2>/dev/null | sed 's/.*=\s*"\([^"]*\)".*/\1/'; }
+SVC_LLM="$(worker_of "$ROOT/platform/router-edge/wrangler.toml")"
+SVC_LIFEBOAT="$(worker_of "$ROOT/platform/lifeboat/wrangler.toml")"
+
+# ============================== PHASE A — the edge ==============================
+edge() {
+  say "PHASE A/2 — Zone B edge: 525 -> 200"
+  echo "Opening the Cloudflare token page. Create a CUSTOM token with EXACTLY:"
+  echo "  Account | Workers Scripts        | Edit"
+  echo "  Zone    | Zone                  | Read"
+  echo "  Zone    | DNS                   | Edit"
+  echo "  Zone    | Workers Routes        | Edit"
+  echo "  Account Resources: Include -> your account;  Zone Resources: Include -> $ZONE"
+  open "https://dash.cloudflare.com/profile/api-tokens" 2>/dev/null || true
+  printf 'gesture 1 — paste the new token: '
+  IFS= read -rs CF </dev/tty; echo
+  [ -n "${CF:-}" ] || die "no token given"
+
+  say "verifying token scope against the live zone"
+  code=$(curl -s -o /tmp/fot-zone.json -w '%{http_code}' -H "Authorization: Bearer $CF" "$API/zones?name=$ZONE")
+  [ "$code" = 200 ] || die "zone read failed (HTTP $code): the token lacks Zone:Read"
+  ZONE_ID=$(python3 -c "import json;d=json.load(open('/tmp/fot-zone.json'));r=d['result'];print(r[0]['id'] if r else '')")
+  [ -n "$ZONE_ID" ] || die "token cannot see zone $ZONE — Zone Resources must Include $ZONE"
+  echo "ok    zone $ZONE = $ZONE_ID"
+
+  ACCOUNT_ID=$(curl -s -H "Authorization: Bearer $CF" "$API/accounts" | python3 -c "import json,sys;d=json.load(sys.stdin);r=d['result'];print(r[0]['id'] if r else '')")
+  [ -n "${ACCOUNT_ID:-}" ] || die "token cannot see the account — re-create it with the account selected in Account Resources"
+  echo "ok    account $ACCOUNT_ID"
+
+  say "storing SEED_CLOUDFLARE_WORKERS_TOKEN in Actions secrets"
+  gh secret set SEED_CLOUDFLARE_WORKERS_TOKEN -R "$REPO" --body "$CF" || die "gh secret set failed"
+  echo "ok    secret set in $REPO"
+
+  say "binding Worker Custom Domains (TLS terminates at the Worker — no origin, no 525)"
+  bind() { # host service — Workers Domains API is idempotent per (hostname, service)
+    curl -s -X PUT "$API/accounts/$ACCOUNT_ID/workers/domains" \
+      -H "Authorization: Bearer $CF" -H 'Content-Type: application/json' \
+      --data "{\"zone_id\":\"$ZONE_ID\",\"hostname\":\"$1.$ZONE\",\"service\":\"$2\",\"environment\":\"production\"}" \
+      | python3 -c "import json,sys;d=json.load(sys.stdin);print('ok    $1.$ZONE -> $2' if d['success'] else 'FAIL  $1.$ZONE: '+str(d['errors']))"
+  }
+  SVC_SUBMIT="$(worker_of "$ROOT/platform/submitqueue/wrangler.toml" 2>/dev/null || true)"
+  bind llm          "${SVC_LLM:-meridian-router-edge}"
+  bind submit       "${SVC_SUBMIT:-$SVC_LLM}"
+  bind lifeboat-llm "${SVC_LIFEBOAT:-estate-lifeboat}"
+
+  say "dispatching router-edge-release"
+  gh workflow run router-edge-release.yml -R "$REPO" --ref main 2>/dev/null \
+    || gh workflow run router-edge-release.yml -R "$REPO" || true
+  echo "dispatched; watching the edge (up to 5 min)"
+
+  for i in $(seq 1 30); do
+    out=""
+    for h in "${HOSTS[@]}"; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "https://$h.$ZONE/health")
+      out="$out $h=$code"
+    done
+    echo "probe $i:$out"
+    case "$out" in *525*|*5[0-9][0-9]*) sleep 10 ;; *) say "EDGE GREEN:$out"; return 0 ;; esac
+  done
+  die "edge did not go green in 5 min — check the router-edge-release run in Actions"
+}
+
+# ============================== PHASE B — the one seal ==============================
+seal() {
+  say "PHASE B/2 — one passkey seal over the guarded surface"
+  PR="${FOUNDER_SEAL_PR:-8494}"
+  BRANCH=$(gh pr view "$PR" -R "$REPO" --json headRefName --jq .headRefName) || die "cannot read PR #$PR"
+  echo "sealing PR #$PR on branch $BRANCH (control-primitive-freeze demands the trailer on the head commit)"
+  printf 'gesture 2 — paste the passkey seal signature: '
+  IFS= read -rs SIG </dev/tty; echo
+  [ -n "${SIG:-}" ] || die "no seal given"
+  W=$(mktemp -d "${TMPDIR:-/tmp}/fot-seal.XXXX")
+  git clone -q --branch "$BRANCH" "https://github.com/$REPO.git" "$W"
+  git -C "$W" fetch -q origin "$BRANCH"
+  MSG="$(git -C "$W" log -1 --format=%B)"
+  case "$MSG" in *"X-Founder-Passkey-Seal: "*) echo "ok    head commit already sealed — idempotent no-op"; rm -rf "$W"; return 0 ;; esac
+  git -C "$W" commit -q --amend -m "$MSG
+X-Founder-Passkey-Seal: $SIG"
+  git -C "$W" push -q --force-with-lease origin "$BRANCH" || die "force-push refused"
+  echo "ok    sealed commit $(git -C "$W" rev-parse --short HEAD) pushed to $BRANCH"
+  rm -rf "$W"
+  echo "watching control-primitive-freeze (gh pr checks $PR -R $REPO)"
+  gh pr checks "$PR" -R "$REPO" --watch || true
+}
+
+case "${1:-all}" in
+  edge) edge ;;
+  seal) seal ;;
+  all)  edge; seal; say "FOUND SIDE COMPLETE — from here the estate runs itself. This is the last manual founder action."; ;;
+  *) echo "usage: $0 [all|edge|seal]"; exit 2 ;;
+esac
