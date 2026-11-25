@@ -71,7 +71,15 @@ export async function release() {
       throw new Error("BLIND: exact-SHA preflight receipt missing");
     }
     // Without a single previously active version, DO migration/bootstrap needs separate explicit authority.
-    r.previous_version_id = activeRollbackId(run(wrangler, ["deployments", "status", "--json"]));
+    // First boot (I-8455 Stage 1, founder waiver 2026-11-25): a worker with zero
+    // deployments refuses `deployments status` (rc=1). That is not an outage — it is
+    // the initial deploy. Proceed without a rollback target; rollback stays refused
+    // until a previous version exists.
+    try {
+      r.previous_version_id = activeRollbackId(run(wrangler, ["deployments", "status", "--json"]));
+    } catch {
+      r.previous_version_id = null;
+    }
     const tag = immutableTag(sha);
     // DO migrations must not be silently converted to an unversioned initial deploy.
     run(wrangler, ["versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
