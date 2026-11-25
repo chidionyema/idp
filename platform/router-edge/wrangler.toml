@@ -10,9 +10,12 @@ DEFAULT_OUTPUT_FLOOR = "2048"
 UPSTREAM_TIMEOUT_MS = "45000"
 RESERVATION_TTL_MS = "120000"
 
-[[routes]]
-pattern = "llm.meridianlabs.cloud/*"
-zone_name = "meridianlabs.cloud"
+# There is no route and no zone_name here on purpose, for the same reason the lifeboat's
+# wrangler.toml carries none (platform/lifeboat/wrangler.toml): the estate's DNS zone is written
+# once, in clusters/<cluster>/estate-config.yaml, and a second copy of the zone name is a drift
+# waiting to happen (bin/estate-zone-gate). The release reads that one value and binds the
+# Worker's route to it through the Cloudflare API, so the hostname is owned by this Worker and by
+# nothing else: that is what turns a dead origin (Cloudflare 525) into an answer the estate owns.
 
 [[durable_objects.bindings]]
 name = "BUDGET_LEDGER"

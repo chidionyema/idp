@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 
-const BASE_URL = process.env.MERIDIAN_ROUTER_URL; // e.g. https://llm.meridianlabs.cloud
+const BASE_URL = process.env.MERIDIAN_ROUTER_URL; // the zone's router hostname, e.g. https://llm.<ESTATE_ZONE>
 const CLIENT_KEY = process.env.MERIDIAN_CLIENT_KEY;
 const ADMIN_KEY = process.env.MERIDIAN_ADMIN_KEY;
 const EXPECTED_SHA = process.env.EXPECTED_COMMIT_SHA;
