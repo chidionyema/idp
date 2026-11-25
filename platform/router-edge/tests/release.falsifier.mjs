@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeRollbackId, failureCause, firstBootDeployArgs, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs } from "../scripts/release.mjs";
+import { activeRollbackId, failureCause, firstBootDeployArgs, requireMainSha, immutableTag, pinnedWranglerVersion, uploadArgs, workerSecrets } from "../scripts/release.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -42,6 +42,19 @@ test("a first boot deploys, because only deploy may create a Durable Object clas
   assert.ok(args.includes("--strict"));
   assert.ok(args.includes("COMMIT_SHA:" + SHA));
   assert.ok(args.includes(immutableTag(SHA)));
+  assert.ok(!args.includes("--secrets-file"), "no secret file, no flag");
+  const withSecrets = firstBootDeployArgs(SHA, immutableTag(SHA), "/tmp/w.json");
+  assert.deepEqual(withSecrets.slice(-2), ["--secrets-file", "/tmp/w.json"]);
+});
+test("the Worker is given its own keys, because a deploy never carries them", () => {
+  assert.deepEqual(
+    workerSecrets({ MERIDIAN_CLIENT_KEY: "c", MERIDIAN_ADMIN_KEY: "a", PATH: "/bin" }),
+    { MERIDIAN_CLIENT_KEY: "c", MERIDIAN_ADMIN_KEY: "a" },
+  );
+  assert.deepEqual(workerSecrets({ MERIDIAN_CLIENT_KEY: "c" }), { MERIDIAN_CLIENT_KEY: "c" });
+  assert.deepEqual(workerSecrets({}), {});
+  const args = uploadArgs(SHA, immutableTag(SHA), true, "/tmp/w.json");
+  assert.deepEqual(args.slice(-3), ["--secrets-file", "/tmp/w.json", "--strict"]);
 });
 test("a failed child carries its own cause, never a credential", () => {
   assert.equal(failureCause("some noise\nError: Cannot use --keep-vars\n"), "some noise / Error: Cannot use --keep-vars");
