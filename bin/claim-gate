@@ -516,6 +516,15 @@ ACCEPT = re.compile(
     r"^GET (?P<url>https://[\w.-]+(?::\d+)?/\S*) expect (?P<code>[1-5]\d\d)"
     r"(?: contains \"(?P<needle>[^\"]+)\")? within (?P<mins>\d{1,4})m$"
 )
+# idp#7443/#8415 (2026-11-24, ERR_PROXY_GREEN_SUBSTITUTION): a ship contract whose accept probe
+# points at a GitHub source URL substitutes the source for production -- a green CI run or a raw
+# file on main is not the thing operating. Fail closed at admission, before merge.
+PROXY_ACCEPT = re.compile(
+    r"^https://(?:raw\.githubusercontent\.com|objects\.githubusercontent\.com|gist\.github\.com"
+    r"|github\.com/[^/\s]+/[^/\s]+/(?:blob|raw)/)"
+)
+# idp#8369/#8415: lanes landed with no live parent obligation. A ship contract now binds to one.
+OBLIGATION = re.compile(r"^[\w.-]+/[\w.-]+#\d+$")
 OPTIMUS = re.compile(
     r"^(?P<name>[a-z][a-z0-9_.]{2,80}) baseline=(?P<base>-?\d+(?:\.\d+)?|UNKNOWN) "
     r"target=(?P<target>-?\d+(?:\.\d+)?)$"
@@ -596,14 +605,29 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
     c = ship_contract(texts)
     how = (
         "post on the claim issue:\nSHIP-CONTRACT\naccept: GET https://<host>/<path> expect 200 "
-        "within 30m\noptimus: <metric> baseline=<n|UNKNOWN> target=<n>[; ...]\n"
+        "within 30m\nobligation: <owner/repo>#<n>\n"
+        "optimus: <metric> baseline=<n|UNKNOWN> target=<n>[; ...]\n"
         "failure-classes: <class>[, ...]  (catalog/issue-classes.json)\n"
         "debug-pack: DBG-<n>  (docs/debugging-packs.json)"
     )
     if c is None:
         return [f"{where} has no SHIP-CONTRACT: {how}"]
     out: list[str] = []
-    if not ACCEPT.match(c.get("accept", "")):
+    accept = c.get("accept", "")
+    m = ACCEPT.match(accept)
+    if m and PROXY_ACCEPT.match(m.group("url")):
+        out.append(
+            f"{where} SHIP-CONTRACT accept probes a GitHub source URL "
+            f"(ERR_PROXY_GREEN_SUBSTITUTION): source/GitHub is not production. Point accept at "
+            f"the live runtime endpoint (e.g. GET https://<host>/<health-path> expect 200)."
+        )
+    obligation = c.get("obligation", "")
+    if not OBLIGATION.match(obligation):
+        out.append(
+            f"{where} SHIP-CONTRACT is not bound to a parent obligation: add "
+            f"`obligation: <owner/repo>#<n>` naming the open issue this lane settles"
+        )
+    if not accept or not ACCEPT.match(accept):
         out.append(
             f"{where} SHIP-CONTRACT accept is not `GET https://... expect NNN within Nm`"
         )
@@ -963,6 +987,7 @@ def optimus_reading(now: datetime) -> str:
         return "optimus.claims.ship_contract_enforced=0"
     contract = (
         "SHIP-CONTRACT\naccept: GET https://x.example.test/ expect 200 within 30m\n"
+        "obligation: o/r#1\n"
         f"optimus: {metrics[0]} baseline=UNKNOWN target=0\n"
         f"failure-classes: {classes[0]}\ndebug-pack: {packs[0]}"
     )
