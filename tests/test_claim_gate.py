@@ -29,6 +29,7 @@ def _gate():
 CONTRACT = (
     "SHIP-CONTRACT\n"
     "accept: GET https://voice.example.test/health expect 200 within 30m\n"
+    "obligation: Mumchimp/idp#1\n"
     "optimus: claims.ship_contract_enforced baseline=UNKNOWN target=1\n"
     "failure-classes: gate-blocks-its-own-repair\n"
     "debug-pack: DBG-001"
@@ -599,6 +600,34 @@ def test_each_contract_field_is_judged():
 
 def test_a_complete_contract_admits_the_change():
     assert run() == []
+
+
+# --- proxy-green substitution and unbound obligations fail closed (idp#7443/#8415/#8369) -----
+# Measured 2026-11-24: lanes stamped NOT OPERATIONAL after merge because their ship contract
+# probed raw.githubusercontent.com (source substituted for production) or bound to no live
+# obligation. Both classes are refused here, before merge, and the falsifiers below are the
+# known-bad fixtures this gate must reject.
+
+
+def test_a_source_url_accept_is_refused_before_merge():
+    contract = CONTRACT.replace(
+        "https://voice.example.test/health",
+        "https://raw.githubusercontent.com/o/r/main/bin/x",
+    )
+    out = run(issue=_issue(claim=_claim(), contract=contract))
+    assert any("ERR_PROXY_GREEN_SUBSTITUTION" in p for p in out), out
+
+
+def test_a_missing_obligation_is_refused():
+    contract = CONTRACT.replace("obligation: Mumchimp/idp#1\n", "")
+    out = run(issue=_issue(claim=_claim(), contract=contract))
+    assert any("not bound to a parent obligation" in p for p in out), out
+
+
+def test_a_malformed_obligation_is_refused():
+    contract = CONTRACT.replace("obligation: Mumchimp/idp#1", "obligation: someday")
+    out = run(issue=_issue(claim=_claim(), contract=contract))
+    assert any("not bound to a parent obligation" in p for p in out), out
 
 
 def test_an_optimus_metric_nobody_can_measure_is_refused():
