@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,7 +100,9 @@ export function workerSecrets(env) {
   for (const k of ["MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]) {
     if (env[k]) secrets[k] = env[k];
   }
-  return secrets;
+  // The routing plane resolves each candidate's `apiKeySecretName` from the Worker's own
+  // env, so a lane without its vendor key is a 502 on every call it is chosen for.
+  return Object.assign(secrets, vendorSecrets(env));
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -108,6 +111,7 @@ export async function release() {
     schema: "meridian/zone-b-release-v1", sha: process.env.RELEASE_SHA ?? null,
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
+    role_seed: null,
     started_at: new Date().toISOString(),
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
@@ -159,6 +163,27 @@ export async function release() {
       run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     }
     r.deploy_attempted = true;
+    // A deployed router with no role pool refuses every routing call: measured on run
+    // 45675424976, probe 3 answered 404 {"error":{"type":"admission_refused",
+    // "detail":"{\"error\":\"unknown_role\",\"role\":\"role:coder\"}"}} while /health was
+    // 200 with configured_roles 0. The pool is seeded through the admin API (zero static
+    // TOML) from the estate's recorded lane truth, and only for vendors the Worker holds.
+    // Seeding is idempotent, so it is retried while the new version propagates.
+    const pool = rolePool(process.env);
+    if (Object.keys(pool.roles).length) {
+      for (let n = 1; n <= 3; n++) {
+        try {
+          r.role_seed = await seedRolePool(process.env.MERIDIAN_ROUTER_URL, process.env.MERIDIAN_ADMIN_KEY, pool);
+          break;
+        } catch (e) {
+          r.role_seed = { configured: 0, status: 0, error: String(e?.message ?? e).slice(0, 200) };
+          if (n === 3) throw e;
+          await pause(3000);
+        }
+      }
+    } else {
+      r.role_seed = { configured: 0, status: 0, skipped: "no vendor key held" };
+    }
     await pause(3000);
     for (let n = 1; n <= 3; n++) {
       run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: sha }, 110000, true);
@@ -185,6 +210,7 @@ export async function release() {
     fs.writeFileSync(out, JSON.stringify(r, null, 2) + "\n", { mode: 0o600 });
     console.log(JSON.stringify({
       status: r.status, sha: r.sha, passed_rounds: r.probes.length,
+      role_seed: r.role_seed?.configured ?? 0,
       rollback_attempted: r.rollback_attempted, rollback_verified: r.rollback_verified,
     }));
   }
