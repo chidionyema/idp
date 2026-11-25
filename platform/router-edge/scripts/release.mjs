@@ -40,8 +40,13 @@ export function redact(text) {
     .trim();
 }
 export function failureCause(text, max = 300) {
-  const lines = redact(text).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  return (lines.pop() ?? "").slice(0, max);
+  // Wrangler ends its stderr with a pointer to a log file on the runner, which says
+  // nothing; the diagnosis is a few lines above it. Strip colour, drop the pointer,
+  // then keep the last three meaningful lines so one run names the whole refusal.
+  const clean = redact(String(text ?? "").replace(/\u001b\[[0-9;]*m/g, ""));
+  const lines = clean.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    .filter(s => !/logs were written to/i.test(s));
+  return lines.slice(-3).join(" / ").slice(0, max);
 }
 function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false) {
   const childEnv = { ...process.env, ...env };
@@ -73,6 +78,15 @@ export function uploadArgs(sha, tag, hasPreviousVersion) {
   if (hasPreviousVersion) args.push("--keep-vars");
   args.push("--strict");
   return args;
+}
+// First boot creates the Worker and applies the Durable Object migration, which only
+// `wrangler deploy` may do. It also creates the 100% deployment directly, so there is
+// nothing for `versions deploy` to promote afterwards.
+export function firstBootDeployArgs(sha, tag) {
+  return [
+    "deploy", "--var", "COMMIT_SHA:" + sha, "--tag", tag,
+    "--message", "meridian:" + sha, "--strict",
+  ];
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -113,10 +127,18 @@ export async function release() {
     }
     const tag = immutableTag(sha);
     // DO migrations must not be silently converted to an unversioned initial deploy.
-    run(wrangler, uploadArgs(sha, tag, Boolean(r.previous_version_id)));
-    r.upload_ok = true;
+    // Cloudflare refuses a Durable Object class creation from `versions upload`:
+    // "any change that creates, deletes, renames, or transfers a Durable Object class
+    // must be applied through wrangler deploy" (Workers docs, deployment management).
+    // wrangler.toml declares new_sqlite_classes v1, so first boot IS that change.
+    if (r.previous_version_id === null) {
+      run(wrangler, firstBootDeployArgs(sha, tag));
+    } else {
+      run(wrangler, uploadArgs(sha, tag, true));
+      r.upload_ok = true;
+      run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
+    }
     r.deploy_attempted = true;
-    run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     await pause(3000);
     for (let n = 1; n <= 3; n++) {
       run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: sha }, 110000, true);
