@@ -70,23 +70,36 @@ function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false
 // `--keep-vars` retains the vars of the PREVIOUS deployment. On a worker with no
 // deployment there is nothing to keep and Wrangler refuses the upload, so first boot
 // uploads without it (I-8455 Stage 1, founder waiver 2026-11-25).
-export function uploadArgs(sha, tag, hasPreviousVersion) {
+export function uploadArgs(sha, tag, hasPreviousVersion, secretsFile) {
   const args = [
     "versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
     "--var", "COMMIT_SHA:" + sha,
   ];
   if (hasPreviousVersion) args.push("--keep-vars");
+  if (secretsFile) args.push("--secrets-file", secretsFile);
   args.push("--strict");
   return args;
 }
 // First boot creates the Worker and applies the Durable Object migration, which only
 // `wrangler deploy` may do. It also creates the 100% deployment directly, so there is
 // nothing for `versions deploy` to promote afterwards.
-export function firstBootDeployArgs(sha, tag) {
-  return [
+export function firstBootDeployArgs(sha, tag, secretsFile) {
+  const args = [
     "deploy", "--var", "COMMIT_SHA:" + sha, "--tag", tag,
     "--message", "meridian:" + sha, "--strict",
   ];
+  if (secretsFile) args.push("--secrets-file", secretsFile);
+  return args;
+}
+// The Worker compares a caller's bearer against ITS OWN secret, and a deploy never
+// uploads one: a Worker deployed without this rejects every real caller with 401
+// while /health stays 200. The values are already in this step's env for the probes.
+export function workerSecrets(env) {
+  const secrets = {};
+  for (const k of ["MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]) {
+    if (env[k]) secrets[k] = env[k];
+  }
+  return secrets;
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -99,6 +112,7 @@ export async function release() {
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
   const wrangler = path.join(ROOT, "node_modules", ".bin", "wrangler");
+  let secretsFile = "";
   try {
     const sha = requireMainSha(process.env.GITHUB_REF, process.env.RELEASE_SHA, run("git", ["rev-parse", "HEAD"]).trim());
     for (const k of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]) {
@@ -126,15 +140,21 @@ export async function release() {
       r.previous_version_id = null;
     }
     const tag = immutableTag(sha);
+    // The Worker's own secrets are values a deploy never carries; without them the edge
+    // rejects every real caller while /health reports ok. Written 0600, used, removed.
+    const secrets = workerSecrets(process.env);
+    secretsFile = Object.keys(secrets).length
+      ? path.join(path.dirname(out), "worker-secrets.json") : "";
+    if (secretsFile) fs.writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600 });
     // DO migrations must not be silently converted to an unversioned initial deploy.
     // Cloudflare refuses a Durable Object class creation from `versions upload`:
     // "any change that creates, deletes, renames, or transfers a Durable Object class
     // must be applied through wrangler deploy" (Workers docs, deployment management).
     // wrangler.toml declares new_sqlite_classes v1, so first boot IS that change.
     if (r.previous_version_id === null) {
-      run(wrangler, firstBootDeployArgs(sha, tag));
+      run(wrangler, firstBootDeployArgs(sha, tag, secretsFile));
     } else {
-      run(wrangler, uploadArgs(sha, tag, true));
+      run(wrangler, uploadArgs(sha, tag, true, secretsFile));
       r.upload_ok = true;
       run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     }
@@ -160,6 +180,7 @@ export async function release() {
       }
     }
   } finally {
+    if (secretsFile) fs.rmSync(secretsFile, { force: true });
     r.finished_at = new Date().toISOString();
     fs.writeFileSync(out, JSON.stringify(r, null, 2) + "\n", { mode: 0o600 });
     console.log(JSON.stringify({
