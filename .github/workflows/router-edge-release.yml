@@ -39,7 +39,7 @@ jobs:
         env:
           ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
           ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
-          ZONE_NAME: meridianlabs.cloud
+          ZONE_NAME: ${{ vars.ESTATE_ZONE }}
         run: |
           set -euo pipefail
           API=https://api.cloudflare.com/client/v4
@@ -51,7 +51,7 @@ jobs:
           ZREAD=$(gid "Zone Read" com.cloudflare.api.account.zone.read) || true
           [ -n "$ZREAD" ] || ZREAD=$(jq -r '.result[] | select((.scopes|index("com.cloudflare.api.account.zone.read")) or (.name|test("Zone Read";"i"))) | .id' <<<"$groups" | head -1)
           [ -n "$WS" ] && [ -n "$WR" ] && [ -n "$ZREAD" ] || { echo "FAIL    cloudflare  missing permission group(s):"; jq -r '.result[] | select((.name|test("Workers")) or (.name|test("Zone";"i"))) | "        " + .name + "  " + (.scopes|join(","))' <<<"$groups"; exit 1; }
-          # The root is pinned to a zone set that predates the meridianlabs.cloud cutover (measured
+          # The root is pinned to a zone set that predates the current zone cutover (measured
           # 2026-11-18, run 44183564083): resolve the zone through a zone-read child, then delete it.
           probe=$(cf "$ROOT" -X POST -d "$(jq -nc --arg n "router-edge-release zone-read $GITHUB_RUN_ID" --arg g "$ZREAD" '{name:$n,policies:[{effect:"allow",resources:{"com.cloudflare.api.account.zone.*":"*"},permission_groups:[{id:$g}]}]}')" "$API/user/tokens")
           jq -e '.success' <<<"$probe" >/dev/null || { echo "FAIL    cloudflare  zone-read child refused:"; jq -c '.errors' <<<"$probe"; exit 1; }
@@ -80,7 +80,7 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_RECEIPT_PATH: ${{ runner.temp }}/router-release-receipt.json
           RELEASE_PREFLIGHT_FILE: ${{ runner.temp }}/router-preflight.sha
-          MERIDIAN_ROUTER_URL: https://llm.meridianlabs.cloud
+          ESTATE_ZONE: ${{ vars.ESTATE_ZONE }}
           CLOUDFLARE_API_TOKEN: ${{ steps.mint.outputs.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
           MERIDIAN_CLIENT_KEY: ${{ secrets.SEED_MERIDIAN_CLIENT_KEY }}
