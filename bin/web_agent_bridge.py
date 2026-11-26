@@ -218,9 +218,7 @@ def request(url, *, token=None, form=None, limit=MAX_ARCHIVE):
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     req = urllib.request.Request(url, headers=headers, data=body)  # noqa: S310 -- fixed HTTPS provider endpoints
     try:
-        with urllib.request.build_opener(NoRedirect()).open(
-            req, timeout=20
-        ) as response:
+        with urllib.request.build_opener(NoRedirect()).open(req) as response:
             data = response.read(limit + 1)
     except urllib.error.HTTPError as exc:
         raise BridgeError(f"PROVIDER_HTTP_{exc.code}") from None
