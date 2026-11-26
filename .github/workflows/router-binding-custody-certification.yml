@@ -1,0 +1,81 @@
+name: Router binding custody certification
+on:
+  push:
+    branches: [research/8416-vendor-binding-custody-20261126]
+permissions:
+  contents: read
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASE: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 pytest==8.4.2 -r sovereign/requirements.txt
+      - uses: ./.github/actions/estate-tools
+      - name: Real hooks and existing router tests
+        run: |
+          set -euo pipefail
+          source="$GITHUB_SHA"
+          git checkout -b router-binding-custody "$BASE"
+          git config core.hooksPath .githooks
+          git config user.name "Meridian Unit 0 cloud recovery"
+          git config user.email "meridian-unit0@users.noreply.github.com"
+          git checkout "$source" -- platform/router-edge/scripts/release.mjs platform/router-edge/tests/release.falsifier.mjs
+          git commit -m "fix(router-edge): preserve alternative vendor lane custody" -m "Claim: #8416
+          Agent: meridian-unit0-router"
+          (cd platform/router-edge && npm install --ignore-scripts --no-package-lock --no-audit --no-fund && npm test && node --test tests/release.falsifier.mjs)
+          IDP_CI_FAST=1 IDP_CI_BASE="$BASE" bin/idp-ci
+          git bundle create "$RUNNER_TEMP/candidate.bundle" router-binding-custody "^$BASE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: exact-router-binding-candidate
+          path: ${{ runner.temp }}/candidate.bundle
+          retention-days: 1
+          if-no-files-found: error
+  custody:
+    needs: prove
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: read
+    env:
+      BASE: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: exact-router-binding-candidate
+          path: ${{ runner.temp }}/bundle
+      - name: Verify exact ordinary source before publishing quarantine ref
+        run: |
+          set -euo pipefail
+          git fetch "$RUNNER_TEMP/bundle/candidate.bundle" refs/heads/router-binding-custody:refs/heads/router-binding-custody
+          tip=$(git rev-parse refs/heads/router-binding-custody)
+          test "$(git rev-parse "$tip^")" = "$BASE"
+          want=$(printf '%s\n' platform/router-edge/scripts/release.mjs platform/router-edge/tests/release.falsifier.mjs)
+          actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$')
+          test "$actual" = "$want"
+          git diff --exit-code "$GITHUB_SHA" "$tip" -- platform/router-edge/scripts/release.mjs platform/router-edge/tests/release.falsifier.mjs
+          git show -s --format=%B "$tip" | grep -q '^X-Idp-Signed: '
+          bin/claim-gate "$BASE" "$tip"
+          ref=refs/heads/quarantine/8416-vendor-binding-custody-20261126
+          test -z "$(git ls-remote origin "$ref")"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.extraHeader=Authorization: Basic $auth" push origin "$tip:$ref"
+          echo "CERTIFIED_UNIT_SHA=$tip"

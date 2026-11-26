@@ -115,16 +115,31 @@ export function workerSecrets(env) {
   // env, so a lane without its vendor key is a 502 on every call it is chosen for.
   return Object.assign(secrets, vendorSecrets(env));
 }
-// Validate all required bindings before any deployment. Values never enter receipts.
-export function completeSecretBundle(env, pool = rolePool()) {
+// Caller/admin authentication is mandatory. Vendor lanes are alternatives, not
+// conjunctive requirements. A pre-existing binding is custody evidence, not a
+// capacity or inference proof. Never overwrite an existing key with an empty value.
+export function completeSecretBundle(env, pool = rolePool(), existing = []) {
   const secrets = workerSecrets(env);
-  const required = new Set(["MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]);
-  for (const role of Object.values(pool.roles)) {
-    for (const candidate of role.candidates) if (candidate.enabled) required.add(candidate.apiKeySecretName);
-  }
-  const missing = [...required].filter(name => typeof secrets[name] !== "string" || !secrets[name].trim());
+  const supplied = name => typeof secrets[name] === "string" && Boolean(secrets[name].trim());
+  const missing = ["MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"].filter(name => !supplied(name));
   if (missing.length) throw new Error("MISSING_REQUIRED_WORKER_BINDINGS:" + missing.join(","));
+  for (const name of Object.keys(secrets)) if (!supplied(name)) delete secrets[name];
+  const present = new Set(existing);
+  for (const [name, role] of Object.entries(pool.roles)) {
+    if (!role.candidates.some(c => c.enabled && (supplied(c.apiKeySecretName) || present.has(c.apiKeySecretName)))) {
+      throw new Error("NO_CUSTODIED_VENDOR_BINDING:" + name);
+    }
+  }
+  if (!Object.keys(pool.roles).length) throw new Error("NO_CONFIGURED_ROLE");
   return secrets;
+}
+
+export function existingSecretNames(raw) {
+  const rows = JSON.parse(raw);
+  if (!Array.isArray(rows) || rows.some(row => !row || typeof row.name !== "string" || row.type !== "secret_text")) {
+    throw new Error("UNPROVEN_WORKER_SECRET_INVENTORY");
+  }
+  return rows.map(row => row.name);
 }
 
 const CUTOVER_HOSTS = new Set(["submit.meridianlabs.cloud", "lifeboat-llm.meridianlabs.cloud"]);
@@ -317,7 +332,18 @@ export async function release() {
     // The Worker's own secrets are values a deploy never carries; without them the edge
     // rejects every real caller while /health reports ok. Written 0600, used, removed.
     const pool = rolePool();
-    const secrets = completeSecretBundle(process.env, pool);
+    const existing = r.previous_version_id
+      ? existingSecretNames(run(wrangler, ["secret", "list", "--format", "json"]))
+      : [];
+    const secrets = completeSecretBundle(process.env, pool, existing);
+    r.vendor_binding_custody = Object.values(pool.roles).flatMap(role => role.candidates
+      .filter(c => c.enabled).map(c => ({
+        id: c.id,
+        source: Object.hasOwn(secrets, c.apiKeySecretName) ? "sync" :
+          existing.includes(c.apiKeySecretName) ? "existing" : "absent",
+      })));
+    // A complete binding is NOT evidence of working provider capacity.
+    // The existing three authenticated probes remain the operational gate.
     secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "meridian-worker-secrets-"));
     secretsFile = path.join(secretsDir, "bundle.json");
     fs.writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600, flag: "wx" });
