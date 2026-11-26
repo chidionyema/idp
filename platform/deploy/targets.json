@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "prohibited_patterns": [
+    "oke",
+    "oci-oke",
+    "oracle-oke"
+  ],
+  "flux_roots": [
+    "clusters"
+  ],
+  "non_deployable_dirs": [
+    "platform/deploy",
+    "platform/estate"
+  ],
+  "cloudflare_workers": [
+    {
+      "name": "meridian-router-edge",
+      "dir": "platform/router-edge",
+      "url": "https://llm.meridianlabs.cloud",
+      "probe_cmd": "npm run probe",
+      "test_cmd": "npm test",
+      "has_durable_objects": true,
+      "min_wrangler_version": "4.131.0"
+    },
+    {
+      "name": "otto-lifeboat",
+      "dir": "platform/lifeboat",
+      "url": "https://lifeboat.meridianlabs.cloud",
+      "probe_cmd": "npm run probe",
+      "test_cmd": "npm test",
+      "has_durable_objects": false,
+      "min_wrangler_version": "4.131.0"
+    }
+  ]
+}
