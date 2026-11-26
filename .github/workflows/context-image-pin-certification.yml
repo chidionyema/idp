@@ -1,0 +1,89 @@
+name: Context image pin certification
+on:
+  push:
+    branches: [research/7344-context-image-pins-20261126]
+permissions:
+  contents: read
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASE: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 pytest==8.4.2 -r sovereign/requirements.txt
+      - uses: ./.github/actions/estate-tools
+      - name: Real hooks and existing context tests
+        run: |
+          set -euo pipefail
+          source="$GITHUB_SHA"
+          git checkout -b context-image-pins "$BASE"
+          git config core.hooksPath .githooks
+          git config user.name "Meridian Unit 0 cloud recovery"
+          git config user.email "meridian-unit0@users.noreply.github.com"
+          git checkout "$source" -- platform/mcp/kustomization.yaml
+          git commit -m "fix(context): pin both signed images from landed context source" -m "Claim: #7344
+          Agent: meridian-unit0-gortex"
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          data = yaml.safe_load(Path("platform/mcp/kustomization.yaml").read_text())
+          images = {i["name"]: i["newTag"] for i in data["images"]}
+          for name in ("estate-context-broker", "gortex-engine"):
+              assert images["ghcr.io/chidionyema/" + name] == "main-15560-ecbde02f8f65fec7a8230b9cb5b8c752a1489a9f"
+          PY
+          python3 -m pytest -q tests/test_estate_context_server.py tests/test_estate_context_broker.py tests/test_estate_context_claims.py
+          IDP_CI_FAST=1 IDP_CI_BASE="$BASE" bin/idp-ci
+          git bundle create "$RUNNER_TEMP/candidate.bundle" context-image-pins "^$BASE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: exact-context-image-candidate
+          path: ${{ runner.temp }}/candidate.bundle
+          retention-days: 1
+          if-no-files-found: error
+  custody:
+    needs: prove
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: read
+    env:
+      BASE: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8515b387afb0cf296172baf7dc43f6cff239ef6e
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: exact-context-image-candidate
+          path: ${{ runner.temp }}/bundle
+      - name: Verify exact ordinary source before publishing quarantine ref
+        run: |
+          set -euo pipefail
+          git fetch "$RUNNER_TEMP/bundle/candidate.bundle" refs/heads/context-image-pins:refs/heads/context-image-pins
+          tip=$(git rev-parse refs/heads/context-image-pins)
+          test "$(git rev-parse "$tip^")" = "$BASE"
+          want=$(printf '%s\n' platform/mcp/kustomization.yaml)
+          actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$')
+          test "$actual" = "$want"
+          git diff --exit-code "$GITHUB_SHA" "$tip" -- platform/mcp/kustomization.yaml
+          git show -s --format=%B "$tip" | grep -q '^X-Idp-Signed: '
+          bin/claim-gate "$BASE" "$tip"
+          ref=refs/heads/quarantine/7344-context-image-pins-20261126
+          test -z "$(git ls-remote origin "$ref")"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.extraHeader=Authorization: Basic $auth" push origin "$tip:$ref"
+          echo "CERTIFIED_UNIT_SHA=$tip"
