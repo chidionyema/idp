@@ -6,6 +6,7 @@ suite) and no dependency on any network call actually happening."""
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -237,3 +238,26 @@ def test_provider_exception_does_not_echo_exact_key(monkeypatch):
     result = cg.probe({"model": "openai/model", "key_var": "TEST_KEY"})
     assert result["status"] == "RED"
     assert "fixture-sensitive-key" not in str(result)
+
+
+def test_cli_emits_only_json_when_provider_library_prints(tmp_path, monkeypatch, capsys):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        """model_list:
+  - model_name: broken
+    litellm_params: {model: "openai/dead", api_key: "os.environ/TEST_KEY"}
+"""
+    )
+    key = "fixture-noise-secret"
+    monkeypatch.setenv("TEST_KEY", key)
+
+    def noisy_completion(**kw):
+        print("provider diagnostic " + kw["api_key"])
+        raise litellm.AuthenticationError("invalid api key")
+
+    monkeypatch.setattr(litellm, "completion", noisy_completion)
+    assert cg.main(["catalog_gate.py", str(cfg)]) == 1
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert len(report["red"]) == 1
+    assert key not in captured.out + captured.err
