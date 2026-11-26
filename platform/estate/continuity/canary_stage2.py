@@ -22,6 +22,11 @@ def stage_two(store, receipt, work_dir, lease_a, lines, verifier_signer) -> int:
     ).fetchone()["lease_expires_at"]
     while _time.time() <= expires + 0.5:
         _time.sleep(0.2)
+    decision = store.control_step("m-canary")
+    receipt["control_before_recovery"] = decision
+    if decision["action"] != "RECOVER":
+        print(json.dumps(receipt))
+        return 2
     takeover = store.needs_takeover("m-canary")
     receipt["takeover_detection"] = {
         "needed": takeover["takeover"],
@@ -29,6 +34,11 @@ def stage_two(store, receipt, work_dir, lease_a, lines, verifier_signer) -> int:
     }
     rec = store.begin_recovery("m-canary", "WORKER_KILLED", "sigkill-canary")
     receipt["fenced_attempt"] = rec["fenced_attempt"]
+    decision = store.control_step("m-canary")
+    receipt["control_after_fence"] = decision
+    if decision["action"] != "RESELECT":
+        print(json.dumps(receipt))
+        return 2
     store.transition("m-canary", "REASSIGNING", "recovery", "takeover")
     lease_b = store.acquire_lease(
         "m-canary",
@@ -53,6 +63,11 @@ def stage_two(store, receipt, work_dir, lease_a, lines, verifier_signer) -> int:
         return 3
     except StaleFenceError:
         receipt["zombie_rejected"] = True
+    decision = store.control_step("m-canary")
+    receipt["control_after_takeover"] = decision
+    if decision["action"] != "CONTINUE":
+        print(json.dumps(receipt))
+        return 2
     artifact_data = store.restore_latest_checkpoint("m-canary")
     receipt["restored_completed_work"] = len(artifact_data["completed_work"])
     artifact = os.path.join(work_dir, "artifact.txt")
