@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""estate-context-door -- the context plane's door, judged before a byte leaves the worktree.
+
+WHY THIS EXISTS. The gortex engine is private behind the broker, and the broker is the only way
+to it (docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md). The gate that
+holds that line is bin/estate-context-gate, and its --self-test proves every check can still
+fail (a gate that cannot fail is not a gate).
+
+THE GAP THIS CLOSES, MEASURED 2026-11-25. The context gate ran in the FULL gate only
+(bin/idp-ci:1454). The pre-push hook runs the FAST gate, and the fast gate exits long before
+the context rung -- so a laptop push could leave the worktree with a broken context door and
+only CI would say so. The founder, 2026-11-19: "CI is the last stand, not the front line."
+Worse: the hook's disk floor (free space < 3000 MB) skips the fast gate entirely, and this
+machine sat at 1996 MB free -- so on the machine that actually pushes, the door was not judged
+at all.
+
+ONE IMPLEMENTATION, THREE CALLERS: the fast gate (bin/idp-ci, so the laptop push and the cloud
+pull request run the same thing), the pre-push hook (above the disk floor, so a low-disk
+machine still judges the door), and the six-gate wall (bin/pre-push-wall.py, so the wall grades
+the door too).
+
+THE SCOPE. The gate costs about 48 s while the engine is unreachable (its live-catalogue probe
+waits 30 s for an engine that is not there), and the fast gate has a 60 s budget. So the door is
+judged when the change touches the CONTEXT PLANE -- the files the gate actually reads -- and
+skipped otherwise, by name, with the reason. With no base (no merge-base, no origin/main) the
+scope is EVERYTHING, so it never skips silently.
+
+EXIT CODES. 0 the door holds (or the change did not touch it), 1 the door is broken.
+"""
+
+from __future__ import annotations
+
+import argparse
+import pathlib
+import subprocess  # noqa: S404 - every call below is a constant argv, no shell
+import sys
+
+# The context plane: the files the gate reads. A change outside this list cannot change what
+# the gate says, so the door does not need judging for it.
+SCOPE = (
+    "platform/estate/context/",
+    "platform/mcp/estate-context-broker.yaml",
+    "platform/estate/libexec/critical-probe.py",
+    "bin/estate-context-",
+    "bin/gortex-health",
+    ".gortex.yaml",
+    "gortex-engine.Dockerfile",
+)
+
+
+def _run(argv: list[str], repo: pathlib.Path) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 - constant argv, no shell
+        argv,
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+    )
+
+
+def _changed(repo: pathlib.Path, base: str | None) -> list[str]:
+    """The paths this change touches, or EVERY path when there is no base to judge from."""
+    if not base:
+        return ["*"]
+    proc = _run(
+        ["/usr/bin/git", "diff", "--name-only", "%s...HEAD" % base],
+        repo,
+    )
+    if proc.returncode != 0:
+        return ["*"]
+    paths = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    return paths or []
+
+
+def _in_scope(paths: list[str]) -> bool:
+    if "*" in paths:
+        return True
+    for path in paths:
+        for pattern in SCOPE:
+            if path.startswith(pattern):
+                return True
+    return False
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="the context plane's door")
+    parser.add_argument(
+        "--base", default="", help="the base ref to judge the change against"
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="judge the door whatever the change touches"
+    )
+    parser.add_argument("--repo", default="", help="the checkout to judge")
+    args = parser.parse_args(argv)
+
+    repo = pathlib.Path(args.repo).resolve() if args.repo else pathlib.Path.cwd()
+    gate = repo / "bin" / "estate-context-gate"
+    if not gate.exists():
+        print("FAIL  context-door  bin/estate-context-gate is not in the checkout")
+        return 1
+
+    base = args.base
+    if not base and not args.all:
+        proc = _run(
+            ["/usr/bin/git", "merge-base", "origin/main", "HEAD"],
+            repo,
+        )
+        if proc.returncode == 0:
+            base = proc.stdout.strip()
+    paths = _changed(repo, base)
+    if not args.all and not _in_scope(paths):
+        print(
+            "ok    context-door  the context plane is unchanged by this change (%d paths)"
+            % len(paths)
+        )
+        return 0
+
+    self_test = _run([sys.executable, str(gate), "--self-test"], repo)
+    judged = _run([sys.executable, str(gate)], repo)
+    if self_test.returncode == 0 and judged.returncode == 0:
+        print("ok    context-door  one door, and the door can still refuse")
+        return 0
+    print(
+        "FAIL  context-door  the context gate refused this tree, or a check cannot fail"
+    )
+    for label, proc in (("judge", judged), ("self-test", self_test)):
+        text = (proc.stdout or proc.stderr or "").strip()
+        if text:
+            for line in text.splitlines()[-12:]:
+                print("      %s: %s" % (label, line))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

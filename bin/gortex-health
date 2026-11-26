@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""gortex-health -- the context engine's own health, measured through its own doors.
+
+WHY THIS EXISTS. Gortex (github.com/zzet/gortex v0.64.11) is the estate's context engine. In
+the cluster it is a private sidecar behind the broker's door; on a laptop it runs as a local
+daemon (docs/reference/estate-context-plane.md: `gortex daemon start --http-addr
+127.0.0.1:7411`). Until now NOTHING measured it. Measured 2026-11-25 on this machine:
+
+  * ~/.gortex/cache/daemon.state.json said `"startup_phase":"serving"` for pid 39356, and no
+    such process existed. A stale pid file is a PROXY; the estate's rule is that a proxy is not
+    the thing, and a proxy that says "serving" is worse than no proxy at all.
+  * the store the dead daemon left behind was 1,920,581,632 bytes (1.79 GiB) with a 64 MiB WAL,
+    on a disk with 2.0 GiB free. That is the disk death spiral (R5) in the act.
+
+WHAT IT MEASURES. Each thing through its own door, never through a proxy:
+
+  * the engine's health door -- http://127.0.0.1:7411/healthz (the same door the broker pod's
+    probe uses: platform/mcp/estate-context-broker.yaml).
+  * the engine's unix socket -- ~/.gortex/cache/daemon.sock.
+  * the engine's process -- the pid the daemon itself wrote, checked for liveness.
+  * the engine's index store -- ~/.gortex/store/store.sqlite and its WAL.
+
+THE BUDGET. Every loop has a budget (R5). The store is capped at 2 GiB, which is the estate's
+own declared budget for this engine's index (the engine's volume in
+platform/mcp/estate-context-broker.yaml is 2Gi), and the WAL at 256 MiB. A store that grows
+past its cap is a FAILURE with a number attached, not a surprise on a laptop two weeks later.
+
+EXIT CODES. 0 healthy, 1 unhealthy (measured and wrong), 2 blind (there is nothing here to
+measure, which is not the same as healthy).
+
+MEASURES (the Optimus shape: one `optimus.<name>=<number>` line each):
+  gortex.store_bytes, gortex.store_wal_bytes, gortex.daemon_up
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import socket
+import sys
+import urllib.error
+import urllib.request
+
+DEFAULT_STORE = pathlib.Path.home() / ".gortex" / "store" / "store.sqlite"
+DEFAULT_PID_FILE = pathlib.Path.home() / ".gortex" / "cache" / "daemon.pid"
+DEFAULT_SOCKET = pathlib.Path.home() / ".gortex" / "cache" / "daemon.sock"
+DEFAULT_ADDR = "127.0.0.1:7411"
+
+# The estate's declared budget for this engine's index: the engine's volume in
+# platform/mcp/estate-context-broker.yaml is 2Gi. The cap is that budget, not a guess.
+STORE_CAP_BYTES = 2 * 1024 * 1024 * 1024
+WAL_CAP_BYTES = 256 * 1024 * 1024
+
+HEALTH_PATH = "/healthz"
+
+
+def _pid_alive(pid: int) -> bool:
+    """Is the pid a live process? os.kill(pid, 0) is the only portable liveness signal."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # it exists; we may not signal it
+    except OSError:
+        return False
+    return True
+
+
+def _http_health(addr: str, timeout: float) -> tuple[bool, str]:
+    """The engine's own health door. A refusal is an answer, and it is recorded."""
+    host, _, port = addr.partition(":")
+    url = "http://%s:%s%s" % (host, port or "80", HEALTH_PATH)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 -- loopback health door, scheme fixed
+            code = getattr(resp, "status", 0)
+        if code == 200:
+            return True, "the engine's health door answered 200 at %s" % url
+        return False, "the engine's health door answered %s at %s" % (code, url)
+    except urllib.error.HTTPError as exc:
+        return False, "the engine's health door answered %s at %s" % (exc.code, url)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return False, "the engine's health door did not answer at %s (%s)" % (url, exc)
+
+
+def _socket_ok(path: pathlib.Path, timeout: float) -> tuple[bool, str]:
+    """The engine's unix socket. A stale socket file refuses a connection, and that is the fact."""
+    if not path.exists():
+        return False, "the engine's socket %s is not there" % path
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(str(path))
+        return True, "the engine's socket %s accepted a connection" % path
+    except OSError as exc:
+        return False, "the engine's socket %s refused a connection (%s)" % (path, exc)
+    finally:
+        sock.close()
+
+
+def _file_size(path: pathlib.Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _read_pid(path: pathlib.Path) -> int:
+    try:
+        return int(path.read_text().strip().splitlines()[0])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _store_stats(store: pathlib.Path) -> dict:
+    wal = store.with_name(store.name + "-wal")
+    mtime = 0
+    if store.exists():
+        try:
+            mtime = int(store.stat().st_mtime)
+        except OSError:
+            mtime = 0
+    return {
+        "path": str(store),
+        "exists": store.exists(),
+        "bytes": _file_size(store),
+        "wal_bytes": _file_size(wal),
+        "mtime": mtime,
+        "cap_bytes": STORE_CAP_BYTES,
+        "wal_cap_bytes": WAL_CAP_BYTES,
+    }
+
+
+def measure(
+    store: pathlib.Path,
+    pid_file: pathlib.Path,
+    sock_path: pathlib.Path,
+    addr: str,
+    timeout: float = 3.0,
+) -> dict:
+    """Measure the engine. Returns the payload; the verdict is derived from it."""
+    pid = _read_pid(pid_file)
+    http_ok, http_reason = _http_health(addr, timeout)
+    sock_ok, sock_reason = _socket_ok(sock_path, timeout)
+    return {
+        "daemon": {
+            "pid": pid,
+            "pid_file": str(pid_file),
+            "pid_alive": _pid_alive(pid),
+        },
+        "door": {
+            "addr": addr,
+            "url": "http://%s%s" % (addr, HEALTH_PATH),
+            "http_ok": http_ok,
+            "http_reason": http_reason,
+            "socket_ok": sock_ok,
+            "socket_reason": sock_reason,
+            "serving": http_ok or sock_ok,
+        },
+        "store": _store_stats(store),
+    }
+
+
+def verdict(payload: dict) -> tuple[str, list[str]]:
+    """ok | fail | blind, with the reasons. A thing that cannot be measured is not healthy."""
+    store = payload["store"]
+    daemon = payload["daemon"]
+    door = payload["door"]
+
+    if not store["exists"] and not daemon["pid_alive"]:
+        return "blind", [
+            "there is no engine store at %s and no engine process: nothing to measure"
+            % store["path"]
+        ]
+
+    reasons: list[str] = []
+    if not daemon["pid_alive"]:
+        reasons.append(
+            "the engine's process is not alive (pid %s from %s)"
+            % (daemon["pid"], daemon["pid_file"])
+        )
+    if not door["serving"]:
+        reasons.append(door["http_reason"])
+        reasons.append(door["socket_reason"])
+    if store["bytes"] > store["cap_bytes"]:
+        reasons.append(
+            "the engine's store is %d bytes, over the %d byte cap"
+            % (store["bytes"], store["cap_bytes"])
+        )
+    if store["wal_bytes"] > store["wal_cap_bytes"]:
+        reasons.append(
+            "the engine's store WAL is %d bytes, over the %d byte cap"
+            % (store["wal_bytes"], store["wal_cap_bytes"])
+        )
+    if reasons:
+        return "fail", reasons
+    return "ok", [
+        "the engine is alive (pid %d), its door answered, and its store is %d bytes within the %d byte cap"
+        % (daemon["pid"], store["bytes"], store["cap_bytes"])
+    ]
+
+
+def _print_human(payload: dict, status: str, reasons: list[str]) -> None:
+    daemon = payload["daemon"]
+    door = payload["door"]
+    store = payload["store"]
+    print(
+        "gortex daemon: %s (pid %s from %s)"
+        % (
+            "alive" if daemon["pid_alive"] else "DEAD",
+            daemon["pid"],
+            daemon["pid_file"],
+        )
+    )
+    print("gortex health door: %s" % door["http_reason"])
+    print("gortex socket: %s" % door["socket_reason"])
+    print(
+        "gortex store: %d bytes (cap %d)  wal: %d bytes (cap %d)"
+        % (
+            store["bytes"],
+            store["cap_bytes"],
+            store["wal_bytes"],
+            store["wal_cap_bytes"],
+        )
+    )
+    for reason in reasons:
+        print("gortex: %s" % reason)
+    print("verdict: %s" % status.upper())
+
+
+def _print_optimus(payload: dict) -> None:
+    store = payload["store"]
+    daemon = payload["daemon"]
+    print("optimus.gortex.store_bytes=%d" % store["bytes"])
+    print("optimus.gortex.store_wal_bytes=%d" % store["wal_bytes"])
+    print("optimus.gortex.daemon_up=%d" % (1 if daemon["pid_alive"] else 0))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="the gortex engine's own health")
+    parser.add_argument(
+        "--store", default=str(DEFAULT_STORE), help="the engine's index store"
+    )
+    parser.add_argument(
+        "--pid-file", default=str(DEFAULT_PID_FILE), help="the daemon's pid file"
+    )
+    parser.add_argument(
+        "--socket", default=str(DEFAULT_SOCKET), help="the daemon's unix socket"
+    )
+    parser.add_argument("--addr", default=DEFAULT_ADDR, help="the engine's health door")
+    parser.add_argument(
+        "--timeout", type=float, default=3.0, help="door timeout in seconds"
+    )
+    parser.add_argument("--json", action="store_true", help="one JSON object on stdout")
+    parser.add_argument(
+        "--optimus", action="store_true", help="print optimus.<name>=<number> lines"
+    )
+    parser.add_argument(
+        "--metric", help="print exactly one optimus.<name>=<number> line"
+    )
+    args = parser.parse_args(argv)
+
+    payload = measure(
+        pathlib.Path(args.store),
+        pathlib.Path(args.pid_file),
+        pathlib.Path(args.socket),
+        args.addr,
+        timeout=args.timeout,
+    )
+    status, reasons = verdict(payload)
+    payload["status"] = status
+    payload["reasons"] = reasons
+
+    if args.optimus:
+        _print_optimus(payload)
+        return 0
+    if args.metric:
+        values = {
+            "gortex.store_bytes": payload["store"]["bytes"],
+            "gortex.store_wal_bytes": payload["store"]["wal_bytes"],
+            "gortex.daemon_up": 1 if payload["daemon"]["pid_alive"] else 0,
+        }
+        if args.metric not in values:
+            print(
+                "FAIL  gortex-health  unknown metric '%s'" % args.metric,
+                file=sys.stderr,
+            )
+            return 2
+        print("optimus.%s=%d" % (args.metric, values[args.metric]))
+        return 0
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+        return {"ok": 0, "fail": 1, "blind": 2}[status]
+    _print_human(payload, status, reasons)
+    return {"ok": 0, "fail": 1, "blind": 2}[status]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
