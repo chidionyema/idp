@@ -11,7 +11,7 @@ THE SHAPE (founder-approved 2026-10-27, consultant-reviewed). One door, in the c
 
     agent runtime  --MCP/HTTPS-->  BROKER  --(private, token held only here)-->  gortex engine
                                           |
-                                          +-- claim-scoped path allowlist
+                                          +-- repository read boundary (explicit scopes remain restrictive)
                                           +-- freshness: index commit == requested commit
                                           +-- token budget
                                           +-- secret scrubbing (values -> REF:<NAME>)
@@ -29,7 +29,7 @@ HOW IT IS PROVEN. tests/test_estate_context_broker.py drives every branch below:
 cannot fail is not a gate, and a decision that is not tested is a comment.
 
 FAIL-CLOSED, AND WHERE IT FAILS OPEN. A stale index, an unproven index, an unreachable engine and
-a path outside the claim are all REFUSALS: the caller gets a verdict, not a stale answer. The one
+a path outside the read boundary are all REFUSALS: the caller gets a verdict, not a stale answer. The one
 deliberate fail-open is `working_copy` mode, where the engine publishes an incremental route
 within a bounded wait (ASYNC_REINDEX): there the answer is allowed but carries the freshness
 reason, because the caller asked for the working copy and the engine has one.
@@ -395,6 +395,17 @@ def freshness_decision(
 
 
 # --- claims and paths -------------------------------------------------------------------------
+def repo_read_path(path: str) -> bool:
+    """Repository-relative read names only; never Git internals or traversal."""
+    if not path or path.startswith("/") or chr(92) in path or "\x00" in path:
+        return False
+    parts = path.split("/")
+    return all(
+        part not in ("", ".", "..", ".git") and not part.startswith(".env")
+        for part in parts
+    )
+
+
 def path_allowed(path: str, allowed: Iterable[str]) -> bool:
     """Is this path inside the live claim's paths?
 
@@ -406,7 +417,7 @@ def path_allowed(path: str, allowed: Iterable[str]) -> bool:
     2. The glob set is matched with fnmatch, the same matcher bin/claim-gate uses, so the broker
        and the CI gate agree about what a claim covers. One matcher, one answer.
     """
-    if not path or path.startswith("/") or "\x00" in path:
+    if not repo_read_path(path):
         return False
     norm = os.path.normpath(path)
     if norm.startswith("..") or norm == ".":
@@ -606,7 +617,7 @@ class BrokerState:
     # and the broker resolves that against the HEAD it already serves -- it never guesses a
     # commit to be kind.
     head_commit: str | None = None
-    claim_paths: Sequence[str] = ()
+    claim_paths: Sequence[str] | None = None
     secrets: Mapping[str, str] = dataclasses.field(default_factory=dict)
     engine_reachable: bool = True
 
@@ -617,7 +628,7 @@ def decide_request(request: ContextRequest, state: BrokerState) -> Decision:
     1. the tool must be read-only      (the context plane cannot change the tree)
     2. the engine must be reachable     (no answer is better than a stale one)
     3. the index must match the commit  (a stale answer is not an answer)
-    4. every path must be inside the claim  (no work outside a claim)
+    4. every path must be repository-relative and inside any explicit read scope
     5. the answer must fit the budget  (a budget is a ceiling)
 
     Each step refuses with its own verdict, so the caller learns WHICH law refused it -- a
@@ -650,15 +661,21 @@ def decide_request(request: ContextRequest, state: BrokerState) -> Decision:
     if not decision.allow:
         return decision
     if request.paths:
-        decision = path_decision(request.paths, state.claim_paths)
-        if not decision.allow:
-            return decision
+        invalid = [path for path in request.paths if not repo_read_path(path)]
+        if invalid:
+            return _refuse(
+                PATH_REFUSED, "invalid repository read path", outside=invalid
+            )
+        if state.claim_paths is not None:
+            decision = path_decision(request.paths, state.claim_paths)
+            if not decision.allow:
+                return decision
     if request.estimated_tokens:
         decision = budget_decision(request.estimated_tokens, request.token_budget)
         if not decision.allow:
             return decision
     return _allow(
-        "the request is inside the claim, the index matches the commit, and the answer fits the budget",
+        "the request is inside the read boundary, the index matches the commit, and the answer fits the budget",
         tool=request.tool,
         paths=list(request.paths),
         index_commit=state.index_commit,
