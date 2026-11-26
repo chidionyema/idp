@@ -108,9 +108,12 @@ async def verify_instruction_yield(inp: dict[str, Any]) -> str:
     ):
         return "reject"
     try:
-        subject = b"meridian/instruction-yield-v1:" + json.dumps(
-            receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
+        subject = (
+            b"meridian/instruction-yield-v1:"
+            + json.dumps(
+                receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode()
+        )
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
             bytes.fromhex(signature), subject
         )

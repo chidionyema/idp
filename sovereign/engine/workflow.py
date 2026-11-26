@@ -497,7 +497,11 @@ class SessionWorkflow:
 
             if result is None:
                 if self._guarded_instruction:
-                    if await self._retain_instruction("worker-exit-unverified") == "retry":
+                    self._fsm_advance()  # tool_use -> synthesis
+                    if (
+                        await self._retain_instruction("worker-exit-unverified")
+                        == "retry"
+                    ):
                         continue
                     return self._state()
                 self.status = "failed"

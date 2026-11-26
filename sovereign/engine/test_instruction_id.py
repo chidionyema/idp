@@ -258,9 +258,12 @@ def test_independent_yield_rejects_worker_claims_and_stale_receipts(monkeypatch)
     }
 
     def verify(data, signing_key=signer):
-        subject = b"meridian/instruction-yield-v1:" + json.dumps(
-            data, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
+        subject = (
+            b"meridian/instruction-yield-v1:"
+            + json.dumps(
+                data, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode()
+        )
         envelope = {"receipt": data, "signature": signing_key.sign(subject).hex()}
         return asyncio.run(
             verify_instruction_yield({"expected": expected, "envelope": envelope})
@@ -285,10 +288,8 @@ def test_independent_yield_rejects_worker_claims_and_stale_receipts(monkeypatch)
 
 
 def test_worker_done_and_worker_exit_are_not_instruction_settlement():
-    source = (
-        Path(__file__).resolve().parent / "workflow.py"
-    ).read_text()
-    assert 'workflow.patched(' in source
+    source = (Path(__file__).resolve().parent / "workflow.py").read_text()
+    assert "workflow.patched(" in source
     assert 'self._retain_instruction("worker-exit-unverified")' in source
     assert 'self._retain_instruction("worker-claim-unverified")' in source
     assert '"verify_instruction_yield"' in source
