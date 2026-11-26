@@ -15,7 +15,7 @@ explicitly accepted with its bound. "Test" = automated test name.
 | F-IN-3 | Unknown API key | 401 by default; opt-in `allow_unknown_keys` | unknown_key_rejected_by_default |
 | F-IN-4 | Unknown model | 400 listing available aliases | unknown_model_lists_available |
 | F-IN-5 | Oversized body (DoS/memory) | 413 via DefaultBodyLimit before any upstream exposure | oversized_body_rejected_413 |
-| F-IN-6 | Key escapes to expensive model | per-key `allowed_models` ACL → 403 | model_acl_enforced_403 |
+| F-IN-6 | Key escapes to expensive model through request, fallback or shared cache | per-key `allowed_models` ACL on requested model and every dispatch candidate; reject direct denial with 403, exclude denied fallbacks and cached results; 502 if permitted lanes fail | model_acl_enforced_403, fallback_cannot_escape_model_acl_or_cache, declared_fallback_escalates_end_to_end |
 
 ## Cache
 | ID | Failure | Response | Test |

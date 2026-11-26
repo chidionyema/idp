@@ -191,6 +191,8 @@ fn resolve_chain(
     reg: &Registry,
     entry: &ModelEntry,
     est_tokens: u64,
+    cfg: &Config,
+    key: &str,
 ) -> Result<Vec<String>, PennyError> {
     if !fits(entry, est_tokens) {
         return Err(PennyError::BadRequest(format!(
@@ -213,13 +215,12 @@ fn resolve_chain(
         if !seen.insert(name.clone()) {
             continue;
         }
-        // P1-3: skip fallbacks that cannot hold the context
-        let fit = reg
-            .resolve(&name)
-            .map(|e| fits(e, est_tokens))
-            .unwrap_or(true);
-        if fit {
-            chain.push(name);
+        // Every actual candidate must satisfy the caller's estate-issued ACL.
+        // A declared fallback is not an independent grant of authority.
+        if let Some(candidate) = reg.resolve(&name) {
+            if fits(candidate, est_tokens) && check_acl(cfg, key, candidate).is_ok() {
+                chain.push(name);
+            }
         }
     }
     Ok(chain)
@@ -479,11 +480,16 @@ async fn handle_chat_inner(
 
     let ck = semantic_cache_key(&canonical_model, &shaped);
     let est_tokens = est_input_tokens(&shaped);
+    let chain = resolve_chain(&reg, entry, est_tokens, &app.cfg, &key)?;
 
     if !wants_stream {
         if let Some(hit) = app.cache.get(&ck, now) {
             match serde_json::from_str::<Value>(&hit.value) {
-                Ok(mut v) => {
+                Ok(mut v)
+                    if v.get("penny_lane")
+                        .and_then(Value::as_str)
+                        .is_some_and(|lane| chain.iter().any(|name| name == lane)) =>
+                {
                     let in_tok = est_tokens;
                     let saved_usd = in_tok as f64 * entry.model.price_in_per_mtok / 1e6;
                     app.ledger.record_hit(in_tok, saved_usd);
@@ -518,14 +524,13 @@ async fn handle_chat_inner(
                     };
                     return Ok((StatusCode::OK, Json(v)).into_response());
                 }
-                Err(_) => {
+                _ => {
                     app.cache.invalidate(&ck);
                 }
             }
         }
     }
 
-    let chain = resolve_chain(&reg, entry, est_tokens)?;
     // Streaming is byte-passed for a same-dialect edge. Anthropic ingress can
     // translate OpenAI lanes, but OpenAI ingress has no Anthropic-stream
     // translator yet; skip those lanes rather than return the wrong wire

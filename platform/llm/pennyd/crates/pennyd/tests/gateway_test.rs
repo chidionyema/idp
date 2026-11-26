@@ -142,6 +142,11 @@ allowed_models = ["test-chat", "tiny-window"]
 key = "k2-restricted"
 daily_budget_usd = {budget}
 allowed_models = ["nonexistent-alias"]
+
+[[keys]]
+key = "k3-fallback"
+daily_budget_usd = {budget}
+allowed_models = ["test-chat", "mock/mock-fallback"]
 "#
     );
     let cfg: Config = toml::from_str(&toml_str).unwrap();
@@ -175,11 +180,15 @@ allowed_models = ["nonexistent-alias"]
 }
 
 fn post_req(body: &Value) -> Request<Body> {
+    post_req_with_key(body, "k1")
+}
+
+fn post_req_with_key(body: &Value, key: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
         .header("content-type", "application/json")
-        .header("authorization", "Bearer k1")
+        .header("authorization", format!("Bearer {key}"))
         .body(Body::from(body.to_string()))
         .unwrap()
 }
@@ -332,12 +341,39 @@ async fn declared_fallback_escalates_end_to_end() {
     let app = test_app(10.0, true); // primary lane fails
     let router = build_router(app);
     let resp = router
-        .oneshot(post_req(&json!({"model": "test-chat", "messages": []})))
+        .oneshot(post_req_with_key(
+            &json!({"model": "test-chat", "messages": []}),
+            "k3-fallback",
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let v = read_json(resp).await;
     assert_eq!(v["penny_lane"], "mock/mock-fallback"); // explicit chain, not global order
+}
+
+#[tokio::test]
+async fn fallback_cannot_escape_model_acl_or_cache() {
+    let app = test_app(10.0, true);
+    let router = build_router(app.clone());
+    let body = json!({"model": "test-chat", "messages": []});
+
+    let denied = router.clone().oneshot(post_req(&body)).await.unwrap();
+    assert_eq!(denied.status(), StatusCode::BAD_GATEWAY);
+
+    let allowed = router
+        .clone()
+        .oneshot(post_req_with_key(&body, "k3-fallback"))
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), StatusCode::OK);
+    assert_eq!(read_json(allowed).await["penny_lane"], "mock/mock-fallback");
+
+    // The privileged caller populated the shared cache. The restricted caller
+    // must not receive a result from the unauthorised fallback, even now.
+    let denied = router.oneshot(post_req(&body)).await.unwrap();
+    assert_eq!(denied.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(app.ledger.snapshot().cache_hits, 0);
 }
 
 #[tokio::test]
