@@ -176,6 +176,32 @@ if ! _claim_guard; then
   exit 1
 fi
 
+# The context door, judged ABOVE the disk floor (2026-11-25). The disk floor below skips the
+# EXPENSIVE verification (bin/idp-ci), and this machine sat at 1996 MB free -- so the fast gate
+# never ran here, and the context door was not judged at all on the machine that pushes. The
+# gortex engine is private behind the broker and the broker is the only way to it, so the door
+# is a cheap authority: when the change does not touch the context plane the check skips itself
+# by name, and when it does, the door has to hold before a byte leaves the worktree.
+_ctx_repo="$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+if [ -x "$_ctx_repo/bin/estate-context-door" ]; then
+  if ! python3 "$_ctx_repo/bin/estate-context-door"; then
+    cat <<'EOF' >&2
+
+❌ pre-push REFUSED: the context door does not hold.
+
+   The gortex engine is private behind the broker, and the broker is the only way to it
+   (docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md). This
+   change touches the context plane, and the gate that holds that line refuses the tree.
+
+   Fix:
+     1) python3 bin/estate-context-gate          # see what the door says
+     2) python3 bin/estate-context-gate --self-test   # prove the checks can still fail
+     3) fix the tree, then push again
+EOF
+    exit 1
+  fi
+fi
+
 # The disk floor buys skipping the EXPENSIVE verification (bin/idp-ci, below), never the cheap
 # authorities above it (2026-11-15). Measured: free space sat at 780-1100 MB all afternoon, and
 # this exit fired on every push, so the claim guard and Layer 0 never ran -- eight lanes reached
