@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+import os
+import re
 from typing import Any
 
 from temporalio import activity
@@ -60,6 +63,60 @@ async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
     result = dict(result)
     result["commit"] = after if after and after != before else None
     return result
+
+
+@activity.defn
+async def verify_instruction_yield(inp: dict[str, Any]) -> str:
+    """Independent authority, pinned by the trusted worker host.
+
+    No worker result, caller-supplied key, or success-shaped prose can
+    produce a settlement. The observer must attest the exact external
+    effect (or reconciliation that permits replay).
+    """
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    expected = inp.get("expected")
+    envelope = inp.get("envelope")
+    key = os.environ.get("ESTATE_YIELD_VERIFIER_PUBKEY_HEX", "")
+    if not (
+        isinstance(expected, dict)
+        and isinstance(envelope, dict)
+        and re.fullmatch(r"[0-9a-fA-F]{64}", key)
+    ):
+        return "reject"
+    receipt = envelope.get("receipt")
+    signature = envelope.get("signature")
+    if not isinstance(receipt, dict) or not isinstance(signature, str):
+        return "reject"
+    if not re.fullmatch(r"[0-9a-fA-F]{128}", signature):
+        return "reject"
+    if set(receipt) != set(expected) | {"action", "ok", "effect_ref", "reconciled"}:
+        return "reject"
+    if any(receipt.get(field) != value for field, value in expected.items()):
+        return "reject"
+    if type(receipt.get("epoch")) is not int or receipt.get("ok") is not True:
+        return "reject"
+    action = receipt.get("action")
+    effect = receipt.get("effect_ref")
+    if (
+        action not in ("settle", "retry")
+        or receipt.get("reconciled") is not True
+        or not isinstance(effect, str)
+        or not effect.strip()
+        or len(effect) > 512
+    ):
+        return "reject"
+    try:
+        subject = b"meridian/instruction-yield-v1:" + json.dumps(
+            receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
+            bytes.fromhex(signature), subject
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return "reject"
+    return action
 
 
 @activity.defn

@@ -229,3 +229,66 @@ def test_workflow_receipts_and_cli_retain_canonical_id():
     assert '"instruction_id": self.instruction_id' in workflow
     assert '"--instruction-id"' in cli
     assert 'instruction_id=getattr(args, "instruction_id", None)' in cli
+
+
+def test_independent_yield_rejects_worker_claims_and_stale_receipts(monkeypatch):
+    import json
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from sovereign.engine.activities import verify_instruction_yield
+
+    signer = Ed25519PrivateKey.generate()
+    monkeypatch.setenv(
+        "ESTATE_YIELD_VERIFIER_PUBKEY_HEX", signer.public_key().public_bytes_raw().hex()
+    )
+    expected = {
+        "instruction_id": "INS-42",
+        "run_id": "current-run",
+        "epoch": 2,
+        "goal_sha256": "a" * 64,
+        "commit_sha": "b" * 40,
+    }
+    receipt = {
+        **expected,
+        "ok": True,
+        "action": "settle",
+        "effect_ref": "independently-observed-effect",
+        "reconciled": True,
+    }
+
+    def verify(data, signing_key=signer):
+        subject = b"meridian/instruction-yield-v1:" + json.dumps(
+            data, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+        envelope = {"receipt": data, "signature": signing_key.sign(subject).hex()}
+        return asyncio.run(
+            verify_instruction_yield({"expected": expected, "envelope": envelope})
+        )
+
+    assert verify(receipt) == "settle"
+    assert verify({**receipt, "action": "retry"}) == "retry"
+    assert verify(receipt, Ed25519PrivateKey.generate()) == "reject"
+    for mutation in (
+        {"instruction_id": "INS-43"},
+        {"run_id": "previous-run"},
+        {"epoch": 1},
+        {"goal_sha256": "c" * 64},
+        {"commit_sha": "d" * 40},
+        {"ok": False},
+        {"reconciled": False},
+        {"effect_ref": ""},
+    ):
+        assert verify({**receipt, **mutation}) == "reject"
+    monkeypatch.delenv("ESTATE_YIELD_VERIFIER_PUBKEY_HEX")
+    assert verify(receipt) == "reject"
+
+
+def test_worker_done_and_worker_exit_are_not_instruction_settlement():
+    source = (
+        Path(__file__).resolve().parent / "workflow.py"
+    ).read_text()
+    assert 'workflow.patched(' in source
+    assert 'self._retain_instruction("worker-exit-unverified")' in source
+    assert 'self._retain_instruction("worker-claim-unverified")' in source
+    assert '"verify_instruction_yield"' in source
