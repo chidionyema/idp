@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 315,
+    "layer": 316,
     "service": 122,
-    "tool": 524,
+    "tool": 526,
     "workflow": 110
   },
   "records": [
@@ -6292,6 +6292,57 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/department/contract.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-deploy-kustomize_reachability",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "spec.path of Flux Kustomization CRs: the estate's actual wiring.",
+      "contract": {
+        "inputs": [
+          "--repo-root",
+          "--targets"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/deploy/kustomize_reachability.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -33675,7 +33726,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -34140,7 +34193,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -34197,7 +34252,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/claim-gate"
+        "cap:tool/claim-gate",
+        "cap:tool/estate-runtime-sync"
       ],
       "cost": {
         "estimate": null,
@@ -34261,6 +34317,53 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-gate",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -34417,6 +34520,7 @@
       },
       "consumers": [
         "cap:tool/estate-receipt",
+        "cap:tool/estate-runtime-sync",
         "cap:tool/idp-ci",
         "cap:workflow/gha-ci"
       ],
@@ -34553,6 +34657,7 @@
       },
       "consumers": [
         "cap:tool/estate-memory-mcp",
+        "cap:tool/estate-runtime-sync",
         "cap:tool/pi-plan-lock-install"
       ],
       "cost": {
@@ -35188,7 +35293,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -35325,7 +35432,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -35501,6 +35610,143 @@
       "writer": "repo",
       "path": "bin/estate-river-data",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-runtime-sync",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Keep the laptop estate running `main`: one tree, converged every five minutes, rolled back if it breaks.",
+      "contract": {
+        "inputs": [
+          "--detach",
+          "--force",
+          "--hard",
+          "--immutable",
+          "--name-only",
+          "--no-checkout",
+          "--no-cone",
+          "--porcelain",
+          "--restart",
+          "--status"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-incident-loop",
+        "cap:tool/fleetview-frontend-launchd",
+        "cap:tool/idp-install-launchd",
+        "cap:tool/load-gate-and-run",
+        "cap:tool/voice-router-launchd"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-runtime-sync",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-executor-permission",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-founder-intake",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-freeze",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-memory-install",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-progress",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-provider-renewal",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-receipt",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-spec-status",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-state-page",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-supervisor",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/fleetview-frontend-launchd",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/fleetview-launchd",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/litellm-local",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/load-gate-and-run",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/voice-router-launchd",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/voice-watch",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -36021,7 +36267,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -36072,7 +36320,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -36201,6 +36451,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-runtime-sync",
         "cap:tool/uncalled-gate"
       ],
       "cost": {
@@ -37030,6 +37281,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-runtime-sync",
         "cap:tool/idp-research-tunnel"
       ],
       "cost": {
@@ -37092,6 +37344,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-runtime-sync",
         "cap:tool/idp-install-all",
         "cap:tool/voice-router-launchd"
       ],
@@ -56101,6 +56354,7 @@
       },
       "consumers": [
         "cap:tool/diagnosis-gate",
+        "cap:tool/estate-runtime-sync",
         "cap:tool/fleetview-launchd",
         "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
@@ -56294,7 +56548,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-runtime-sync"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -59723,6 +59979,7 @@
         "cap:tool/estate-memory-mcp",
         "cap:tool/estate-patch",
         "cap:tool/estate-read",
+        "cap:tool/estate-runtime-sync",
         "cap:tool/estate-state-page",
         "cap:tool/estate-surface-map",
         "cap:tool/estate-work-status",
@@ -61022,6 +61279,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-runtime-sync",
         "cap:tool/fleetview-launchd",
         "cap:tool/idp-install-all"
       ],
@@ -61093,6 +61351,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-runtime-sync",
         "cap:tool/idp-install-all",
         "cap:tool/voice-router-launchd"
       ],

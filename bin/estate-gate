@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+LOCK_FILE="$REPO_ROOT/requirements-gate.lock"
+if [[ ! -f "$LOCK_FILE" ]]; then
+  echo "FATAL: missing $LOCK_FILE" >&2
+  exit 2
+fi
+
+# 1. Hermetic Python venv keyed by lockfile SHA-256 (eliminates /usr/bin/python3 drift & PEP 668 errors)
+if command -v sha256sum >/dev/null 2>&1; then
+  LOCK_HASH="$(sha256sum "$LOCK_FILE" | awk '{print $1}' | cut -c1-16)"
+else
+  LOCK_HASH="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}' | cut -c1-16)"
+fi
+
+VENV_DIR="${ESTATE_GATE_VENV_ROOT:-$REPO_ROOT/.venv-gate}/py-$LOCK_HASH"
+VENV_PY="$VENV_DIR/bin/python"
+
+if [[ ! -x "$VENV_PY" ]] || ! "$VENV_PY" -c "import pytest, yaml" >/dev/null 2>&1; then
+  rm -rf "$VENV_DIR"
+  mkdir -p "$(dirname "$VENV_DIR")"
+  BASE_PY="$(command -v python3)"
+  "$BASE_PY" -m venv "$VENV_DIR"
+  "$VENV_PY" -m pip install --quiet --disable-pip-version-check --no-cache-dir -r "$LOCK_FILE"
+fi
+
+# 2. Enforce executable bits on bin/* (prevents #8387 mode-drop regressions)
+if [[ -d "$REPO_ROOT/bin" ]]; then
+  while IFS= read -r -d '' script_path; do
+    if [[ ! -x "$script_path" ]]; then
+      echo "GATE_FAIL: executable bit missing on $script_path (expected 0755)" >&2
+      exit 1
+    fi
+  done < <(find "$REPO_ROOT/bin" -maxdepth 1 -type f ! -name "*.md" ! -name "*.json" -print0)
+fi
+
+# 3. Zero-Unapplied-Directory & Retired-OKE Gate (#8328 + #7387)
+"$VENV_PY" "$REPO_ROOT/platform/deploy/kustomize_reachability.py" \
+  --repo-root "$REPO_ROOT" \
+  --targets "$REPO_ROOT/platform/deploy/targets.json"
+
+# 4. Run Deployment & Greenlane Circuit-Breaker Falsifiers
+"$VENV_PY" -m pytest -q "$REPO_ROOT/tests/test_deployment_control_plane.py"
+
+# 5. Run Edge Router Falsifiers when platform/router-edge is present
+if [[ -f "$REPO_ROOT/platform/router-edge/tests/router.falsifier.mjs" ]]; then
+  (
+    cd "$REPO_ROOT/platform/router-edge"
+    if [[ ! -d node_modules ]]; then
+      npm ci --silent
+    fi
+    npm test
+  )
+fi
+
+echo "ESTATE_GATE_PASS lock=$LOCK_HASH sha=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
