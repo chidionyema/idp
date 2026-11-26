@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated_at": "2026-10-30",
+  "updated_at": "2026-11-25",
   "why": "The estate-wide critical-function spine. A function is listed here when the estate cannot work without it. The spine (platform/estate/libexec/critical-watch.py) measures each one's LIVENESS (is it running?) and, where one exists, its GOAL (is it doing its job?). A function that is alive but missing its goal is FAILING -- that is the failure the 2026-10-28 disk watcher was: alive, ticking, and freeing nothing. The registry is data, not code: adding a function is a file edit, and the detector is the one implementation that reads it. ORDER IS PRIORITY. The spine walks the registry in order, raises the incident of the first failing function first, and wakes the agent for it first -- so the founder's own surfaces sit at the top and the fleet's first idle agent is sent at the highest-value work. WEIGHT IS THE ONE METRIC. estate_health = the weighted share of passing entries, founder-critical entries carrying weight 2 and the rest weight 1; the number is computed by `python3 platform/estate/libexec/critical-probe.py estate-health`, which reads this registry and the spine's own verdicts.",
   "probe_types": {
     "heartbeat_file": "a JSON file whose `at` field must be younger than max_age_s",
@@ -213,6 +213,39 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's event bus (NATS) is not accepting connections on 127.0.0.1:4222. The evidence is in ~/.estate/incidents/latest.json. Check launchctl print gui/$(id -u)/ai.estate.nats and the bus logs, and bring it back."
+      }
+    },
+    {
+      "id": "gortex-engine",
+      "title": "the estate's context engine (gortex), through its own doors",
+      "severity": "critical",
+      "weight": 1,
+      "founder_critical": false,
+      "owner": "estate-runtime",
+      "receipt": "gortex-engine.json",
+      "why_it_is_critical": "gortex is the estate's context engine: the broker's door is the only way to it, and this engine answers every question the estate asks about where its code is used. Measured 2026-11-25: the engine's own state file said 'serving' for pid 39356 and no such process existed, and the store it left behind was 1,920,581,632 bytes (1.79 GiB) with a 64 MiB WAL on a disk with 2.0 GiB free. Nothing watched it, so the engine could die without a word and the store could grow until the machine stopped. The founder: nothing may be quietly degraded, and every loop has a budget.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "for p in \"$HOME/.estate/libexec/critical-probe.py\" \"$HOME/.estate/runtime/idp/platform/estate/libexec/critical-probe.py\" \"$HOME/Documents/code/idp/platform/estate/libexec/critical-probe.py\"; do if [ -f \"$p\" ]; then exec /usr/bin/python3 \"$p\" \"$0\"; fi; done; echo 'critical-probe.py is not installed' >&2; exit 127",
+          "gortex-engine"
+        ],
+        "timeout_s": 40,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/gortex-engine.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's context engine is not healthy. The evidence is in ~/.estate/heartbeats/gortex-engine.json: the pid the daemon wrote, whether the health door at 127.0.0.1:7411/healthz answered, and the store bytes against the 2 GiB cap. Start the engine on this machine with `~/.local/bin/gortex daemon start --http-addr 127.0.0.1:7411` (docs/reference/estate-context-plane.md); if the store is over its cap, rebuild the index instead of growing it. Do NOT give the engine a Service, a route or a public address: it is private behind the broker (the broker-is-the-only-door decision, AGENTS.md 6)."
       }
     }
   ],

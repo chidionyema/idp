@@ -109,7 +109,45 @@
       "better": "lower",
       "owner": "estate",
       "description": "ordinary tool calls the plan gate refuses after a plan is declared: 1 before idp#8558, 0 after (a declared plan is LIVE; the scenario is required before the goal is claimed done)"
+    },
+    {
+      "name": "gortex.store_bytes",
+      "measure": [
+        "python3",
+        "bin/gortex-health",
+        "--metric",
+        "gortex.store_bytes"
+      ],
+      "unit": "bytes",
+      "better": "lower",
+      "owner": "estate-runtime",
+      "description": "the gortex context engine's index store on this machine; measured 1920581632 bytes (1.79 GiB) on 2026-11-25 against the 2 GiB cap the estate declares for the engine's volume, so the growth that ends the machine is now a number and not a surprise"
+    },
+    {
+      "name": "gortex.store_wal_bytes",
+      "measure": [
+        "python3",
+        "bin/gortex-health",
+        "--metric",
+        "gortex.store_wal_bytes"
+      ],
+      "unit": "bytes",
+      "better": "lower",
+      "owner": "estate-runtime",
+      "description": "the gortex context engine's index store WAL; measured 67108864 bytes (64 MiB) on 2026-11-25 against a 256 MiB cap -- the write-ahead log is what grows when the engine dies mid-write"
+    },
+    {
+      "name": "gortex.daemon_up",
+      "measure": [
+        "python3",
+        "bin/gortex-health",
+        "--metric",
+        "gortex.daemon_up"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "estate-runtime",
+      "description": "1 when the gortex engine's own process is alive (the pid the daemon wrote, checked for liveness); measured 0 on 2026-11-25 while the daemon's own state file still said 'serving' -- the proxy lied and the process did not exist"
     }
-
   ]
 }
