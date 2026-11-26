@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 316,
     "service": 122,
-    "tool": 527,
+    "tool": 528,
     "workflow": 110
   },
   "records": [
@@ -38880,7 +38880,8 @@
       "consumers": [
         "cap:tool/idp-auth-verify",
         "cap:tool/idp-ci-guarded-paths",
-        "cap:tool/idp-guarded-paths"
+        "cap:tool/idp-guarded-paths",
+        "cap:tool/web_agent_bridge.py"
       ],
       "cost": {
         "estimate": null,
@@ -40752,6 +40753,7 @@
         "cap:tool/idp-auth",
         "cap:tool/idp-guarded-paths",
         "cap:tool/pr-parity",
+        "cap:tool/web_agent_bridge.py",
         "cap:workflow/gha-guarded-paths"
       ],
       "cost": {
@@ -45048,7 +45050,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci-guarded-paths"
+        "cap:tool/idp-ci-guarded-paths",
+        "cap:tool/web_agent_bridge.py"
       ],
       "cost": {
         "estimate": null,
@@ -61416,6 +61419,74 @@
       "writer": "repo",
       "path": "bin/voice-watch",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/web_agent_bridge.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Zero-router web-agent intake. Source manifests are data, never authority.",
+      "contract": {
+        "inputs": [
+          "--archive",
+          "--commit",
+          "--name-only",
+          "--no-renames",
+          "--parents",
+          "--porcelain",
+          "--root"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/web_agent_bridge.py",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-auth",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-guarded-paths",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-guarded-paths",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
