@@ -914,3 +914,60 @@ def test_predecessor_actors_cannot_become_observer_after_takeover(tmp_path):
         operating(store, successor, "effect:" + eid, actor="executor-b")
     assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
     store.close()
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"ok": False},
+        {"instruction_id": "another-instruction"},
+        {"acceptance_contract_digest": "wrong-contract"},
+        {"epoch": 0},
+        {"commit_sha": "c" * 40},
+    ],
+)
+def test_bound_revision_rejects_signed_but_wrong_yield(tmp_path, override):
+    store, lease = staged(tmp_path)
+    try:
+        store.bind_expected_revision(
+            "m-test", lease["attempt_id"], lease["lease_epoch"], "b" * 40
+        )
+        with pytest.raises(InvalidTransition, match="immutable"):
+            store.bind_expected_revision(
+                "m-test", lease["attempt_id"], lease["lease_epoch"], "c" * 40
+            )
+        intent = store.record_effect_intent(
+            "m-test",
+            lease["attempt_id"],
+            lease["lease_epoch"],
+            "deployment",
+            "example.invalid",
+            "bound-effect",
+            {"expected_revision": "b" * 40},
+        )
+        receipt = {
+            "ok": True,
+            "instruction_id": "idp#7443",
+            "acceptance_contract_digest": "a" * 64,
+            "epoch": lease["lease_epoch"],
+            "commit_sha": "b" * 40,
+        }
+        signed_receipt(store, intent["effect_id"], {**receipt, **override})
+        with pytest.raises(InvalidTransition, match="signed yield"):
+            operating(store, lease, "effect:" + intent["effect_id"])
+        assert store.get_mission("m-test")["state"] == "DEPLOY_VERIFY"
+        actual = store.record_effect_intent(
+            "m-test",
+            lease["attempt_id"],
+            lease["lease_epoch"],
+            "deployment",
+            "example.invalid",
+            "actual-effect",
+            {"expected_revision": "b" * 40},
+        )
+        signed_receipt(store, actual["effect_id"], receipt)
+        assert operating(store, lease, "effect:" + actual["effect_id"])["state"] == (
+            "OPERATING"
+        )
+    finally:
+        store.close()

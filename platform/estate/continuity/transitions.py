@@ -8,6 +8,7 @@ immutable causally-linked receipt in mission_events.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from .fence import FenceMixin
@@ -31,6 +32,7 @@ def _require_verified_operational_effect(
     evidence,
     now=None,
     trusted_keys=None,
+    settlement=False,
 ):
     """Require an independent effect from this mission and mandate.
 
@@ -82,7 +84,7 @@ def _require_verified_operational_effect(
     # with the actual leased harness identity too, or an agent can pass a
     # different actor label and count its own observation as independent.
     holder = cur.execute(
-        "SELECT agent_adapter FROM mission_attempts WHERE attempt_id=?"
+        "SELECT agent_adapter, candidate_sha FROM mission_attempts WHERE attempt_id=?"
         " AND mission_id=? AND lease_epoch=?",
         (attempt_id, mission_id, lease_epoch),
     ).fetchone()
@@ -117,7 +119,7 @@ def _require_verified_operational_effect(
     if not isinstance(receipt, dict) or not receipt:
         raise InvalidTransition("OPERATING refused: effect receipt is missing or empty")
     try:
-        verify_effect_receipt(
+        verified = verify_effect_receipt(
             evidence[7:],
             receipt,
             effect["verified_by"],
@@ -128,8 +130,68 @@ def _require_verified_operational_effect(
             "OPERATING refused: external receipt has no trusted observer seal"
         ) from exc
 
+    if settlement and holder["candidate_sha"] is not None:
+        mission = cur.execute(
+            "SELECT instruction_id, acceptance_contract_digest FROM missions"
+            " WHERE mission_id=?",
+            (mission_id,),
+        ).fetchone()
+        if (
+            verified.get("ok") is not True
+            or verified.get("instruction_id") != mission["instruction_id"]
+            or verified.get("acceptance_contract_digest")
+            != mission["acceptance_contract_digest"]
+            or type(verified.get("epoch")) is not int
+            or verified["epoch"] != lease_epoch
+            or effect["source_epoch"] != lease_epoch
+            or verified.get("commit_sha") != holder["candidate_sha"]
+        ):
+            raise InvalidTransition(
+                "OPERATING refused: signed yield does not match the bound "
+                "instruction, acceptance contract, current epoch and revision"
+            )
+
 
 class TransitionMixin(FenceMixin):
+    def bind_expected_revision(self, mission_id, attempt_id, lease_epoch, commit_sha):
+        """Trusted promotion host binds an immutable revision before deployment.
+
+        This is a custody operation, not a worker or supervisor approval.
+        The host must not expose this method directly to an untrusted agent.
+        """
+        if not isinstance(commit_sha, str) or not re.fullmatch(
+            r"[0-9a-f]{40}", commit_sha
+        ):
+            raise InvalidTransition("expected revision must be an exact Git SHA")
+        with self.db:
+            cur = self.db.execute("BEGIN IMMEDIATE")
+            mission = self.assert_fence(mission_id, attempt_id, lease_epoch, cur=cur)
+            if mission["state"] not in ("VERIFYING", "PROMOTING", "DEPLOY_VERIFY"):
+                raise InvalidTransition("revision binding requires verified delivery")
+            row = cur.execute(
+                "SELECT candidate_sha FROM mission_attempts WHERE attempt_id=?",
+                (attempt_id,),
+            ).fetchone()
+            if row["candidate_sha"] not in (None, commit_sha):
+                raise InvalidTransition("expected revision is immutable within a lease")
+            if row["candidate_sha"] is None:
+                cur.execute(
+                    "UPDATE mission_attempts SET candidate_sha=? WHERE attempt_id=?",
+                    (commit_sha, attempt_id),
+                )
+                self._event(
+                    mission_id,
+                    mission["state"],
+                    "estate",
+                    "expected deployment revision bound",
+                    commit_sha,
+                    attempt_id=attempt_id,
+                    lease_epoch=lease_epoch,
+                    from_state=mission["state"],
+                    cur=cur,
+                )
+            return {"commit_sha": commit_sha, "epoch": lease_epoch}
+
     def transition(
         self,
         mission_id: str,
@@ -190,6 +252,7 @@ class TransitionMixin(FenceMixin):
                     evidence,
                     now=t,
                     trusted_keys=self._trusted_verifier_keys,
+                    settlement=True,
                 )
             cur.execute(
                 "UPDATE missions SET state=? WHERE mission_id=?",
