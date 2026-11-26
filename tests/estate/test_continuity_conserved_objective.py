@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "platform"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "platform" / "estate"))
 
-from estate.continuity.fields import CheckpointRejected  # noqa: E402
-from estate.continuity.store import MissionStore  # noqa: E402
-from estate.continuity.util import digest_of  # noqa: E402
+from continuity.fields import CheckpointRejected  # noqa: E402
+from continuity.store import MissionStore  # noqa: E402
+from continuity.util import digest_of  # noqa: E402
 
 
 def test_correction_cannot_replace_accepted_objective(tmp_path):
@@ -65,6 +65,15 @@ def test_correction_cannot_replace_accepted_objective(tmp_path):
         assert store.restore_latest_checkpoint("root")["goal_digest"] == digest_of(
             record["goal"]
         )
+        store.begin_recovery("root", "WORKER_LOST", "fixture-failure", now=1002)
+        store.transition("root", "REASSIGNING", "recovery", "takeover", now=1002)
+        successor = store.acquire_lease("root", worker, now=1003)
+        assert successor["lease_epoch"] == lease["lease_epoch"] + 1
+        store.close()
+        store = MissionStore(tmp_path / "custody.db")
+        restored = store.restore_latest_checkpoint("root")
+        assert restored["goal_digest"] == digest_of(record["goal"])
+        assert restored["next_admissible_action"] == "resume original work"
         assert store.get_mission("root")["goal"] == record["goal"]
     finally:
         store.close()
