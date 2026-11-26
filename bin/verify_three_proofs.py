@@ -81,6 +81,43 @@ def _introduced_lines(repo_root: str, rel_path: str) -> str:
     ]
     if added:
         return "\n".join(added)
+    # Nothing staged for this path: judge the LANE's own diff against main, not
+    # the file's whole content. MEASURED 2026-11-24 (lane/i8455-r2-decouple): a
+    # lane whose files were committed but not staged hit this fallback, scanned
+    # whole files, and refused on an 'oke-check' mention inherited from main
+    # (2 on origin/main, 0 introduced) -- a guard refusing the estate's own work
+    # (AGENTS.md 9 R14) by judging history instead of the change.
+    base = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", "merge-base", "HEAD", "origin/main"],  # noqa: S607
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if base:
+        lane_diff = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            [  # noqa: S607
+                "git",
+                "diff",
+                base,
+                "HEAD",
+                "--unified=0",
+                "--no-color",
+                "--",
+                rel_path,
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        lane_added = [
+            ln[1:]
+            for ln in lane_diff.splitlines()
+            if ln.startswith("+") and not ln.startswith("+++")
+        ]
+        if lane_added:
+            return "\n".join(lane_added)
     abs_path = os.path.join(repo_root, rel_path)
     try:
         with open(abs_path, "rb") as fh:
