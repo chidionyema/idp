@@ -521,11 +521,82 @@ def probe_substrate(timeout: float = 90.0) -> tuple[bool, str, dict]:
     )
 
 
+def probe_gortex_engine(timeout: float = 25.0) -> tuple[bool, str, dict]:
+    """The context engine (gortex), through the engine's own doors and its own budget.
+
+    WHY. Measured 2026-11-25: the engine's daemon state file said `"startup_phase":"serving"`
+    for pid 39356, and no such process existed. The engine's store was 1,920,581,632 bytes
+    (1.79 GiB) with a 64 MiB WAL, on a disk with 2.0 GiB free. Nothing was watching, so the
+    engine could die and keep its "serving" label, and the store could grow until the machine
+    stopped. A stale proxy is not health: the engine's own doors and its own bytes are what
+    count.
+
+    The measurement lives in bin/gortex-health -- ONE implementation, called from here, so the
+    probe and the Optimus measures can never disagree about the engine.
+    """
+    root = repo_root()
+    if root is None:
+        return (
+            False,
+            "the idp checkout was not found, so the engine cannot be measured",
+            {},
+        )
+    script = root / "bin" / "gortex-health"
+    if not script.exists():
+        return (
+            False,
+            "bin/gortex-health is not in the checkout, so the engine cannot be measured",
+            {},
+        )
+    try:
+        proc = subprocess.run(  # noqa: S603 -- the estate's own health reader, argv fixed
+            [sys.executable, str(script), "--json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, "the engine health command could not be run: %s" % exc, {}
+    lines = (proc.stdout or "").strip().splitlines()
+    payload: dict = {}
+    if lines:
+        try:
+            payload = json.loads(lines[-1])
+        except json.JSONDecodeError:
+            payload = {}
+    store = payload.get("store") or {}
+    extra = {
+        "rc": proc.returncode,
+        "status": payload.get("status", "unknown"),
+        "store_bytes": store.get("bytes", 0),
+        "store_wal_bytes": store.get("wal_bytes", 0),
+    }
+    reasons = payload.get("reasons") or []
+    if proc.returncode == 0 and payload.get("status") == "ok":
+        return (
+            True,
+            reasons[0] if reasons else "the engine is alive and within its budget",
+            extra,
+        )
+    # rc 2 is BLIND (nothing was there to measure) and rc 1 is a real FAIL. Both are red here:
+    # a critical function that cannot be measured has not been proven healthy.
+    detail = (
+        "; ".join(reasons) if reasons else (proc.stderr or proc.stdout or "").strip()
+    )
+    return (
+        False,
+        detail[:400] or "the engine's health command exited %d" % proc.returncode,
+        extra,
+    )
+
+
 PROBES = {
     "memory-plane": probe_memory_plane,
     "router-lanes": probe_router_lanes,
     "spend-bound": probe_spend_bound,
     "substrate": probe_substrate,
+    "gortex-engine": probe_gortex_engine,
 }
 
 
