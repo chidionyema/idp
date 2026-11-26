@@ -56,6 +56,7 @@ WORKFLOWS = [
 ]
 ACTIVITIES = [
     activities.run_step,
+    activities.verify_instruction_yield,
     activities.append_receipt,
     activities.notify_change,
     activities.budget_op,
