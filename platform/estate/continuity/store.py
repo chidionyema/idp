@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from .accept import AcceptMixin
 from .accept_txn import AcceptTxnMixin
 from .checkpoints import CheckpointMixin
+from .control import ControlMixin
 from .effects import EffectsMixin
 from .fields import InvalidTransition, UnknownField
 from .leases import LeaseMixin
@@ -27,6 +28,7 @@ from .transitions import TransitionMixin
 
 class MissionStore(
     AcceptTxnMixin,
+    ControlMixin,
     EffectsMixin,
     TransitionMixin,
     CheckpointMixin,
