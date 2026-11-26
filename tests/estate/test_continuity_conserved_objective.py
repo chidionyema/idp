@@ -1,10 +1,15 @@
 """Conservation of objective across acceptance, correction and takeover."""
 
+import sys
+from pathlib import Path
+
 import pytest
 
-from platform.estate.continuity.fields import CheckpointRejected
-from platform.estate.continuity.store import MissionStore
-from platform.estate.continuity.util import digest_of
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "platform"))
+
+from estate.continuity.fields import CheckpointRejected  # noqa: E402
+from estate.continuity.store import MissionStore  # noqa: E402
+from estate.continuity.util import digest_of  # noqa: E402
 
 
 def test_correction_cannot_replace_accepted_objective(tmp_path):
