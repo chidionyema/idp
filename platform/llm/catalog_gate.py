@@ -121,7 +121,11 @@ def probe(lane: dict) -> dict:
         api_base is not None and not _valid_api_base(api_base)
     ):
         safe_lane = {k: v for k, v in lane.items() if k != "api_base"}
-        return {**safe_lane, "status": "UNKNOWN", "reason": "invalid configured API base"}
+        return {
+            **safe_lane,
+            "status": "UNKNOWN",
+            "reason": "invalid configured API base",
+        }
     key_var = lane["key_var"]
     key = os.environ.get(key_var, "")
     if not key:

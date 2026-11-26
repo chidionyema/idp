@@ -240,7 +240,9 @@ def test_provider_exception_does_not_echo_exact_key(monkeypatch):
     assert "fixture-sensitive-key" not in str(result)
 
 
-def test_cli_emits_only_json_when_provider_library_prints(tmp_path, monkeypatch, capsys):
+def test_cli_emits_only_json_when_provider_library_prints(
+    tmp_path, monkeypatch, capsys
+):
     cfg = tmp_path / "config.yaml"
     cfg.write_text(
         """model_list:
