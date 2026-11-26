@@ -1,11 +1,10 @@
 import type {
-  BackendCandidate,
   CircuitRecord,
   PlanRequest,
   PlanResponse,
-  RejectedCandidate,
   RolePool,
 } from "./types";
+import { selectCapabilities } from "./capability_pool.mjs";
 
 const ROLES_KEY = "roles_v1";
 const CIRCUITS_KEY = "circuits_v1";
@@ -70,62 +69,7 @@ export class RoutingStateDO implements DurableObject {
       }
 
       const circuits = await this.getCircuits();
-      const excluded = new Set(req.excludeBackendIds ?? []);
-      const effectiveOutputTokens = Math.max(req.requestedOutputTokens, pool.minOutputFloor || 2048);
-      const requiredTotalTokens = req.estimatedInputTokens + effectiveOutputTokens;
-
-      const eligible: BackendCandidate[] = [];
-      const rejected: RejectedCandidate[] = [];
-
-      const sorted = [...pool.candidates].sort((a, b) => a.priority - b.priority);
-
-      for (const candidate of sorted) {
-        if (!candidate.enabled) {
-          rejected.push({ id: candidate.id, reason: "disabled" });
-          continue;
-        }
-        if (excluded.has(candidate.id)) {
-          rejected.push({ id: candidate.id, reason: "excluded_by_caller" });
-          continue;
-        }
-        if (req.requiresTools && !candidate.supportsTools) {
-          rejected.push({ id: candidate.id, reason: "tools_unsupported" });
-          continue;
-        }
-
-        const circuit = circuits[candidate.id];
-        if (circuit && circuit.openUntilMs > nowMs) {
-          rejected.push({
-            id: candidate.id,
-            reason: `circuit_open_until_${circuit.openUntilMs}_code_${circuit.lastErrorCode ?? 0}`,
-          });
-          continue;
-        }
-
-        const learnedCap =
-          circuit?.learnedMaxContextTokens && (circuit.learnedMaxExpiresMs ?? 0) > nowMs
-            ? circuit.learnedMaxContextTokens
-            : Infinity;
-        const effectiveMaxContext = Math.min(candidate.maxContextTokens, learnedCap);
-
-        // Pre-dispatch payload cap filter: prevents firing oversized prompts at narrow lanes (e.g. Groq 413)
-        if (requiredTotalTokens > effectiveMaxContext) {
-          rejected.push({
-            id: candidate.id,
-            reason: `payload_exceeds_context:${requiredTotalTokens}>${effectiveMaxContext}`,
-          });
-          continue;
-        }
-
-        eligible.push(candidate);
-      }
-
-      const response: PlanResponse = {
-        role: pool.role,
-        effectiveOutputTokens,
-        eligible,
-        rejected,
-      };
+      const response: PlanResponse = selectCapabilities(pool, req, circuits, nowMs);
       return Response.json(response);
     }
 

@@ -244,3 +244,60 @@ test("a deployment whose own pool failed is kept, not rolled back onto a version
   assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: '{"probe":"auth","status":"FAIL"}' }), true);
   assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: "" }), false);
 });
+
+import { completeSecretBundle, domainCutoverPlan, reconcileRetiredDomains } from "../scripts/release.mjs";
+import { selectCapabilities } from "../src/capability_pool.mjs";
+
+test("missing required bindings refuse before a release can deploy", () => {
+  assert.throws(() => completeSecretBundle({MERIDIAN_CLIENT_KEY:"c", MERIDIAN_ADMIN_KEY:"a"}), /MISSING_REQUIRED_WORKER_BINDINGS/);
+  const full = {MERIDIAN_CLIENT_KEY:"c", MERIDIAN_ADMIN_KEY:"a", SEED_MINIMAX_API_KEY:"m", SEED_DEEPSEEK_API_KEY:"d", SEED_GEMINI_API_KEY:"g"};
+  assert.equal(Object.keys(completeSecretBundle(full)).length, 5);
+});
+
+test("output cap and tool capability are rejected before dispatch", () => {
+  const pool = rolePool().roles["role:coder"];
+  const narrow = {...pool.candidates[0], maxOutputTokens:1024};
+  const req = {estimatedInputTokens:100, requestedOutputTokens:2000, requiresTools:false};
+  const p = selectCapabilities({...pool,candidates:[narrow,pool.candidates[1]]},req,{},0);
+  assert.deepEqual(p.rejected,[{id:narrow.id,reason:"output_cap_exceeded"}]);
+  assert.equal(p.eligible.length,1);
+  assert.equal(selectCapabilities(pool,{...req,requiresTools:true},{},0).eligible.length,0);
+});
+
+const account = "a".repeat(32), zone = "b".repeat(32);
+const target = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.cfargotunnel.com";
+const cutoverFixture = {account,zone,hosts:[
+  {hostname:"submit.meridianlabs.cloud",service:"estate-submit",retiredTarget:target},
+  {hostname:"lifeboat-llm.meridianlabs.cloud",service:"estate-lifeboat",retiredTarget:target}
+]};
+test("domain plan cannot choose unrelated hosts or router as their service", () => {
+  for (const bad of [
+    {...cutoverFixture,hosts:[{...cutoverFixture.hosts[0],hostname:"llm.meridianlabs.cloud"},cutoverFixture.hosts[1]]},
+    {...cutoverFixture,hosts:[{...cutoverFixture.hosts[0],service:"meridian-router-edge"},cutoverFixture.hosts[1]]},
+  ]) assert.throws(() => domainCutoverPlan(JSON.stringify(bad),account), /INVALID_DOMAIN/);
+});
+test("retired CNAME migration is exact, read-back verified and idempotent", async () => {
+  const rows = new Map(cutoverFixture.hosts.map((h,i)=>[h.hostname,{id:String(i+1).repeat(32),name:h.hostname,type:"CNAME",content:target,ttl:1,proxied:true}]));
+  const attached = new Map(), writes = [];
+  const fetchImpl = async (url,init) => {
+    const u = new URL(url), p = u.pathname, m = init.method;
+    let result;
+    if (m === "GET" && p.endsWith("/zones/"+zone)) result={name:"meridianlabs.cloud",account:{id:account}};
+    else if (p.endsWith("/settings")) result={};
+    else if (m === "GET" && p.endsWith("/workers/domains")) result=[...attached.values()].filter(x=>x.hostname===u.searchParams.get("hostname"));
+    else if (m === "GET" && p.endsWith("/dns_records")) result=[...rows.values()].filter(x=>x.name===u.searchParams.get("name"));
+    else if (m === "DELETE") {writes.push(m); for(const [k,v] of rows) if(p.endsWith(v.id)) rows.delete(k); result={};}
+    else if (m === "PUT") {writes.push(m); const d=JSON.parse(init.body); result={...d,enabled:true};attached.set(d.hostname,result);}
+    else throw Error("unexpected "+m+" "+p);
+    return new Response(JSON.stringify({success:true,result}));
+  };
+  const auth={workersToken:"fixture-worker",dnsToken:"fixture-dns",fetchImpl};
+  assert.deepEqual((await reconcileRetiredDomains(cutoverFixture,auth)).map(x=>x.status),["ATTACHED","ATTACHED"]);
+  assert.equal(writes.length,4);
+  assert.deepEqual((await reconcileRetiredDomains(cutoverFixture,auth)).map(x=>x.status),["ALREADY_ATTACHED","ALREADY_ATTACHED"]);
+  assert.equal(writes.length,4);
+  attached.clear();
+  rows.set(cutoverFixture.hosts[0].hostname,{id:"1".repeat(32),type:"CNAME",name:cutoverFixture.hosts[0].hostname,content:"not-retired.example.com"});
+  await assert.rejects(reconcileRetiredDomains(cutoverFixture,auth),/RETIRED_CNAME_NOT_EXACT/);
+  assert.equal(writes.length,4);
+});
