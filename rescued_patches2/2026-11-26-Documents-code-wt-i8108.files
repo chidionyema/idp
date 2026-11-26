@@ -1,0 +1,4 @@
+catalog/estate-capability-registry.json
+catalog/issue-classes.json
+platform/estate/intents/ci.run.yaml
+tests/test_a_declared_argument_is_substituted_not_shell_referenced.py

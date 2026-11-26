@@ -1,0 +1,60 @@
+# RESCUED PATCH 2026-11-26-Documents-code-wt-seed
+# source worktree: /Users/roseonyema/Documents/code/wt-seed
+# source branch:   fix/seed-callers
+# source HEAD:     246d2f690199671fcf9529d6820f1b43e7e1be96
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 4  untracked files included: 0
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-Documents-code-wt-seed.patch  (from a checkout of fix/seed-callers)
+diff --git a/.github/workflows/deploy-when-green.yml b/.github/workflows/deploy-when-green.yml
+index 03bcb0fe1..bca5800b1 100644
+--- a/.github/workflows/deploy-when-green.yml
++++ b/.github/workflows/deploy-when-green.yml
+@@ -74,6 +74,8 @@ jobs:
+           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+           oci_region: ${{ vars.OCI_REGION }}
+           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
++          seed_app_id: ${{ secrets.SEED_APP_ID }}
++          seed_pem_b64: ${{ secrets.SEED_PEM_B64 }}
+       - name: land the deploy if it is green, clean and nothing but a tag
+         env:
+           GH_TOKEN: ${{ steps.app.outputs.token }}
+diff --git a/.github/workflows/estate-inventory.yml b/.github/workflows/estate-inventory.yml
+index edcc81a5d..012214171 100644
+--- a/.github/workflows/estate-inventory.yml
++++ b/.github/workflows/estate-inventory.yml
+@@ -78,6 +78,8 @@ jobs:
+           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+           oci_region: ${{ vars.OCI_REGION }}
+           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
++          seed_app_id: ${{ secrets.SEED_APP_ID }}
++          seed_pem_b64: ${{ secrets.SEED_PEM_B64 }}
+       # R52: no root in this file. The Cloudflare token is the vault entry the bootstrapper minted;
+       # the Tailscale key is a short-lived access token from the operator's OAuth client in the vault.
+       # Either missing = that plane reads UNKNOWN, never a paste and never a red run.
+diff --git a/.github/workflows/merge-when-green.yml b/.github/workflows/merge-when-green.yml
+index 683684505..03cc83c58 100644
+--- a/.github/workflows/merge-when-green.yml
++++ b/.github/workflows/merge-when-green.yml
+@@ -86,6 +86,8 @@ jobs:
+           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+           oci_region: ${{ vars.OCI_REGION }}
+           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
++          seed_app_id: ${{ secrets.SEED_APP_ID }}
++          seed_pem_b64: ${{ secrets.SEED_PEM_B64 }}
+       - name: land every pull request that is finished
+         env:
+           GH_TOKEN: ${{ steps.app.outputs.token }}
+diff --git a/.github/workflows/pr-age.yml b/.github/workflows/pr-age.yml
+index 2ca6a0a41..742f0f459 100644
+--- a/.github/workflows/pr-age.yml
++++ b/.github/workflows/pr-age.yml
+@@ -32,6 +32,8 @@ jobs:
+           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+           oci_region: ${{ vars.OCI_REGION }}
+           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
++          seed_app_id: ${{ secrets.SEED_APP_ID }}
++          seed_pem_b64: ${{ secrets.SEED_PEM_B64 }}
+       - name: sweep every open PR, merge the green, name the old
+         env:
+           GH_TOKEN: ${{ steps.app.outputs.token }}
