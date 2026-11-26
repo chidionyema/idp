@@ -62,16 +62,31 @@ jobs:
         with:
           name: exact-obligation-exit-candidate
           path: ${{ runner.temp }}/bundle
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - run: pip install -q ruff==0.15.18
       - name: Verify exact ordinary source before publishing quarantine ref
         run: |
           set -euo pipefail
           git fetch "$RUNNER_TEMP/bundle/candidate.bundle" refs/heads/obligation-exit-boundary:refs/heads/obligation-exit-boundary
           tip=$(git rev-parse refs/heads/obligation-exit-boundary)
           test "$(git rev-parse "$tip^")" = "$BASE"
-          want=$(printf '%s\n' platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py tests/estate/test_continuity_conserved_objective.py)
+          want=$(printf '%s\n' platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py tests/estate/test_continuity_conserved_objective.py | sort)
           actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$')
           test "$actual" = "$want"
-          # Python hook formatting is deterministic; compare source after formatting in the prove job.
+          # Recreate the candidate formatting independently from trusted base config.
+          while IFS= read -r file; do
+            mkdir -p "$(dirname "$file")"
+            git show "$GITHUB_SHA:$file" > "$file"
+          done <<< "$want"
+          ruff check --fix $(printf '%s\n' "$want")
+          ruff format $(printf '%s\n' "$want")
+          while IFS= read -r file; do
+            git show "$tip:$file" | cmp - "$file"
+          done <<< "$want"
+          git reset --hard "$BASE"
+          git clean -f -- tests/estate/test_continuity_conserved_objective.py
           git show -s --format=%B "$tip" | grep -q '^X-Idp-Signed: '
           bin/claim-gate "$BASE" "$tip"
           ref=refs/heads/quarantine/8415-obligation-exit-boundary-20261126
