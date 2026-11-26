@@ -1,0 +1,28 @@
+#!/bin/bash
+# Optimus measure (idp#8575): the fatal R2 failure points in
+# bin/idp-bootstrap-cloudflare's DNS/Workers critical path.
+#
+# I-8455 Stage 1: an R2 failure gates ONLY R2 -- DNS and Workers mint, verify and vault
+# regardless. This measure counts the places where an R2 failure still aborts the whole
+# bootstrap. On main (measured 2026-11-26, dd4c1e8be) that is 5: the R2 mint path (1) and
+# the R2 bucket-proof path (4). It reads 0 once the decoupling lands; the registry's target
+# is 0.
+#
+# It prints exactly one line: optimus.bootstrap.r2_scoped_failures=<n>
+# It prints NOTHING and exits non-zero when it cannot judge the script (the bootstrap file
+# is absent, or it carries neither a fatal nor a scoped R2 site): the readback is then
+# UNKNOWN, which is honest, instead of a silent 0 that would pass a target-0 gate.
+set -u
+cd "$(dirname "$0")/.." || exit 1
+script="${1:-bin/idp-bootstrap-cloudflare}"
+if [ ! -f "$script" ]; then
+	echo "optimus instrument cannot judge: $script is absent" >&2
+	exit 1
+fi
+fatal=$(awk '/fail r2/ || /fail mint "R2/ {n++} END {print n+0}' "$script")
+scoped=$(awk '/R2_SCOPE_FAILED/ || /R2 gates only R2/ {n++} END {print n+0}' "$script")
+if [ "$fatal" -eq 0 ] && [ "$scoped" -eq 0 ]; then
+	echo "optimus instrument cannot judge: no fatal or scoped R2 site in $script" >&2
+	exit 1
+fi
+echo "optimus.bootstrap.r2_scoped_failures=$fatal"
