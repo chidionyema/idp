@@ -64,9 +64,7 @@ class AcceptTxnMixin:
             )
             cur.execute(insert_sql, row)
             checkpoint_id = f"cp-{uuid.uuid4()}"
-            content = {
-                k: initial[k] for k in initial if k != "created_at"
-            }
+            content = {k: initial[k] for k in initial if k != "created_at"}
             content_digest = digest_of(content)
             cur.execute(
                 "INSERT INTO mission_checkpoints (checkpoint_id, mission_id,"
