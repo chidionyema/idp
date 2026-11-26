@@ -2,7 +2,7 @@
 
 WHAT THIS IS. A policy-enforcing MCP server. An agent calls `estate_context` through the
 estate's existing MCP gateway (agentgateway, decision 0006), the gateway hands the call here,
-and here the claim, the freshness, the budget, the secrets and the provenance are settled
+and here the read boundary, freshness, budget, secrets and provenance are settled
 BEFORE the private engine is asked anything. The engine has no public route, so a client that
 bypasses its own harness still cannot reach it.
 
@@ -15,10 +15,10 @@ minting a session id, a 404 for an unknown session. Standard library only, so th
 no dependency that can be swapped underneath the policy.
 
 THE TOOLS. Two, and two is enough:
-    estate_context       ask the engine a question about the tree, inside a claim, at a commit
+    estate_context       ask the engine a question about the indexed tree, at a commit
     estate_context_status what the broker knows: the indexed commit, the engine's health, the claims
 
-WHAT IT WILL NOT DO. It will not serve an answer for a path outside the caller's claim, from an
+WHAT IT WILL NOT DO. It will not serve an answer for a path outside the indexed repository, from an
 index that does not match the commit asked about, when the engine is down, or with a credential
 in it. Each of those is a refusal with a verdict a client can act on.
 """
@@ -44,6 +44,7 @@ from .broker import (
     EngineError,
     envelope,
     provenance,
+    repo_read_path,
     scrub,
 )
 
@@ -220,6 +221,20 @@ def _engine_reachable() -> bool:
         return False
 
 
+def _source_relative(raw_path: str) -> str | None:
+    """Contain engine-returned paths inside the indexed source tree."""
+    rel = plan_rules.normalize_path(raw_path, SOURCE_DIR)
+    if not rel or not repo_read_path(rel):
+        return None
+    root = os.path.realpath(SOURCE_DIR)
+    full = os.path.realpath(os.path.join(root, rel))
+    if os.path.commonpath([root, full]) != root:
+        return None
+    if not repo_read_path(os.path.relpath(full, root)) or not os.path.isfile(full):
+        return None
+    return rel
+
+
 def _digest_of(path: str) -> str | None:
     """sha256 of a file in the indexed source tree, for the provenance envelope.
 
@@ -228,7 +243,9 @@ def _digest_of(path: str) -> str | None:
     A digest looked up under the engine's prefix would find nothing, and an excerpt with no
     digest is an excerpt nobody can check.
     """
-    rel = plan_rules.normalize_path(path, SOURCE_DIR) or path
+    rel = _source_relative(path)
+    if not rel:
+        return None
     full = os.path.join(SOURCE_DIR, rel)
     try:
         import hashlib
@@ -250,7 +267,7 @@ def _read_head(raw_path: str) -> tuple[str, int, int]:
     of the file it holds, which is the only copy of that text the broker can vouch for. A
     bounded head keeps one answer inside the budget the caller asked for.
     """
-    rel = plan_rules.normalize_path(raw_path, SOURCE_DIR)
+    rel = _source_relative(raw_path)
     if not rel:
         return "", 0, 0
     try:
@@ -305,8 +322,8 @@ def _excerpts_from(
     def _add(
         raw_path: str, content: str, line: int, end_line: int | None = None
     ) -> None:
-        rel = plan_rules.normalize_path(raw_path, SOURCE_DIR) or raw_path
-        if rel in seen:
+        rel = _source_relative(raw_path)
+        if not rel or rel in seen:
             return
         seen.add(rel)
         out.append(
@@ -349,20 +366,17 @@ def _excerpts_from(
 
 # --- the tools --------------------------------------------------------------------------------
 def tool_estate_context(args: Mapping[str, Any]) -> dict[str, Any]:
-    """Ask the engine a question, inside a claim, at a commit, within a budget.
+    """Read the committed index without a mutation claim.
 
-    The order is the argument: the claim is checked first (it is the cheapest to check and the
-    most load-bearing), then freshness, then the engine, then the answer.
+    Legacy claim arguments remain accepted. Explicit working-copy or alternate
+    view access retains its existing claim scope; ordinary discovery does not
+    depend on GitHub being reachable. Effect authority is unchanged.
     """
     task = str(args.get("task") or "").strip()
     if not task:
         return _error("the request has no task")
     issue_number = args.get("claim_issue")
     agent = str(args.get("claim_agent") or "").strip()
-    if not issue_number or not agent:
-        return _error(
-            "a context request states its claim: claim_issue and claim_agent are required"
-        )
     paths = [str(p) for p in (args.get("paths") or [])]
     mode = str(args.get("mode") or "committed")
     commit = str(args.get("commit") or "").strip() or None
@@ -370,17 +384,24 @@ def tool_estate_context(args: Mapping[str, Any]) -> dict[str, Any]:
     budget = max(1, min(budget, MAX_TOKEN_BUDGET))
     _tally("estate_context_requests_total")
 
-    state, comments = _issue_record(int(issue_number))
-    verdict = claim_rules.verify_claim(
-        issue_state=state,
-        issue_comments=claim_rules.github_comment_bodies(comments),
-        agent=agent,
-        requested_paths=paths,
-        issue_number=int(issue_number),
-    )
-    if not verdict.allow:
-        _tally("estate_context_refusals_total")
-        return _refusal(verdict)
+    read_scope = None
+    if mode != "committed" or args.get("view"):
+        if not issue_number or not agent or not paths:
+            _tally("estate_context_refusals_total")
+            return _error("working-copy or alternate-view access requires a scoped claim")
+        state, comments = _issue_record(int(issue_number))
+        bodies = claim_rules.github_comment_bodies(comments)
+        verdict = claim_rules.verify_claim(
+            issue_state=state,
+            issue_comments=bodies,
+            agent=agent,
+            requested_paths=paths,
+            issue_number=int(issue_number),
+        )
+        if not verdict.allow:
+            _tally("estate_context_refusals_total")
+            return _refusal(verdict)
+        read_scope = claim_rules.paths_held_by(claim_rules.parse_claims(bodies), agent)
 
     manifest = _index_manifest()
     index_commit = manifest.get("commit") or None
@@ -388,9 +409,7 @@ def tool_estate_context(args: Mapping[str, Any]) -> dict[str, Any]:
     broker_state = BrokerState(
         index_commit=index_commit,
         head_commit=head_commit,
-        claim_paths=claim_rules.paths_held_by(
-            claim_rules.parse_claims(claim_rules.github_comment_bodies(comments)), agent
-        ),
+        claim_paths=read_scope,
         secrets=_load_named_secrets(),
         engine_reachable=_engine_reachable(),
     )
@@ -528,8 +547,8 @@ TOOLS = [
     {
         "name": "estate_context",
         "description": (
-            "Answer a question about the estate's code from the private context engine, inside "
-            "the caller's live claim, at a commit whose index is proven. Returns the answer, the "
+            "Read the estate's indexed committed code without a mutation claim, at a commit "
+            "whose index is proven. Alternate views still require a scoped claim. Returns the "
             "verdict, and a provenance envelope for every excerpt."
         ),
         "inputSchema": {
@@ -539,7 +558,7 @@ TOOLS = [
                 "paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "The paths this question is about. Each must be inside the claim.",
+                    "description": "Repository-relative paths this question is about.",
                 },
                 "commit": {
                     "type": "string",
@@ -567,7 +586,7 @@ TOOLS = [
                     "description": "The engine view (worktree) to read.",
                 },
             },
-            "required": ["task", "claim_issue", "claim_agent"],
+            "required": ["task"],
         },
     },
     {

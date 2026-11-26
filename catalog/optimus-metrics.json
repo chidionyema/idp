@@ -133,6 +133,18 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "Scoped R2 WARN markers in bin/idp-bootstrap-cloudflare (I-8455 Stage 1, idp#8519); baseline 0, target >=4"
+    },
+    {
+      "name": "context.committed_claimless_read",
+      "measure": [
+        "python3",
+        "-c",
+        "import sys\nsys.path.insert(0, 'platform')\nfrom estate.context import server as s\nfrom unittest.mock import patch\nclass Engine:\n    def call(self, tool, args):\n        return {'working_set': []}\nwith patch.object(s, '_issue_record', side_effect=AssertionError('GitHub read forbidden')), patch.object(s, '_index_manifest', return_value={'commit':'fixture','head_commit':'fixture'}), patch.object(s, '_engine_reachable', return_value=True), patch.object(s, '_load_named_secrets', return_value={}), patch.object(s, '_engine_client', return_value=Engine()):\n    good=s.tool_estate_context({'task':'orient'})\n    bad=s.tool_estate_context({'task':'orient','paths':['../outside']})\n    private=s.tool_estate_context({'task':'orient','mode':'working_copy'})\nprint('optimus.context.committed_claimless_read=%d' % int(not good['isError'] and bad['isError'] and private['isError']))"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "estate-context",
+      "description": "Actual broker policy invocation with deterministic engine fixture; read committed index without GitHub claim lookup, reject traversal and unclaimed working-copy. Source-policy proof only, not a deployed endpoint measurement."
     }
 
   ]

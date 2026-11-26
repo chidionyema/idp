@@ -1,0 +1,115 @@
+name: Unit 0 independent source certification
+on:
+  push:
+    branches: [research/unit0-disjoint-20261126]
+permissions:
+  contents: read
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        unit: [gortex, router-edge]
+    env:
+      BASE: e05609e5612b8559edd5377d1a214fb8c527c918
+      UNIT: ${{ matrix.unit }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 pytest==8.4.2 -r sovereign/requirements.txt
+      - uses: ./.github/actions/estate-tools
+      - name: Certify disjoint source with estate hooks and actual tests
+        run: |
+          set -euo pipefail
+          source="$GITHUB_SHA"
+          git checkout -b "unit0-$UNIT" "$BASE"
+          git config core.hooksPath .githooks
+          git config user.name "Meridian Unit 0 cloud recovery"
+          git config user.email "meridian-unit0@users.noreply.github.com"
+          if [ "$UNIT" = gortex ]; then
+            git checkout "$source" -- platform/estate/context/server.py platform/estate/context/broker.py
+            git commit -m "fix(context): committed discovery without mutation claim" -m "Claim: #7344
+          Agent: meridian-unit0-gortex"
+            git checkout "$source" -- tests/test_estate_context_server.py
+            git commit -m "test(context): prove claimless reads and containment" -m "Claim: #7344
+          Agent: meridian-unit0-gortex"
+            git checkout "$source" -- catalog/optimus-metrics.json
+            git commit -m "feat(context): measure read-only policy against deterministic fixture" -m "Claim: #7344
+          Agent: meridian-unit0-gortex"
+            python3 -m pytest -q tests/test_estate_context_server.py tests/test_estate_context_broker.py tests/test_estate_context_claims.py
+          else
+            git checkout "$source" -- platform/router-edge/src/capability_pool.mjs platform/router-edge/src/routing-do.ts platform/router-edge/scripts/release.mjs platform/router-edge/tests/release.falsifier.mjs
+            git commit -m "fix(router-edge): pre-dispatch capabilities, complete secret bundle and exact domain cutover" -m "Claim: #8416
+          Agent: meridian-unit0-router"
+            (
+              cd platform/router-edge
+              npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+              npm test
+              node --test tests/release.falsifier.mjs
+            )
+          fi
+          IDP_CI_FAST=1 IDP_CI_BASE="$BASE" bin/idp-ci
+          git bundle create "$RUNNER_TEMP/unit.bundle" "unit0-$UNIT" "^$BASE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: unit0-${{ matrix.unit }}
+          path: ${{ runner.temp }}/unit.bundle
+          retention-days: 1
+          if-no-files-found: error
+  publish:
+    needs: prove
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: read
+    strategy:
+      fail-fast: false
+      matrix:
+        unit: [gortex, router-edge]
+    env:
+      UNIT: ${{ matrix.unit }}
+      BASE: e05609e5612b8559edd5377d1a214fb8c527c918
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: e05609e5612b8559edd5377d1a214fb8c527c918
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: unit0-${{ matrix.unit }}
+          path: ${{ runner.temp }}/bundle
+      - name: Recheck exact source scope and claim before create-only publication
+        run: |
+          set -euo pipefail
+          git fetch "$RUNNER_TEMP/bundle/unit.bundle" "refs/heads/unit0-$UNIT:refs/heads/unit0-$UNIT"
+          tip=$(git rev-parse "refs/heads/unit0-$UNIT")
+          git merge-base --is-ancestor "$BASE" "$tip"
+          if [ "$UNIT" = gortex ]; then
+            want=$(printf '%s\n' catalog/optimus-metrics.json platform/estate/context/broker.py platform/estate/context/server.py tests/test_estate_context_server.py | sort)
+          else
+            want=$(printf '%s\n' platform/router-edge/scripts/release.mjs platform/router-edge/src/capability_pool.mjs platform/router-edge/src/routing-do.ts platform/router-edge/tests/release.falsifier.mjs | sort)
+          fi
+          actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$' | sort)
+          test "$actual" = "$want"
+          for c in $(git rev-list "$BASE..$tip"); do
+            git show -s --format=%B "$c" | grep -q '^X-Idp-Signed: '
+          done
+          bin/claim-gate "$BASE" "$tip"
+          ref="refs/heads/quarantine/unit0-$UNIT-20261126"
+          test -z "$(git ls-remote origin "$ref")"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.extraHeader=Authorization: Basic $auth" push origin "$tip:$ref"
+          echo "CERTIFIED_UNIT_SHA=$tip"
