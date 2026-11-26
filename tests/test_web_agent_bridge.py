@@ -92,7 +92,6 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(BRIDGE.BridgeError):
             self.check(*fixture("src/generalPurposePersonaData.ts"))
 
-
     def test_real_git_stage_and_verify(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
