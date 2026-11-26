@@ -1,0 +1,5 @@
+.ci/ci-microscope.jsonl
+.estate-scratch/memory-plane-incident/plan.json
+.estate-session-probe
+rer-fail.txt
+tests/test_precommit_defers_guarded_seal_to_push.py

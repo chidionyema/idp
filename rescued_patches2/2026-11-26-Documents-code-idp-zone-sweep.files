@@ -1,0 +1,16 @@
+bin/aei-observe
+bin/estate-runtime-sync
+bin/idp-hypothesize
+bin/idp-mac-provision
+platform/estate/bin/estate-execute
+platform/estate/gates/protocol_gate.py
+platform/estate/intents/cost-today.yaml
+platform/estate/intents/ledger-verify.yaml
+platform/estate/intents/litellm-test.yaml
+platform/estate/intents/router-status.yaml
+platform/estate/libexec/code-review-t2.py
+platform/estate/libexec/consult_gemini.py
+platform/estate/libexec/critical-probe.py
+platform/estate/libexec/telegram-agent-doctor.py
+lib/estate_zone.py
+tests/test_estate_zone_resolver.py

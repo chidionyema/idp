@@ -1,0 +1,1243 @@
+# RESCUED PATCH 2026-11-26-Documents-code-idp-zone-sweep
+# source worktree: /Users/roseonyema/Documents/code/idp-zone-sweep
+# source branch:   feat/zone-sweep
+# source HEAD:     cf2830fcb776c3e7f0379f78d8f1fa011996e3bd
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 14  untracked files included: 2
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-Documents-code-idp-zone-sweep.patch  (from a checkout of feat/zone-sweep)
+diff --git a/bin/aei-observe b/bin/aei-observe
+index 5626bac66..6ecd5181b 100755
+--- a/bin/aei-observe
++++ b/bin/aei-observe
+@@ -35,13 +35,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
+ SRC = REPO_ROOT / "packages" / "aei" / "src"
+ if str(SRC) not in sys.path:
+     sys.path.insert(0, str(SRC))
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
++# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
++LIB = REPO_ROOT / "lib"
++if (LIB / "estate_zone.py").is_file() and str(LIB) not in sys.path:
++    sys.path.insert(0, str(LIB))
+ 
+ from aei.estate import emitter, identity, router_call, task, tool, verification  # noqa: E402
+ from aei.core import utc_now  # noqa: E402
++from estate_zone import estate_router  # noqa: E402
+ 
+ TOKEN_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "token"
+ PORT_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "port"
+-DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
++DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL") or estate_router()
+ 
+ 
+ def _collector_url() -> str:
+diff --git a/bin/estate-runtime-sync b/bin/estate-runtime-sync
+index e1329859d..a70a78b5a 100644
+--- a/bin/estate-runtime-sync
++++ b/bin/estate-runtime-sync
+@@ -343,6 +343,20 @@ def stage() -> list[str]:
+             shutil.copy2(f, STATE / "bin" / name)
+             (STATE / "bin" / name).chmod(0o755)
+             notes.append(f"bin/{name}")
++    # The estate's zone resolver (lib/estate_zone.py) is a MODULE, not a launcher. The staged
++    # executor and the staged libexec scripts import it by name, and Python puts a script's own
++    # directory on the path, so it is staged BESIDE them: in ~/.estate/bin, ~/.estate/libexec and
++    # ~/.estate/lib. It comes from the same tree as the scripts that import it, so the two are
++    # never out of step (the tree copy finds it by path; the staged copy finds it beside itself).
++    resolver = TREE / "lib" / "estate_zone.py"
++    if resolver.exists():
++        for sub in ("bin", "libexec", "lib"):
++            dst = STATE / sub / "estate_zone.py"
++            if dst.exists() and filecmp.cmp(resolver, dst, False):
++                continue
++            dst.parent.mkdir(parents=True, exist_ok=True)
++            shutil.copy2(resolver, dst)
++            notes.append(f"{sub}/estate_zone.py")
+     return notes
+ 
+ 
+diff --git a/bin/idp-hypothesize b/bin/idp-hypothesize
+index eee1caf95..99953a98a 100755
+--- a/bin/idp-hypothesize
++++ b/bin/idp-hypothesize
+@@ -62,6 +62,14 @@ import subprocess
+ import sys
+ import time
+ from dataclasses import asdict, dataclass, field
++from pathlib import Path
++
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
++# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
++_LIB = Path(__file__).resolve().parents[1] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_router, estate_zone  # noqa: E402
+ 
+ EXIT_OK, EXIT_USAGE, EXIT_NO_HYP, EXIT_DEGRADED = 0, 2, 3, 4
+ 
+@@ -83,7 +91,7 @@ LAYER_PRIORS_DEFAULT = {
+ LAYER_ORDER = ["caller", "checkout", "script", "config", "daemon", "upstream"]
+ 
+ DEFAULT_ROUTER_PORT = 4000
+-DEFAULT_ROUTER_URL = "https://llm.mumchimp.com"
++DEFAULT_ROUTER_URL = estate_router()
+ EXT_DIR = "$HOME/.pi/agent/extensions"
+ 
+ ERROR_PATTERNS = [
+@@ -516,7 +524,7 @@ def synthesize(
+         )
+ 
+     script = script or ctx.get("script") or "estate-execute"
+-    host = host or _host_of(ctx) or "llm.mumchimp.com"
++    host = host or _host_of(ctx) or ("llm." + estate_zone() if estate_zone() else "")
+     port = port or ctx.get("port") or str(DEFAULT_ROUTER_PORT)
+     url = url or ctx.get("url") or DEFAULT_ROUTER_URL
+     if url.endswith("/"):
+diff --git a/bin/idp-mac-provision b/bin/idp-mac-provision
+index 3f8680b84..b11302961 100755
+--- a/bin/idp-mac-provision
++++ b/bin/idp-mac-provision
+@@ -36,7 +36,10 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ BREWFILE="$IDP/infra/macos/Brewfile"
+ LD_DIR="$IDP/infra/macos/LaunchDaemons"
+ SPIRE_TEMPLATE="$IDP/infra/macos/spire-agent.conf.template"
+-ESTATE_ZONE="${ESTATE_ZONE:-mumchimp.com}"
++# The estate's DNS zone is declared once, in clusters/<cluster>/estate-config.yaml. This script
++# asks for it instead of spelling it: a shell default that carries the zone is the commonest way a
++# literal hides (bin/estate-zone-gate refuses one).
++ESTATE_ZONE="${ESTATE_ZONE:-$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' "$IDP"/clusters/*/estate-config.yaml 2>/dev/null | head -1)}"
+ SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN:-estate.internal}"
+ 
+ # --- print helpers ---------------------------------------------------------
+@@ -51,7 +54,8 @@ usage() {
+ Usage: bin/idp-mac-provision {install|upgrade|uninstall|status|doctor|self-test}
+ 
+ Options (env vars):
+-  ESTATE_ZONE            DNS zone the estate lives under (default: mumchimp.com)
++  ESTATE_ZONE            DNS zone the estate lives under (default: the zone declared in
++                         clusters/*/estate-config.yaml)
+   SPIRE_TRUST_DOMAIN     SPIFFE trust domain (default: estate.internal)
+   IDP_MAC_PROVISION_DRY  1 = run with --dry-run writes
+ 
+diff --git a/platform/estate/bin/estate-execute b/platform/estate/bin/estate-execute
+index cf703f7f2..6a7586b9d 100755
+--- a/platform/estate/bin/estate-execute
++++ b/platform/estate/bin/estate-execute
+@@ -10,6 +10,7 @@ Usage:
+ All executor logs go to stderr. Intent output goes to stdout.
+ No heredocs. No pipes. No exit traps. All SQL via parameterized queries.
+ """
++
+ import sqlite3
+ import subprocess
+ import sys
+@@ -22,8 +23,8 @@ from datetime import datetime, timezone
+ import uuid
+ 
+ # ---- Paths ---------------------------------------------------------------
+-HOME    = Path.home()
+-DB      = HOME / ".estate" / "estate.db"
++HOME = Path.home()
++DB = HOME / ".estate" / "estate.db"
+ INTENTS = HOME / ".estate" / "intents"
+ 
+ # The door's module lives beside the repo (mcp/plugins), and this script lives in
+@@ -39,6 +40,17 @@ if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
+ _HARNESS = Path(__file__).resolve().parent.parent / "harness"
+ if _HARNESS.is_dir() and str(_HARNESS) not in sys.path:
+     sys.path.insert(0, str(_HARNESS))
++
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml. This file asks
++# the one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling
++# it: a reader that carries the zone is a reader that goes stale at the next migration. The tree
++# copy finds the module through the path below; the staged copy under ~/.estate/bin finds it
++# beside itself, because the runtime sync stages it there.
++_LIB = Path(__file__).resolve().parents[3] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_zone  # noqa: E402
++
+ try:
+     from fs_guard import check_command_allowed
+ except ImportError:
+@@ -46,6 +58,7 @@ except ImportError:
+     def check_command_allowed(cmd):  # fail open, never closed, on an import problem
+         return True, "OK"
+ 
++
+ # The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
+ # this script asks it one question per command and never interprets a plan itself.
+ _PLAN_CONTRACT = None
+@@ -60,9 +73,14 @@ EXPLICIT_SESSION = ""
+ # Merged is operating (docs/tickets/2026-09-27-merged-is-operating.md): the executor runs only
+ # intents from the root-owned release estate-converge cut from main. ~/.estate/intents is a link
+ # into it. A hand copy is refused; an unmerged intent runs only through --from, labelled.
+-CURRENT  = Path(os.environ.get("ESTATE_PREFIX") or "/usr/local/estate") / "releases" / "current"
++CURRENT = (
++    Path(os.environ.get("ESTATE_PREFIX") or "/usr/local/estate")
++    / "releases"
++    / "current"
++)
+ FROM_DIR = None
+ 
++
+ def log(*args, **kw):
+     print(*args, file=sys.stderr, **kw)
+ 
+@@ -73,16 +91,20 @@ def admit(intent_path):
+         log(f"[estate] UNMERGED: {intent_path} (--from {FROM_DIR})")
+         return "unmerged"
+     if not CURRENT.exists():
+-        log("[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger; "
+-            "running the local copy")
++        log(
++            "[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger; "
++            "running the local copy"
++        )
+         return "unconverged"
+     try:
+         Path(intent_path).resolve().relative_to(CURRENT.resolve())
+         return ""
+     except ValueError:
+-        log(f"[estate] REFUSED: {intent_path} is not in the current release "
++        log(
++            f"[estate] REFUSED: {intent_path} is not in the current release "
+             f"{CURRENT.resolve()}. Merge it to main (estate-converge delivers it within "
+-            "minutes) or test it with: estate-execute --from <worktree> <intent>")
++            "minutes) or test it with: estate-execute --from <worktree> <intent>"
++        )
+         sys.exit(2)
+ 
+ 
+@@ -90,14 +112,18 @@ def not_merged_hint(name):
+     """An intent that exists only as a moved-aside hand copy: say so, exit 2."""
+     for variant in dict.fromkeys([name, name.replace(".", "-")]):
+         for copy in sorted(HOME.glob(f".estate/intents.pre-converge-*/{variant}.yaml")):
+-            log(f"[estate] NOT MERGED: {name} exists only as a hand copy at {copy}. "
+-                "Merge it to main or run it with --from <worktree>")
++            log(
++                f"[estate] NOT MERGED: {name} exists only as a hand copy at {copy}. "
++                "Merge it to main or run it with --from <worktree>"
++            )
+             sys.exit(2)
+ 
++
+ # ---- Step output cache (keyed by step name) ---------------------------------
+ # Filled by run_steps, consumed by subsequent `from:` steps
+ STEP_OUTPUTS = {}  # {step_name: {"stdout": str, "rc": int, "json": obj}}
+ 
++
+ # ---- DB init ------------------------------------------------------------
+ def init_db():
+     DB.parent.mkdir(parents=True, exist_ok=True)
+@@ -146,21 +172,24 @@ def init_db():
+     conn.commit()
+     return conn
+ 
++
+ # ---- Policy gate (ML dept loop A, docs/specs/2026-09-29-machine-learning-dept.md) ----
+ # The environment decides before the step runs, from what it has recorded: the intent's own
+ # outcomes over the last 30 days. Beta(1+not_ok, 1+ok) posterior mean; a decision only once
+ # it has seen POLICY_MIN_N runs. ESTATE_POLICY=shadow (default) records what it would do and
+ # never blocks; =enforce refuses (exit 3) or holds (sleep); =off skips the read entirely.
+-POLICY_MIN_N     = 5
+-POLICY_REFUSE_P  = 0.80
+-POLICY_HOLD_P    = 0.50
++POLICY_MIN_N = 5
++POLICY_REFUSE_P = 0.80
++POLICY_HOLD_P = 0.50
+ POLICY_HOLD_MAX_S = 10
+ 
++
+ def policy_decide(conn, ticket_id, intent_name, session_id=""):
+     mode = os.environ.get("ESTATE_POLICY", "shadow")
+     if mode == "off":
+         return "allow", None
+     import time as _t
++
+     t0 = _t.perf_counter()
+     n, not_ok = conn.execute(
+         "SELECT COUNT(*), SUM(status != 'ok') FROM intent_tickets "
+@@ -182,7 +211,18 @@ def policy_decide(conn, ticket_id, intent_name, session_id=""):
+         "INSERT INTO policy_decisions "
+         "(ticket_id,intent,session_id,n,not_ok,p_fail,decision,mode,latency_us,at) "
+         "VALUES (?,?,?,?,?,?,?,?,?,?)",
+-        (ticket_id, intent_name, session_id, n, not_ok, p_fail, decision, mode, latency_us, now),
++        (
++            ticket_id,
++            intent_name,
++            session_id,
++            n,
++            not_ok,
++            p_fail,
++            decision,
++            mode,
++            latency_us,
++            now,
++        ),
+     )
+     conn.commit()
+     reason = f"{not_ok}/{n} runs not ok in 30d, p_fail={p_fail:.2f}, {latency_us}us"
+@@ -199,6 +239,7 @@ def policy_decide(conn, ticket_id, intent_name, session_id=""):
+         _t.sleep(min(POLICY_HOLD_MAX_S, POLICY_HOLD_MAX_S * p_fail))
+     return decision, reason
+ 
++
+ def _policy_event(session_id, decision, mode, intent_name, reason, now):
+     # One estate.agent gate event per decision, through the same outbox fleetview-backend
+     # drains to NATS (outbox.py schema), so /fleet shows the gate deciding on real actions.
+@@ -235,17 +276,28 @@ def _policy_event(session_id, decision, mode, intent_name, reason, now):
+             )
+         """)
+         import time as _t
++
+         ob.execute(
+             "INSERT INTO outbox (created_at,session_id,runtime,kind,phase,payload,next_attempt_at) "
+             "VALUES (?,?,?,?,?,?,?)",
+-            (_t.time(), payload["session_id"], "claude-code", "gate", "executing",
+-             json.dumps(payload), _t.time()),
++            (
++                _t.time(),
++                payload["session_id"],
++                "claude-code",
++                "gate",
++                "executing",
++                json.dumps(payload),
++                _t.time(),
++            ),
+         )
+         ob.commit()
+         ob.close()
+-    except sqlite3.Error as exc:  # the gate never fails an intent because the bus is busy
++    except (
++        sqlite3.Error
++    ) as exc:  # the gate never fails an intent because the bus is busy
+         log(f"[estate] policy event not queued: {exc}")
+ 
++
+ # ---- Ticket ops ----------------------------------------------------------
+ def open_ticket(conn, intent_name, harness, goal=""):
+     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+@@ -254,26 +306,29 @@ def open_ticket(conn, intent_name, harness, goal=""):
+     conn.execute(
+         "INSERT INTO intent_tickets "
+         "(id,intent,harness,goal,started_at,status) VALUES (?,?,?,?,?,?)",
+-        (ticket_id, intent_name, harness, goal, now, "running")
++        (ticket_id, intent_name, harness, goal, now, "running"),
+     )
+     conn.commit()
+     return ticket_id
+ 
++
+ def log_step(conn, ticket_id, idx, cmd, rc, dur_ms):
+     conn.execute(
+         "INSERT INTO step_runs "
+         "(ticket_id,step_idx,cmd,exit_code,duration_ms,ran_at) VALUES (?,?,?,?,?,?)",
+-        (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat())
++        (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat()),
+     )
+     conn.commit()
+ 
++
+ def close_ticket(conn, ticket_id, status, error=None):
+     conn.execute(
+         "UPDATE intent_tickets SET completed_at=?,status=?,error=? WHERE id=?",
+-        (datetime.now(timezone.utc).isoformat(), status, error, ticket_id)
++        (datetime.now(timezone.utc).isoformat(), status, error, ticket_id),
+     )
+     conn.commit()
+ 
++
+ # ---- Argument resolution ------------------------------------------------
+ def resolve_args(intent, raw_args):
+     arg_defs = intent.get("args", {})
+@@ -302,6 +357,7 @@ def resolve_args(intent, raw_args):
+                 resolved[name] = 0
+     return resolved
+ 
++
+ # ---- Interpolation ------------------------------------------------------
+ def interpolate(cmd, args):
+     """{{var}} → shell-quoted (safe path), <<var>> → raw (already quoted)."""
+@@ -336,6 +392,7 @@ def interpolate_parts(cmd, args):
+         cmd = cmd.replace("<<" + name + ">>", raw)
+     return cmd, "\n".join(raw_parts)
+ 
++
+ # ---- Composition helpers --------------------------------------------------
+ def _resolve_from(prev_name, prev_output):
+     """Parse previous step output into a dict inject."""
+@@ -374,9 +431,12 @@ def _read_intent(name):
+         admit(path)
+     except SystemExit:
+         # A composed step fails like a missing intent, so the ticket still closes.
+-        raise FileNotFoundError(f"intent refused: {name} is not in the current release") from None
++        raise FileNotFoundError(
++            f"intent refused: {name} is not in the current release"
++        ) from None
+     with open(path) as f:
+         import yaml
++
+         return yaml.safe_load(f), path.stem
+ 
+ 
+@@ -427,10 +487,19 @@ def _plan_contract():
+     # repository layout: <repo>/platform/estate/bin/estate-execute -> parents[1] is platform/estate
+     candidates.append(here.parents[1] / "memory" / "plan.py")
+     # staged layout: <root>/bin/estate-execute with the contract under <root>/memory/...
+-    candidates.append(here.parents[1] / "memory" / "platform" / "estate" / "memory" / "plan.py")
++    candidates.append(
++        here.parents[1] / "memory" / "platform" / "estate" / "memory" / "plan.py"
++    )
+     # the runtime tree
+     candidates.append(
+-        Path(os.path.expanduser("~")) / ".estate" / "runtime" / "idp" / "platform" / "estate" / "memory" / "plan.py"
++        Path(os.path.expanduser("~"))
++        / ".estate"
++        / "runtime"
++        / "idp"
++        / "platform"
++        / "estate"
++        / "memory"
++        / "plan.py"
+     )
+     for path in candidates:
+         try:
+@@ -438,7 +507,9 @@ def _plan_contract():
+                 continue
+             import importlib.util
+ 
+-            spec = importlib.util.spec_from_file_location("estate_plan_contract", str(path))
++            spec = importlib.util.spec_from_file_location(
++                "estate_plan_contract", str(path)
++            )
+             if spec is None or spec.loader is None:
+                 continue
+             module = importlib.util.module_from_spec(spec)
+@@ -472,7 +543,9 @@ def _plan_refusal(command, session_id, reason, detail):
+     if module is None:
+         return
+     try:
+-        module.record_refusal(command, session_id, reason=reason, detail=detail, source="intent-door")
++        module.record_refusal(
++            command, session_id, reason=reason, detail=detail, source="intent-door"
++        )
+     except Exception:  # noqa: BLE001 - recording must never break the door
+         pass
+     try:
+@@ -534,12 +607,16 @@ def _intent_budget(intent):
+         try:
+             budget, provenance = int(declared), "door_s"
+         except (TypeError, ValueError):
+-            raise SystemExit(f"estate-execute: door_s must be whole seconds, got {declared!r}") from None
++            raise SystemExit(
++                f"estate-execute: door_s must be whole seconds, got {declared!r}"
++            ) from None
+     elif intent.get("timeout") is not None:
+         try:
+             budget, provenance = int(intent["timeout"]), "timeout (deprecated)"
+         except (TypeError, ValueError):
+-            raise SystemExit(f"estate-execute: timeout must be whole seconds, got {intent['timeout']!r}") from None
++            raise SystemExit(
++                f"estate-execute: timeout must be whole seconds, got {intent['timeout']!r}"
++            ) from None
+         log(
+             "[estate] DEPRECATED: this intent declares `timeout:` at the top level. The field the "
+             "door reads is `door_s:`; the old name is honoured so a live intent does not break, "
+@@ -569,7 +646,7 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+             args[name] = out.get("stdout", "")
+ 
+     for idx, step in enumerate(steps):
+-        step_name = step.get("name", f"step-{idx+1}")
++        step_name = step.get("name", f"step-{idx + 1}")
+         on_fail = step.get("on_fail", "halt" if halt_on_fail else "continue")
+ 
+         # Inject previous step output
+@@ -588,7 +665,7 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+                     sub_args[k] = v
+ 
+             indent = "  " * (depth + 1)
+-            log(f"[step {idx+1} / {step_name}] COMPOSE → {sub_name}")
++            log(f"[step {idx + 1} / {step_name}] COMPOSE → {sub_name}")
+             if depth > 4:
+                 log(f"{indent}ERROR: composition depth exceeded (max 5)")
+                 rc = 1
+@@ -616,7 +693,9 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+         elif "cmd" in step:
+             cmd_tmpl = step["cmd"]
+             cmd, agent_raw = interpolate_parts(cmd_tmpl, args)
+-            log(f"[step {idx+1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
++            log(
++                f"[step {idx + 1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}"
++            )
+ 
+             t0 = datetime.now(timezone.utc)
+             # A step may narrow the intent's budget, never widen it. The default is the budget
+@@ -631,7 +710,9 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+                 try:
+                     step_timeout = int(declared_step)
+                 except (TypeError, ValueError):
+-                    bad_bound = f"step timeout must be whole seconds, got {declared_step!r}"
++                    bad_bound = (
++                        f"step timeout must be whole seconds, got {declared_step!r}"
++                    )
+                     step_timeout = budget
+                 else:
+                     if step_timeout > budget:
+@@ -660,7 +741,12 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+                     log_step(conn, ticket_id, idx, cmd, rc, 0)
+                     failed += 1
+                     if on_fail == "halt":
+-                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused")
++                        close_ticket(
++                            conn,
++                            ticket_id,
++                            "halted",
++                            f"step {idx + 1} ({step_name}) refused",
++                        )
+                         return "halted"
+                     continue
+                 # The read/write boundary judges the AGENT's content, not the estate's own step
+@@ -675,18 +761,29 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+                     log_step(conn, ticket_id, idx, cmd, rc, 0)
+                     failed += 1
+                     if on_fail == "halt":
+-                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: {fs_reason}")
++                        close_ticket(
++                            conn,
++                            ticket_id,
++                            "halted",
++                            f"step {idx + 1} ({step_name}) refused: {fs_reason}",
++                        )
+                         return "halted"
+                     continue
+                 try:
+                     result = subprocess.run(  # noqa: S602
+-                        cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
++                        cmd,
++                        shell=True,
++                        capture_output=True,
++                        text=True,
++                        timeout=step_timeout,
+                     )
+                     rc = result.returncode
+                     stdout = result.stdout
+                     stderr = result.stderr
+                 except subprocess.TimeoutExpired as exc:
+-                    log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED")
++                    log(
++                        f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED"
++                    )
+                     rc = 124
+                     stdout = exc.stdout or ""
+                     stderr = exc.stderr or ""
+@@ -718,13 +815,17 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
+                 print(stdout.rstrip("\n"))
+ 
+         else:
+-            log(f"[step {idx+1} / {step_name}] ERROR: step has no `cmd` or `intent` field")
++            log(
++                f"[step {idx + 1} / {step_name}] ERROR: step has no `cmd` or `intent` field"
++            )
+             rc = 1
+ 
+         if rc != 0:
+             failed += 1
+             if on_fail == "halt":
+-                close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) failed")
++                close_ticket(
++                    conn, ticket_id, "halted", f"step {idx + 1} ({step_name}) failed"
++                )
+                 return "halted"
+ 
+     status = "ok" if failed == 0 else "broken"
+@@ -740,8 +841,9 @@ def _run_composed(intent_name, args, depth=0):
+     for k, v in args.items():
+         if k in sub_intent.get("args", {}):
+             sub_args[k] = v
+-    sub_args.update({k: v for k, v in args.items()
+-                    if k not in sub_args and not k.startswith("_")})
++    sub_args.update(
++        {k: v for k, v in args.items() if k not in sub_args and not k.startswith("_")}
++    )
+ 
+     conn = init_db()
+     t_id = f"SUB-{uuid.uuid4().hex[:8]}"
+@@ -755,9 +857,11 @@ def _run_composed(intent_name, args, depth=0):
+             stdout_parts.append(out["stdout"])
+     return rc, "\n".join(stdout_parts)
+ 
++
+ # ---- Commands -----------------------------------------------------------
+ def cmd_list():
+     import yaml
++
+     log("Available intents:")
+     for f in sorted(INTENTS.glob("*.yaml")):
+         name = f.stem
+@@ -772,6 +876,7 @@ def cmd_list():
+         if desc:
+             log(f"    {desc}")
+ 
++
+ def cmd_run(intent_name, raw_args):
+     # Handle --intent=<name> when called as: estate-execute pi --intent=<name>
+     # The main() dispatcher sets harness_name='pi' intent_name=None in this case.
+@@ -799,6 +904,7 @@ def cmd_run(intent_name, raw_args):
+     label = admit(intent_path)
+ 
+     import yaml
++
+     with open(intent_path) as f:
+         intent = yaml.safe_load(f)
+ 
+@@ -806,7 +912,9 @@ def cmd_run(intent_name, raw_args):
+     args = resolve_args(intent, raw_args)
+     ticket_id = open_ticket(conn, intent_name, label or "direct")
+     session = _session_identity()
+-    log(f"[estate] intent={intent_name}  ticket={ticket_id}  session={session or 'anonymous'}")
++    log(
++        f"[estate] intent={intent_name}  ticket={ticket_id}  session={session or 'anonymous'}"
++    )
+     policy_decide(conn, ticket_id, intent_name, session or "")
+     _record_intent(intent_name, session)
+ 
+@@ -827,6 +935,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+ 
+     import yaml
+     import tempfile
++
+     with open(intent_path) as f:
+         intent = yaml.safe_load(f)
+ 
+@@ -835,16 +944,32 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+     harness_label = f"{harness_name}+{label}" if label else harness_name
+     ticket_id = open_ticket(conn, intent_name, harness_label, goal)
+     session = _session_identity()
+-    log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}  "
+-        f"session={session or 'anonymous'}")
++    log(
++        f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}  "
++        f"session={session or 'anonymous'}"
++    )
+     policy_decide(conn, ticket_id, intent_name, session or "")
+     _record_intent(intent_name, session)
+ 
+     # --- Build session HOME with allowlisted tools + runtime deps -------
+     tools = intent.get("tools", [])
+     # Always include these runtime deps regardless of intent
+-    always = ["node", "python3", "bash", "sh", "cat", "ls", "mkdir",
+-               "rm", "grep", "rg", "sed", "awk", "git", "gh"]
++    always = [
++        "node",
++        "python3",
++        "bash",
++        "sh",
++        "cat",
++        "ls",
++        "mkdir",
++        "rm",
++        "grep",
++        "rg",
++        "sed",
++        "awk",
++        "git",
++        "gh",
++    ]
+     needed = list(dict.fromkeys(always + tools))  # dedupe, always first
+     session_home = Path(tempfile.mkdtemp(prefix="estate-session."))
+     (session_home / ".bin").mkdir()
+@@ -855,10 +980,16 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+ 
+     # --- Environment scrub (keep real HOME — curl needs it for cert lookup) ------
+     scrub_vars = [
+-        "MINIMAX_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_DIRECT_KEY",
+-        "ANTHROPIC_DIRECT_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY",
+-        "CEREBRAS_API_KEY", "KUBECONFIG",
+-        "MINIMAX_BASE_URL", "DEEPSEEK_BASE_URL",
++        "MINIMAX_API_KEY",
++        "DEEPSEEK_API_KEY",
++        "OPENAI_DIRECT_KEY",
++        "ANTHROPIC_DIRECT_KEY",
++        "OPENROUTER_API_KEY",
++        "GROQ_API_KEY",
++        "CEREBRAS_API_KEY",
++        "KUBECONFIG",
++        "MINIMAX_BASE_URL",
++        "DEEPSEEK_BASE_URL",
+     ]
+     for var in scrub_vars:
+         os.environ.pop(var, None)
+@@ -883,8 +1014,23 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+     if agent_key:
+         os.environ["OPENAI_API_KEY"] = agent_key
+         os.environ["ANTHROPIC_API_KEY"] = agent_key
+-    os.environ["OPENAI_BASE_URL"] = "https://llm.mumchimp.com/v1"
+-    os.environ["ANTHROPIC_BASE_URL"] = "https://llm.mumchimp.com/v1"
++    # The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml, and the
++    # executor asks the one resolver for it (lib/estate_zone.py) rather than spelling it. It is
++    # exported here, so every step this session runs -- including the shell steps whose URLs are
++    # written ${ESTATE_ZONE} -- knows the zone without carrying it. A zone that cannot be
++    # resolved is not a zone: the harness must not fall back to somebody's default endpoint, so
++    # the session stops here and says why.
++    _zone = estate_zone()
++    if not _zone:
++        log(
++            "ERROR: the estate's zone is unknown: no ESTATE_ZONE in the environment and no "
++            "declaration in clusters/*/estate-config.yaml"
++        )
++        sys.exit(2)
++    os.environ["ESTATE_ZONE"] = _zone
++    _router = os.environ.get("ESTATE_ROUTER_URL") or f"https://llm.{_zone}"
++    os.environ["OPENAI_BASE_URL"] = _router + "/v1"
++    os.environ["ANTHROPIC_BASE_URL"] = _router + "/v1"
+     os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
+     os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
+ 
+@@ -892,10 +1038,19 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+     pf_loaded = False
+     if Path("/etc/pf.anchors/estate-session").exists():
+         import subprocess as _sub
++
+         r = _sub.run(
+-            ["sudo", "pfctl", "-a", "estate-session", "-f",  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
+-             "/etc/pf.anchors/estate-session"],
+-            capture_output=True, text=True, timeout=5,
++            [
++                "sudo",
++                "pfctl",
++                "-a",
++                "estate-session",
++                "-f",  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
++                "/etc/pf.anchors/estate-session",
++            ],
++            capture_output=True,
++            text=True,
++            timeout=5,
+         )
+         pf_loaded = r.returncode == 0
+         if pf_loaded:
+@@ -910,10 +1065,13 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+         shutil.rmtree(session_home, ignore_errors=True)
+         if pf_loaded:
+             import subprocess as _sub
++
+             _sub.run(
+                 ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
+-                capture_output=True, timeout=5,
++                capture_output=True,
++                timeout=5,
+             )
++
+     atexit.register(cleanup)
+ 
+     # Reset step outputs for fresh session
+@@ -933,6 +1091,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
+     if not real_bin.exists():
+         # Fallback: find on original PATH
+         import shutil as sh
++
+         orig_path = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+         found = sh.which(harness_name, path=orig_path)
+         if found:
+@@ -964,6 +1123,7 @@ if __name__ == "__main__":
+ 
+     if sys.argv[1] == "--show" and len(sys.argv) >= 3:
+         import yaml
++
+         name = sys.argv[2]
+         path = INTENTS / f"{name}.yaml"
+         if not path.exists():
+@@ -973,14 +1133,14 @@ if __name__ == "__main__":
+             d = yaml.safe_load(f)
+         log(f"name: {name}")
+         log(f"description: {d.get('description', '')}")
+-        if d.get('args'):
++        if d.get("args"):
+             log("args:")
+-            for k, v in d['args'].items():
++            for k, v in d["args"].items():
+                 log(f"  {k}: {v}")
+-        if d.get('steps'):
++        if d.get("steps"):
+             log(f"steps: {len(d['steps'])}")
+-            for i, s in enumerate(d['steps']):
+-                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
++            for i, s in enumerate(d["steps"]):
++                log(f"  {i + 1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
+         sys.exit(0)
+ 
+     harness_name = None
+diff --git a/platform/estate/gates/protocol_gate.py b/platform/estate/gates/protocol_gate.py
+index 29725f7d5..51be006e2 100755
+--- a/platform/estate/gates/protocol_gate.py
++++ b/platform/estate/gates/protocol_gate.py
+@@ -40,6 +40,30 @@ DIR = os.path.expanduser(os.environ.get("ESTATE_BREAKS_DIR", "~/.estate/breaks")
+ SELF = os.path.abspath(__file__)
+ PY = sys.executable or "python3"
+ 
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml, and this gate asks
++# the one resolver for it (lib/estate_zone.py) instead of spelling it. This gate runs on the hot
++# path of every tool call of every hooked agent, so a resolver that cannot answer must leave the
++# host empty and the probes unbuilt -- never raise, never take the hook down.
++_ZONE = ""
++try:
++    _LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(SELF))), "lib")
++    if os.path.isfile(os.path.join(_LIB, "estate_zone.py")) and _LIB not in sys.path:
++        sys.path.insert(0, _LIB)
++    from estate_zone import estate_zone
++
++    _ZONE = estate_zone()
++except Exception:  # noqa: BLE001 -- a broken import must not take the hook down
++    _ZONE = os.environ.get("ESTATE_ZONE", "").strip()
++_MCP_HOST = f"https://mcp.{_ZONE}" if _ZONE else ""
++_ROUTER_HOST = f"https://llm.{_ZONE}" if _ZONE else ""
++# The break's own log lines name the router host; the pattern follows the zone, so a migration
++# does not leave the gate watching a host the estate no longer answers on.
++_ROUTER_BREAK = (
++    r"llm\.%s.*(fail|unreachable|timeout|EOF)" % re.escape(_ZONE)
++    if _ZONE
++    else r"router\.(cloud|edge).*(fail|unreachable|timeout|EOF)"
++)
++
+ DEFAULT_PROTOCOLS = {
+     "memory-door": {
+         "critical": True,
+@@ -50,7 +74,7 @@ DEFAULT_PROTOCOLS = {
+             r"memdoor",
+             r"no MCP_GATEWAY_KEY",
+         ],
+-        "probes": ["%s %s probe-http https://mcp.mumchimp.com/" % (PY, SELF)],
++        "probes": [f"{PY} {SELF} probe-http {_MCP_HOST}/"] if _MCP_HOST else [],
+         "roundtrip": [],  # ADD a real authenticated remember+recall round trip here; transport-only proof is weaker
+         "repair_scope": [],  # path globs agents may edit while this break is open, e.g. "*/cloudflare/*"
+         "required_action": "Restore the memory door (or move it off the dead cluster). Name who must act and give the exact command.",
+@@ -60,10 +84,10 @@ DEFAULT_PROTOCOLS = {
+         "owner": "founder / holder of the OCI account",
+         "patterns": [
+             r"router\.cloud\.completion",
+-            r"llm\.mumchimp\.com.*(fail|unreachable|timeout|EOF)",
++            _ROUTER_BREAK,
+             r"router.*(SPOF|single point of failure)",
+         ],
+-        "probes": ["%s %s probe-http https://llm.mumchimp.com/" % (PY, SELF)],
++        "probes": [f"{PY} {SELF} probe-http {_ROUTER_HOST}/"] if _ROUTER_HOST else [],
+         "roundtrip": [],
+         "repair_scope": [],
+         "required_action": "Restore the LLM router (or point agents at the Cloudflare router). Name who must act and give the exact command.",
+diff --git a/platform/estate/intents/cost-today.yaml b/platform/estate/intents/cost-today.yaml
+index 42d7c5a78..8dac63037 100644
+--- a/platform/estate/intents/cost-today.yaml
++++ b/platform/estate/intents/cost-today.yaml
+@@ -6,6 +6,6 @@ halt_on_failure: true
+ max_turns: 3
+ steps:
+   - cmd: >
+-      curl -s https://llm.mumchimp.com/key/info
++      curl -s https://llm.${ESTATE_ZONE}/key/info
+       -H "Authorization: Bearer $ESTATE_AGENT_KEY"
+     on_fail: halt
+diff --git a/platform/estate/intents/ledger-verify.yaml b/platform/estate/intents/ledger-verify.yaml
+index 0237a05b6..75b50d711 100644
+--- a/platform/estate/intents/ledger-verify.yaml
++++ b/platform/estate/intents/ledger-verify.yaml
+@@ -6,11 +6,11 @@ halt_on_failure: true
+ max_turns: 3
+ steps:
+   - cmd: >
+-      curl -s https://llm.mumchimp.com/v1/models
++      curl -s https://llm.${ESTATE_ZONE}/v1/models
+       -H "Authorization: Bearer $ESTATE_AGENT_KEY" -o /dev/null
+       -w "models HTTP:%{http_code}\n"
+     on_fail: halt
+   - cmd: >
+-      curl -s https://llm.mumchimp.com/key/info
++      curl -s https://llm.${ESTATE_ZONE}/key/info
+       -H "Authorization: Bearer $ESTATE_AGENT_KEY"
+     on_fail: halt
+diff --git a/platform/estate/intents/litellm-test.yaml b/platform/estate/intents/litellm-test.yaml
+index 1037f554b..135684f94 100644
+--- a/platform/estate/intents/litellm-test.yaml
++++ b/platform/estate/intents/litellm-test.yaml
+@@ -5,7 +5,7 @@ args:
+ steps:
+   - name: call
+     cmd: |
+-      curl -sS https://llm.mumchimp.com/v1/chat/completions \
++      curl -sS https://llm.${ESTATE_ZONE}/v1/chat/completions \
+         -H "Authorization: Bearer $LITELLM_API_KEY" \
+         -H "Content-Type: application/json" \
+         -d "{\"model\":\"{{model}}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \
+diff --git a/platform/estate/intents/router-status.yaml b/platform/estate/intents/router-status.yaml
+index 462f54a77..5ea0f7ab2 100644
+--- a/platform/estate/intents/router-status.yaml
++++ b/platform/estate/intents/router-status.yaml
+@@ -6,7 +6,7 @@ halt_on_failure: true
+ max_turns: 3
+ steps:
+   - cmd: >
+-      curl -s https://llm.mumchimp.com/v1/models
++      curl -s https://llm.${ESTATE_ZONE}/v1/models
+       -H "Authorization: Bearer $ESTATE_AGENT_KEY"
+       -w "\nHTTP:%{http_code}\n"
+     on_fail: halt
+diff --git a/platform/estate/libexec/code-review-t2.py b/platform/estate/libexec/code-review-t2.py
+index ff2d68a63..87ba3adca 100755
+--- a/platform/estate/libexec/code-review-t2.py
++++ b/platform/estate/libexec/code-review-t2.py
+@@ -20,7 +20,16 @@ from pathlib import Path
+ 
+ HOME = Path.home()
+ IDP = HOME / "Documents/code/idp"
+-ROUTER = "https://llm.mumchimp.com/v1/chat/completions"
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
++# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
++# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
++# finds it beside itself, because the runtime sync stages it there.
++_LIB = Path(__file__).resolve().parents[3] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_router  # noqa: E402
++
++ROUTER = estate_router("/v1/chat/completions")
+ # The router this tier calls is the cluster's, and its key is model-allowlisted
+ # (default, ollama, deepseek, gemini, kimi, minimax, minimax_m27, groq, ... --
+ # 'gpt-4o-mini' was never on it, so this tier could not have made a call). The
+diff --git a/platform/estate/libexec/consult_gemini.py b/platform/estate/libexec/consult_gemini.py
+index 8232f9b9a..9d33c4699 100644
+--- a/platform/estate/libexec/consult_gemini.py
++++ b/platform/estate/libexec/consult_gemini.py
+@@ -4,7 +4,7 @@
+ Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.5-flash]
+                         [max_bytes=400000] [timeout=70]
+ 
+-One door. The call goes to the estate router (llm.mumchimp.com), never to Google direct, so
++One door. The call goes to the estate router (llm.<the estate's zone>), never to Google direct, so
+ spend lands on the router ledger and under its daily ceiling. If the consultant lane refuses or
+ is slow the helper retries once on the neutral `default` lane and SAYS SO in the output: a
+ consultant that quietly answers as a different model is worse than one that fails loudly.
+@@ -24,7 +24,16 @@ import urllib.request
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
++# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
++# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
++# finds it beside itself, because the runtime sync stages it there.
++_LIB = Path(__file__).resolve().parents[3] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_router  # noqa: E402
++
++ROUTER = os.environ.get("ESTATE_ROUTER_URL") or estate_router()
+ # The router's `gemini` lane named gemini-2.5-flash, which Google 404s for new users
+ # (measured 2026-10-30), so it silently fell back to MiniMax. The lane now names
+ # gemini-3.5-flash (2026-10-30), so the alias and this name ask for the same model. The name
+@@ -189,6 +198,13 @@ def _repo_reviews_dir():
+ 
+ def main(argv):
+     a = parse_args(argv)
++    if not ROUTER:
++        print(
++            "consult.gemini FAILED: the estate's zone is unknown (no ESTATE_ZONE in the "
++            "environment, no declaration in clusters/*/estate-config.yaml); the router this "
++            "call goes through cannot be named, so no call is made."
++        )
++        return 2
+     files = [f for f in a.get("files", "").split(",") if f]
+     key = os.environ.get("LITELLM_API_KEY") or os.environ.get("ESTATE_AGENT_KEY", "")
+     try:
+diff --git a/platform/estate/libexec/critical-probe.py b/platform/estate/libexec/critical-probe.py
+index 47153e517..e7751a127 100644
+--- a/platform/estate/libexec/critical-probe.py
++++ b/platform/estate/libexec/critical-probe.py
+@@ -52,6 +52,15 @@ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+ HOME = Path.home()
++# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
++# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
++# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
++# finds it beside itself, because the runtime sync stages it there.
++_LIB = Path(__file__).resolve().parents[3] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_router  # noqa: E402
++
+ STATE = Path(os.environ.get("ESTATE_STATE_DIR", str(HOME / ".estate")))
+ HEARTBEATS = STATE / "heartbeats"
+ 
+@@ -81,7 +90,7 @@ ROUTER_CORE_LANES = (
+ )
+ 
+ ROUTER_RUNGS = (
+-    ("cloud", os.environ.get("ESTATE_ROUTER_BASE", "https://llm.mumchimp.com")),
++    ("cloud", os.environ.get("ESTATE_ROUTER_BASE") or estate_router()),
+     ("laptop", os.environ.get("ESTATE_ROUTER_FALLBACK", "http://127.0.0.1:4000")),
+ )
+ 
+@@ -350,6 +359,17 @@ def probe_router_lanes(timeout: float = 8.0) -> tuple[bool, str, dict]:
+     """
+     attempts: list[dict] = []
+     for rung, base in ROUTER_RUNGS:
++        if not base:
++            # The zone is unknown, so the cloud rung has no address. Saying so is the honest
++            # attempt; dialling a guessed host would be the lie.
++            attempts.append(
++                {
++                    "rung": rung,
++                    "url": "",
++                    "error": "the estate's zone is unknown, so the router cannot be named",
++                }
++            )
++            continue
+         url = base.rstrip("/") + "/v1/models"
+         t0 = time.time()
+         try:
+diff --git a/platform/estate/libexec/telegram-agent-doctor.py b/platform/estate/libexec/telegram-agent-doctor.py
+index 5f1d50930..bf4b13d55 100644
+--- a/platform/estate/libexec/telegram-agent-doctor.py
++++ b/platform/estate/libexec/telegram-agent-doctor.py
+@@ -60,15 +60,17 @@ import time
+ import urllib.error
+ import urllib.request
+ from datetime import datetime, timezone
+-
+-# The estate's DNS zone. The one place it is written is clusters/oke/estate-config.yaml
+-# (ESTATE_ZONE: mumchimp.com); every platform file says ${ESTATE_ZONE} and the zone gate
+-# refuses a literal. This is the fallback for a runtime install that has no checkout to read
+-# it from and no ESTATE_ZONE in the environment.
+-ESTATE_ZONE_DEFAULT = "mumchimp.com"
+-
+-# The one place the zone is written, when this script runs from a checkout.
+-ZONE_CONFIG_RELATIVE = ("clusters", "oke", "estate-config.yaml")
++from pathlib import Path
++
++# The estate's DNS zone is declared once, in clusters/<cluster>/estate-config.yaml, and this file
++# asks the one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of
++# spelling it and instead of knowing which cluster tree holds the declaration. The tree copy
++# finds the module through the path below; the staged copy under ~/.estate/libexec finds it
++# beside itself, because the runtime sync stages it there.
++_LIB = Path(__file__).resolve().parents[3] / "lib"
++if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
++    sys.path.insert(0, str(_LIB))
++from estate_zone import estate_zone  # noqa: E402
+ 
+ CLUSTER_TIMEOUT = 20  # a cluster link that cannot be read is blind, not a hang
+ HEAL_TIMEOUT = 45  # flux reconcile has its own 2m budget; we give up first
+@@ -316,22 +318,13 @@ def probe_workflow(workflow: str, run=None) -> tuple:
+ # BLIND, and that is the whole point of the BLIND state.
+ # --------------------------------------------------------------------------------------
+ def resolve_zone() -> str:
+-    """The estate's DNS zone, from the environment, the checkout, or the declared default."""
+-    zone = os.environ.get("ESTATE_ZONE", "").strip()
+-    if zone:
+-        return zone
+-    here = os.path.dirname(os.path.abspath(__file__))
+-    root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+-    config = os.path.join(root, *ZONE_CONFIG_RELATIVE)
+-    if os.path.exists(config):
+-        try:
+-            with open(config, "r", encoding="utf-8") as handle:
+-                for line in handle:
+-                    if line.strip().startswith("ESTATE_ZONE:"):
+-                        return line.split(":", 1)[1].strip().strip('"')
+-        except OSError:
+-            pass
+-    return ESTATE_ZONE_DEFAULT
++    """The estate's DNS zone, from the environment or from the file that declares it.
++
++    The declaration is the estate's one source; this function asks the one resolver for it.
++    An unknown zone is an empty string, and the probes that need it say BLIND rather than
++    dialling a host they cannot name.
++    """
++    return estate_zone()
+ 
+ 
+ def probe_http(link: dict, zone: str) -> tuple:
+diff --git a/lib/estate_zone.py b/lib/estate_zone.py
+new file mode 100644
+index 000000000..7d7ba4adf
+--- /dev/null
++++ b/lib/estate_zone.py
+@@ -0,0 +1,85 @@
++"""The estate's DNS zone, resolved the one way every reader resolves it.
++
++The zone is written once, in clusters/<cluster>/estate-config.yaml (ESTATE_ZONE; LAW 46). Every
++reader that needs a hostname -- the router front, the voice engine, the estate's own tools -- asks
++this module, so the zone is read in one place instead of copied into twenty files with twenty
++different failure modes. Measured 2026-11-17: the router front died at import under launchd on a
++bare os.environ["ESTATE_ZONE"], and the voice loop died the same way, because the laptop has no
++shell profile that exports the zone.
++
++Two sources, in this order:
++  1. the environment, because the cluster's ConfigMap sets ESTATE_ZONE for every workload;
++  2. the file that declares it, because the laptop has no exported zone (measured: printenv
++     ESTATE_ZONE is empty in this machine's session) and the tree that declares it is right
++     here -- clusters/*/estate-config.yaml, whichever cluster tree holds it.
++
++An unknown zone is an empty string, never an exception. A reader that cannot know the zone says
++so and stops; it never dials a guessed host.
++
++The module lives in lib/ beside estate_spatial.py, the estate's other shared resolver, and is
++imported the same way (a sys.path insert of the tree's lib/ directory), so it can be copied into
++a container image the way that one is (see fleetview-backend.Dockerfile).
++
++    python3 lib/estate_zone.py          # prints the zone, or nothing
++"""
++
++from __future__ import annotations
++
++import os
++import pathlib
++import re
++
++ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*(\S+)", re.M)
++CLUSTER_GLOB = "*/estate-config.yaml"
++
++
++def _roots() -> list[pathlib.Path]:
++    """The directories that may hold a clusters/<cluster>/estate-config.yaml, in order.
++
++    ESTATE_ZONE_ROOT is the zone of ANOTHER checkout (bin/estate-zone-gate --root uses it), so a
++    reader can be pointed at the tree that declares the zone it cares about.
++    """
++    roots: list[pathlib.Path] = []
++    external = os.environ.get("ESTATE_ZONE_ROOT", "").strip()
++    if external:
++        roots.append(pathlib.Path(external))
++    # This module's own tree: lib/estate_zone.py -> the tree root is its parent's parent.
++    here = pathlib.Path(__file__).resolve()
++    roots.append(here.parents[1])
++    # The runtime copy of the tree, which is what a launchd job or an installed tool sees.
++    roots.append(pathlib.Path.home() / ".estate" / "runtime" / "idp")
++    return roots
++
++
++def _from_config() -> str:
++    for root in _roots():
++        clusters = root / "clusters"
++        if not clusters.is_dir():
++            continue
++        for cfg in sorted(clusters.glob(CLUSTER_GLOB)):
++            match = ZONE_KEY.search(cfg.read_text(errors="replace"))
++            if match:
++                return match.group(1)
++    return ""
++
++
++def estate_zone() -> str:
++    """The estate's zone, or "" when no source knows it."""
++    return os.environ.get("ESTATE_ZONE", "").strip() or _from_config()
++
++
++def estate_host(name: str, path: str = "") -> str:
++    """https://<name>.<zone><path>, or "" when the zone is unknown."""
++    zone = estate_zone()
++    if not zone or not name:
++        return ""
++    return f"https://{name}.{zone}{path}"
++
++
++def estate_router(path: str = "") -> str:
++    """The estate's router front, https://llm.<zone><path>, or "" when the zone is unknown."""
++    return estate_host("llm", path)
++
++
++if __name__ == "__main__":  # pragma: no cover - the shell entry point
++    print(estate_zone())
+diff --git a/tests/test_estate_zone_resolver.py b/tests/test_estate_zone_resolver.py
+new file mode 100644
+index 000000000..3b849d753
+--- /dev/null
++++ b/tests/test_estate_zone_resolver.py
+@@ -0,0 +1,88 @@
++"""The zone resolver (lib/estate_zone.py) reads the estate's zone the one way every reader does.
++
++Three properties, proved here rather than narrated:
++  the environment wins when it is set (the cluster's ConfigMap sets ESTATE_ZONE);
++  the file that declares the zone is read when the environment is silent (the laptop exports
++  nothing -- measured 2026-11-17: printenv ESTATE_ZONE is empty in this machine's session);
++  an unknown zone is an empty string -- never an exception, never a guess, because a reader that
++  cannot know the zone must stop rather than dial a host it invented.
++
++The expected zone is read from the declaration, never written here: a test that pins the zone is
++a test a migration voids.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import os
++import pathlib
++import re
++import sys
++
++import pytest
++
++REPO = pathlib.Path(__file__).resolve().parents[1]
++ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*(\S+)", re.M)
++
++
++def _load():
++    path = REPO / "lib" / "estate_zone.py"
++    spec = importlib.util.spec_from_file_location("estate_zone_under_test", path)
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture()
++def zone_module():
++    return _load()
++
++
++def _declared_zone() -> str:
++    for cfg in sorted((REPO / "clusters").glob("*/estate-config.yaml")):
++        match = ZONE_KEY.search(cfg.read_text())
++        if match:
++            return match.group(1)
++    raise AssertionError("no clusters/*/estate-config.yaml declares ESTATE_ZONE")
++
++
++def test_the_environment_wins(zone_module, monkeypatch):
++    monkeypatch.setenv("ESTATE_ZONE", "zone.example")
++    assert zone_module.estate_zone() == "zone.example"
++
++
++def test_the_declaration_is_read_when_the_environment_is_silent(zone_module, monkeypatch):
++    monkeypatch.delenv("ESTATE_ZONE", raising=False)
++    assert zone_module.estate_zone() == _declared_zone()
++
++
++def test_an_unknown_zone_is_empty_and_never_raises(zone_module, monkeypatch, tmp_path):
++    monkeypatch.delenv("ESTATE_ZONE", raising=False)
++    monkeypatch.setattr(zone_module, "_roots", lambda: [tmp_path])
++    assert zone_module.estate_zone() == ""
++    assert zone_module.estate_host("llm") == ""
++    assert zone_module.estate_router("/v1/models") == ""
++
++
++def test_the_hosts_are_built_from_the_zone(zone_module, monkeypatch):
++    monkeypatch.setenv("ESTATE_ZONE", "zone.example")
++    assert zone_module.estate_host("catalogue", "/fleet") == "https://catalogue.zone.example/fleet"
++    assert zone_module.estate_router("/v1/models") == "https://llm.zone.example/v1/models"
++
++
++def test_the_resolver_spells_no_zone(zone_module):
++    """The resolver reads the zone; it never carries one. The estate-zone gate grades the tree,
++    and this is the same law applied to the one file that every reader trusts."""
++    source = (REPO / "lib" / "estate_zone.py").read_text()
++    for cfg in sorted((REPO / "clusters").glob("*/estate-config.yaml")):
++        for zone in ZONE_KEY.findall(cfg.read_text()):
++            assert zone not in source, f"the resolver spells the zone {zone}"
++
++
++def test_the_resolver_is_importable_as_a_module(zone_module):
++    """lib/estate_zone.py is imported by a sys.path insert (the estate_spatial.py precedent), so
++    the module must import cleanly on its own, with no estate import machinery."""
++    assert zone_module.__name__.endswith("estate_zone_under_test")
++    assert callable(zone_module.estate_zone)
++    assert os.path.basename(zone_module.__file__) == "estate_zone.py"
