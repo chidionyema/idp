@@ -2,6 +2,7 @@
 // Zone B release adapter. Existing Greenlane is the only source-admission authority.
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { liveRoles, rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
@@ -114,6 +115,114 @@ export function workerSecrets(env) {
   // env, so a lane without its vendor key is a 502 on every call it is chosen for.
   return Object.assign(secrets, vendorSecrets(env));
 }
+// Validate all required bindings before any deployment. Values never enter receipts.
+export function completeSecretBundle(env, pool = rolePool()) {
+  const secrets = workerSecrets(env);
+  const required = new Set(["MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]);
+  for (const role of Object.values(pool.roles)) {
+    for (const candidate of role.candidates) if (candidate.enabled) required.add(candidate.apiKeySecretName);
+  }
+  const missing = [...required].filter(name => typeof secrets[name] !== "string" || !secrets[name].trim());
+  if (missing.length) throw new Error("MISSING_REQUIRED_WORKER_BINDINGS:" + missing.join(","));
+  return secrets;
+}
+
+const CUTOVER_HOSTS = new Set(["submit.meridianlabs.cloud", "lifeboat-llm.meridianlabs.cloud"]);
+const CF_ID = /^[a-f0-9]{32}$/i;
+const TUNNEL = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.cfargotunnel\.com$/i;
+
+// The release identity cannot invent the retired target or the intended service.
+// Both must come from an exact independently authorised cutover manifest.
+export function domainCutoverPlan(raw, account) {
+  const data = JSON.parse(raw);
+  if (!CF_ID.test(account) || data.account !== account || !CF_ID.test(data.zone) ||
+      !Array.isArray(data.hosts) || data.hosts.length !== CUTOVER_HOSTS.size) {
+    throw new Error("INVALID_DOMAIN_CUTOVER_SCOPE");
+  }
+  const names = new Set();
+  for (const h of data.hosts) {
+    if (!CUTOVER_HOSTS.has(h.hostname) || names.has(h.hostname) ||
+        !TUNNEL.test(h.retiredTarget) || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(h.service) ||
+        (h.hostname === "lifeboat-llm.meridianlabs.cloud" && h.service !== "estate-lifeboat") ||
+        h.service === "meridian-router-edge") throw new Error("INVALID_DOMAIN_CUTOVER_HOST");
+    names.add(h.hostname);
+  }
+  return data;
+}
+
+export async function reconcileRetiredDomains(plan, {workersToken, dnsToken, fetchImpl = fetch}) {
+  if (!workersToken || !dnsToken) throw new Error("DOMAIN_CUTOVER_AUTHORITY_MISSING");
+  plan = domainCutoverPlan(JSON.stringify(plan), plan.account);
+  const origin = "https://api.cloudflare.com/client/v4";
+  async function cf(token, pathname, method = "GET", body) {
+    const res = await fetchImpl(origin + pathname, {
+      method, redirect: "error",
+      headers: {authorization: "Bearer " + token, "content-type": "application/json"},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok || json.success !== true) throw new Error("CLOUDFLARE_" + method + "_HTTP_" + res.status);
+    if ((json.result_info?.total_pages ?? 1) > 1) throw new Error("DOMAIN_LIST_INCOMPLETE");
+    return json.result;
+  }
+  const domains = "/accounts/" + plan.account + "/workers/domains";
+  const records = "/zones/" + plan.zone + "/dns_records";
+  const zone = await cf(dnsToken, "/zones/" + plan.zone);
+  if (zone?.name !== "meridianlabs.cloud" || zone?.account?.id !== plan.account) {
+    throw new Error("DOMAIN_ZONE_ACCOUNT_MISMATCH");
+  }
+  const readDomain = h => cf(workersToken, domains + "?hostname=" + encodeURIComponent(h.hostname));
+  const readDns = h => cf(dnsToken, records + "?name=" + encodeURIComponent(h.hostname));
+  const same = (d, h) => d.hostname === h.hostname && d.service === h.service &&
+    d.zone_id === plan.zone && d.enabled === true;
+  const retired = (d, h) => d.name === h.hostname && d.type === "CNAME" && d.content === h.retiredTarget;
+  // Complete all read-only preflight before any record is removed.
+  const work = [];
+  for (const h of plan.hosts) {
+    const current = await readDomain(h);
+    if (!Array.isArray(current) || current.some(d => !same(d, h)) || current.length > 1) {
+      throw new Error("DOMAIN_OWNERSHIP_CONFLICT:" + h.hostname);
+    }
+    if (current.length === 1) { work.push({h, done: true}); continue; }
+    // A custom domain belongs to the specified existing service, never the router by default.
+    await cf(workersToken, "/accounts/" + plan.account + "/workers/scripts/" + h.service + "/settings");
+    const dns = await readDns(h);
+    if (!Array.isArray(dns) || dns.length !== 1 || !retired(dns[0], h) || !CF_ID.test(dns[0].id)) {
+      throw new Error("RETIRED_CNAME_NOT_EXACT:" + h.hostname);
+    }
+    work.push({h, previous: dns[0]});
+  }
+  const result = [];
+  for (const item of work) {
+    const {h, previous} = item;
+    if (item.done) { result.push({hostname: h.hostname, status: "ALREADY_ATTACHED"}); continue; }
+    // Re-read immediately before mutation. A changed record is not ours to delete.
+    const fresh = await readDns(h);
+    const attached = await readDomain(h);
+    if (attached.length || fresh.length !== 1 || fresh[0].id !== previous.id || !retired(fresh[0], h)) {
+      throw new Error("DNS_REVISION_CHANGED:" + h.hostname);
+    }
+    await cf(dnsToken, records + "/" + previous.id, "DELETE");
+    try {
+      await cf(workersToken, domains, "PUT", {hostname: h.hostname, service: h.service, zone_id: plan.zone});
+      const live = await readDomain(h);
+      if (live.length !== 1 || !same(live[0], h)) throw new Error("DOMAIN_READBACK_MISMATCH");
+    } catch {
+      // Restore only when readback proves neither custom domain nor replacement DNS exists.
+      const nowDomain = await readDomain(h);
+      const nowDns = await readDns(h);
+      if (!nowDomain.length && !nowDns.length) {
+        await cf(dnsToken, records, "POST", {
+          type: previous.type, name: previous.name, content: previous.content,
+          ttl: previous.ttl, proxied: previous.proxied,
+        });
+      }
+      throw new Error("DOMAIN_ATTACH_NOT_VERIFIED:" + h.hostname);
+    }
+    result.push({hostname: h.hostname, status: "ATTACHED"});
+  }
+  return result;
+}
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // WHEN TO ROLL BACK IS A DECISION, NOT A REFLEX. Measured 2026-11-25 (run 45691317108): every
 // lane failed with its own named vendor error (minimax 402, deepseek 401, gemini
@@ -177,6 +286,7 @@ export async function release() {
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
   const wrangler = path.join(ROOT, "node_modules", ".bin", "wrangler");
   let secretsFile = "";
+  let secretsDir = "";
   try {
     const sha = requireMainSha(process.env.GITHUB_REF, process.env.RELEASE_SHA, run("git", ["rev-parse", "HEAD"]).trim());
     for (const k of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "MERIDIAN_CLIENT_KEY", "MERIDIAN_ADMIN_KEY"]) {
@@ -206,10 +316,15 @@ export async function release() {
     const tag = immutableTag(sha);
     // The Worker's own secrets are values a deploy never carries; without them the edge
     // rejects every real caller while /health reports ok. Written 0600, used, removed.
-    const secrets = workerSecrets(process.env);
-    secretsFile = Object.keys(secrets).length
-      ? path.join(path.dirname(out), "worker-secrets.json") : "";
-    if (secretsFile) fs.writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600 });
+    const pool = rolePool();
+    const secrets = completeSecretBundle(process.env, pool);
+    secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "meridian-worker-secrets-"));
+    secretsFile = path.join(secretsDir, "bundle.json");
+    fs.writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600, flag: "wx" });
+    const cutover = process.env.MERIDIAN_DOMAIN_CUTOVER_JSON
+      ? domainCutoverPlan(process.env.MERIDIAN_DOMAIN_CUTOVER_JSON, process.env.CLOUDFLARE_ACCOUNT_ID)
+      : null;
+    if (cutover && !process.env.CLOUDFLARE_DNS_API_TOKEN) throw new Error("DOMAIN_CUTOVER_AUTHORITY_MISSING");
     // DO migrations must not be silently converted to an unversioned initial deploy.
     // Cloudflare refuses a Durable Object class creation from `versions upload`:
     // "any change that creates, deletes, renames, or transfers a Durable Object class
@@ -253,7 +368,6 @@ export async function release() {
     // Repo truth, not release env: the pool names every lane the estate records, and the
     // router fails over across them, so a key set out-of-band (dashboard) serves with no
     // code change and an exhausted wallet costs one attempt instead of the role.
-    const pool = rolePool();
     if (Object.keys(pool.roles).length) {
       for (let n = 1; n <= 3; n++) {
         try {
@@ -279,6 +393,18 @@ export async function release() {
       run("node", ["scripts/blackbox-prober.mjs"], { EXPECTED_COMMIT_SHA: sha }, 110000, true);
       r.probes.push({ round: n, passed: true, at: new Date().toISOString() });
     }
+    if (cutover) {
+      r.domain_cutover = await reconcileRetiredDomains(cutover, {
+        workersToken: process.env.CLOUDFLARE_API_TOKEN,
+        dnsToken: process.env.CLOUDFLARE_DNS_API_TOKEN,
+      });
+      for (const h of cutover.hosts) {
+        const health = await fetch("https://" + h.hostname + "/health", {redirect: "error"});
+        if (!health.ok) throw new Error("DOMAIN_HEALTH_NOT_VERIFIED:" + h.hostname);
+      }
+    } else {
+      r.domain_cutover = {status: "NOT_REQUESTED"};
+    }
     r.status = "OPERATIONAL";
   } catch (e) {
     r.status = "NOT_OPERATIONAL";
@@ -302,7 +428,7 @@ export async function release() {
       }
     }
   } finally {
-    if (secretsFile) fs.rmSync(secretsFile, { force: true });
+    if (secretsDir) fs.rmSync(secretsDir, { recursive: true, force: true });
     r.finished_at = new Date().toISOString();
     fs.writeFileSync(out, JSON.stringify(r, null, 2) + "\n", { mode: 0o600 });
     console.log(JSON.stringify({
