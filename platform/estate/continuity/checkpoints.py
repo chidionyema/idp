@@ -191,7 +191,12 @@ class CheckpointMixin:
         mission = self.get_mission(mission_id)
         if mission is None:
             raise CheckpointRejected(f"mission {mission_id} vanished")
-        if artifact.get("goal_digest") != digest_of(mission["goal"]):
+        goal_digest = digest_of(mission["goal"])
+        if "goal_digest" not in artifact and cp["goal_digest"] == "":
+            # Pre-invariant checkpoints had no goal binding. Derive it only
+            # from authoritative custody after verifying their original bytes.
+            artifact["goal_digest"] = goal_digest
+        elif artifact.get("goal_digest") != goal_digest:
             raise CheckpointRejected(
                 "checkpoint objective does not match accepted goal"
             )
