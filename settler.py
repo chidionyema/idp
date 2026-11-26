@@ -3,6 +3,7 @@
 The worker and supervisor are not settlement authorities. The probe must be
 supplied by the trusted runtime and observe the actual effect out of band.
 This implementation is process-local; durable custody belongs to the runtime.
+Do not grant workers a reference to the custody object or verifier.
 """
 
 from dataclasses import dataclass
