@@ -168,3 +168,72 @@ model_list:
     assert rc == 1
     out = capsys.readouterr().out
     assert '"lanes_checked": 2' in out
+
+
+def test_catalogue_preserves_exact_provider_endpoint_and_dedupes_by_endpoint(
+    tmp_path, monkeypatch
+):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        """
+model_list:
+  - model_name: first
+    litellm_params: {model: "openai/model", api_key: "os.environ/TEST_KEY", api_base: "https://one.example/v1"}
+  - model_name: duplicate
+    litellm_params: {model: "openai/model", api_key: "os.environ/TEST_KEY", api_base: "https://one.example/v1"}
+  - model_name: second
+    litellm_params: {model: "openai/model", api_key: "os.environ/TEST_KEY", api_base: "https://two.example/v1"}
+  - model_name: default
+    litellm_params: {model: "openai/model", api_key: "os.environ/TEST_KEY"}
+"""
+    )
+    monkeypatch.setenv("TEST_KEY", "fixture-key")
+    calls = []
+    monkeypatch.setattr(litellm, "completion", lambda **kw: calls.append(kw))
+    lanes = cg._lanes(cfg)
+    assert [lane["lane"] for lane in lanes] == ["first", "second", "default"]
+    assert all(cg.probe(lane)["status"] == "GREEN" for lane in lanes)
+    assert [call.get("api_base") for call in calls] == [
+        "https://one.example/v1",
+        "https://two.example/v1",
+        None,
+    ]
+    assert "api_base" not in calls[2]
+    assert all(call["max_tokens"] == 1 for call in calls)
+
+
+def test_invalid_explicit_base_never_falls_back_or_exposes_url(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        """
+model_list:
+  - model_name: invalid
+    litellm_params: {model: "openai/model", api_key: "os.environ/TEST_KEY", api_base: "https://user:secret@example.com/v1"}
+"""
+    )
+    monkeypatch.setenv("TEST_KEY", "fixture-key")
+    calls = []
+    monkeypatch.setattr(litellm, "completion", lambda **kw: calls.append(kw))
+    result = cg.probe(cg._lanes(cfg)[0])
+    assert result["status"] == "UNKNOWN"
+    assert "secret" not in str(result)
+    for base in ("", "http://example.com", "https://example.com/?key=secret", {}):
+        result = cg.probe(
+            {"model": "openai/model", "key_var": "TEST_KEY", "api_base": base}
+        )
+        assert result["status"] == "UNKNOWN"
+        assert "api_base" not in result
+    assert not calls
+
+
+def test_provider_exception_does_not_echo_exact_key(monkeypatch):
+    key = "fixture-sensitive-key" * 30
+    monkeypatch.setenv("TEST_KEY", key)
+
+    def boom(**kw):
+        raise litellm.AuthenticationError("invalid key " + kw["api_key"])
+
+    monkeypatch.setattr(litellm, "completion", boom)
+    result = cg.probe({"model": "openai/model", "key_var": "TEST_KEY"})
+    assert result["status"] == "RED"
+    assert "fixture-sensitive-key" not in str(result)
