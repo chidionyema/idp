@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 316,
     "service": 122,
-    "tool": 527,
+    "tool": 529,
     "workflow": 110
   },
   "records": [
@@ -32960,6 +32960,76 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-context-door",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-context-door -- the context plane's door, judged before a byte leaves the worktree.",
+      "contract": {
+        "inputs": [
+          "--all",
+          "--base",
+          "--name-only",
+          "--repo",
+          "--self-test"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-context-door",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-context-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/gortex-health",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/pre-push-wall.py",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-context-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -32995,6 +33065,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-context-door",
         "cap:tool/idp-ci"
       ],
       "cost": {
@@ -37821,6 +37892,69 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/gortex-health",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "gortex-health -- the context engine's own health, measured through its own doors.",
+      "contract": {
+        "inputs": [
+          "--addr",
+          "--json",
+          "--metric",
+          "--optimus",
+          "--pid-file",
+          "--socket",
+          "--store",
+          "--timeout"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-context-door"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/gortex-health",
+      "depends_on": [
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/gvisor-cell-fence-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -40339,6 +40473,7 @@
         "cap:tool/catalog-projection",
         "cap:tool/catalog-refcheck",
         "cap:tool/diagnosis-gate",
+        "cap:tool/estate-context-door",
         "cap:tool/estate-production-acceptance",
         "cap:tool/estate-zone-gate",
         "cap:tool/face-licence-gate",
@@ -58613,7 +58748,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-context-door"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -60041,6 +60178,7 @@
         "cap:tool/fleetview-launchd",
         "cap:tool/gate-undeclared",
         "cap:tool/gen-reactor-css",
+        "cap:tool/gortex-health",
         "cap:tool/idp-agent-orchestrator",
         "cap:tool/idp-api-version-gate",
         "cap:tool/idp-bound-helm-history",
