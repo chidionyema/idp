@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 316,
     "service": 122,
-    "tool": 526,
+    "tool": 527,
     "workflow": 110
   },
   "records": [
@@ -39345,6 +39345,7 @@
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-oci-session",
         "cap:tool/idp-otto-homes",
+        "cap:tool/optimus-r2-scoped-failures",
         "cap:workflow/gha-estate-bootstrap",
         "cap:workflow/gha-otto-lifeboat"
       ],
@@ -57688,6 +57689,58 @@
         "platform/estate/karma/observer.py",
         "platform/intent/observer.py"
       ]
+    },
+    {
+      "id": "cap:tool/optimus-r2-scoped-failures",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/optimus-r2-scoped-failures",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-bootstrap-cloudflare",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
     },
     {
       "id": "cap:tool/oss-harvest",
