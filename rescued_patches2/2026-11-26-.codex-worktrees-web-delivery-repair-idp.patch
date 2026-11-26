@@ -1,0 +1,318 @@
+# RESCUED PATCH 2026-11-26-.codex-worktrees-web-delivery-repair-idp
+# source worktree: /Users/roseonyema/.codex/worktrees/web-delivery-repair/idp
+# source branch:   (detached)
+# source HEAD:     046665bbe701e0d1dabe201f203fbdc5d929d418
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 4  untracked files included: 0
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-.codex-worktrees-web-delivery-repair-idp.patch  (from a checkout of (detached))
+diff --git a/.github/workflows/submit-gate.yml b/.github/workflows/submit-gate.yml
+index 9f57fe82f..640b564aa 100644
+--- a/.github/workflows/submit-gate.yml
++++ b/.github/workflows/submit-gate.yml
+@@ -100,11 +100,79 @@ jobs:
+     permissions:
+       contents: read
+       issues: write
++      actions: read
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+           fetch-depth: 1
+           persist-credentials: false
++      - name: Collect failed fast-gate evidence
++        env:
++          GH_TOKEN: ${{ github.token }}
++          SHA: ${{ github.sha }}
++        run: |
++          python3 - <<'PY'
++          import json
++          import os
++          from pathlib import Path
++          import re
++          import subprocess
++
++          repo = os.environ["GITHUB_REPOSITORY"]
++          run = os.environ["GITHUB_RUN_ID"]
++          sha = os.environ["SHA"]
++          details = []
++
++          def api(path, raw=False):
++              args = ["gh", "api", path]
++              if raw:
++                  args += ["--allow-escape-sequences"]
++              else:
++                  args += ["--paginate", "--slurp"]
++              result = subprocess.run(args, capture_output=True, text=True, check=True)
++              return result.stdout if raw else json.loads(result.stdout)
++
++          def clean(text):
++              text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
++              text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
++              text = re.sub(r"\b(?:gh[sopur]_[A-Za-z0-9_.-]+|github_pat_[A-Za-z0-9_]+)", "[REDACTED]", text)
++              return text.replace("```", "''' ")
++
++          try:
++              pages = api(f"repos/{repo}/actions/runs/{run}/jobs")
++              if isinstance(pages, dict):
++                  pages = [pages]
++              jobs = [job for page in pages for job in page["jobs"]
++                      if job.get("conclusion") == "failure"
++                      and job.get("head_sha") == sha
++                      and job.get("name", "").startswith("gate /")]
++              if not jobs:
++                  details.append("UNKNOWN: no failed fast-gate job for this exact head.")
++              for job in jobs:
++                  details.append(f"Job: {job['name']} ({job['id']})")
++                  try:
++                      check = job["check_run_url"].rsplit("/", 1)[1]
++                      pages = api(f"repos/{repo}/check-runs/{check}/annotations")
++                      if pages and isinstance(pages[0], dict):
++                          pages = [pages]
++                      for page in pages:
++                          for note in page:
++                              details.append(f"{note.get('path', '?')}:{note.get('start_line', '?')}: {note.get('message', '')}")
++                  except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
++                      details.append("UNKNOWN: failure annotations could not be read.")
++                  try:
++                      lines = api(f"repos/{repo}/actions/jobs/{job['id']}/logs", raw=True).splitlines()
++                      ends = [i for i, line in enumerate(lines)
++                              if "Process completed with exit code" in line]
++                      if ends:
++                          lines = lines[:ends[-1] + 1]
++                      details.append("Last 20 failure log lines:\n" + "\n".join(lines[-20:]))
++                  except (subprocess.SubprocessError, ValueError):
++                      details.append("UNKNOWN: failed-job logs could not be read.")
++          except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
++              details.append("UNKNOWN: failed-job inventory could not be read.")
++          Path("failure-details.txt").write_text(clean("\n".join(details))[:12000] + "\n")
++          PY
+       - name: Post the failing run to the claim issue
+         env:
+           GH_TOKEN: ${{ github.token }}
+@@ -120,10 +188,17 @@ jobs:
+             echo "BLIND   submit-gate  $REF ($SHA) failed and names no Claim: trailer; no owner to tell"
+             exit 1
+           fi
+-          gh api "repos/${GITHUB_REPOSITORY}/issues/${claim}/comments" -X POST -f body="<!-- submit-gate head=${SHA} -->
++          cat > owner-comment.md <<EOF
++          <!-- submit-gate head=${SHA} -->
+           **submit door: \`${REF}\` failed the fast gate** -- owner \`${agent:-unknown}\`.
+ 
+           - head: \`${SHA}\`
+           - failing run: ${RUN}
+-          - next: fix on \`${REF}\` and push again; only a green commit is promoted to \`lane/${REF#submit/}\`." >/dev/null
++          - next: use the evidence below to correct the failed gate; validate the exact revised head before another push.
++
++          \`\`\`text
++          $(cat failure-details.txt)
++          \`\`\`
++          EOF
++          gh api "repos/${GITHUB_REPOSITORY}/issues/${claim}/comments" -X POST -F body=@owner-comment.md >/dev/null
+           echo "told claim #${claim} (${agent:-unknown})"
+diff --git a/.github/workflows/ticket-verification.yml b/.github/workflows/ticket-verification.yml
+index 53468ad0d..d2812b108 100644
+--- a/.github/workflows/ticket-verification.yml
++++ b/.github/workflows/ticket-verification.yml
+@@ -55,7 +55,9 @@ jobs:
+           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+         run: |
+           set -o pipefail
+-          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   ticket-verify  no App token: ${tok:0:160}"; exit 2; }
++          # stdout is the credential; OIDC and vault diagnostics remain on stderr.
++          tok=$(bin/idp-github-app token ticket-verifier) || { echo "BLIND   ticket-verify  App token mint failed" >&2; exit 2; }
++          [[ "$tok" =~ ^ghs_[A-Za-z0-9_.-]+$ ]] || { echo "BLIND   ticket-verify  invalid App token shape" >&2; exit 2; }
+           echo "::add-mask::$tok"
+           echo "tok=$tok" >> "$GITHUB_OUTPUT"
+           apply=--apply
+diff --git a/tests/test_submit_failure_feedback.py b/tests/test_submit_failure_feedback.py
+new file mode 100644
+index 000000000..50b9bc31f
+--- /dev/null
++++ b/tests/test_submit_failure_feedback.py
+@@ -0,0 +1,98 @@
++"""Execute submit owner reporting with real shell/Python and fixture GitHub responses."""
++
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++import pytest
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++SHA = "a" * 40
++
++
++def execute(tmp_path, logs_available=True, wrong_head=False):
++    flow = yaml.safe_load((ROOT / ".github/workflows/submit-gate.yml").read_text())
++    job = flow["jobs"]["tell-the-owner"]
++    bindir = tmp_path / "tools"
++    bindir.mkdir()
++    fake = bindir / "gh"
++    fake.write_text(
++        f"#!{sys.executable}\n"
++        + """import json, os, pathlib, sys
++a = sys.argv[1:]
++if "-X" in a and a[a.index("-X")+1] == "POST":
++    form = next(x for x in a if x.startswith("body="))
++    body = pathlib.Path(form[6:]).read_text() if form.startswith("body=@") else form[5:]
++    pathlib.Path("comment.txt").write_text(body)
++elif any(x.endswith("/jobs") for x in a):
++    print(json.dumps({"jobs":[{"id":101,"name":"gate / fast-gate","conclusion":"failure","head_sha":os.environ["FIXTURE_HEAD"],"check_run_url":"https://api.github.com/repos/chidionyema/idp/check-runs/101"}]}))
++elif any(x.endswith("/annotations") for x in a):
++    print(json.dumps([{"path":"tests/bad.py","start_line":4,"message":"Process completed with exit code 1."}]))
++elif any(x.endswith("/logs") for x in a):
++    if os.environ["FIXTURE_LOGS"] == "no":
++        print("unavailable", file=sys.stderr)
++        sys.exit(1)
++    print("preamble\\n" * 40 + "FAIL ruff-fmt tests/bad.py\\nFAIL registry snapshot lags\\n::error::Process completed with exit code 1.\\nPost job cleanup.\\n" + "cleanup\\n" * 40)
++else:
++    raise SystemExit("Unexpected API fixture call: " + repr(a))
++"""
++    )
++    fake.chmod(0o755)
++    git = bindir / "git"
++    git.write_text(
++        '#!/bin/sh\nprintf "Claim: chidionyema/idp#8455\\nAgent: fixture-owner\\n"\n'
++    )
++    git.chmod(0o755)
++    env = dict(
++        os.environ,
++        PATH=str(bindir) + os.pathsep + os.environ["PATH"],
++        GITHUB_REPOSITORY="chidionyema/idp",
++        GITHUB_RUN_ID="123",
++        SHA=SHA,
++        REF="submit/fixture",
++        RUN="https://github.com/chidionyema/idp/actions/runs/123",
++        RUNNER_TEMP=str(tmp_path),
++        FIXTURE_HEAD="b" * 40 if wrong_head else SHA,
++        FIXTURE_LOGS="yes" if logs_available else "no",
++    )
++    for step in job["steps"]:
++        if "run" not in step:
++            continue
++        script = step["run"]
++        for key, value in {"github.run_id": "123", "github.sha": SHA}.items():
++            script = script.replace("${{ " + key + " }}", value)
++        result = subprocess.run(
++            ["bash", "-e", "-c", script],
++            cwd=tmp_path,
++            env=env,
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        assert result.returncode == 0, result.stdout + result.stderr
++    return (tmp_path / "comment.txt").read_text(), job
++
++
++def test_real_failures_and_annotations_are_in_owner_comment(tmp_path):
++    body, job = execute(tmp_path)
++    assert "FAIL ruff-fmt tests/bad.py" in body
++    assert "FAIL registry snapshot lags" in body
++    assert "tests/bad.py:4" in body
++    assert "cleanup" not in body
++    assert job["permissions"]["actions"] == "read"
++
++
++def test_log_read_failure_is_unknown_and_owner_is_still_notified(tmp_path):
++    body, _ = execute(tmp_path, logs_available=False)
++    assert "UNKNOWN" in body
++    assert "tests/bad.py:4" in body
++    assert "fixture-owner" in body
++
++
++def test_another_head_cannot_supply_failure_evidence(tmp_path):
++    body, _ = execute(tmp_path, wrong_head=True)
++    assert "UNKNOWN" in body
++    assert "FAIL ruff-fmt" not in body
+diff --git a/tests/test_ticket_verification_token.py b/tests/test_ticket_verification_token.py
+new file mode 100644
+index 000000000..7b59859b3
+--- /dev/null
++++ b/tests/test_ticket_verification_token.py
+@@ -0,0 +1,81 @@
++"""Execute the real workflow shell against a noisy token producer, without credentials."""
++
++import json
++import os
++from pathlib import Path
++import subprocess
++
++import pytest
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++TOKEN = "ghs_fixture_only_123"
++
++
++def execute(tmp_path, token=TOKEN, diagnostic="OIDC allowed", mint_exit=0):
++    flow = yaml.safe_load(
++        (ROOT / ".github/workflows/ticket-verification.yml").read_text()
++    )
++    step = next(s for s in flow["jobs"]["verify"]["steps"] if s.get("id") == "verify")
++    script = (
++        step["run"]
++        .replace("${{ github.event_name }}", "schedule")
++        .replace("${{ inputs.apply }}", "true")
++    )
++    bindir = tmp_path / "bin"
++    bindir.mkdir()
++    mint = bindir / "idp-github-app"
++    mint.write_text(
++        '#!/bin/sh\nprintf "%s" "$FIXTURE_TOKEN"\nprintf "%s\\n" "$FIXTURE_DIAGNOSTIC" >&2\nexit "$FIXTURE_MINT_EXIT"\n'
++    )
++    mint.chmod(0o755)
++    verifier = bindir / "idp-ticket-verify"
++    verifier.write_text(
++        '#!/bin/sh\nprintf "%s" "$GH_TOKEN" > captured-token\necho VERIFIED\n'
++    )
++    verifier.chmod(0o755)
++    env = dict(
++        os.environ,
++        FIXTURE_TOKEN=token,
++        FIXTURE_DIAGNOSTIC=diagnostic,
++        FIXTURE_MINT_EXIT=str(mint_exit),
++        GITHUB_OUTPUT=str(tmp_path / "output"),
++        GITHUB_STEP_SUMMARY=str(tmp_path / "summary"),
++    )
++    result = subprocess.run(
++        ["bash", "-e", "-c", script],
++        cwd=tmp_path,
++        env=env,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    return result, tmp_path / "captured-token", tmp_path / "output"
++
++
++def test_diagnostics_cannot_become_authorization_header(tmp_path):
++    result, captured, output = execute(tmp_path)
++    assert result.returncode == 0, result.stderr
++    assert captured.read_text() == TOKEN
++    assert output.read_text() == f"tok={TOKEN}\n"
++
++
++@pytest.mark.parametrize(
++    "token", ["", "not-a-token", TOKEN + "\n" + TOKEN, TOKEN + "\r", " " + TOKEN]
++)
++def test_malformed_token_never_reaches_verifier_or_output(tmp_path, token):
++    result, captured, output = execute(tmp_path, token=token, diagnostic="")
++    assert result.returncode == 2
++    assert not captured.exists()
++    assert not output.exists() or not output.read_text()
++    assert token.strip() not in result.stdout or not token.strip()
++
++
++def test_failed_mint_does_not_echo_partial_credential(tmp_path):
++    result, captured, output = execute(
++        tmp_path, token=TOKEN, diagnostic="mint failed", mint_exit=1
++    )
++    assert result.returncode == 2
++    assert not captured.exists()
++    assert TOKEN not in result.stdout + result.stderr
++    assert not output.exists() or not output.read_text()

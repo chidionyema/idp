@@ -1,0 +1,3299 @@
+# RESCUED PATCH 2026-11-26-.codex-worktrees-router-edge-compile-repair-idp
+# source worktree: /Users/roseonyema/.codex/worktrees/router-edge-compile-repair/idp
+# source branch:   lane/context-governance-shadow-20261123
+# source HEAD:     718c6374412008a10a39b7e62d2df7c1676b1717
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 17  untracked files included: 1
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-.codex-worktrees-router-edge-compile-repair-idp.patch  (from a checkout of lane/context-governance-shadow-20261123)
+diff --git a/platform/router-edge/CONTEXT_GOVERNANCE.md b/platform/router-edge/CONTEXT_GOVERNANCE.md
+new file mode 100644
+index 000000000..ff3d21fed
+--- /dev/null
++++ b/platform/router-edge/CONTEXT_GOVERNANCE.md
+@@ -0,0 +1,14 @@
++# Context governance: SHADOW integration
++
++Authenticated inference schedules non-blocking observations through the existing BudgetLedgerDO transaction boundary. SHADOW never gates inference, mutates requests, replaces financial controls, changes credentials or overwrites estate instructions.
++
++GET /admin/v1/context uses existing administrator authentication. It exposes bounded aggregate token estimates, violations and last observed source SHA. No raw prompts, credentials or client-provided session/mission tags are persisted. Session keys are hashed with the authenticated key identity and bounded to 128 records. Oversized observations are skipped.
++
++Provider usage coverage and cache hit ratio remain UNKNOWN (null); estimates do not establish provider usage, cache performance or enforcement readiness. The adapter forces SHADOW independently of the reference policy. Identity validation and longitudinal promotion evidence remain required before enforcement.
++
++The context-governance directory preserves the reviewed package. Its standalone compiler is reference source, not a replacement for bin/estate-context-compile. It is not installed as an auto-run hook. See the existing context compiler for source retrieval.
++
++Run npm test for the actual Worker/ledger integration falsifiers, Python reference suite and TypeScript SHADOW regression. Release remains exact-main through the existing workflow; tests and source landing are not runtime receipts.
++
++Original archive sha256: cb13e9f77e046b25eda874c2bbe7cf98a35db5962e11fbc11a43fae4754f58c8
++Claim: chidionyema/idp#8492
+diff --git a/platform/router-edge/context-governance/DEPLOYMENT_STATUS.md b/platform/router-edge/context-governance/DEPLOYMENT_STATUS.md
+new file mode 100644
+index 000000000..4fa787cd1
+--- /dev/null
++++ b/platform/router-edge/context-governance/DEPLOYMENT_STATUS.md
+@@ -0,0 +1,9 @@
++# Deployment status: NOT FLEET-OPERATIONAL
++
++This candidate preserves existing AGENTS.md and writes its proposed contract to .meridian/context-core.md instead. SHADOW returns ALLOW in both Python and TypeScript; the Python telemetry preserves the proposed directive separately.
++
++Verification: 21 Python tests and 1 TypeScript/Node test passed. The two Python regressions and TypeScript regression were observed failing against the supplied implementation before repair.
++
++No production hooks, routing, credentials, estate instructions, laws or CI enforcement were changed by these candidate repairs. Integration must reuse the existing context compiler and authenticated router ledger. Identity binding, concurrent ledger transactions, gateway recovery, independent live canary and fleet adoption remain required. Enforcement promotion also needs the policy's longitudinal evidence; these tests do not establish it.
++
++Original archive SHA-256: cb13e9f77e046b25eda874c2bbe7cf98a35db5962e11fbc11a43fae4754f58c8
+diff --git a/platform/router-edge/context-governance/README.md b/platform/router-edge/context-governance/README.md
+new file mode 100644
+index 000000000..0b70a3b50
+--- /dev/null
++++ b/platform/router-edge/context-governance/README.md
+@@ -0,0 +1,26 @@
++<!-- estate:historical current=platform/router-edge/CONTEXT_GOVERNANCE.md -->
++# Meridian Estate-Wide Context Governance & Fleet Adoption Kit (`v1.0.0`)
++
++One-shot, zero-external-dependency, multi-runtime control plane enforcing tight,
++cache-coherent context budgets across **all estate surfaces** (`meridian-router-edge`,
++Cline, Codex CLI, OpenCode, `agent-sandbox`, Legion 8, `brain-hub`, `lifeboat`) with
++zero mid-transaction interruptions.
++
++## Edge Cases Hardened Mechanically (10/10 Covered in Test Suite)
++
++1. **Streaming SSE / Mid-Tool-Call Cutoff:** Budget evaluated strictly at ingress; never truncates mid-stream.
++2. **Atomic Critical-Section Interruption:** Bounded, non-renewable `X-Meridian-Critical-Section` lease (+15% headroom, max 2 turns) lets commit/push/rollback finish atomically.
++3. **Heterogeneous Provider Tokenizer Drift:** Conservative safety multipliers per model family + exponential moving average calibration from live provider `usage.prompt_tokens`.
++4. **KV-Cache Prefix Thrashing:** Computes `prefix_sha256` on Turn 1; flags `ERR_KV_PREFIX_THRASH` on any mid-session prefix/tool mutation; all dynamic directives emit strictly via `X-Meridian-*` headers.
++5. **Multimodal / Screenshot Explosion:** Accounts for base64/tile image tokens and externalizes images older than `N=1` turn to hash-addressed pointers.
++6. **Sub-Agent / Legion Fan-Out Amplification:** Enforces `<= 4k` compiled brief on sub-agent Turn 1 plus hierarchical `mission_aggregate_cap` across all child sessions.
++7. **High-Reasoning Burn on Mechanical Ops:** Router transparently clamps `reasoning_effort` (`low` for `role:ops-dispatch`) and `max_tokens` in `SOFT_ROTATE`/`ENFORCE` phases.
++8. **BudgetLedgerDO Storage Outage:** Degrades fail-open (`budget_ledger_unavailable_fail_open`) rather than causing self-inflicted inference downtime.
++9. **Compaction Invariant Amnesia & Failure-Trace Erasure:** Externalizes >4 KB tool payloads to recoverable file pointers while pinning the last 15 lines of failure traces verbatim; validates rotation handoff packets for mandatory invariants (`mission_id`, `target_sha`, `acceptance_receipt_contract`).
++10. **Memory Probe Pollution & Stale Authority Injection:** Pre-slice filter quarantines `self-test`/`probe` namespaces and restricts recall strictly to `authority_status == CURRENT`.
++
++## Zero-Interruption Delivery & Fleet Adoption
++
++1. **Stage immediately (independent of `idp#8416`):** Land this kit in `chidionyema/idp` with `rollout_phase: "SHADOW"`, run `bin/estate_context_fleet_sync.py --compile` to slim `.clinerules` and `AGENTS.md` below 1,500 tokens, and activate `context-budget-gate.yml` on PRs.
++2. **Gateway Gravity (after `idp#8416` HTTP 200):** Wire `ts/context-budget-middleware/index.ts` into `meridian-router-edge` (`BudgetLedgerDO`), remove raw upstream provider keys from client workstations, and issue `MERIDIAN_CLIENT_KEY` only so every fleet surface adopts automatically with zero bypass.
++3. **Evidence-Gated Phase Promotion:** `SHADOW` (Days 0-3, observe-only) -> `SOFT_ROTATE` (Days 4-7, role clamping + soft rotation headers) -> `ENFORCE` (Day 8+, gated on 7 days of zero false-positive interruptions and >=75% KV-cache hit ratio).
+diff --git a/platform/router-edge/context-governance/bin/estate_context_fleet_sync.py b/platform/router-edge/context-governance/bin/estate_context_fleet_sync.py
+new file mode 100644
+index 000000000..45cd33d6b
+--- /dev/null
++++ b/platform/router-edge/context-governance/bin/estate_context_fleet_sync.py
+@@ -0,0 +1,228 @@
++#!/usr/bin/env python3
++"""Meridian Fleet Context Compiler & Pre-Push Bloat/Bypass Gate.
++
++Two deterministic modes:
++  1. `--compile --repo-root <path>`: Generates lean, pinned, policy-compiled fleet configs
++     for Cline, Codex, OpenCode, Aider, and Lane 3 agent-sandbox from
++     `governance/context-policy.v1.json` (zero manual drift).
++  2. `--audit --repo-root <path>`: Fail-closed gate for `bin/pre-push-wall.py` and
++     GitHub Actions (`context-budget-gate.yml`). Blocks PRs that:
++       - Push auto-injected instruction files over 1,500 tokens
++       - Declare >10 always-on MCP tools in active agent configs
++       - Reintroduce raw upstream provider URLs bypassing `llm.meridianlabs.cloud/v1`
++       - Reintroduce retired Zone A (`~/.estate`, `launchctl`) paths
++
++Exit codes: 0 = PASS, 43 = CONTEXT_GOVERNANCE_VIOLATION (fail-closed).
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import sys
++from pathlib import Path
++from typing import Any, Dict, List, Tuple
++
++AUTO_INJECTED_FILES = (
++    "AGENTS.md",
++    "CLINE.md",
++    ".clinerules",
++    ".github/copilot-instructions.md",
++)
++
++ZONE_A_FORBIDDEN = ("~/.estate", "launchctl", "LaunchAgents", "LaunchDaemons")
++
++
++def est_tokens(text: str) -> int:
++    if not text:
++        return 0
++    return max(1, int(math.ceil((len(text.encode("utf-8")) / 3.2) * 1.15)))
++
++
++def compile_fleet_configs(policy: Dict[str, Any], out_root: Path) -> List[str]:
++    written: List[str] = []
++    gw = policy["gateway_base_url"]
++    inv = policy["global_invariants"]
++    roles = policy["roles"]
++
++    # 1. Lean Cline core rule (< 350 tokens — prevents Turn-1 30k tax)
++    cline_rule = f"""# Meridian Cline Core Rules (Compiled from context-policy.v1.json)
++- Gateway: route all inference via `{gw}` (`role:ops-dispatch` default; reasoning clamped to `low`).
++- Zone B Only: never edit or inspect `~/.estate` or macOS `launchctl`.
++- Token Discipline: never dump raw CI logs (>25 lines) or full multi-hundred-line files unless isolating a proven 1-line fault. Run single-shot scripts emitting compact JSON.
++- Rotation: on header `X-Meridian-Context-Directive: CHECKPOINT_AND_ROTATE`, stop immediately and emit a structured handoff packet (`mission_id`, `target_repo`, `target_sha`, `acceptance_receipt_contract`, `next_discriminating_step`, `pinned_failure_receipts`) before starting a fresh task.
++- Epistemic Law: never cite Drive JSONs or chat summaries (`TIER_2`) as primary facts; never declare `OPERATIONAL` from `raw.githubusercontent.com`.
++"""
++    p_cline = out_root / ".clinerules" / "00-meridian-context-core.md"
++    p_cline.parent.mkdir(parents=True, exist_ok=True)
++    p_cline.write_text(cline_rule, encoding="utf-8")
++    written.append(str(p_cline.relative_to(out_root)))
++
++    # 2. Lean Codex / OpenCode / Aider core rule (< 350 tokens)
++    agents_core = f"""# Meridian Fleet Context Contract (Compiled from context-policy.v1.json)
++- All fleet agents route through `{gw}` with explicit `X-Meridian-Role`, `X-Meridian-Mission-Id`, and `X-Meridian-Session-Id`.
++- Turn-1 auto-injected rule budget: <= {inv["max_auto_injected_rules_tokens"]} tokens total; always-on MCP tools: <= {inv["max_always_on_mcp_tools"]}.
++- Externalize any tool output > {inv["externalize_tool_result_bytes"]} bytes to file pointers while pinning the last 15 lines of failure traces verbatim.
++- Never mutate system prompt or tool schemas mid-session (protects KV-cache prefix).
++- Sub-agents receive compiled briefs <= {inv["subagent_max_brief_tokens"]} tokens; never forward full parent transcripts.
++- On `CHECKPOINT_AND_ROTATE`, flush an atomic handoff packet at the next tool boundary; use `X-Meridian-Critical-Section` only to complete an in-flight commit/push/rollback (max {inv["critical_section_max_turns"]} turns).
++"""
++    p_agents = out_root / "AGENTS.md"
++    if p_agents.exists() and not p_agents.read_text(encoding="utf-8").startswith(
++        "# Meridian Fleet Context Contract (Compiled from context-policy.v1.json)"
++    ):
++        p_agents = out_root / ".meridian" / "context-core.md"
++        p_agents.parent.mkdir(parents=True, exist_ok=True)
++    p_agents.write_text(agents_core, encoding="utf-8")
++    written.append(str(p_agents.relative_to(out_root)))
++
++    # 3. Unified fleet client gateway profile (Cline / Codex / OpenCode / agent-sandbox)
++    fleet_profile = {
++        "schema": "urn:estate:fleet:gateway-profile:v1",
++        "openai_compatible_base_url": gw,
++        "auth_env_var": "MERIDIAN_CLIENT_KEY",
++        "direct_upstream_keys_allowed": False,
++        "surfaces": {
++            "cline": {
++                "default_role": "role:ops-dispatch",
++                "reasoning_effort": roles["role:ops-dispatch"][
++                    "reasoning_effort_clamp"
++                ],
++            },
++            "codex_cli": {
++                "default_role": "role:surgical-patch",
++                "reasoning_effort": roles["role:surgical-patch"][
++                    "reasoning_effort_clamp"
++                ],
++            },
++            "opencode": {
++                "default_role": "role:surgical-patch",
++                "reasoning_effort": roles["role:surgical-patch"][
++                    "reasoning_effort_clamp"
++                ],
++            },
++            "agent_sandbox": {
++                "default_role": "role:sandbox-legion",
++                "reasoning_effort": roles["role:sandbox-legion"][
++                    "reasoning_effort_clamp"
++                ],
++            },
++            "architecture_review": {
++                "default_role": "role:architecture-audit",
++                "reasoning_effort": roles["role:architecture-audit"][
++                    "reasoning_effort_clamp"
++                ],
++            },
++        },
++    }
++    p_prof = out_root / ".meridian" / "fleet-gateway-profile.json"
++    p_prof.parent.mkdir(parents=True, exist_ok=True)
++    p_prof.write_text(
++        json.dumps(fleet_profile, indent=2, sort_keys=True) + "\n", encoding="utf-8"
++    )
++    written.append(str(p_prof.relative_to(out_root)))
++
++    return written
++
++
++def audit_repo(policy: Dict[str, Any], repo_root: Path) -> Tuple[bool, Dict[str, Any]]:
++    inv = policy["global_invariants"]
++    max_rule_tokens = int(inv["max_auto_injected_rules_tokens"])
++    max_mcp_tools = int(inv["max_always_on_mcp_tools"])
++    forbidden_hosts = tuple(inv["forbidden_direct_provider_hosts"])
++
++    violations: List[str] = []
++    rule_token_total = 0
++    scanned_rules: Dict[str, int] = {}
++
++    # 1. Measure all auto-injected rule files (including .clinerules/*.md)
++    candidates: List[Path] = []
++    for rel in AUTO_INJECTED_FILES:
++        p = repo_root / rel
++        if p.is_file():
++            candidates.append(p)
++        elif p.is_dir():
++            candidates.extend(sorted(p.rglob("*.md")))
++
++    for p in candidates:
++        txt = p.read_text(encoding="utf-8", errors="replace")
++        toks = est_tokens(txt)
++        rel = p.relative_to(repo_root).as_posix()
++        scanned_rules[rel] = toks
++        rule_token_total += toks
++        for bad in ZONE_A_FORBIDDEN:
++            if bad in txt and "never edit or inspect" not in txt.lower():
++                violations.append(f"FC_ZONE_A_DARWIN_REGRESSION:{rel}:{bad}")
++
++    if rule_token_total > max_rule_tokens:
++        violations.append(
++            f"FC_TURN1_BLOATED_RULES:total_{rule_token_total}_exceeds_{max_rule_tokens}"
++        )
++
++    # 2. Check active MCP server config JSONs for >10 always-on tools or raw provider bypass
++    for cfg_name in (
++        ".mcp.json",
++        "mcp.json",
++        ".meridian/mcp-servers.json",
++        ".meridian/fleet-gateway-profile.json",
++    ):
++        cfg_p = repo_root / cfg_name
++        if not cfg_p.is_file():
++            continue
++        raw_txt = cfg_p.read_text(encoding="utf-8", errors="replace")
++        for host in forbidden_hosts:
++            if host in raw_txt:
++                violations.append(f"FC_GATEWAY_BYPASS_RAW_PROVIDER:{cfg_name}:{host}")
++        try:
++            data = json.loads(raw_txt)
++            tools_list = data.get("always_on_tools") or data.get("tools") or []
++            if isinstance(tools_list, list) and len(tools_list) > max_mcp_tools:
++                violations.append(
++                    f"FC_MCP_TOOL_CEILING_EXCEEDED:{cfg_name}:got_{len(tools_list)}_max_{max_mcp_tools}"
++                )
++        except json.JSONDecodeError:
++            violations.append(f"ERR_MALFORMED_CONFIG_JSON:{cfg_name}")
++
++    report = {
++        "passed": len(violations) == 0,
++        "auto_injected_rule_tokens_total": rule_token_total,
++        "auto_injected_rule_tokens_cap": max_rule_tokens,
++        "scanned_rule_files": scanned_rules,
++        "violations": sorted(set(violations)),
++    }
++    return len(violations) == 0, report
++
++
++def main(argv: List[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(
++        description="Meridian Fleet Context Compiler & Audit Gate"
++    )
++    parser.add_argument(
++        "--policy", required=True, help="Path to context-policy.v1.json"
++    )
++    parser.add_argument("--repo-root", required=True, help="Target repository root")
++    parser.add_argument(
++        "--compile", action="store_true", help="Compile fleet configs into repo-root"
++    )
++    parser.add_argument(
++        "--audit", action="store_true", help="Audit repo-root against policy"
++    )
++    args = parser.parse_args(argv)
++
++    policy = json.loads(Path(args.policy).read_text(encoding="utf-8"))
++    root = Path(args.repo_root).resolve()
++
++    if args.compile:
++        written = compile_fleet_configs(policy, root)
++        print(json.dumps({"compiled_files": written}, indent=2))
++
++    if args.audit or not args.compile:
++        ok, report = audit_repo(policy, root)
++        print(json.dumps(report, indent=2))
++        return 0 if ok else 43
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/platform/router-edge/context-governance/governance/context-policy.v1.json b/platform/router-edge/context-governance/governance/context-policy.v1.json
+new file mode 100644
+index 000000000..dab68f517
+--- /dev/null
++++ b/platform/router-edge/context-governance/governance/context-policy.v1.json
+@@ -0,0 +1,88 @@
++{
++  "allowed_phases": [
++    "SHADOW",
++    "SOFT_ROTATE",
++    "ENFORCE"
++  ],
++  "gateway_base_url": "https://llm.meridianlabs.cloud/v1",
++  "global_invariants": {
++    "allowed_memory_authority_statuses": [
++      "CURRENT"
++    ],
++    "critical_section_max_headroom_ratio": 0.15,
++    "critical_section_max_turns": 2,
++    "critical_section_renewable": false,
++    "externalize_tool_result_bytes": 4096,
++    "forbidden_direct_provider_hosts": [
++      "api.deepseek.com",
++      "api.openai.com",
++      "api.anthropic.com",
++      "openrouter.ai",
++      "api.z.ai"
++    ],
++    "max_always_on_mcp_tools": 10,
++    "max_auto_injected_rules_tokens": 1500,
++    "min_kv_cache_hit_ratio_target": 0.75,
++    "quarantined_memory_namespaces": [
++      "self-test",
++      "probe",
++      "healthcheck",
++      "canary-probe"
++    ],
++    "retain_recent_images_count": 1,
++    "subagent_max_brief_tokens": 4000
++  },
++  "roles": {
++    "role:architecture-audit": {
++      "description": "Frontier architectural planning, formal specs, adversarial review",
++      "hard_context_cap": 64000,
++      "max_grace_turns_after_soft": 2,
++      "max_output_tokens_clamp": 8192,
++      "mission_aggregate_cap": 200000,
++      "reasoning_effort_clamp": "high",
++      "soft_context_cap": 48000,
++      "turn_1_prefix_cap": 12000
++    },
++    "role:ops-dispatch": {
++      "description": "Cline deploy dispatch, gh CLI, curl probes, incident triage",
++      "hard_context_cap": 24000,
++      "max_grace_turns_after_soft": 1,
++      "max_output_tokens_clamp": 2048,
++      "mission_aggregate_cap": 48000,
++      "reasoning_effort_clamp": "low",
++      "soft_context_cap": 16000,
++      "turn_1_prefix_cap": 6000
++    },
++    "role:sandbox-legion": {
++      "description": "Lane 3 agent-sandbox and Legion 8 sub-agent swarm",
++      "hard_context_cap": 48000,
++      "max_grace_turns_after_soft": 1,
++      "max_output_tokens_clamp": 4096,
++      "mission_aggregate_cap": 160000,
++      "reasoning_effort_clamp": "medium",
++      "soft_context_cap": 32000,
++      "turn_1_prefix_cap": 8000
++    },
++    "role:surgical-patch": {
++      "description": "Codex / OpenCode single-PR surgical code repair",
++      "hard_context_cap": 40000,
++      "max_grace_turns_after_soft": 1,
++      "max_output_tokens_clamp": 4096,
++      "mission_aggregate_cap": 120000,
++      "reasoning_effort_clamp": "medium",
++      "soft_context_cap": 28000,
++      "turn_1_prefix_cap": 8000
++    }
++  },
++  "rollout_phase": "SHADOW",
++  "schema": "urn:estate:context:policy:v1",
++  "tokenizer_safety_multipliers": {
++    "deepseek": 1.25,
++    "default": 1.15,
++    "gemini": 1.1,
++    "glm": 1.25,
++    "minimax": 1.25,
++    "nemotron": 1.2
++  },
++  "version": "1.0.0"
++}
+diff --git a/platform/router-edge/context-governance/governance/issue-classes-context-patch.json b/platform/router-edge/context-governance/governance/issue-classes-context-patch.json
+new file mode 100644
+index 000000000..2b74117d3
+--- /dev/null
++++ b/platform/router-edge/context-governance/governance/issue-classes-context-patch.json
+@@ -0,0 +1,39 @@
++{
++  "registered_context_failure_classes": [
++    {
++      "code": "FC_TURN1_BLOATED_RULES",
++      "description": "Auto-injected repo rule files exceed 1,500 tokens, causing Turn-1 context rot across Cline/Codex/agent-sandbox.",
++      "exit_code": 43,
++      "mechanical_gate": "bin/estate_context_fleet_sync.py",
++      "severity": "P1_STRUCTURAL"
++    },
++    {
++      "code": "FC_CONTEXT_PREFIX_THRASH",
++      "description": "Agent or middleware mutated system prompt or tool schema mid-session, destroying KV-cache hit ratio.",
++      "error_code": "ERR_KV_PREFIX_THRASH",
++      "mechanical_gate": "context_governor.ContextGovernor.evaluate_ingress",
++      "severity": "P1_STRUCTURAL"
++    },
++    {
++      "code": "FC_GATEWAY_BYPASS_RAW_PROVIDER",
++      "description": "Fleet client config routes directly to upstream provider host instead of meridian-router-edge.",
++      "exit_code": 43,
++      "mechanical_gate": "bin/estate_context_fleet_sync.py",
++      "severity": "P0_STRUCTURAL"
++    },
++    {
++      "code": "FC_SUBAGENT_BUDGET_AMPLIFICATION",
++      "description": "Sub-agent inherited parent transcript (>4k brief) or exceeded hierarchical mission aggregate cap.",
++      "error_code": "ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED",
++      "mechanical_gate": "context_governor.ContextGovernor.evaluate_ingress",
++      "severity": "P1_STRUCTURAL"
++    },
++    {
++      "code": "FC_MEMORY_PROBE_POLLUTION",
++      "description": "Self-test probe records or non-CURRENT authority memories injected into active context.",
++      "mechanical_gate": "context_governor.filter_authoritative_memories",
++      "severity": "P1_STRUCTURAL"
++    }
++  ],
++  "schema_version": "1.0.0"
++}
+diff --git a/platform/router-edge/context-governance/governance/laws-context-patch.yaml b/platform/router-edge/context-governance/governance/laws-context-patch.yaml
+new file mode 100644
+index 000000000..c8f0be797
+--- /dev/null
++++ b/platform/router-edge/context-governance/governance/laws-context-patch.yaml
+@@ -0,0 +1,12 @@
++# Drop-in patch for platform/estate/governance/laws.yaml
++context_governance_laws:
++  - id: LAW_CONTEXT_BUDGET_COHERENCE
++    version: "1.0.0"
++    enforcement: PHASED_SHADOW_TO_HARD_FAIL_CLOSED
++    applies_to: [lane_1_cloudflare, lane_2_oci, lane_3_github_actions, cline, codex, opencode, agent_sandbox]
++    invariant: >
++      All fleet agents route exclusively through meridian-router-edge (BudgetLedgerDO) with
++      role-clamped reasoning effort, immutable KV-cache prefixes, recoverable >4KB tool
++      pointer externalization (preserving failure traces), bounded non-renewable critical-section
++      leases, and Turn-1 auto-injected rule ceilings <= 1,500 tokens.
++    mechanical_gate: bin/estate_context_fleet_sync.py
+diff --git a/platform/router-edge/context-governance/python/context_governor/__init__.py b/platform/router-edge/context-governance/python/context_governor/__init__.py
+new file mode 100644
+index 000000000..a26fbbbd5
+--- /dev/null
++++ b/platform/router-edge/context-governance/python/context_governor/__init__.py
+@@ -0,0 +1,28 @@
++"""Meridian Estate-Wide Context Governor (v1.0.0).
++
++Implements urn:estate:memory:context:v1 compliance, hybrid calibrated token estimation,
++KV-cache prefix immutability tracking, multimodal/tool-output pointer externalization,
++critical-section leases, hierarchical mission budget trees, and handoff validation.
++"""
++
++from .governor import (
++    ContextGovernor,
++    ContextPolicy,
++    IngressDecision,
++    MissionBudgetLedger,
++    estimate_messages_tokens,
++    externalize_and_compact_history,
++    filter_authoritative_memories,
++    validate_handoff_packet,
++)
++
++__all__ = [
++    "ContextGovernor",
++    "ContextPolicy",
++    "IngressDecision",
++    "MissionBudgetLedger",
++    "estimate_messages_tokens",
++    "externalize_and_compact_history",
++    "filter_authoritative_memories",
++    "validate_handoff_packet",
++]
+diff --git a/platform/router-edge/context-governance/python/context_governor/governor.py b/platform/router-edge/context-governance/python/context_governor/governor.py
+new file mode 100644
+index 000000000..0c122b0f0
+--- /dev/null
++++ b/platform/router-edge/context-governance/python/context_governor/governor.py
+@@ -0,0 +1,646 @@
++"""Deterministic Estate-Wide Context Governance Engine (Zero External Dependencies).
++
++Guards against all 10 production context failure modes:
++  1. Streaming mid-generation cutoff (strictly ingress-evaluated; never cuts mid-stream)
++  2. Atomic critical-section interruption (bounded non-renewable +15% / 2-turn lease)
++  3. Cross-provider tokenizer drift (conservative multiplier + provider usage calibration)
++  4. KV-cache prefix thrashing (prefix_sha256 immutability check; tail/header directives)
++  5. Multimodal/base64 explosion (image tile accounting + automatic N>1 image externalization)
++  6. Sub-agent/Legion fan-out amplification (hierarchical mission aggregate budget tree)
++  7. Reasoning effort bloat (role-based reasoning_effort + max_tokens clamping)
++  8. Storage/DO outage self-inflicted interruption (degraded fail-open for telemetry)
++  9. Lossy compaction invariant amnesia (mandatory handoff validator + failure-trace pinning)
++ 10. Memory probe pollution & retired decision leakage (CURRENT authority + namespace filter)
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from dataclasses import asdict, dataclass, field
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any, Dict, List, Optional, Sequence, Tuple
++
++REASONING_ORDER = {"minimal": 0, "low": 1, "medium": 2, "high": 3}
++
++
++def sha256_hex(text: str) -> str:
++    return hashlib.sha256(text.encode("utf-8")).hexdigest()
++
++
++def canonical_json(obj: Any) -> str:
++    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++
++
++def estimate_text_tokens(text: str, multiplier: float = 1.15) -> int:
++    """Conservative upper-bound token estimator safe for code, JSON, and Unicode."""
++    if not text:
++        return 0
++    utf8_len = len(text.encode("utf-8"))
++    # Dense code/JSON/punctuation averages ~3.2 bytes/token; apply provider safety factor.
++    return max(1, int(math.ceil((utf8_len / 3.2) * multiplier)))
++
++
++def estimate_messages_tokens(
++    messages: Sequence[Dict[str, Any]],
++    tools: Optional[Sequence[Dict[str, Any]]] = None,
++    multiplier: float = 1.15,
++    calibration_ratio: float = 1.0,
++) -> Dict[str, Any]:
++    """Estimate prompt tokens including multimodal images and tool schemas."""
++    effective_mult = multiplier * max(0.85, min(2.0, calibration_ratio))
++    tool_tokens = (
++        estimate_text_tokens(canonical_json(tools), effective_mult) if tools else 0
++    )
++    text_tokens = 0
++    image_tokens = 0
++    image_count = 0
++
++    for msg in messages:
++        text_tokens += 6  # per-message framing overhead
++        content = msg.get("content")
++        if isinstance(content, str):
++            text_tokens += estimate_text_tokens(content, effective_mult)
++        elif isinstance(content, list):
++            for part in content:
++                if not isinstance(part, dict):
++                    continue
++                ptype = part.get("type", "")
++                if ptype == "text":
++                    text_tokens += estimate_text_tokens(
++                        str(part.get("text", "")), effective_mult
++                    )
++                elif ptype in ("image_url", "image"):
++                    image_count += 1
++                    url_val = ""
++                    if isinstance(part.get("image_url"), dict):
++                        url_val = str(part["image_url"].get("url", ""))
++                    elif isinstance(part.get("image_url"), str):
++                        url_val = part["image_url"]
++                    # Base64/high-res screenshot conservative tile estimate (1,600 to 6,400 tokens)
++                    if url_val.startswith("data:image"):
++                        raw_bytes = len(url_val) * 3 // 4
++                        image_tokens += min(8192, max(1600, raw_bytes // 128))
++                    else:
++                        image_tokens += 1600
++                else:
++                    text_tokens += estimate_text_tokens(
++                        canonical_json(part), effective_mult
++                    )
++        if msg.get("tool_calls"):
++            text_tokens += estimate_text_tokens(
++                canonical_json(msg["tool_calls"]), effective_mult
++            )
++
++    total = tool_tokens + text_tokens + image_tokens
++    return {
++        "total_tokens": total,
++        "tool_schema_tokens": tool_tokens,
++        "text_tokens": text_tokens,
++        "image_tokens": image_tokens,
++        "image_count": image_count,
++    }
++
++
++def compute_prefix_hash(
++    messages: Sequence[Dict[str, Any]],
++    tools: Optional[Sequence[Dict[str, Any]]] = None,
++) -> str:
++    """Stable hash of immutable Turn-1 prefix (system prompt + sorted tools)."""
++    system_msgs = [m for m in messages if m.get("role") == "system"]
++    stable_tools = sorted([canonical_json(t) for t in (tools or [])])
++    return sha256_hex(canonical_json({"system": system_msgs, "tools": stable_tools}))
++
++
++@dataclass
++class ContextPolicy:
++    raw: Dict[str, Any]
++
++    @classmethod
++    def from_file(cls, path: Path) -> "ContextPolicy":
++        return cls(json.loads(path.read_text(encoding="utf-8")))
++
++    @property
++    def phase(self) -> str:
++        return str(self.raw.get("rollout_phase", "SHADOW"))
++
++    @property
++    def invariants(self) -> Dict[str, Any]:
++        return self.raw["global_invariants"]
++
++    def role_config(self, role: str) -> Dict[str, Any]:
++        roles = self.raw["roles"]
++        if role in roles:
++            return roles[role]
++        # Unknown role fails safely to strictest operational ceiling.
++        return roles["role:ops-dispatch"]
++
++    def tokenizer_multiplier(self, model_name: str) -> float:
++        m = (model_name or "").lower()
++        mults = self.raw.get("tokenizer_safety_multipliers", {})
++        for family, val in mults.items():
++            if family != "default" and family in m:
++                return float(val)
++        return float(mults.get("default", 1.15))
++
++
++@dataclass
++class SessionState:
++    session_id: str
++    mission_id: str
++    role: str
++    turn_count: int = 0
++    initial_prefix_hash: str = ""
++    prefix_mutations: int = 0
++    soft_warnings_issued: int = 0
++    critical_section_turns_used: int = 0
++    critical_section_nonce: Optional[str] = None
++    calibration_ratio: float = 1.0
++    total_prompt_tokens: int = 0
++    cached_prompt_tokens: int = 0
++
++
++class MissionBudgetLedger:
++    """In-memory / DO-compatible hierarchical mission & session budget ledger."""
++
++    def __init__(self, simulate_storage_outage: bool = False):
++        self.sessions: Dict[str, SessionState] = {}
++        self.mission_tokens: Dict[str, int] = {}
++        self.simulate_storage_outage = simulate_storage_outage
++
++    def get_or_create_session(
++        self, session_id: str, mission_id: str, role: str
++    ) -> SessionState:
++        if self.simulate_storage_outage:
++            raise RuntimeError("BUDGET_LEDGER_DO_TIMEOUT")
++        if session_id not in self.sessions:
++            self.sessions[session_id] = SessionState(
++                session_id=session_id, mission_id=mission_id, role=role
++            )
++        return self.sessions[session_id]
++
++    def record_provider_usage(
++        self,
++        session_id: str,
++        estimated_tokens: int,
++        actual_prompt_tokens: int,
++        cached_prompt_tokens: int = 0,
++    ) -> None:
++        if self.simulate_storage_outage or session_id not in self.sessions:
++            return
++        st = self.sessions[session_id]
++        st.total_prompt_tokens += actual_prompt_tokens
++        st.cached_prompt_tokens += cached_prompt_tokens
++        self.mission_tokens[st.mission_id] = (
++            self.mission_tokens.get(st.mission_id, 0) + actual_prompt_tokens
++        )
++        if estimated_tokens > 0 and actual_prompt_tokens > 0:
++            observed_ratio = actual_prompt_tokens / float(estimated_tokens)
++            # Exponential moving average calibration prevents sudden tokenizer cliff
++            st.calibration_ratio = round(
++                0.7 * st.calibration_ratio + 0.3 * observed_ratio, 4
++            )
++
++    def mission_total(self, mission_id: str) -> int:
++        if self.simulate_storage_outage:
++            raise RuntimeError("BUDGET_LEDGER_DO_TIMEOUT")
++        return self.mission_tokens.get(mission_id, 0)
++
++
++@dataclass
++class IngressDecision:
++    allowed: bool
++    http_status: int
++    directive: str
++    headers: Dict[str, str]
++    clamped_request: Dict[str, Any]
++    telemetry: Dict[str, Any]
++    degradations: List[str] = field(default_factory=list)
++    violations: List[str] = field(default_factory=list)
++
++    def to_dict(self) -> Dict[str, Any]:
++        return asdict(self)
++
++
++class ContextGovernor:
++    """Stateless ingress policy evaluator backed by MissionBudgetLedger."""
++
++    def __init__(self, policy: ContextPolicy, ledger: MissionBudgetLedger):
++        self.policy = policy
++        self.ledger = ledger
++
++    def evaluate_ingress(
++        self,
++        request: Dict[str, Any],
++        *,
++        session_id: str,
++        mission_id: str,
++        role: str,
++        critical_section_nonce: Optional[str] = None,
++        is_subagent: bool = False,
++    ) -> IngressDecision:
++        phase = self.policy.phase
++        rcfg = self.policy.role_config(role)
++        inv = self.policy.invariants
++        degradations: List[str] = []
++        violations: List[str] = []
++
++        # Edge Case 8: Degraded fail-open on DO/ledger outage (never cause self-inflicted outage)
++        session: Optional[SessionState] = None
++        mission_spent = 0
++        try:
++            session = self.ledger.get_or_create_session(session_id, mission_id, role)
++            mission_spent = self.ledger.mission_total(mission_id)
++        except Exception:
++            degradations.append("budget_ledger_unavailable_fail_open")
++
++        model = str(request.get("model", ""))
++        messages = list(request.get("messages") or [])
++        tools = list(request.get("tools") or [])
++
++        # Edge Case 7: Transparent role clamping (reasoning_effort + max_tokens)
++        clamped = dict(request)
++        if phase in ("SOFT_ROTATE", "ENFORCE"):
++            req_effort = str(request.get("reasoning_effort", "")).lower()
++            clamp_effort = str(rcfg["reasoning_effort_clamp"]).lower()
++            if not req_effort or REASONING_ORDER.get(
++                req_effort, 99
++            ) > REASONING_ORDER.get(clamp_effort, 1):
++                clamped["reasoning_effort"] = clamp_effort
++                degradations.append(f"reasoning_effort_clamped_to_{clamp_effort}")
++
++            max_out_clamp = int(rcfg["max_output_tokens_clamp"])
++            req_max_out = request.get("max_tokens") or request.get(
++                "max_completion_tokens"
++            )
++            if req_max_out is None or int(req_max_out) > max_out_clamp:
++                clamped["max_tokens"] = max_out_clamp
++                degradations.append(f"max_tokens_clamped_to_{max_out_clamp}")
++
++        # Edge Case 3 & 5: Hybrid calibrated + multimodal token estimation
++        mult = self.policy.tokenizer_multiplier(model)
++        cal = session.calibration_ratio if session else 1.0
++        est = estimate_messages_tokens(
++            messages, tools=tools, multiplier=mult, calibration_ratio=cal
++        )
++        used_tokens = est["total_tokens"]
++
++        # Edge Case 4: KV-cache prefix immutability tracking
++        prefix_hash = compute_prefix_hash(messages, tools=tools)
++        kv_cache_state = "COLD_TURN_1"
++        if session is not None:
++            session.turn_count += 1
++            if session.turn_count == 1:
++                session.initial_prefix_hash = prefix_hash
++                if used_tokens > int(rcfg["turn_1_prefix_cap"]):
++                    violations.append("ERR_TURN1_PREFIX_CAP_EXCEEDED")
++            else:
++                if prefix_hash != session.initial_prefix_hash:
++                    session.prefix_mutations += 1
++                    kv_cache_state = "PREFIX_MUTATED_THRASH"
++                    violations.append("ERR_KV_PREFIX_THRASH")
++                else:
++                    kv_cache_state = "PREFIX_STABLE"
++
++        # Always-on MCP tool ceiling check
++        if len(tools) > int(inv["max_always_on_mcp_tools"]):
++            violations.append("ERR_MCP_TOOL_CEILING_EXCEEDED")
++
++        # Edge Case 6: Sub-agent brief isolation & hierarchical mission fan-out budget
++        if is_subagent and session is not None and session.turn_count == 1:
++            if used_tokens > int(inv["subagent_max_brief_tokens"]):
++                violations.append("ERR_SUBAGENT_BRIEF_CAP_EXCEEDED")
++
++        if mission_spent + used_tokens > int(rcfg["mission_aggregate_cap"]):
++            violations.append("ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED")
++
++        soft_cap = int(rcfg["soft_context_cap"])
++        hard_cap = int(rcfg["hard_context_cap"])
++        max_grace = int(rcfg["max_grace_turns_after_soft"])
++
++        # Edge Case 2: Bounded non-renewable Critical-Section Lease (+15% headroom, max 2 turns)
++        lease_active = False
++        effective_hard_cap = hard_cap
++        if critical_section_nonce:
++            max_cs_turns = int(inv["critical_section_max_turns"])
++            headroom = float(inv["critical_section_max_headroom_ratio"])
++            if session is not None:
++                if session.critical_section_nonce is None:
++                    session.critical_section_nonce = critical_section_nonce
++                # Non-renewable: changing nonce cannot reset turn count!
++                if session.critical_section_turns_used < max_cs_turns:
++                    session.critical_section_turns_used += 1
++                    lease_active = True
++                    effective_hard_cap = int(math.ceil(hard_cap * (1.0 + headroom)))
++                else:
++                    violations.append("ERR_CRITICAL_SECTION_LEASE_EXHAUSTED")
++            else:
++                # Stateless fallback during DO outage
++                lease_active = True
++                effective_hard_cap = int(math.ceil(hard_cap * (1.0 + headroom)))
++
++        # Edge Case 1: Streaming-safe ingress decision (soft-rotate before hard-stop)
++        directive = "ALLOW"
++        allowed = True
++        http_status = 200
++
++        if used_tokens >= soft_cap:
++            directive = "CHECKPOINT_AND_ROTATE"
++            if session is not None:
++                session.soft_warnings_issued += 1
++
++        if phase == "ENFORCE":
++            grace_exhausted = (
++                session is None or session.soft_warnings_issued > max_grace
++            )
++            if (
++                "ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED" in violations
++                and not lease_active
++            ):
++                allowed = False
++                http_status = 429
++                directive = "HARD_STOP_MISSION_BUDGET_EXHAUSTED"
++            elif used_tokens > effective_hard_cap:
++                allowed = False
++                http_status = 429
++                directive = "HARD_STOP_CONTEXT_CAP_EXCEEDED"
++            elif used_tokens >= hard_cap and not lease_active and grace_exhausted:
++                allowed = False
++                http_status = 429
++                directive = "HARD_STOP_ROTATION_IGNORED"
++
++        shadow_would_directive = directive
++        if phase == "SHADOW":
++            directive = "ALLOW"
++
++        headers = {
++            "X-Meridian-Context-Phase": phase,
++            "X-Meridian-Context-Directive": directive,
++            "X-Meridian-Context-Tokens": str(used_tokens),
++            "X-Meridian-Context-Soft-Cap": str(soft_cap),
++            "X-Meridian-Context-Hard-Cap": str(effective_hard_cap),
++            "X-Meridian-Prefix-Cache-State": kv_cache_state,
++            "X-Meridian-Critical-Section-Lease": "ACTIVE" if lease_active else "NONE",
++        }
++
++        telemetry = {
++            "schema": "urn:estate:memory:context:v1",
++            "shadow_would_directive": shadow_would_directive
++            if phase == "SHADOW"
++            else None,
++            "mission_id": mission_id,
++            "session_id": session_id,
++            "role": role,
++            "used_tokens": used_tokens,
++            "budget_tokens": hard_cap,
++            "mission_aggregate_used_tokens": mission_spent + used_tokens,
++            "mission_aggregate_budget_tokens": int(rcfg["mission_aggregate_cap"]),
++            "token_measurement_method": "provider_usage_calibrated"
++            if (session and session.total_prompt_tokens > 0)
++            else "conservative_upper_bound",
++            "prefix_sha256": prefix_hash,
++            "kv_cache_state": kv_cache_state,
++            "image_count": est["image_count"],
++            "image_tokens": est["image_tokens"],
++            "tool_schema_tokens": est["tool_schema_tokens"],
++            "degradations": degradations,
++            "violations": violations,
++            "complete": len(degradations) == 0,
++            "freshness_as_of": datetime.now(timezone.utc).strftime(
++                "%Y-%m-%dT%H:%M:%SZ"
++            ),
++        }
++
++        return IngressDecision(
++            allowed=allowed,
++            http_status=http_status,
++            directive=directive,
++            headers=headers,
++            clamped_request=clamped,
++            telemetry=telemetry,
++            degradations=degradations,
++            violations=violations,
++        )
++
++
++def externalize_and_compact_history(
++    messages: Sequence[Dict[str, Any]],
++    *,
++    artifact_dir: Path,
++    externalize_threshold_bytes: int = 4096,
++    keep_recent_verbatim_turns: int = 4,
++    keep_recent_images: int = 1,
++) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
++    """Recoverable pointer compression that NEVER strips failure traces or system prompts.
++
++    - Leaves system prompt untouched (protects KV-cache prefix).
++    - Leaves last `keep_recent_verbatim_turns` turns untouched.
++    - For older tool results > threshold: writes full raw payload to `artifact_dir` and replaces
++      with a recoverable pointer (`uri`, `sha256`, `bytes`) PLUS preserves the last 15 lines
++      if the tool result contains failure markers (`exit_code!=0`, `error`, `525`, `403`, `402`).
++    - Replaces multimodal images older than `keep_recent_images` with recoverable hash pointers.
++    """
++    artifact_dir.mkdir(parents=True, exist_ok=True)
++    compacted: List[Dict[str, Any]] = []
++    omissions: List[Dict[str, Any]] = []
++
++    total = len(messages)
++    cutoff_idx = max(0, total - keep_recent_verbatim_turns)
++
++    # Identify image indices so only the newest `keep_recent_images` stay inline.
++    image_msg_indices = []
++    for idx, m in enumerate(messages):
++        c = m.get("content")
++        if isinstance(c, list) and any(
++            isinstance(p, dict) and p.get("type") in ("image_url", "image") for p in c
++        ):
++            image_msg_indices.append(idx)
++    keep_img_set = (
++        set(image_msg_indices[-keep_recent_images:])
++        if keep_recent_images > 0
++        else set()
++    )
++
++    failure_markers = (
++        "error",
++        "failed",
++        "exception",
++        "exit_code",
++        "traceback",
++        " 525",
++        " 403",
++        " 402",
++    )
++
++    for idx, msg in enumerate(messages):
++        role = msg.get("role", "")
++        if role == "system" or idx >= cutoff_idx:
++            # Even inside recent window, strip older images beyond keep_img_set
++            if idx in image_msg_indices and idx not in keep_img_set:
++                new_parts = []
++                for p in msg["content"]:
++                    if isinstance(p, dict) and p.get("type") in ("image_url", "image"):
++                        raw_s = canonical_json(p)
++                        digest = sha256_hex(raw_s)
++                        out_p = artifact_dir / f"img_{digest[:16]}.json"
++                        out_p.write_text(raw_s, encoding="utf-8")
++                        new_parts.append(
++                            {
++                                "type": "text",
++                                "text": f"[EXTERNALIZED_IMAGE sha256={digest} uri={out_p.name}]",
++                            }
++                        )
++                        omissions.append(
++                            {
++                                "index": idx,
++                                "kind": "image_externalized",
++                                "sha256": digest,
++                                "uri": out_p.name,
++                            }
++                        )
++                    else:
++                        new_parts.append(p)
++                compacted.append({**msg, "content": new_parts})
++            else:
++                compacted.append(msg)
++            continue
++
++        # Older tool result compression with failure-trace retention
++        if role == "tool" and isinstance(msg.get("content"), str):
++            raw_body = msg["content"]
++            raw_bytes = len(raw_body.encode("utf-8"))
++            if raw_bytes > externalize_threshold_bytes:
++                digest = sha256_hex(raw_body)
++                out_p = artifact_dir / f"tool_{digest[:16]}.txt"
++                out_p.write_text(raw_body, encoding="utf-8")
++                lower_body = raw_body.lower()
++                is_failure = any(mk in lower_body for mk in failure_markers)
++                if is_failure:
++                    tail = "\n".join(raw_body.splitlines()[-15:])
++                    replacement = (
++                        f"[EXTERNALIZED_FAILURE_TRACE bytes={raw_bytes} sha256={digest} uri={out_p.name}]\n"
++                        f"--- LAST_15_LINES_PINNED ---\n{tail}"
++                    )
++                else:
++                    replacement = f"[EXTERNALIZED_TOOL_RESULT bytes={raw_bytes} sha256={digest} uri={out_p.name}]"
++                omissions.append(
++                    {
++                        "index": idx,
++                        "kind": "tool_result_externalized",
++                        "failure_trace_pinned": is_failure,
++                        "bytes": raw_bytes,
++                        "sha256": digest,
++                        "uri": out_p.name,
++                    }
++                )
++                compacted.append({**msg, "content": replacement})
++                continue
++
++        # Strip older images beyond keep_img_set
++        if idx in image_msg_indices and idx not in keep_img_set:
++            new_parts = []
++            for p in msg["content"]:
++                if isinstance(p, dict) and p.get("type") in ("image_url", "image"):
++                    raw_s = canonical_json(p)
++                    digest = sha256_hex(raw_s)
++                    out_p = artifact_dir / f"img_{digest[:16]}.json"
++                    out_p.write_text(raw_s, encoding="utf-8")
++                    new_parts.append(
++                        {
++                            "type": "text",
++                            "text": f"[EXTERNALIZED_IMAGE sha256={digest} uri={out_p.name}]",
++                        }
++                    )
++                    omissions.append(
++                        {
++                            "index": idx,
++                            "kind": "image_externalized",
++                            "sha256": digest,
++                            "uri": out_p.name,
++                        }
++                    )
++                else:
++                    new_parts.append(p)
++            compacted.append({**msg, "content": new_parts})
++            continue
++
++        compacted.append(msg)
++
++    return compacted, omissions
++
++
++def filter_authoritative_memories(
++    records: Sequence[Dict[str, Any]],
++    *,
++    policy: ContextPolicy,
++    limit: int = 10,
++) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
++    """Pre-slice authoritative memory filter (fixes Nov 15 memory-audit crowdout bugs).
++
++    Filters BEFORE slicing to `limit`, quarantines self-test probe namespaces, and drops
++    SUPERSEDED / HISTORICAL / CONFLICTED records while recording explicit omissions.
++    """
++    inv = policy.invariants
++    quarantined = set(inv["quarantined_memory_namespaces"])
++    allowed_status = set(inv["allowed_memory_authority_statuses"])
++
++    kept: List[Dict[str, Any]] = []
++    dropped: List[Dict[str, Any]] = []
++
++    for rec in records:
++        ns = str(rec.get("namespace", "")).lower()
++        status = str(rec.get("authority_status", "UNRESOLVED")).upper()
++        if any(q in ns for q in quarantined):
++            dropped.append(
++                {"id": rec.get("id"), "reason": f"quarantined_namespace:{ns}"}
++            )
++            continue
++        if status not in allowed_status:
++            dropped.append(
++                {"id": rec.get("id"), "reason": f"non_current_authority:{status}"}
++            )
++            continue
++        kept.append(rec)
++
++    if len(kept) > limit:
++        for extra in kept[limit:]:
++            dropped.append({"id": extra.get("id"), "reason": "budget_limit_sliced"})
++        kept = kept[:limit]
++
++    return kept, dropped
++
++
++def validate_handoff_packet(packet: Dict[str, Any]) -> Tuple[bool, List[str]]:
++    """Defeats invariant amnesia on CHECKPOINT_AND_ROTATE session rotation."""
++    errors: List[str] = []
++    required_fields = (
++        "mission_id",
++        "target_repo",
++        "target_sha",
++        "acceptance_receipt_contract",
++        "next_discriminating_step",
++        "pinned_failure_receipts",
++    )
++    for f in required_fields:
++        val = packet.get(f)
++        if val is None or (isinstance(val, str) and not val.strip()):
++            errors.append(f"ERR_HANDOFF_MISSING_{f.upper()}")
++
++    # Block retired Zone A paths from sneaking across rotations
++    serialized = canonical_json(packet)
++    for bad in ("~/.estate", "launchctl", "LaunchAgents", "LaunchDaemons"):
++        if bad in serialized:
++            errors.append(f"ERR_HANDOFF_ZONE_A_REGRESSION:{bad}")
++
++    # Block TIER_2 agent inferences labeled as primary proof
++    for r in packet.get("pinned_failure_receipts", []):
++        if (
++            isinstance(r, dict)
++            and r.get("tier") == "TIER_2_AGENT_INFERENCE"
++            and r.get("used_as_primary_fact")
++        ):
++            errors.append("ERR_HANDOFF_EPISTEMIC_LAUNDERING")
++
++    return len(errors) == 0, sorted(set(errors))
+diff --git a/platform/router-edge/context-governance/tests/shadow.test.mjs b/platform/router-edge/context-governance/tests/shadow.test.mjs
+new file mode 100644
+index 000000000..38ac09a15
+--- /dev/null
++++ b/platform/router-edge/context-governance/tests/shadow.test.mjs
+@@ -0,0 +1,21 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import { pathToFileURL } from 'node:url';
++
++const moduleUrl = process.env.GOVERNOR_TS
++  ? pathToFileURL(process.env.GOVERNOR_TS)
++  : new URL('../ts/context-budget-middleware/index.ts', import.meta.url);
++const { gateRouterIngress } = await import(moduleUrl.href);
++const policy = JSON.parse(fs.readFileSync(new URL('../governance/context-policy.v1.json', import.meta.url)));
++
++test('SHADOW preserves the request and sends no rotation command', async () => {
++  const body = { model: 'glm-5.3-flash', messages: [{ role: 'user', content: 'x'.repeat(120000) }] };
++  const before = JSON.stringify(body);
++  const ledger = { getSession: async () => null, putSession: async () => {}, getMissionTotal: async () => 0 };
++  const result = await gateRouterIngress(body, new Headers(), policy, ledger);
++  assert.equal(result.allowed, true);
++  assert.equal(result.status, 200);
++  assert.equal(result.responseHeaders['X-Meridian-Context-Directive'], 'ALLOW');
++  assert.equal(JSON.stringify(result.clampedBody), before);
++});
+diff --git a/platform/router-edge/context-governance/tests/test_context_governor.py b/platform/router-edge/context-governance/tests/test_context_governor.py
+new file mode 100644
+index 000000000..1be6e8949
+--- /dev/null
++++ b/platform/router-edge/context-governance/tests/test_context_governor.py
+@@ -0,0 +1,535 @@
++"""20-case adversarial test suite covering all 10 edge cases, fleet compilation, and CI exit 43."""
++
++from __future__ import annotations
++
++import copy
++import json
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(ROOT / "python"))
++
++from context_governor import (
++    ContextGovernor,
++    ContextPolicy,
++    MissionBudgetLedger,
++    externalize_and_compact_history,
++    filter_authoritative_memories,
++    validate_handoff_packet,
++)
++
++POLICY_PATH = ROOT / "governance" / "context-policy.v1.json"
++
++
++def make_policy(phase: str = "ENFORCE") -> ContextPolicy:
++    raw = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
++    raw["rollout_phase"] = phase
++    return ContextPolicy(raw)
++
++
++class TestEstateContextGovernance(unittest.TestCase):
++    # 1. Shadow mode never blocks even over hard cap
++    def test_01_shadow_mode_never_interrupts_operations(self):
++        gov = ContextGovernor(make_policy("SHADOW"), MissionBudgetLedger())
++        huge = "x" * 120000
++        d = gov.evaluate_ingress(
++            {
++                "model": "deepseek-flash",
++                "reasoning_effort": "high",
++                "messages": [{"role": "user", "content": huge}],
++            },
++            session_id="s1",
++            mission_id="m1",
++            role="role:ops-dispatch",
++        )
++        self.assertTrue(d.allowed)
++        self.assertEqual(d.http_status, 200)
++        self.assertEqual(d.directive, "ALLOW")
++        self.assertEqual(d.telemetry["shadow_would_directive"], "CHECKPOINT_AND_ROTATE")
++
++    # 2. Soft-rotate clamps reasoning_effort=high -> low on ops-dispatch without blocking
++    def test_02_role_clamps_high_reasoning_on_ops_dispatch(self):
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), MissionBudgetLedger())
++        d = gov.evaluate_ingress(
++            {
++                "model": "nemotron-3.5-super-vl",
++                "reasoning_effort": "high",
++                "max_tokens": 16000,
++                "messages": [{"role": "user", "content": "gh run view 45248612714"}],
++            },
++            session_id="s2",
++            mission_id="m8416",
++            role="role:ops-dispatch",
++        )
++        self.assertTrue(d.allowed)
++        self.assertEqual(d.clamped_request["reasoning_effort"], "low")
++        self.assertEqual(d.clamped_request["max_tokens"], 2048)
++
++    # 3. Soft threshold issues CHECKPOINT_AND_ROTATE header while allowing atomic turn completion
++    def test_03_soft_cap_emits_rotate_directive_before_hard_block(self):
++        gov = ContextGovernor(make_policy("ENFORCE"), MissionBudgetLedger())
++        body_18k = "a " * 25000  # ~18k tokens (between 16k soft and 24k hard)
++        d = gov.evaluate_ingress(
++            {"model": "nemotron", "messages": [{"role": "user", "content": body_18k}]},
++            session_id="s3",
++            mission_id="m3",
++            role="role:ops-dispatch",
++        )
++        self.assertTrue(d.allowed)
++        self.assertEqual(
++            d.headers["X-Meridian-Context-Directive"], "CHECKPOINT_AND_ROTATE"
++        )
++
++    # 4. Hard cap blocks only after exceeding hard cap when no critical-section lease
++    def test_04_hard_cap_blocks_in_enforce_mode(self):
++        gov = ContextGovernor(make_policy("ENFORCE"), MissionBudgetLedger())
++        body_26k = "a " * 40000
++        d = gov.evaluate_ingress(
++            {"model": "nemotron", "messages": [{"role": "user", "content": body_26k}]},
++            session_id="s4",
++            mission_id="m4",
++            role="role:ops-dispatch",
++        )
++        self.assertFalse(d.allowed)
++        self.assertEqual(d.http_status, 429)
++        self.assertEqual(d.directive, "HARD_STOP_CONTEXT_CAP_EXCEEDED")
++
++    # 5. Edge Case 2: Critical-Section Lease allows +15% headroom for up to 2 turns
++    def test_05_critical_section_lease_protects_atomic_commit_push(self):
++        gov = ContextGovernor(make_policy("ENFORCE"), MissionBudgetLedger())
++        # ~25.5k tokens: above 24k hard cap, below 27.6k (+15%) critical-section cap
++        body_25k = "word " * 13500
++        d1 = gov.evaluate_ingress(
++            {"model": "nemotron", "messages": [{"role": "user", "content": body_25k}]},
++            session_id="s5",
++            mission_id="m5",
++            role="role:ops-dispatch",
++            critical_section_nonce="commit-push-1",
++        )
++        self.assertTrue(d1.allowed, d1.to_dict())
++        self.assertEqual(d1.headers["X-Meridian-Critical-Section-Lease"], "ACTIVE")
++
++    # 6. Edge Case 2b: Critical-Section Lease is strictly non-renewable after 2 turns even with new nonce
++    def test_06_critical_section_lease_non_renewable_after_2_turns(self):
++        gov = ContextGovernor(make_policy("ENFORCE"), MissionBudgetLedger())
++        body_25k = "word " * 13500
++        for i in range(2):
++            d = gov.evaluate_ingress(
++                {
++                    "model": "nemotron",
++                    "messages": [{"role": "user", "content": body_25k}],
++                },
++                session_id="s6",
++                mission_id="m6",
++                role="role:ops-dispatch",
++                critical_section_nonce=f"nonce-{i}",
++            )
++            self.assertTrue(d.allowed)
++        # Turn 3 with fresh nonce MUST fail
++        d3 = gov.evaluate_ingress(
++            {"model": "nemotron", "messages": [{"role": "user", "content": body_25k}]},
++            session_id="s6",
++            mission_id="m6",
++            role="role:ops-dispatch",
++            critical_section_nonce="nonce-renew-attempt",
++        )
++        self.assertFalse(d3.allowed)
++        self.assertIn("ERR_CRITICAL_SECTION_LEASE_EXHAUSTED", d3.violations)
++
++    # 7. Edge Case 4: Stable prefix preserves KV-cache; mutating system prompt flags thrash
++    def test_07_kv_cache_prefix_immutability_and_thrash_detection(self):
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), MissionBudgetLedger())
++        r1 = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [
++                    {"role": "system", "content": "STATIC_CORE"},
++                    {"role": "user", "content": "hi"},
++                ],
++            },
++            session_id="s7",
++            mission_id="m7",
++            role="role:surgical-patch",
++        )
++        r2 = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [
++                    {"role": "system", "content": "STATIC_CORE"},
++                    {"role": "user", "content": "hi"},
++                    {"role": "user", "content": "step 2"},
++                ],
++            },
++            session_id="s7",
++            mission_id="m7",
++            role="role:surgical-patch",
++        )
++        self.assertEqual(r2.headers["X-Meridian-Prefix-Cache-State"], "PREFIX_STABLE")
++        r3 = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [
++                    {"role": "system", "content": "STATIC_CORE ts=19:33:01Z"},
++                    {"role": "user", "content": "step 3"},
++                ],
++            },
++            session_id="s7",
++            mission_id="m7",
++            role="role:surgical-patch",
++        )
++        self.assertEqual(
++            r3.headers["X-Meridian-Prefix-Cache-State"], "PREFIX_MUTATED_THRASH"
++        )
++        self.assertIn("ERR_KV_PREFIX_THRASH", r3.violations)
++
++    # 8. Edge Case 3: Provider usage calibration adjusts estimator upward on dense tokenizers
++    def test_08_tokenizer_calibration_feedback_loop(self):
++        ledger = MissionBudgetLedger()
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), ledger)
++        d1 = gov.evaluate_ingress(
++            {
++                "model": "deepseek-v4",
++                "messages": [{"role": "user", "content": "abc" * 500}],
++            },
++            session_id="s8",
++            mission_id="m8",
++            role="role:surgical-patch",
++        )
++        est1 = d1.telemetry["used_tokens"]
++        ledger.record_provider_usage(
++            "s8", estimated_tokens=est1, actual_prompt_tokens=int(est1 * 1.5)
++        )
++        d2 = gov.evaluate_ingress(
++            {
++                "model": "deepseek-v4",
++                "messages": [{"role": "user", "content": "abc" * 500}],
++            },
++            session_id="s8",
++            mission_id="m8",
++            role="role:surgical-patch",
++        )
++        self.assertGreater(d2.telemetry["used_tokens"], est1)
++        self.assertEqual(
++            d2.telemetry["token_measurement_method"], "provider_usage_calibrated"
++        )
++
++    # 9. Edge Case 5: Multimodal base64 screenshot accounting + historical image stripping
++    def test_09_multimodal_base64_accounting_and_externalization(self):
++        fake_b64 = "data:image/png;base64," + ("A" * 400000)
++        msgs = [
++            {"role": "system", "content": "STATIC"},
++            {
++                "role": "user",
++                "content": [
++                    {"type": "text", "text": "old shot"},
++                    {"type": "image_url", "image_url": {"url": fake_b64}},
++                ],
++            },
++            {
++                "role": "user",
++                "content": [
++                    {"type": "text", "text": "new shot"},
++                    {"type": "image_url", "image_url": {"url": fake_b64}},
++                ],
++            },
++        ]
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), MissionBudgetLedger())
++        d = gov.evaluate_ingress(
++            {"model": "nemotron-vl", "messages": msgs},
++            session_id="s9",
++            mission_id="m9",
++            role="role:ops-dispatch",
++        )
++        self.assertEqual(d.telemetry["image_count"], 2)
++        self.assertGreaterEqual(d.telemetry["image_tokens"], 4000)
++
++        with tempfile.TemporaryDirectory() as td:
++            compacted, omissions = externalize_and_compact_history(
++                msgs, artifact_dir=Path(td), keep_recent_images=1
++            )
++            self.assertEqual(len(omissions), 1)
++            self.assertIn("EXTERNALIZED_IMAGE", compacted[1]["content"][1]["text"])
++            self.assertEqual(compacted[2]["content"][1]["type"], "image_url")
++
++    # 10. Edge Case 6: Sub-agent brief cap + hierarchical mission aggregate budget
++    def test_10_subagent_brief_and_mission_aggregate_budget(self):
++        ledger = MissionBudgetLedger()
++        gov = ContextGovernor(make_policy("ENFORCE"), ledger)
++        # Child 1 inherits bloated 6k brief -> flagged
++        d_child1 = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [{"role": "user", "content": "data " * 4000}],
++            },
++            session_id="child-1",
++            mission_id="m-swarm",
++            role="role:ops-dispatch",
++            is_subagent=True,
++        )
++        self.assertIn("ERR_SUBAGENT_BRIEF_CAP_EXCEEDED", d_child1.violations)
++
++        # Simulate prior sub-agents burning 47,500 of 48,000 mission cap
++        ledger.mission_tokens["m-swarm"] = 47500
++        d_child2 = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [{"role": "user", "content": "small task " * 400}],
++            },
++            session_id="child-2",
++            mission_id="m-swarm",
++            role="role:ops-dispatch",
++            is_subagent=True,
++        )
++        self.assertFalse(d_child2.allowed)
++        self.assertEqual(d_child2.directive, "HARD_STOP_MISSION_BUDGET_EXHAUSTED")
++
++    # 11. Edge Case 8: BudgetLedgerDO storage outage degrades fail-open safely
++    def test_11_storage_outage_degrades_fail_open(self):
++        gov = ContextGovernor(
++            make_policy("ENFORCE"), MissionBudgetLedger(simulate_storage_outage=True)
++        )
++        d = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [{"role": "user", "content": "check health"}],
++            },
++            session_id="s11",
++            mission_id="m11",
++            role="role:ops-dispatch",
++        )
++        self.assertTrue(d.allowed)
++        self.assertIn("budget_ledger_unavailable_fail_open", d.degradations)
++        self.assertFalse(d.telemetry["complete"])
++
++    # 12. Edge Case 9: >4KB tool output externalization preserves failure traces verbatim
++    def test_12_externalize_tool_output_pins_failure_trace(self):
++        huge_ok = "INFO ok line\n" * 500
++        huge_fail = (
++            "INFO step\n" * 500
++        ) + "ERROR: HTTP 525 SSL handshake failed on llm.meridianlabs.cloud\n"
++        msgs = [
++            {"role": "system", "content": "STATIC"},
++            {"role": "tool", "content": huge_ok},
++            {"role": "tool", "content": huge_fail},
++            {"role": "user", "content": "t1"},
++            {"role": "assistant", "content": "a1"},
++            {"role": "user", "content": "t2"},
++            {"role": "assistant", "content": "a2"},
++        ]
++        with tempfile.TemporaryDirectory() as td:
++            compacted, omissions = externalize_and_compact_history(
++                msgs, artifact_dir=Path(td), keep_recent_verbatim_turns=4
++            )
++            self.assertIn("EXTERNALIZED_TOOL_RESULT", compacted[1]["content"])
++            self.assertIn("EXTERNALIZED_FAILURE_TRACE", compacted[2]["content"])
++            self.assertIn("HTTP 525", compacted[2]["content"])
++            self.assertEqual(len(omissions), 2)
++
++    # 13. Edge Case 9b: Handoff validator blocks missing invariants, Zone A, and TIER_2 laundering
++    def test_13_handoff_validator_rejects_amnesia_and_zone_a(self):
++        bad_ok, bad_errs = validate_handoff_packet(
++            {
++                "mission_id": "idp#8416",
++                "target_repo": "chidionyema/idp",
++                "target_sha": "",
++                "acceptance_receipt_contract": "GET /health -> 200",
++                "next_discriminating_step": "edit ~/.estate/daemon.plist",
++                "pinned_failure_receipts": [
++                    {"tier": "TIER_2_AGENT_INFERENCE", "used_as_primary_fact": True}
++                ],
++            }
++        )
++        self.assertFalse(bad_ok)
++        self.assertIn("ERR_HANDOFF_MISSING_TARGET_SHA", bad_errs)
++        self.assertIn("ERR_HANDOFF_ZONE_A_REGRESSION:~/.estate", bad_errs)
++        self.assertIn("ERR_HANDOFF_EPISTEMIC_LAUNDERING", bad_errs)
++
++        good_ok, good_errs = validate_handoff_packet(
++            {
++                "mission_id": "idp#8416",
++                "target_repo": "chidionyema/idp",
++                "target_sha": "4e88bf0",
++                "acceptance_receipt_contract": "GET https://llm.meridianlabs.cloud/health -> 200 zone-b-cloudflare-edge",
++                "next_discriminating_step": "dispatch bootstrap mode=live once",
++                "pinned_failure_receipts": [
++                    {"tier": "TIER_0_RAW_MACHINE_RECEIPT", "run_id": "45248612714"}
++                ],
++            }
++        )
++        self.assertTrue(good_ok, good_errs)
++
++    # 14. Edge Case 10: Pre-slice memory filter quarantines self-test probes & SUPERSEDED records
++    def test_14_memory_filter_quarantines_probes_before_slicing(self):
++        policy = make_policy("ENFORCE")
++        records = [
++            {"id": "p1", "namespace": "self-test-probe", "authority_status": "CURRENT"},
++            {"id": "p2", "namespace": "healthcheck", "authority_status": "CURRENT"},
++            {"id": "old", "namespace": "estate", "authority_status": "SUPERSEDED"},
++            {"id": "real", "namespace": "estate", "authority_status": "CURRENT"},
++        ]
++        kept, dropped = filter_authoritative_memories(records, policy=policy, limit=1)
++        self.assertEqual([r["id"] for r in kept], ["real"])
++        self.assertEqual(len(dropped), 3)
++
++    # 15. Always-on MCP tool ceiling >10 flagged
++    def test_15_mcp_tool_ceiling_flagged(self):
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), MissionBudgetLedger())
++        tools = [
++            {"type": "function", "function": {"name": f"t_{i}"}} for i in range(12)
++        ]
++        d = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "messages": [{"role": "user", "content": "hi"}],
++                "tools": tools,
++            },
++            session_id="s15",
++            mission_id="m15",
++            role="role:surgical-patch",
++        )
++        self.assertIn("ERR_MCP_TOOL_CEILING_EXCEEDED", d.violations)
++
++    # 16. Unknown role fails safely to strictest ops-dispatch cap
++    def test_16_unknown_role_defaults_to_strictest_ops_cap(self):
++        gov = ContextGovernor(make_policy("SOFT_ROTATE"), MissionBudgetLedger())
++        d = gov.evaluate_ingress(
++            {
++                "model": "deepseek",
++                "reasoning_effort": "high",
++                "messages": [{"role": "user", "content": "hi"}],
++            },
++            session_id="s16",
++            mission_id="m16",
++            role="role:unregistered-rogue",
++        )
++        self.assertEqual(d.clamped_request["reasoning_effort"], "low")
++        self.assertEqual(d.telemetry["budget_tokens"], 24000)
++
++    # 17. Fleet compiler emits lean configs passing audit with exit 0
++    def test_17_fleet_compiler_passes_audit_exit_0(self):
++        cli = ROOT / "bin" / "estate_context_fleet_sync.py"
++        with tempfile.TemporaryDirectory() as td:
++            p = subprocess.run(
++                [
++                    sys.executable,
++                    str(cli),
++                    "--policy",
++                    str(POLICY_PATH),
++                    "--repo-root",
++                    td,
++                    "--compile",
++                    "--audit",
++                ],
++                capture_output=True,
++                text=True,
++            )
++            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
++            self.assertTrue(
++                (Path(td) / ".clinerules" / "00-meridian-context-core.md").is_file()
++            )
++            self.assertTrue((Path(td) / "AGENTS.md").is_file())
++            self.assertTrue(
++                (Path(td) / ".meridian" / "fleet-gateway-profile.json").is_file()
++            )
++
++    # 18. Fleet audit fails closed (exit 43) on Turn-1 rule bloat > 1,500 tokens
++    def test_18_fleet_audit_blocks_bloated_rules_exit_43(self):
++        cli = ROOT / "bin" / "estate_context_fleet_sync.py"
++        with tempfile.TemporaryDirectory() as td:
++            (Path(td) / "AGENTS.md").write_text(
++                "verbose rule line " * 1000, encoding="utf-8"
++            )
++            p = subprocess.run(
++                [
++                    sys.executable,
++                    str(cli),
++                    "--policy",
++                    str(POLICY_PATH),
++                    "--repo-root",
++                    td,
++                    "--audit",
++                ],
++                capture_output=True,
++                text=True,
++            )
++            self.assertEqual(p.returncode, 43)
++            self.assertIn("FC_TURN1_BLOATED_RULES", p.stdout)
++
++    # 19. Fleet audit fails closed (exit 43) on direct raw upstream provider bypass
++    def test_19_fleet_audit_blocks_raw_provider_bypass_exit_43(self):
++        cli = ROOT / "bin" / "estate_context_fleet_sync.py"
++        with tempfile.TemporaryDirectory() as td:
++            (Path(td) / ".mcp.json").write_text(
++                json.dumps({"endpoint": "https://api.deepseek.com/v1"}),
++                encoding="utf-8",
++            )
++            p = subprocess.run(
++                [
++                    sys.executable,
++                    str(cli),
++                    "--policy",
++                    str(POLICY_PATH),
++                    "--repo-root",
++                    td,
++                    "--audit",
++                ],
++                capture_output=True,
++                text=True,
++            )
++            self.assertEqual(p.returncode, 43)
++            self.assertIn("FC_GATEWAY_BYPASS_RAW_PROVIDER", p.stdout)
++
++    # 20. Fleet audit fails closed (exit 43) on >10 always-on MCP tools
++    def test_20_fleet_audit_blocks_excessive_mcp_tools_exit_43(self):
++        cli = ROOT / "bin" / "estate_context_fleet_sync.py"
++        with tempfile.TemporaryDirectory() as td:
++            (Path(td) / ".mcp.json").write_text(
++                json.dumps({"always_on_tools": [f"tool_{i}" for i in range(15)]}),
++                encoding="utf-8",
++            )
++            p = subprocess.run(
++                [
++                    sys.executable,
++                    str(cli),
++                    "--policy",
++                    str(POLICY_PATH),
++                    "--repo-root",
++                    td,
++                    "--audit",
++                ],
++                capture_output=True,
++                text=True,
++            )
++            self.assertEqual(p.returncode, 43)
++            self.assertIn("FC_MCP_TOOL_CEILING_EXCEEDED", p.stdout)
++
++    def test_compile_preserves_existing_estate_authority(self):
++        cli = ROOT / "bin" / "estate_context_fleet_sync.py"
++        with tempfile.TemporaryDirectory() as td:
++            authority = Path(td) / "AGENTS.md"
++            original = "# Existing authority\nCurrent signed instructions stay authoritative.\n"
++            authority.write_text(original, encoding="utf-8")
++            p = subprocess.run(
++                [
++                    sys.executable,
++                    str(cli),
++                    "--policy",
++                    str(POLICY_PATH),
++                    "--repo-root",
++                    td,
++                    "--compile",
++                ],
++                capture_output=True,
++                text=True,
++            )
++            self.assertEqual(p.returncode, 0, p.stderr)
++            self.assertEqual(authority.read_text(), original)
++            self.assertTrue((Path(td) / ".meridian" / "context-core.md").is_file())
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/platform/router-edge/context-governance/ts/context-budget-middleware/index.ts b/platform/router-edge/context-governance/ts/context-budget-middleware/index.ts
+new file mode 100644
+index 000000000..80eec3b95
+--- /dev/null
++++ b/platform/router-edge/context-governance/ts/context-budget-middleware/index.ts
+@@ -0,0 +1,273 @@
++/**
++ * Meridian Context Budget & Role-Clamping Middleware for Lane 1 Cloudflare Workers
++ * (`meridian-router-edge` + `BudgetLedgerDO`).
++ *
++ * Zero external dependencies (Web Crypto API only).
++ * Enforces:
++ *  - Streaming-safe ingress gating (never cuts mid-SSE chunk)
++ *  - Transparent reasoning_effort & max_tokens clamping per role
++ *  - KV-cache prefix_sha256 immutability tracking (zero dynamic injection into prefix)
++ *  - Bounded non-renewable Critical-Section Lease (+15% headroom, max 2 turns)
++ *  - Degraded fail-open on BudgetLedgerDO transient timeout
++ */
++
++export type RolloutPhase = "SHADOW" | "SOFT_ROTATE" | "ENFORCE";
++
++export interface RolePolicy {
++  reasoning_effort_clamp: "minimal" | "low" | "medium" | "high";
++  max_output_tokens_clamp: number;
++  turn_1_prefix_cap: number;
++  soft_context_cap: number;
++  hard_context_cap: number;
++  mission_aggregate_cap: number;
++  max_grace_turns_after_soft: number;
++}
++
++export interface ContextPolicyManifest {
++  rollout_phase: RolloutPhase;
++  global_invariants: {
++    max_always_on_mcp_tools: number;
++    critical_section_max_headroom_ratio: number;
++    critical_section_max_turns: number;
++    subagent_max_brief_tokens: number;
++  };
++  tokenizer_safety_multipliers: Record<string, number>;
++  roles: Record<string, RolePolicy>;
++}
++
++export interface SessionBudgetRecord {
++  turn_count: number;
++  initial_prefix_hash: string;
++  soft_warnings_issued: number;
++  critical_section_turns_used: number;
++  calibration_ratio: number;
++}
++
++export interface LedgerStore {
++  getSession(sessionId: string): Promise<SessionBudgetRecord | null>;
++  putSession(sessionId: string, rec: SessionBudgetRecord): Promise<void>;
++  getMissionTotal(missionId: string): Promise<number>;
++}
++
++const REASONING_RANK: Record<string, number> = {
++  minimal: 0,
++  low: 1,
++  medium: 2,
++  high: 3,
++};
++
++function toHex(buf: ArrayBuffer): string {
++  return Array.from(new Uint8Array(buf))
++    .map((b) => b.toString(16).padStart(2, "0"))
++    .join("");
++}
++
++async function sha256Hex(input: string): Promise<string> {
++  const bytes = new TextEncoder().encode(input);
++  const digest = await crypto.subtle.digest("SHA-256", bytes);
++  return toHex(digest);
++}
++
++function estimateTextTokens(text: string, mult: number): number {
++  if (!text) return 0;
++  const utf8Bytes = new TextEncoder().encode(text).length;
++  return Math.max(1, Math.ceil((utf8Bytes / 3.2) * mult));
++}
++
++export function estimateRequestTokens(
++  body: Record<string, unknown>,
++  mult: number
++): { total: number; toolCount: number; imageCount: number } {
++  const messages = Array.isArray(body.messages) ? body.messages : [];
++  const tools = Array.isArray(body.tools) ? body.tools : [];
++  let total = tools.length > 0 ? estimateTextTokens(JSON.stringify(tools), mult) : 0;
++  let imageCount = 0;
++
++  for (const m of messages) {
++    if (!m || typeof m !== "object") continue;
++    total += 6;
++    const content = (m as Record<string, unknown>).content;
++    if (typeof content === "string") {
++      total += estimateTextTokens(content, mult);
++    } else if (Array.isArray(content)) {
++      for (const part of content) {
++        if (!part || typeof part !== "object") continue;
++        const p = part as Record<string, unknown>;
++        if (p.type === "text") {
++          total += estimateTextTokens(String(p.text || ""), mult);
++        } else if (p.type === "image_url" || p.type === "image") {
++          imageCount += 1;
++          total += 2048;
++        } else {
++          total += estimateTextTokens(JSON.stringify(p), mult);
++        }
++      }
++    }
++  }
++  return { total, toolCount: tools.length, imageCount };
++}
++
++export async function gateRouterIngress(
++  requestBody: Record<string, unknown>,
++  headersIn: Headers,
++  policy: ContextPolicyManifest,
++  ledger: LedgerStore
++): Promise<{
++  allowed: boolean;
++  status: number;
++  clampedBody: Record<string, unknown>;
++  responseHeaders: Record<string, string>;
++  violations: string[];
++  degradations: string[];
++}> {
++  const role = headersIn.get("x-meridian-role") || "role:ops-dispatch";
++  const sessionId = headersIn.get("x-meridian-session-id") || "ephemeral";
++  const missionId = headersIn.get("x-meridian-mission-id") || "unassigned";
++  const csNonce = headersIn.get("x-meridian-critical-section");
++  const isSubagent = headersIn.get("x-meridian-subagent") === "true";
++
++  const rcfg = policy.roles[role] || policy.roles["role:ops-dispatch"];
++  const phase = policy.rollout_phase;
++  const degradations: string[] = [];
++  const violations: string[] = [];
++
++  let session: SessionBudgetRecord | null = null;
++  let missionSpent = 0;
++  let ledgerHealthy = true;
++
++  try {
++    session = (await ledger.getSession(sessionId)) || {
++      turn_count: 0,
++      initial_prefix_hash: "",
++      soft_warnings_issued: 0,
++      critical_section_turns_used: 0,
++      calibration_ratio: 1.0,
++    };
++    missionSpent = await ledger.getMissionTotal(missionId);
++  } catch {
++    ledgerHealthy = false;
++    degradations.push("budget_ledger_unavailable_fail_open");
++  }
++
++  // Transparent role clamping (prevents high-reasoning token burn on ops-dispatch)
++  const clampedBody: Record<string, unknown> = { ...requestBody };
++  if (phase === "SOFT_ROTATE" || phase === "ENFORCE") {
++    const reqEffort = String(requestBody.reasoning_effort || "").toLowerCase();
++    const clampEffort = rcfg.reasoning_effort_clamp;
++    if (!reqEffort || (REASONING_RANK[reqEffort] ?? 99) > (REASONING_RANK[clampEffort] ?? 1)) {
++      clampedBody.reasoning_effort = clampEffort;
++      degradations.push(`reasoning_effort_clamped_to_${clampEffort}`);
++    }
++    const reqMax = Number(requestBody.max_tokens ?? requestBody.max_completion_tokens ?? 0);
++    if (!reqMax || reqMax > rcfg.max_output_tokens_clamp) {
++      clampedBody.max_tokens = rcfg.max_output_tokens_clamp;
++      degradations.push(`max_tokens_clamped_to_${rcfg.max_output_tokens_clamp}`);
++    }
++  }
++
++  const modelStr = String(requestBody.model || "").toLowerCase();
++  let mult = policy.tokenizer_safety_multipliers.default ?? 1.15;
++  for (const [k, v] of Object.entries(policy.tokenizer_safety_multipliers)) {
++    if (k !== "default" && modelStr.includes(k)) {
++      mult = v;
++      break;
++    }
++  }
++  const cal = session ? session.calibration_ratio : 1.0;
++  const est = estimateRequestTokens(clampedBody, mult * cal);
++
++  // Prefix immutability hash (system messages + tools only)
++  const messages = Array.isArray(clampedBody.messages) ? clampedBody.messages : [];
++  const sysMsgs = messages.filter((m) => (m as Record<string, unknown>)?.role === "system");
++  const tools = Array.isArray(clampedBody.tools) ? clampedBody.tools : [];
++  const prefixHash = await sha256Hex(JSON.stringify({ system: sysMsgs, tools }));
++
++  let kvState = "COLD_TURN_1";
++  if (session) {
++    session.turn_count += 1;
++    if (session.turn_count === 1) {
++      session.initial_prefix_hash = prefixHash;
++      if (est.total > rcfg.turn_1_prefix_cap) violations.push("ERR_TURN1_PREFIX_CAP_EXCEEDED");
++    } else if (prefixHash !== session.initial_prefix_hash) {
++      kvState = "PREFIX_MUTATED_THRASH";
++      violations.push("ERR_KV_PREFIX_THRASH");
++    } else {
++      kvState = "PREFIX_STABLE";
++    }
++  }
++
++  if (est.toolCount > policy.global_invariants.max_always_on_mcp_tools) {
++    violations.push("ERR_MCP_TOOL_CEILING_EXCEEDED");
++  }
++  if (isSubagent && session && session.turn_count === 1 && est.total > policy.global_invariants.subagent_max_brief_tokens) {
++    violations.push("ERR_SUBAGENT_BRIEF_CAP_EXCEEDED");
++  }
++  if (missionSpent + est.total > rcfg.mission_aggregate_cap) {
++    violations.push("ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED");
++  }
++
++  let leaseActive = false;
++  let effectiveHardCap = rcfg.hard_context_cap;
++  if (csNonce) {
++    if (!session || session.critical_section_turns_used < policy.global_invariants.critical_section_max_turns) {
++      if (session) session.critical_section_turns_used += 1;
++      leaseActive = true;
++      effectiveHardCap = Math.ceil(
++        rcfg.hard_context_cap * (1 + policy.global_invariants.critical_section_max_headroom_ratio)
++      );
++    } else {
++      violations.push("ERR_CRITICAL_SECTION_LEASE_EXHAUSTED");
++    }
++  }
++
++  let directive = "ALLOW";
++  let allowed = true;
++  let status = 200;
++
++  if (est.total >= rcfg.soft_context_cap) {
++    directive = "CHECKPOINT_AND_ROTATE";
++    if (session) session.soft_warnings_issued += 1;
++  }
++
++  if (phase === "ENFORCE") {
++    const graceExhausted = !session || session.soft_warnings_issued > rcfg.max_grace_turns_after_soft;
++    if (violations.includes("ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED") && !leaseActive) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_MISSION_BUDGET_EXHAUSTED";
++    } else if (est.total > effectiveHardCap) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_CONTEXT_CAP_EXCEEDED";
++    } else if (est.total >= rcfg.hard_context_cap && !leaseActive && graceExhausted) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_ROTATION_IGNORED";
++    }
++  }
++
++  if (ledgerHealthy && session) {
++    try {
++      await ledger.putSession(sessionId, session);
++    } catch {
++      degradations.push("budget_ledger_write_failed_nonfatal");
++    }
++  }
++
++  return {
++    allowed,
++    status,
++    clampedBody,
++    responseHeaders: {
++      "X-Meridian-Context-Phase": phase,
++      "X-Meridian-Context-Directive": phase === "SHADOW" ? "ALLOW" : directive,
++      "X-Meridian-Context-Tokens": String(est.total),
++      "X-Meridian-Context-Soft-Cap": String(rcfg.soft_context_cap),
++      "X-Meridian-Context-Hard-Cap": String(effectiveHardCap),
++      "X-Meridian-Prefix-Cache-State": kvState,
++      "X-Meridian-Critical-Section-Lease": leaseActive ? "ACTIVE" : "NONE",
++    },
++    violations,
++    degradations,
++  };
++}
+diff --git a/platform/router-edge/package.json b/platform/router-edge/package.json
+index b7778080e..9cfa2b5c3 100644
+--- a/platform/router-edge/package.json
++++ b/platform/router-edge/package.json
+@@ -5,7 +5,7 @@
+   "type": "module",
+   "scripts": {
+     "build": "esbuild src/index.ts --bundle --format=esm --platform=neutral --outfile=dist/index.js",
+-    "test": "npm run build && node tests/router.falsifier.mjs",
++    "test": "npm run build && node tests/router.falsifier.mjs && python3 -m unittest discover -s context-governance/tests && node --experimental-strip-types --test context-governance/tests/shadow.test.mjs",
+     "deploy": "wrangler deploy --var COMMIT_SHA:$(git rev-parse --short HEAD)",
+     "probe": "node scripts/blackbox-prober.mjs"
+   },
+diff --git a/platform/router-edge/src/context-shadow.ts b/platform/router-edge/src/context-shadow.ts
+new file mode 100644
+index 000000000..2509d1afc
+--- /dev/null
++++ b/platform/router-edge/src/context-shadow.ts
+@@ -0,0 +1,82 @@
++import { gateRouterIngress } from "../context-governance/ts/context-budget-middleware/index";
++import type { ContextPolicyManifest, SessionBudgetRecord } from "../context-governance/ts/context-budget-middleware/index";
++import rawPolicy from "../context-governance/governance/context-policy.v1.json";
++
++const KEY = "context_shadow_v1";
++const MAX_SESSIONS = 128;
++const policy = { ...rawPolicy, rollout_phase: "SHADOW" } as ContextPolicyManifest;
++type Snapshot = {
++  observations: number; estimatedTokens: number; warnings: number;
++  sessions: Record<string, { record: SessionBudgetRecord; observedAt: number }>;
++  lastObservation?: { sourceSha: string; observedAt: number; role: string; estimatedTokens: number; violations: string[] };
++};
++const empty = (): Snapshot => ({ observations: 0, estimatedTokens: 0, warnings: 0, sessions: {} });
++
++async function digest(value: string): Promise<string> {
++  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
++  return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("");
++}
++
++export async function observeContext(
++  stub: DurableObjectStub, request: Request, body: unknown, role: string, clientToken: string, sourceSha: string
++): Promise<void> {
++  const serialized = JSON.stringify(body);
++  // A shadow measurement never makes a valid large inference fail or doubles an unbounded body.
++  if (serialized.length > 1_048_576) return;
++  const session = request.headers.get("x-meridian-session-id")?.slice(0, 128) || crypto.randomUUID();
++  const mission = request.headers.get("x-meridian-mission-id")?.slice(0, 128) || "unattributed";
++  const scope = await digest(JSON.stringify([await digest(clientToken), session, mission, role]));
++  const contextRole = role === "role:coder" ? "role:surgical-patch"
++    : role === "role:architect" ? "role:architecture-audit" : "role:ops-dispatch";
++  const response = await stub.fetch("https://ledger.internal/context/observe", {
++    method: "POST", headers: { "content-type": "application/json" },
++    body: JSON.stringify({ scope, role: contextRole, request: body, sourceSha }),
++  });
++  if (!response.ok) throw new Error("context_observer_unavailable");
++}
++
++export async function contextSnapshot(storage: DurableObjectStorage): Promise<Response> {
++  const snapshot = await storage.get<Snapshot>(KEY) || empty();
++  return Response.json({
++    schema: "urn:estate:context:shadow-observation:v1", phase: "SHADOW",
++    observations: snapshot.observations, estimatedTokens: snapshot.estimatedTokens,
++    warnings: snapshot.warnings, retainedSessions: Object.keys(snapshot.sessions).length,
++    lastObservation: snapshot.lastObservation ?? null,
++    measurement: "estimate", providerUsageCoverage: null, cacheHitRatio: null,
++    enforcementEnabled: false,
++  });
++}
++
++export async function recordContext(state: DurableObjectState, input: unknown): Promise<Response> {
++  const data = input as { scope: string; role: string; request: Record<string, unknown>; sourceSha: string };
++  if (!data || !/^[a-f0-9]{64}$/.test(data.scope) || !Object.hasOwn(policy.roles, data.role) || !data.request || typeof data.sourceSha !== "string") {
++    return Response.json({ error: "invalid_context_observation" }, { status: 400 });
++  }
++  return state.storage.transaction(async () => {
++    const snapshot = await state.storage.get<Snapshot>(KEY) || empty();
++    const now = Date.now();
++    const ledger = {
++      getSession: async () => snapshot.sessions[data.scope]?.record ?? null,
++      putSession: async (_id: string, record: SessionBudgetRecord) => {
++        snapshot.sessions[data.scope] = { record, observedAt: now };
++      },
++      // Mission enforcement is deliberately not inferred from this observation-only counter.
++      getMissionTotal: async () => 0,
++    };
++    const result = await gateRouterIngress(data.request, new Headers({
++      "x-meridian-role": data.role, "x-meridian-session-id": data.scope,
++    }), policy, ledger);
++    const tokens = Number(result.responseHeaders["X-Meridian-Context-Tokens"]);
++    snapshot.observations += 1;
++    snapshot.estimatedTokens += tokens;
++    snapshot.warnings += result.violations.length;
++    snapshot.lastObservation = {
++      sourceSha: data.sourceSha.slice(0, 64), observedAt: now, role: data.role,
++      estimatedTokens: tokens, violations: result.violations,
++    };
++    const ordered = Object.keys(snapshot.sessions).sort((a, b) => snapshot.sessions[b].observedAt - snapshot.sessions[a].observedAt);
++    for (const key of ordered.slice(MAX_SESSIONS)) delete snapshot.sessions[key];
++    await state.storage.put(KEY, snapshot);
++    return Response.json({ observed: true, phase: "SHADOW" });
++  });
++}
+diff --git a/platform/router-edge/src/index.ts b/platform/router-edge/src/index.ts
+index cc82cca89..816619869 100644
+--- a/platform/router-edge/src/index.ts
++++ b/platform/router-edge/src/index.ts
+@@ -1,5 +1,6 @@
+ import { BudgetLedgerDO } from "./ledger-do";
+ import { RoutingStateDO } from "./routing-do";
++import { observeContext } from "./context-shadow";
+ import type {
+   BackendCandidate,
+   ChatCompletionRequest,
+@@ -215,6 +216,10 @@ export default {
+         return getRoutingStub(env).fetch("https://routing.internal/circuits");
+       }
+ 
++      if (url.pathname === "/admin/v1/context" && request.method === "GET") {
++        return getLedgerStub(env).fetch("https://ledger.internal/context/status");
++      }
++
+       if (url.pathname === "/admin/v1/budget") {
+         const targetPath = request.method === "POST" ? "/configure" : "/status";
+         return getLedgerStub(env).fetch(`https://ledger.internal${targetPath}`, {
+@@ -254,6 +259,7 @@ export default {
+ 
+       const routingStub = getRoutingStub(env);
+       const ledgerStub = getLedgerStub(env);
++      ctx.waitUntil(observeContext(ledgerStub, request, body, role, clientToken, commitSha).catch(() => {}));
+ 
+       // Step A: Capability-aware Battalion Admission Plan
+       const planRes = await routingStub.fetch("https://routing.internal/plan", {
+diff --git a/platform/router-edge/src/ledger-do.ts b/platform/router-edge/src/ledger-do.ts
+index 5559813b5..d8a56e34b 100644
+--- a/platform/router-edge/src/ledger-do.ts
++++ b/platform/router-edge/src/ledger-do.ts
+@@ -1,4 +1,5 @@
+ import type { ReserveRequest, ReserveResponse, SettleRequest } from "./types";
++import { contextSnapshot, recordContext } from "./context-shadow";
+ 
+ interface ReservationEntry {
+   estimatedUsd: number;
+@@ -67,6 +68,8 @@ export class BudgetLedgerDO implements DurableObject {
+     const nowMs = Date.now();
+ 
+     try {
++      if (request.method === "GET" && url.pathname === "/context/status") return contextSnapshot(this.state.storage);
++      if (request.method === "POST" && url.pathname === "/context/observe") return recordContext(this.state, await request.json());
+       if (request.method === "GET" && url.pathname === "/status") {
+         const snap = await this.load(nowMs);
+         const reservedUsd = this.sumReserved(snap);
+diff --git a/platform/router-edge/tests/router.falsifier.mjs b/platform/router-edge/tests/router.falsifier.mjs
+index 9201919a5..7f72176db 100644
+--- a/platform/router-edge/tests/router.falsifier.mjs
++++ b/platform/router-edge/tests/router.falsifier.mjs
+@@ -4,6 +4,7 @@ import worker, { BudgetLedgerDO, RoutingStateDO } from "../dist/index.js";
+ 
+ function createMemoryStorage() {
+   const store = new Map();
++  let transactionQueue = Promise.resolve();
+   return {
+     async get(key) {
+       return store.has(key) ? structuredClone(store.get(key)) : undefined;
+@@ -12,7 +13,9 @@ function createMemoryStorage() {
+       store.set(key, structuredClone(val));
+     },
+     async transaction(fn) {
+-      return await fn();
++      const job = transactionQueue.then(fn);
++      transactionQueue = job.then(() => {}, () => {});
++      return await job;
+     },
+   };
+ }
+@@ -111,7 +114,7 @@ assert.equal(seedRes.status, 200);
+ const calls = [];
+ globalThis.fetch = async (url, init) => {
+   const parsed = JSON.parse(init.body);
+-  calls.push({ url: String(url), max_tokens: parsed.max_tokens, model: parsed.model });
++  calls.push({ url: String(url), max_tokens: parsed.max_tokens, model: parsed.model, messages: parsed.messages });
+ 
+   if (String(url).includes("mock.groq.local")) {
+     return new Response(JSON.stringify({ error: "request too large" }), { status: 413 });
+@@ -194,4 +197,74 @@ const res4 = await worker.fetch(
+ );
+ assert.equal(res4.status, 401);
+ 
++// Context governance observes authenticated ingress through the real Worker and ledger classes.
++// Financial refusals remain independent of observer health.
++await drain();
++const contextStatusRequest = (key = "admin-secret-test") => new Request(
++  "https://llm.meridianlabs.cloud/admin/v1/context", { headers: { authorization: `Bearer ${key}` } }
++);
++const contextRes = await worker.fetch(contextStatusRequest(), env, ctx);
++assert.equal(contextRes.status, 200, "context governance is not wired into the existing ledger");
++const context = await contextRes.json();
++assert.equal(context.phase, "SHADOW");
++assert.equal(context.observations, 3, "wrong-key request must not enter context telemetry");
++assert(context.estimatedTokens > 0);
++assert(!JSON.stringify(context).includes("x".repeat(100)), "raw prompts must not be persisted or exposed");
++assert.equal((await worker.fetch(contextStatusRequest("wrong-key"), env, ctx)).status, 401);
++
++// Only the observer fails here. Inference and the financial ledger must still work.
++await worker.fetch(new Request("https://llm.meridianlabs.cloud/admin/v1/budget", {
++  method: "POST", headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
++  body: JSON.stringify({ dailyLimitUsd: 25, resetSpend: true }),
++}), env, ctx);
++const originalLedger = env.BUDGET_LEDGER;
++env.BUDGET_LEDGER = {
++  ...originalLedger,
++  get(id) {
++    const stub = originalLedger.get(id);
++    return { fetch(input, init) {
++      if (String(input).includes("/context/observe")) return Promise.reject(new Error("observer unavailable"));
++      return stub.fetch(input, init);
++    } };
++  },
++};
++const observerFailureResponse = await worker.fetch(new Request("https://llm.meridianlabs.cloud/v1/chat/completions", {
++  method: "POST", headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
++  body: JSON.stringify({ model: "role:coder", messages: [{ role: "user", content: "OBSERVER_FAILURE_CANARY" }] }),
++}), env, ctx);
++await drain();
++assert.equal(observerFailureResponse.status, 200, "SHADOW outage must not interrupt inference");
++env.BUDGET_LEDGER = originalLedger;
++
++const largeMessages = [{ role: "user", content: "x".repeat(120000) }];
++const largeResponse = await worker.fetch(new Request("https://llm.meridianlabs.cloud/v1/chat/completions", {
++  method: "POST", headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
++  body: JSON.stringify({ model: "role:coder", messages: largeMessages }),
++}), env, ctx);
++await drain();
++assert.equal(largeResponse.status, 200, "SHADOW must not interrupt a valid over-cap request");
++assert.deepEqual(calls.at(-1).messages, largeMessages, "context observer must not compact or mutate requests");
++const largeSnapshot = await (await worker.fetch(contextStatusRequest(), env, ctx)).json();
++assert.equal(largeSnapshot.observations, 4);
++assert.equal(largeSnapshot.lastObservation.role, "role:surgical-patch");
++assert(largeSnapshot.lastObservation.estimatedTokens > 28000);
++assert.equal(largeSnapshot.cacheHitRatio, null, "unmeasured cache coverage must stay UNKNOWN");
++
++const persistentStorage = createMemoryStorage();
++const contextLedger = new BudgetLedgerDO({ storage: persistentStorage });
++const directObservation = i => contextLedger.fetch(new Request("https://ledger.internal/context/observe", {
++  method: "POST", headers: { "content-type": "application/json" },
++  body: JSON.stringify({ scope: i.toString(16).padStart(64, "0"), role: "role:ops-dispatch", sourceSha: env.COMMIT_SHA,
++    request: { model: "test", messages: [{ role: "user", content: "PRIVATE_CONTEXT_SENTINEL" }] } }),
++}));
++for (let i = 0; i < 130; i++) assert.equal((await directObservation(i)).status, 200);
++await Promise.all(Array.from({ length: 10 }, (_, i) => directObservation(200 + i)));
++const restartedLedger = new BudgetLedgerDO({ storage: persistentStorage });
++const persisted = await (await restartedLedger.fetch(new Request("https://ledger.internal/context/status"))).json();
++assert.equal(persisted.observations, 140, "concurrent observations must persist across object restart");
++assert.equal(persisted.retainedSessions, 128, "observer storage must be bounded");
++assert.equal(await persistentStorage.get("ledger_state_v1"), undefined, "observer must not initialise/reset financial state");
++assert(!JSON.stringify(persisted).includes("PRIVATE_CONTEXT_SENTINEL"));
++
+ console.log("ALL 4 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)");
++console.log("CONTEXT SHADOW INTEGRATION PASSED (real ingress, admin auth, privacy, observer outage isolation)");
+diff --git a/platform/router-edge/dist/index.js b/platform/router-edge/dist/index.js
+new file mode 100644
+index 000000000..d20f74130
+--- /dev/null
++++ b/platform/router-edge/dist/index.js
+@@ -0,0 +1,1037 @@
++// context-governance/ts/context-budget-middleware/index.ts
++var REASONING_RANK = {
++  minimal: 0,
++  low: 1,
++  medium: 2,
++  high: 3
++};
++function toHex(buf) {
++  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
++}
++async function sha256Hex(input) {
++  const bytes = new TextEncoder().encode(input);
++  const digest2 = await crypto.subtle.digest("SHA-256", bytes);
++  return toHex(digest2);
++}
++function estimateTextTokens(text, mult) {
++  if (!text) return 0;
++  const utf8Bytes = new TextEncoder().encode(text).length;
++  return Math.max(1, Math.ceil(utf8Bytes / 3.2 * mult));
++}
++function estimateRequestTokens(body, mult) {
++  const messages = Array.isArray(body.messages) ? body.messages : [];
++  const tools = Array.isArray(body.tools) ? body.tools : [];
++  let total = tools.length > 0 ? estimateTextTokens(JSON.stringify(tools), mult) : 0;
++  let imageCount = 0;
++  for (const m of messages) {
++    if (!m || typeof m !== "object") continue;
++    total += 6;
++    const content = m.content;
++    if (typeof content === "string") {
++      total += estimateTextTokens(content, mult);
++    } else if (Array.isArray(content)) {
++      for (const part of content) {
++        if (!part || typeof part !== "object") continue;
++        const p = part;
++        if (p.type === "text") {
++          total += estimateTextTokens(String(p.text || ""), mult);
++        } else if (p.type === "image_url" || p.type === "image") {
++          imageCount += 1;
++          total += 2048;
++        } else {
++          total += estimateTextTokens(JSON.stringify(p), mult);
++        }
++      }
++    }
++  }
++  return { total, toolCount: tools.length, imageCount };
++}
++async function gateRouterIngress(requestBody, headersIn, policy2, ledger) {
++  const role = headersIn.get("x-meridian-role") || "role:ops-dispatch";
++  const sessionId = headersIn.get("x-meridian-session-id") || "ephemeral";
++  const missionId = headersIn.get("x-meridian-mission-id") || "unassigned";
++  const csNonce = headersIn.get("x-meridian-critical-section");
++  const isSubagent = headersIn.get("x-meridian-subagent") === "true";
++  const rcfg = policy2.roles[role] || policy2.roles["role:ops-dispatch"];
++  const phase = policy2.rollout_phase;
++  const degradations = [];
++  const violations = [];
++  let session = null;
++  let missionSpent = 0;
++  let ledgerHealthy = true;
++  try {
++    session = await ledger.getSession(sessionId) || {
++      turn_count: 0,
++      initial_prefix_hash: "",
++      soft_warnings_issued: 0,
++      critical_section_turns_used: 0,
++      calibration_ratio: 1
++    };
++    missionSpent = await ledger.getMissionTotal(missionId);
++  } catch {
++    ledgerHealthy = false;
++    degradations.push("budget_ledger_unavailable_fail_open");
++  }
++  const clampedBody = { ...requestBody };
++  if (phase === "SOFT_ROTATE" || phase === "ENFORCE") {
++    const reqEffort = String(requestBody.reasoning_effort || "").toLowerCase();
++    const clampEffort = rcfg.reasoning_effort_clamp;
++    if (!reqEffort || (REASONING_RANK[reqEffort] ?? 99) > (REASONING_RANK[clampEffort] ?? 1)) {
++      clampedBody.reasoning_effort = clampEffort;
++      degradations.push(`reasoning_effort_clamped_to_${clampEffort}`);
++    }
++    const reqMax = Number(requestBody.max_tokens ?? requestBody.max_completion_tokens ?? 0);
++    if (!reqMax || reqMax > rcfg.max_output_tokens_clamp) {
++      clampedBody.max_tokens = rcfg.max_output_tokens_clamp;
++      degradations.push(`max_tokens_clamped_to_${rcfg.max_output_tokens_clamp}`);
++    }
++  }
++  const modelStr = String(requestBody.model || "").toLowerCase();
++  let mult = policy2.tokenizer_safety_multipliers.default ?? 1.15;
++  for (const [k, v] of Object.entries(policy2.tokenizer_safety_multipliers)) {
++    if (k !== "default" && modelStr.includes(k)) {
++      mult = v;
++      break;
++    }
++  }
++  const cal = session ? session.calibration_ratio : 1;
++  const est = estimateRequestTokens(clampedBody, mult * cal);
++  const messages = Array.isArray(clampedBody.messages) ? clampedBody.messages : [];
++  const sysMsgs = messages.filter((m) => m?.role === "system");
++  const tools = Array.isArray(clampedBody.tools) ? clampedBody.tools : [];
++  const prefixHash = await sha256Hex(JSON.stringify({ system: sysMsgs, tools }));
++  let kvState = "COLD_TURN_1";
++  if (session) {
++    session.turn_count += 1;
++    if (session.turn_count === 1) {
++      session.initial_prefix_hash = prefixHash;
++      if (est.total > rcfg.turn_1_prefix_cap) violations.push("ERR_TURN1_PREFIX_CAP_EXCEEDED");
++    } else if (prefixHash !== session.initial_prefix_hash) {
++      kvState = "PREFIX_MUTATED_THRASH";
++      violations.push("ERR_KV_PREFIX_THRASH");
++    } else {
++      kvState = "PREFIX_STABLE";
++    }
++  }
++  if (est.toolCount > policy2.global_invariants.max_always_on_mcp_tools) {
++    violations.push("ERR_MCP_TOOL_CEILING_EXCEEDED");
++  }
++  if (isSubagent && session && session.turn_count === 1 && est.total > policy2.global_invariants.subagent_max_brief_tokens) {
++    violations.push("ERR_SUBAGENT_BRIEF_CAP_EXCEEDED");
++  }
++  if (missionSpent + est.total > rcfg.mission_aggregate_cap) {
++    violations.push("ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED");
++  }
++  let leaseActive = false;
++  let effectiveHardCap = rcfg.hard_context_cap;
++  if (csNonce) {
++    if (!session || session.critical_section_turns_used < policy2.global_invariants.critical_section_max_turns) {
++      if (session) session.critical_section_turns_used += 1;
++      leaseActive = true;
++      effectiveHardCap = Math.ceil(
++        rcfg.hard_context_cap * (1 + policy2.global_invariants.critical_section_max_headroom_ratio)
++      );
++    } else {
++      violations.push("ERR_CRITICAL_SECTION_LEASE_EXHAUSTED");
++    }
++  }
++  let directive = "ALLOW";
++  let allowed = true;
++  let status = 200;
++  if (est.total >= rcfg.soft_context_cap) {
++    directive = "CHECKPOINT_AND_ROTATE";
++    if (session) session.soft_warnings_issued += 1;
++  }
++  if (phase === "ENFORCE") {
++    const graceExhausted = !session || session.soft_warnings_issued > rcfg.max_grace_turns_after_soft;
++    if (violations.includes("ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED") && !leaseActive) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_MISSION_BUDGET_EXHAUSTED";
++    } else if (est.total > effectiveHardCap) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_CONTEXT_CAP_EXCEEDED";
++    } else if (est.total >= rcfg.hard_context_cap && !leaseActive && graceExhausted) {
++      allowed = false;
++      status = 429;
++      directive = "HARD_STOP_ROTATION_IGNORED";
++    }
++  }
++  if (ledgerHealthy && session) {
++    try {
++      await ledger.putSession(sessionId, session);
++    } catch {
++      degradations.push("budget_ledger_write_failed_nonfatal");
++    }
++  }
++  return {
++    allowed,
++    status,
++    clampedBody,
++    responseHeaders: {
++      "X-Meridian-Context-Phase": phase,
++      "X-Meridian-Context-Directive": phase === "SHADOW" ? "ALLOW" : directive,
++      "X-Meridian-Context-Tokens": String(est.total),
++      "X-Meridian-Context-Soft-Cap": String(rcfg.soft_context_cap),
++      "X-Meridian-Context-Hard-Cap": String(effectiveHardCap),
++      "X-Meridian-Prefix-Cache-State": kvState,
++      "X-Meridian-Critical-Section-Lease": leaseActive ? "ACTIVE" : "NONE"
++    },
++    violations,
++    degradations
++  };
++}
++
++// context-governance/governance/context-policy.v1.json
++var context_policy_v1_default = {
++  allowed_phases: [
++    "SHADOW",
++    "SOFT_ROTATE",
++    "ENFORCE"
++  ],
++  gateway_base_url: "https://llm.meridianlabs.cloud/v1",
++  global_invariants: {
++    allowed_memory_authority_statuses: [
++      "CURRENT"
++    ],
++    critical_section_max_headroom_ratio: 0.15,
++    critical_section_max_turns: 2,
++    critical_section_renewable: false,
++    externalize_tool_result_bytes: 4096,
++    forbidden_direct_provider_hosts: [
++      "api.deepseek.com",
++      "api.openai.com",
++      "api.anthropic.com",
++      "openrouter.ai",
++      "api.z.ai"
++    ],
++    max_always_on_mcp_tools: 10,
++    max_auto_injected_rules_tokens: 1500,
++    min_kv_cache_hit_ratio_target: 0.75,
++    quarantined_memory_namespaces: [
++      "self-test",
++      "probe",
++      "healthcheck",
++      "canary-probe"
++    ],
++    retain_recent_images_count: 1,
++    subagent_max_brief_tokens: 4e3
++  },
++  roles: {
++    "role:architecture-audit": {
++      description: "Frontier architectural planning, formal specs, adversarial review",
++      hard_context_cap: 64e3,
++      max_grace_turns_after_soft: 2,
++      max_output_tokens_clamp: 8192,
++      mission_aggregate_cap: 2e5,
++      reasoning_effort_clamp: "high",
++      soft_context_cap: 48e3,
++      turn_1_prefix_cap: 12e3
++    },
++    "role:ops-dispatch": {
++      description: "Cline deploy dispatch, gh CLI, curl probes, incident triage",
++      hard_context_cap: 24e3,
++      max_grace_turns_after_soft: 1,
++      max_output_tokens_clamp: 2048,
++      mission_aggregate_cap: 48e3,
++      reasoning_effort_clamp: "low",
++      soft_context_cap: 16e3,
++      turn_1_prefix_cap: 6e3
++    },
++    "role:sandbox-legion": {
++      description: "Lane 3 agent-sandbox and Legion 8 sub-agent swarm",
++      hard_context_cap: 48e3,
++      max_grace_turns_after_soft: 1,
++      max_output_tokens_clamp: 4096,
++      mission_aggregate_cap: 16e4,
++      reasoning_effort_clamp: "medium",
++      soft_context_cap: 32e3,
++      turn_1_prefix_cap: 8e3
++    },
++    "role:surgical-patch": {
++      description: "Codex / OpenCode single-PR surgical code repair",
++      hard_context_cap: 4e4,
++      max_grace_turns_after_soft: 1,
++      max_output_tokens_clamp: 4096,
++      mission_aggregate_cap: 12e4,
++      reasoning_effort_clamp: "medium",
++      soft_context_cap: 28e3,
++      turn_1_prefix_cap: 8e3
++    }
++  },
++  rollout_phase: "SHADOW",
++  schema: "urn:estate:context:policy:v1",
++  tokenizer_safety_multipliers: {
++    deepseek: 1.25,
++    default: 1.15,
++    gemini: 1.1,
++    glm: 1.25,
++    minimax: 1.25,
++    nemotron: 1.2
++  },
++  version: "1.0.0"
++};
++
++// src/context-shadow.ts
++var KEY = "context_shadow_v1";
++var MAX_SESSIONS = 128;
++var policy = { ...context_policy_v1_default, rollout_phase: "SHADOW" };
++var empty = () => ({ observations: 0, estimatedTokens: 0, warnings: 0, sessions: {} });
++async function digest(value) {
++  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
++  return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
++}
++async function observeContext(stub, request, body, role, clientToken, sourceSha) {
++  const serialized = JSON.stringify(body);
++  if (serialized.length > 1048576) return;
++  const session = request.headers.get("x-meridian-session-id")?.slice(0, 128) || crypto.randomUUID();
++  const mission = request.headers.get("x-meridian-mission-id")?.slice(0, 128) || "unattributed";
++  const scope = await digest(JSON.stringify([await digest(clientToken), session, mission, role]));
++  const contextRole = role === "role:coder" ? "role:surgical-patch" : role === "role:architect" ? "role:architecture-audit" : "role:ops-dispatch";
++  const response = await stub.fetch("https://ledger.internal/context/observe", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ scope, role: contextRole, request: body, sourceSha })
++  });
++  if (!response.ok) throw new Error("context_observer_unavailable");
++}
++async function contextSnapshot(storage) {
++  const snapshot = await storage.get(KEY) || empty();
++  return Response.json({
++    schema: "urn:estate:context:shadow-observation:v1",
++    phase: "SHADOW",
++    observations: snapshot.observations,
++    estimatedTokens: snapshot.estimatedTokens,
++    warnings: snapshot.warnings,
++    retainedSessions: Object.keys(snapshot.sessions).length,
++    lastObservation: snapshot.lastObservation ?? null,
++    measurement: "estimate",
++    providerUsageCoverage: null,
++    cacheHitRatio: null,
++    enforcementEnabled: false
++  });
++}
++async function recordContext(state, input) {
++  const data = input;
++  if (!data || !/^[a-f0-9]{64}$/.test(data.scope) || !Object.hasOwn(policy.roles, data.role) || !data.request || typeof data.sourceSha !== "string") {
++    return Response.json({ error: "invalid_context_observation" }, { status: 400 });
++  }
++  return state.storage.transaction(async () => {
++    const snapshot = await state.storage.get(KEY) || empty();
++    const now = Date.now();
++    const ledger = {
++      getSession: async () => snapshot.sessions[data.scope]?.record ?? null,
++      putSession: async (_id, record) => {
++        snapshot.sessions[data.scope] = { record, observedAt: now };
++      },
++      // Mission enforcement is deliberately not inferred from this observation-only counter.
++      getMissionTotal: async () => 0
++    };
++    const result = await gateRouterIngress(data.request, new Headers({
++      "x-meridian-role": data.role,
++      "x-meridian-session-id": data.scope
++    }), policy, ledger);
++    const tokens = Number(result.responseHeaders["X-Meridian-Context-Tokens"]);
++    snapshot.observations += 1;
++    snapshot.estimatedTokens += tokens;
++    snapshot.warnings += result.violations.length;
++    snapshot.lastObservation = {
++      sourceSha: data.sourceSha.slice(0, 64),
++      observedAt: now,
++      role: data.role,
++      estimatedTokens: tokens,
++      violations: result.violations
++    };
++    const ordered = Object.keys(snapshot.sessions).sort((a, b) => snapshot.sessions[b].observedAt - snapshot.sessions[a].observedAt);
++    for (const key of ordered.slice(MAX_SESSIONS)) delete snapshot.sessions[key];
++    await state.storage.put(KEY, snapshot);
++    return Response.json({ observed: true, phase: "SHADOW" });
++  });
++}
++
++// src/ledger-do.ts
++var DEFAULT_DAILY_LIMIT_USD = 25;
++var STORAGE_KEY = "ledger_state_v1";
++function utcDay(nowMs) {
++  return new Date(nowMs).toISOString().slice(0, 10);
++}
++var BudgetLedgerDO = class {
++  state;
++  constructor(state) {
++    this.state = state;
++  }
++  async load(nowMs) {
++    const today = utcDay(nowMs);
++    const stored = await this.state.storage.get(STORAGE_KEY);
++    if (!stored || stored.epochDay !== today) {
++      const fresh = {
++        epochDay: today,
++        dailyLimitUsd: stored?.dailyLimitUsd ?? DEFAULT_DAILY_LIMIT_USD,
++        spentUsd: 0,
++        reservations: {}
++      };
++      await this.state.storage.put(STORAGE_KEY, fresh);
++      return fresh;
++    }
++    let mutated = false;
++    for (const [id, entry] of Object.entries(stored.reservations)) {
++      if (entry.expiresAtMs <= nowMs) {
++        delete stored.reservations[id];
++        mutated = true;
++      }
++    }
++    if (mutated) {
++      await this.state.storage.put(STORAGE_KEY, stored);
++    }
++    return stored;
++  }
++  sumReserved(snap) {
++    let total = 0;
++    for (const entry of Object.values(snap.reservations)) {
++      total += entry.estimatedUsd;
++    }
++    return total;
++  }
++  async fetch(request) {
++    const url = new URL(request.url);
++    const nowMs = Date.now();
++    try {
++      if (request.method === "GET" && url.pathname === "/context/status") return contextSnapshot(this.state.storage);
++      if (request.method === "POST" && url.pathname === "/context/observe") return recordContext(this.state, await request.json());
++      if (request.method === "GET" && url.pathname === "/status") {
++        const snap = await this.load(nowMs);
++        const reservedUsd = this.sumReserved(snap);
++        return Response.json({
++          ok: true,
++          epochDay: snap.epochDay,
++          dailyLimitUsd: snap.dailyLimitUsd,
++          spentUsd: Number(snap.spentUsd.toFixed(6)),
++          reservedUsd: Number(reservedUsd.toFixed(6)),
++          remainingUsd: Number(Math.max(0, snap.dailyLimitUsd - snap.spentUsd - reservedUsd).toFixed(6)),
++          activeReservations: Object.keys(snap.reservations).length
++        });
++      }
++      if (request.method === "POST" && url.pathname === "/configure") {
++        const body = await request.json();
++        if (typeof body.dailyLimitUsd !== "number" || body.dailyLimitUsd < 0 || !Number.isFinite(body.dailyLimitUsd)) {
++          return Response.json({ error: "invalid_daily_limit" }, { status: 400 });
++        }
++        const snap = await this.load(nowMs);
++        snap.dailyLimitUsd = body.dailyLimitUsd;
++        if (body.resetSpend) {
++          snap.spentUsd = 0;
++          snap.reservations = {};
++        }
++        await this.state.storage.put(STORAGE_KEY, snap);
++        return Response.json({ ok: true, dailyLimitUsd: snap.dailyLimitUsd, spentUsd: snap.spentUsd });
++      }
++      if (request.method === "POST" && url.pathname === "/reserve") {
++        const body = await request.json();
++        if (!body.reservationId || body.estimatedUsd < 0 || !Number.isFinite(body.estimatedUsd)) {
++          return Response.json({ error: "invalid_reserve_request" }, { status: 400 });
++        }
++        const result = await this.state.storage.transaction(async () => {
++          const snap = await this.load(nowMs);
++          const reservedUsd = this.sumReserved(snap);
++          const remaining = snap.dailyLimitUsd - snap.spentUsd - reservedUsd;
++          if (body.estimatedUsd > remaining + 1e-9) {
++            const denied = {
++              ok: false,
++              code: "BUDGET_EXHAUSTED",
++              remainingUsd: Number(Math.max(0, remaining).toFixed(6)),
++              dailyLimitUsd: snap.dailyLimitUsd,
++              spentUsd: Number(snap.spentUsd.toFixed(6)),
++              reservedUsd: Number(reservedUsd.toFixed(6))
++            };
++            return denied;
++          }
++          snap.reservations[body.reservationId] = {
++            estimatedUsd: body.estimatedUsd,
++            expiresAtMs: nowMs + Math.max(5e3, body.ttlMs || 12e4),
++            role: body.role
++          };
++          await this.state.storage.put(STORAGE_KEY, snap);
++          const nextReserved = reservedUsd + body.estimatedUsd;
++          const approved = {
++            ok: true,
++            code: "RESERVED",
++            remainingUsd: Number(Math.max(0, snap.dailyLimitUsd - snap.spentUsd - nextReserved).toFixed(6)),
++            dailyLimitUsd: snap.dailyLimitUsd,
++            spentUsd: Number(snap.spentUsd.toFixed(6)),
++            reservedUsd: Number(nextReserved.toFixed(6))
++          };
++          return approved;
++        });
++        return Response.json(result, { status: result.ok ? 200 : 429 });
++      }
++      if (request.method === "POST" && url.pathname === "/settle") {
++        const body = await request.json();
++        await this.state.storage.transaction(async () => {
++          const snap = await this.load(nowMs);
++          delete snap.reservations[body.reservationId];
++          if (typeof body.actualUsd === "number" && body.actualUsd > 0 && Number.isFinite(body.actualUsd)) {
++            snap.spentUsd += body.actualUsd;
++          }
++          await this.state.storage.put(STORAGE_KEY, snap);
++        });
++        return Response.json({ ok: true });
++      }
++      if (request.method === "POST" && url.pathname === "/release") {
++        const body = await request.json();
++        await this.state.storage.transaction(async () => {
++          const snap = await this.load(nowMs);
++          delete snap.reservations[body.reservationId];
++          await this.state.storage.put(STORAGE_KEY, snap);
++        });
++        return Response.json({ ok: true });
++      }
++      return Response.json({ error: "not_found" }, { status: 404 });
++    } catch (err) {
++      return Response.json(
++        { error: { type: "ledger_unavailable", detail: err instanceof Error ? err.message : String(err) } },
++        { status: 503 }
++      );
++    }
++  }
++};
++
++// src/routing-do.ts
++var ROLES_KEY = "roles_v1";
++var CIRCUITS_KEY = "circuits_v1";
++var LEARNED_413_TTL_MS = 10 * 60 * 1e3;
++var BASE_COOLDOWN_MS = 15e3;
++var MAX_COOLDOWN_MS = 3e5;
++var RoutingStateDO = class {
++  state;
++  constructor(state) {
++    this.state = state;
++  }
++  async getRoles() {
++    return await this.state.storage.get(ROLES_KEY) ?? {};
++  }
++  async getCircuits() {
++    return await this.state.storage.get(CIRCUITS_KEY) ?? {};
++  }
++  async fetch(request) {
++    const url = new URL(request.url);
++    const nowMs = Date.now();
++    if (request.method === "GET" && url.pathname === "/roles") {
++      const roles = await this.getRoles();
++      return Response.json({ roles });
++    }
++    if (request.method === "PUT" && url.pathname === "/roles") {
++      const body = await request.json();
++      if (!body || typeof body.roles !== "object") {
++        return Response.json({ error: "invalid_roles_payload" }, { status: 400 });
++      }
++      for (const [roleName, pool] of Object.entries(body.roles)) {
++        if (!Array.isArray(pool.candidates) || pool.candidates.length === 0) {
++          return Response.json({ error: `role_${roleName}_requires_candidates` }, { status: 400 });
++        }
++        for (const c of pool.candidates) {
++          if (!c.id || !c.baseUrl || !c.apiKeySecretName || !c.upstreamModel || c.maxContextTokens <= 0) {
++            return Response.json({ error: `invalid_candidate_${c.id || "unknown"}` }, { status: 400 });
++          }
++        }
++      }
++      await this.state.storage.put(ROLES_KEY, body.roles);
++      return Response.json({ ok: true, roleCount: Object.keys(body.roles).length });
++    }
++    if (request.method === "GET" && url.pathname === "/circuits") {
++      const circuits = await this.getCircuits();
++      return Response.json({ circuits, nowMs });
++    }
++    if (request.method === "POST" && url.pathname === "/plan") {
++      const req = await request.json();
++      const roles = await this.getRoles();
++      const pool = roles[req.role] ?? roles["role:default"];
++      if (!pool) {
++        return Response.json({ error: "unknown_role", role: req.role }, { status: 404 });
++      }
++      const circuits = await this.getCircuits();
++      const excluded = new Set(req.excludeBackendIds ?? []);
++      const effectiveOutputTokens = Math.max(req.requestedOutputTokens, pool.minOutputFloor || 2048);
++      const requiredTotalTokens = req.estimatedInputTokens + effectiveOutputTokens;
++      const eligible = [];
++      const rejected = [];
++      const sorted = [...pool.candidates].sort((a, b) => a.priority - b.priority);
++      for (const candidate of sorted) {
++        if (!candidate.enabled) {
++          rejected.push({ id: candidate.id, reason: "disabled" });
++          continue;
++        }
++        if (excluded.has(candidate.id)) {
++          rejected.push({ id: candidate.id, reason: "excluded_by_caller" });
++          continue;
++        }
++        if (req.requiresTools && !candidate.supportsTools) {
++          rejected.push({ id: candidate.id, reason: "tools_unsupported" });
++          continue;
++        }
++        const circuit = circuits[candidate.id];
++        if (circuit && circuit.openUntilMs > nowMs) {
++          rejected.push({
++            id: candidate.id,
++            reason: `circuit_open_until_${circuit.openUntilMs}_code_${circuit.lastErrorCode ?? 0}`
++          });
++          continue;
++        }
++        const learnedCap = circuit?.learnedMaxContextTokens && (circuit.learnedMaxExpiresMs ?? 0) > nowMs ? circuit.learnedMaxContextTokens : Infinity;
++        const effectiveMaxContext = Math.min(candidate.maxContextTokens, learnedCap);
++        if (requiredTotalTokens > effectiveMaxContext) {
++          rejected.push({
++            id: candidate.id,
++            reason: `payload_exceeds_context:${requiredTotalTokens}>${effectiveMaxContext}`
++          });
++          continue;
++        }
++        eligible.push(candidate);
++      }
++      const response = {
++        role: pool.role,
++        effectiveOutputTokens,
++        eligible,
++        rejected
++      };
++      return Response.json(response);
++    }
++    if (request.method === "POST" && url.pathname === "/record") {
++      const body = await request.json();
++      const circuits = await this.getCircuits();
++      const prev = circuits[body.backendId] ?? { failures: 0, openUntilMs: 0 };
++      if (body.outcome === "success") {
++        circuits[body.backendId] = {
++          failures: 0,
++          openUntilMs: 0,
++          learnedMaxContextTokens: prev.learnedMaxContextTokens,
++          learnedMaxExpiresMs: prev.learnedMaxExpiresMs
++        };
++      } else if (body.outcome === "payload_too_large") {
++        const safeCap = Math.max(512, Math.floor((body.observedTokens ?? 4096) * 0.85));
++        circuits[body.backendId] = {
++          ...prev,
++          learnedMaxContextTokens: prev.learnedMaxContextTokens ? Math.min(prev.learnedMaxContextTokens, safeCap) : safeCap,
++          learnedMaxExpiresMs: nowMs + LEARNED_413_TTL_MS,
++          lastErrorCode: 413,
++          lastErrorAtMs: nowMs
++        };
++      } else {
++        const failures = prev.failures + 1;
++        const cooldown = Math.min(MAX_COOLDOWN_MS, BASE_COOLDOWN_MS * Math.pow(2, Math.min(failures - 1, 5)));
++        circuits[body.backendId] = {
++          ...prev,
++          failures,
++          openUntilMs: nowMs + cooldown,
++          lastErrorCode: body.statusCode ?? 503,
++          lastErrorAtMs: nowMs
++        };
++      }
++      await this.state.storage.put(CIRCUITS_KEY, circuits);
++      return Response.json({ ok: true, circuit: circuits[body.backendId] });
++    }
++    return Response.json({ error: "not_found" }, { status: 404 });
++  }
++};
++
++// src/index.ts
++var FAILOVER_STATUS_CODES = /* @__PURE__ */ new Set([408, 413, 429, 500, 502, 503, 504, 520, 522, 524, 525, 530]);
++async function timingSafeTokenEqual(provided, expected) {
++  if (!provided || !expected) return false;
++  const enc = new TextEncoder();
++  const [a, b] = await Promise.all([
++    crypto.subtle.digest("SHA-256", enc.encode(provided)),
++    crypto.subtle.digest("SHA-256", enc.encode(expected))
++  ]);
++  const viewA = new Uint8Array(a);
++  const viewB = new Uint8Array(b);
++  let diff = 0;
++  for (let i = 0; i < viewA.length; i++) {
++    diff |= viewA[i] ^ viewB[i];
++  }
++  return diff === 0;
++}
++function extractBearer(request) {
++  const header = request.headers.get("authorization") ?? "";
++  if (!header.toLowerCase().startsWith("bearer ")) return "";
++  return header.slice(7).trim();
++}
++function estimateRequestInputTokens(req) {
++  const encoder = new TextEncoder();
++  const payloadBytes = encoder.encode(JSON.stringify(req.messages ?? [])).byteLength + (req.tools ? encoder.encode(JSON.stringify(req.tools)).byteLength : 0);
++  return Math.ceil(payloadBytes / 3.2) + 128;
++}
++function estimateCostUsd(candidate, inputTokens, outputTokens) {
++  return inputTokens / 1e3 * candidate.costPer1kInputUsd + outputTokens / 1e3 * candidate.costPer1kOutputUsd;
++}
++function resolveRole(modelField) {
++  if (!modelField || !modelField.trim()) return "role:default";
++  const normalized = modelField.trim();
++  if (normalized.startsWith("role:")) return normalized;
++  return `role:${normalized}`;
++}
++function getLedgerStub(env) {
++  return env.BUDGET_LEDGER.get(env.BUDGET_LEDGER.idFromName("global-ledger-v1"));
++}
++function getRoutingStub(env) {
++  return env.ROUTING_STATE.get(env.ROUTING_STATE.idFromName("global-routing-v1"));
++}
++async function recordOutcome(routingStub, backendId, outcome, statusCode, observedTokens) {
++  await routingStub.fetch("https://routing.internal/record", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ backendId, outcome, statusCode, observedTokens })
++  });
++}
++async function releaseReservation(ledgerStub, reservationId) {
++  await ledgerStub.fetch("https://ledger.internal/release", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ reservationId })
++  });
++}
++async function settleReservation(ledgerStub, reservationId, actualUsd) {
++  await ledgerStub.fetch("https://ledger.internal/settle", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ reservationId, actualUsd })
++  });
++}
++async function probeFirstStreamChunk(upstreamBody) {
++  const reader = upstreamBody.getReader();
++  const decoder = new TextDecoder();
++  const buffered = [];
++  try {
++    while (true) {
++      const { done, value } = await reader.read();
++      if (done) {
++        if (buffered.length === 0) {
++          return { ok: false, reason: "empty_stream_before_first_chunk" };
++        }
++        break;
++      }
++      if (!value || value.byteLength === 0) continue;
++      buffered.push(value);
++      const text = decoder.decode(value, { stream: true }).trim();
++      if (!text) continue;
++      if (text.startsWith('{"error"') || text.includes('"error":')) {
++        await reader.cancel("upstream_error_frame_in_stream");
++        return { ok: false, reason: "upstream_error_frame" };
++      }
++      break;
++    }
++  } catch (err) {
++    try {
++      await reader.cancel();
++    } catch {
++    }
++    return { ok: false, reason: err instanceof Error ? err.message : "stream_read_error" };
++  }
++  const reassembled = new ReadableStream({
++    start(controller) {
++      for (const chunk of buffered) {
++        controller.enqueue(chunk);
++      }
++    },
++    async pull(controller) {
++      try {
++        const { done, value } = await reader.read();
++        if (done) {
++          controller.close();
++        } else if (value) {
++          controller.enqueue(value);
++        }
++      } catch (err) {
++        controller.error(err);
++      }
++    },
++    async cancel(reason) {
++      await reader.cancel(reason);
++    }
++  });
++  return { ok: true, stream: reassembled };
++}
++var index_default = {
++  async fetch(request, env, ctx) {
++    const url = new URL(request.url);
++    const commitSha = env.COMMIT_SHA || "unknown";
++    const zone = env.DEPLOYMENT_ZONE || "zone-b-cloudflare-edge";
++    if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/health/liveliness")) {
++      const [ledgerRes, rolesRes] = await Promise.all([
++        getLedgerStub(env).fetch("https://ledger.internal/status").then((r) => r.ok).catch(() => false),
++        getRoutingStub(env).fetch("https://routing.internal/roles").then(async (r) => r.ok ? Object.keys((await r.json()).roles).length : -1).catch(() => -1)
++      ]);
++      const healthy = ledgerRes && rolesRes >= 0;
++      return Response.json(
++        {
++          status: healthy ? "ok" : "degraded",
++          commit_sha: commitSha,
++          zone,
++          ledger_ok: ledgerRes,
++          configured_roles: rolesRes,
++          timestamp: (/* @__PURE__ */ new Date()).toISOString()
++        },
++        { status: healthy ? 200 : 503 }
++      );
++    }
++    if (url.pathname.startsWith("/admin/v1/")) {
++      const token = extractBearer(request);
++      const isAdmin = await timingSafeTokenEqual(token, env.MERIDIAN_ADMIN_KEY);
++      if (!isAdmin) {
++        return Response.json({ error: { type: "unauthorized", detail: "invalid_admin_key" } }, { status: 401 });
++      }
++      if (url.pathname === "/admin/v1/roles") {
++        return getRoutingStub(env).fetch("https://routing.internal/roles", {
++          method: request.method,
++          headers: { "content-type": "application/json" },
++          body: request.method === "PUT" ? await request.text() : void 0
++        });
++      }
++      if (url.pathname === "/admin/v1/circuits" && request.method === "GET") {
++        return getRoutingStub(env).fetch("https://routing.internal/circuits");
++      }
++      if (url.pathname === "/admin/v1/context" && request.method === "GET") {
++        return getLedgerStub(env).fetch("https://ledger.internal/context/status");
++      }
++      if (url.pathname === "/admin/v1/budget") {
++        const targetPath = request.method === "POST" ? "/configure" : "/status";
++        return getLedgerStub(env).fetch(`https://ledger.internal${targetPath}`, {
++          method: request.method,
++          headers: { "content-type": "application/json" },
++          body: request.method === "POST" ? await request.text() : void 0
++        });
++      }
++      return Response.json({ error: { type: "not_found" } }, { status: 404 });
++    }
++    if (request.method === "POST" && url.pathname === "/v1/chat/completions") {
++      const clientToken = extractBearer(request);
++      const isAuthorized = await timingSafeTokenEqual(clientToken, env.MERIDIAN_CLIENT_KEY);
++      if (!isAuthorized) {
++        return Response.json({ error: { type: "unauthorized", detail: "invalid_api_key" } }, { status: 401 });
++      }
++      let body;
++      try {
++        body = await request.json();
++      } catch {
++        return Response.json({ error: { type: "invalid_request", detail: "malformed_json" } }, { status: 400 });
++      }
++      if (!Array.isArray(body.messages) || body.messages.length === 0) {
++        return Response.json({ error: { type: "invalid_request", detail: "messages_required" } }, { status: 400 });
++      }
++      const role = resolveRole(body.model);
++      const defaultFloor = Number(env.DEFAULT_OUTPUT_FLOOR || "2048");
++      const requestedOutput = body.max_completion_tokens ?? body.max_tokens ?? defaultFloor;
++      const estimatedInputTokens = estimateRequestInputTokens(body);
++      const requiresTools = Array.isArray(body.tools) && body.tools.length > 0;
++      const routingStub = getRoutingStub(env);
++      const ledgerStub = getLedgerStub(env);
++      ctx.waitUntil(observeContext(ledgerStub, request, body, role, clientToken, commitSha).catch(() => {
++      }));
++      const planRes = await routingStub.fetch("https://routing.internal/plan", {
++        method: "POST",
++        headers: { "content-type": "application/json" },
++        body: JSON.stringify({
++          role,
++          estimatedInputTokens,
++          requestedOutputTokens: requestedOutput,
++          requiresTools
++        })
++      });
++      if (!planRes.ok) {
++        return Response.json(
++          { error: { type: "admission_refused", detail: await planRes.text() } },
++          { status: planRes.status }
++        );
++      }
++      const plan = await planRes.json();
++      if (plan.eligible.length === 0) {
++        return Response.json(
++          {
++            error: {
++              type: "no_eligible_backend",
++              role: plan.role,
++              estimated_input_tokens: estimatedInputTokens,
++              effective_output_tokens: plan.effectiveOutputTokens,
++              rejected: plan.rejected
++            }
++          },
++          { status: 503 }
++        );
++      }
++      const worstCaseUsd = Math.max(...plan.eligible.map((c) => estimateCostUsd(c, estimatedInputTokens, plan.effectiveOutputTokens)));
++      const reservationId = crypto.randomUUID();
++      const ttlMs = Number(env.RESERVATION_TTL_MS || "120000");
++      let reserveRes;
++      try {
++        reserveRes = await ledgerStub.fetch("https://ledger.internal/reserve", {
++          method: "POST",
++          headers: { "content-type": "application/json" },
++          body: JSON.stringify({
++            reservationId,
++            role: plan.role,
++            estimatedUsd: worstCaseUsd,
++            ttlMs
++          })
++        });
++      } catch (err) {
++        return Response.json(
++          {
++            error: {
++              type: "ledger_unavailable",
++              detail: err instanceof Error ? err.message : "ledger_unreachable"
++            }
++          },
++          { status: 503 }
++        );
++      }
++      if (reserveRes.status === 429) {
++        const detail = await reserveRes.json();
++        return Response.json({ error: { type: "budget_exhausted", ...detail } }, { status: 429 });
++      }
++      if (!reserveRes.ok) {
++        return Response.json(
++          { error: { type: "ledger_unavailable", detail: await reserveRes.text() } },
++          { status: 503 }
++        );
++      }
++      const attemptErrors = [];
++      const timeoutMs = Number(env.UPSTREAM_TIMEOUT_MS || "45000");
++      for (let i = 0; i < plan.eligible.length; i++) {
++        const candidate = plan.eligible[i];
++        const upstreamKey = env[candidate.apiKeySecretName];
++        if (typeof upstreamKey !== "string" || !upstreamKey) {
++          attemptErrors.push({ backendId: candidate.id, status: 500, detail: `missing_secret_${candidate.apiKeySecretName}` });
++          continue;
++        }
++        const boundedOutput = Math.min(plan.effectiveOutputTokens, candidate.maxOutputTokens);
++        const upstreamPayload = {
++          ...body,
++          model: candidate.upstreamModel,
++          max_tokens: boundedOutput
++        };
++        delete upstreamPayload.max_completion_tokens;
++        let upstreamRes;
++        try {
++          upstreamRes = await fetch(candidate.baseUrl, {
++            method: "POST",
++            headers: {
++              "content-type": "application/json",
++              authorization: `Bearer ${upstreamKey}`
++            },
++            body: JSON.stringify(upstreamPayload),
++            signal: AbortSignal.timeout(timeoutMs)
++          });
++        } catch (err) {
++          const msg = err instanceof Error ? err.message : "network_error";
++          attemptErrors.push({ backendId: candidate.id, status: 503, detail: msg });
++          ctx.waitUntil(recordOutcome(routingStub, candidate.id, "transient_failure", 503));
++          continue;
++        }
++        if (upstreamRes.status === 413) {
++          const errText = await upstreamRes.text().catch(() => "payload_too_large");
++          attemptErrors.push({ backendId: candidate.id, status: 413, detail: errText.slice(0, 200) });
++          ctx.waitUntil(
++            recordOutcome(routingStub, candidate.id, "payload_too_large", 413, estimatedInputTokens + boundedOutput)
++          );
++          continue;
++        }
++        if (FAILOVER_STATUS_CODES.has(upstreamRes.status)) {
++          const errText = await upstreamRes.text().catch(() => "upstream_error");
++          attemptErrors.push({
++            backendId: candidate.id,
++            status: upstreamRes.status,
++            detail: errText.slice(0, 200)
++          });
++          ctx.waitUntil(recordOutcome(routingStub, candidate.id, "transient_failure", upstreamRes.status));
++          continue;
++        }
++        if (!upstreamRes.ok) {
++          const errBody = await upstreamRes.text().catch(() => "");
++          ctx.waitUntil(releaseReservation(ledgerStub, reservationId));
++          return new Response(errBody, {
++            status: upstreamRes.status,
++            headers: {
++              "content-type": upstreamRes.headers.get("content-type") ?? "application/json",
++              "x-meridian-backend": candidate.id,
++              "x-meridian-commit-sha": commitSha
++            }
++          });
++        }
++        if (body.stream && upstreamRes.body) {
++          const probed = await probeFirstStreamChunk(upstreamRes.body);
++          if (!probed.ok) {
++            attemptErrors.push({ backendId: candidate.id, status: 502, detail: probed.reason });
++            ctx.waitUntil(recordOutcome(routingStub, candidate.id, "transient_failure", 502));
++            continue;
++          }
++          ctx.waitUntil(recordOutcome(routingStub, candidate.id, "success", 200));
++          const { readable, writable } = new TransformStream();
++          const streamCost = estimateCostUsd(candidate, estimatedInputTokens, boundedOutput);
++          ctx.waitUntil(
++            probed.stream.pipeTo(writable).catch(() => {
++            }).finally(() => settleReservation(ledgerStub, reservationId, streamCost))
++          );
++          return new Response(readable, {
++            status: 200,
++            headers: {
++              "content-type": "text/event-stream; charset=utf-8",
++              "cache-control": "no-cache",
++              "x-meridian-role": plan.role,
++              "x-meridian-backend": candidate.id,
++              "x-meridian-lane": candidate.lane,
++              "x-meridian-failover-count": String(i),
++              "x-meridian-commit-sha": commitSha,
++              "x-meridian-reservation-id": reservationId
++            }
++          });
++        }
++        const rawText = await upstreamRes.text();
++        let actualUsd = estimateCostUsd(candidate, estimatedInputTokens, boundedOutput);
++        try {
++          const parsed = JSON.parse(rawText);
++          if (parsed.usage?.prompt_tokens != null && parsed.usage?.completion_tokens != null) {
++            actualUsd = estimateCostUsd(candidate, parsed.usage.prompt_tokens, parsed.usage.completion_tokens);
++          }
++        } catch {
++        }
++        ctx.waitUntil(
++          Promise.all([
++            recordOutcome(routingStub, candidate.id, "success", 200),
++            settleReservation(ledgerStub, reservationId, actualUsd)
++          ])
++        );
++        return new Response(rawText, {
++          status: 200,
++          headers: {
++            "content-type": "application/json; charset=utf-8",
++            "x-meridian-role": plan.role,
++            "x-meridian-backend": candidate.id,
++            "x-meridian-lane": candidate.lane,
++            "x-meridian-failover-count": String(i),
++            "x-meridian-commit-sha": commitSha,
++            "x-meridian-reservation-id": reservationId
++          }
++        });
++      }
++      ctx.waitUntil(releaseReservation(ledgerStub, reservationId));
++      return Response.json(
++        {
++          error: {
++            type: "all_pool_backends_failed",
++            role: plan.role,
++            attempts: attemptErrors,
++            pre_filtered_rejected: plan.rejected
++          }
++        },
++        { status: 503 }
++      );
++    }
++    return Response.json({ error: { type: "not_found" } }, { status: 404 });
++  }
++};
++export {
++  BudgetLedgerDO,
++  RoutingStateDO,
++  index_default as default,
++  estimateRequestInputTokens
++};
