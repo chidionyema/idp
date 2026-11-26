@@ -1,0 +1,253 @@
+# RESCUED PATCH 2026-11-26-wc
+# source worktree: /Users/roseonyema/wc
+# source branch:   (detached)
+# source HEAD:     49c76e319da651bfc223ba8c2b7f7a242968ec9f
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 0  untracked files included: 1
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-wc.patch  (from a checkout of (detached))
+diff --git a/bin/zero_repeat_gate.py b/bin/zero_repeat_gate.py
+new file mode 100644
+index 000000000..749a2397d
+--- /dev/null
++++ b/bin/zero_repeat_gate.py
+@@ -0,0 +1,239 @@
++#!/usr/bin/env python3
++"""zero_repeat_gate — the estate may fail a class once, and never loop on it.
++
++Five invariants, each a refusal with a typed error, durable in one SQLite database (WAL) so a
++restart cannot forget a strike. Nothing here is advisory: every entry point returns a typed dict
++`{"ok": bool, "error": CODE|None, "state": ...}` and the caller must refuse on ok=false.
++
++  I1 a retry of a class with no fix-between-strikes is refused; the second strike quarantines
++  I2 a bot auto-merge that goes red twice without a fix commit is quarantined
++  I3 a headless worker may not idle-wait for the founder; it pulls the next ticket instead
++  I4 a superseded head is not "pending", it is retired — stop watching it
++  I5 the durable passkey sink survives a nonce change, keeps >=30d, and will not purge while the
++     founder tap is unconsumed (no 40-hex committed_sha recorded)
++
++CLI: zero_repeat_gate.py <strike|bot-sync|handoff|watch-head|sink-*|workflow-preflight> ... --json
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import sqlite3
++import sys
++import time
++from typing import Any
++
++ERR_UNIMMUNIZED_RETRY = "ERR_UNIMMUNIZED_RETRY"
++ERR_CLASS_QUARANTINE = "ERR_CLASS_QUARANTINE"
++ERR_BOT_SYNC_LOOP_QUARANTINED = "ERR_BOT_SYNC_LOOP_QUARANTINED"
++ERR_FOUNDER_EVENT_LOOP_FORBIDDEN = "ERR_FOUNDER_EVENT_LOOP_FORBIDDEN"
++SUPERSEDED_HEAD = "SUPERSEDED_HEAD"
++LANE_RETIRED = "LANE_RETIRED"
++ERR_UNCONSUMED_FOUNDER_TAP = "ERR_UNCONSUMED_FOUNDER_TAP"
++ERR_ZERO_JOB_WORKFLOW = "ERR_ZERO_JOB_WORKFLOW"
++ERR_ADMISSION_PRECONDITION_FAILED = "ERR_ADMISSION_PRECONDITION_FAILED"
++
++SINK_TTL_S = 30 * 86400
++SHA40 = re.compile(r"^[0-9a-f]{40}$")
++
++
++def _db(path: str | None = None) -> sqlite3.Connection:
++    path = path or os.environ.get("ZERO_REPEAT_DB") or os.path.expanduser(
++        "~/.estate/state/zero_repeat.db"
++    )
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    conn = sqlite3.connect(path)
++    conn.row_factory = sqlite3.Row
++    conn.execute("PRAGMA journal_mode=WAL")
++    conn.executescript(
++        """
++        CREATE TABLE IF NOT EXISTS strikes (
++            class TEXT PRIMARY KEY, count INTEGER NOT NULL, quarantined INTEGER NOT NULL,
++            last_fix_sha TEXT, last_strike_at REAL NOT NULL);
++        CREATE TABLE IF NOT EXISTS bot_sync (
++            branch TEXT PRIMARY KEY, reds INTEGER NOT NULL, last_head TEXT, fix_sha TEXT,
++            quarantined INTEGER NOT NULL, at REAL NOT NULL);
++        CREATE TABLE IF NOT EXISTS sink (
++            id INTEGER PRIMARY KEY CHECK (id = 1), nonce TEXT, payload TEXT,
++            committed_sha TEXT, written_at REAL NOT NULL);
++        """
++    )
++    return conn
++
++
++def strike(klass: str, fix_sha: str | None = None, proof: dict | None = None,
++           db: str | None = None) -> dict[str, Any]:
++    """Record one failure of `klass`. A fix only counts with the immunization proof."""
++    conn = _db(db)
++    row = conn.execute("SELECT * FROM strikes WHERE class=?", (klass,)).fetchone()
++    count = (row["count"] if row else 0) + 1
++    quarantined = bool(row["quarantined"]) if row else False
++    immunized = bool(
++        proof and proof.get("failed_before_fix") is True and proof.get("passed_after_fix") is True
++    )
++    if immunized and fix_sha:
++        conn.execute(
++            "INSERT INTO strikes VALUES (?,?,?,?,?) ON CONFLICT(class) DO UPDATE SET "
++            "count=0, quarantined=0, last_fix_sha=excluded.last_fix_sha, last_strike_at=excluded.last_strike_at",
++            (klass, 0, 0, fix_sha, time.time()),
++        )
++        conn.commit()
++        return {"ok": True, "error": None, "class": klass, "count": 0, "quarantined": False,
++                "state": "IMMUNIZED", "fix_sha": fix_sha}
++    if count >= 2 or quarantined:
++        conn.execute(
++            "INSERT INTO strikes VALUES (?,?,?,?,?) ON CONFLICT(class) DO UPDATE SET "
++            "count=excluded.count, quarantined=1, last_strike_at=excluded.last_strike_at",
++            (klass, count, 1, row["last_fix_sha"] if row else None, time.time()),
++        )
++        conn.commit()
++        return {"ok": False, "error": ERR_CLASS_QUARANTINE, "class": klass, "count": count,
++                "quarantined": True,
++                "why": "a class may occur once; this is strike %d with no immunization" % count}
++    conn.execute(
++        "INSERT INTO strikes VALUES (?,?,?,?,?) ON CONFLICT(class) DO UPDATE SET "
++        "count=excluded.count, last_strike_at=excluded.last_strike_at",
++        (klass, count, 0, row["last_fix_sha"] if row else None, time.time()),
++    )
++    conn.commit()
++    return {"ok": False, "error": ERR_UNIMMUNIZED_RETRY, "class": klass, "count": 1,
++            "quarantined": False,
++            "why": "first strike: retry is refused until failed_before_fix and passed_after_fix"}
++
++
++def bot_sync(branch: str, head: str, fix_sha: str | None = None, red: bool = True,
++             db: str | None = None) -> dict[str, Any]:
++    """I2: a bot auto-merge that goes red twice on the same branch without a fix is quarantined."""
++    conn = _db(db)
++    row = conn.execute("SELECT * FROM bot_sync WHERE branch=?", (branch,)).fetchone()
++    if not red:
++        return {"ok": True, "error": None, "branch": branch, "reds": row["reds"] if row else 0,
++                "quarantined": bool(row["quarantined"]) if row else False}
++    if fix_sha and row and row["last_head"] != head:
++        conn.execute("UPDATE bot_sync SET reds=0, last_head=?, fix_sha=?, quarantined=0, at=? "
++                     "WHERE branch=?", (head, fix_sha, time.time(), branch))
++        conn.commit()
++        return {"ok": True, "error": None, "branch": branch, "reds": 0, "quarantined": False}
++    reds = (row["reds"] if row else 0) + 1
++    quarantined = reds >= 2
++    conn.execute(
++        "INSERT INTO bot_sync VALUES (?,?,?,?,?,?) ON CONFLICT(branch) DO UPDATE SET "
++        "reds=excluded.reds, last_head=excluded.last_head, quarantined=excluded.quarantined, at=excluded.at",
++        (branch, reds, head, fix_sha, 1 if quarantined else 0, time.time()),
++    )
++    conn.commit()
++    if quarantined:
++        return {"ok": False, "error": ERR_BOT_SYNC_LOOP_QUARANTINED, "branch": branch,
++                "reds": reds, "quarantined": True,
++                "why": "%d red auto-merges without a fix commit" % reds}
++    return {"ok": True, "error": None, "branch": branch, "reds": 1, "quarantined": False}
++
++
++def handoff(request: str, next_ticket: str | None = None) -> dict[str, Any]:
++    """I3: a headless worker never waits for the founder; it pulls the next ticket."""
++    if request.strip().upper() == "IDLE_WAIT_FOR_FOUNDER":
++        return {"ok": False, "error": ERR_FOUNDER_EVENT_LOOP_FORBIDDEN,
++                "next": "PULL_NEXT_TICKET",
++                "why": "a worker that waits for a human is a loop, not a worker"}
++    return {"ok": True, "error": None, "next": next_ticket or "PULL_NEXT_TICKET"}
++
++
++def watch_head(watched_sha: str, state_head: str) -> dict[str, Any]:
++    """I4: a superseded head is retired, never 'pending'."""
++    if watched_sha != state_head:
++        return {"ok": False, "error": SUPERSEDED_HEAD, "state": LANE_RETIRED,
++                "watched": watched_sha, "head": state_head,
++                "why": "the watched commit is no longer the head Greenlane is judging"}
++    return {"ok": True, "error": None, "state": "CURRENT", "head": state_head}
++
++
++def sink_write(payload: str, nonce: str, committed_sha: str | None = None,
++               db: str | None = None) -> dict[str, Any]:
++    """I5: one durable sink row; a new nonce does not erase it."""
++    if committed_sha is not None and not SHA40.match(committed_sha):
++        return {"ok": False, "error": ERR_UNCONSUMED_FOUNDER_TAP,
++                "why": "committed_sha must be 40 hex characters"}
++    conn = _db(db)
++    conn.execute(
++        "INSERT INTO sink VALUES (1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
++        "payload=excluded.payload, committed_sha=COALESCE(excluded.committed_sha, sink.committed_sha)",
++        (nonce, payload, committed_sha, time.time()),
++    )
++    conn.commit()
++    row = conn.execute("SELECT * FROM sink WHERE id=1").fetchone()
++    return {"ok": True, "error": None, "nonce": row["nonce"], "committed_sha": row["committed_sha"]}
++
++
++def sink_read(nonce: str, db: str | None = None) -> dict[str, Any]:
++    conn = _db(db)
++    row = conn.execute("SELECT * FROM sink WHERE id=1").fetchone()
++    if not row:
++        return {"ok": True, "error": None, "payload": None, "age_s": 0}
++    age = time.time() - row["written_at"]
++    return {"ok": age <= SINK_TTL_S, "error": None if age <= SINK_TTL_S else "ERR_SINK_EXPIRED",
++            "payload": row["payload"], "age_s": int(age), "nonce": row["nonce"]}
++
++
++def sink_purge(db: str | None = None) -> dict[str, Any]:
++    """I5: never purge while the founder tap is unconsumed."""
++    conn = _db(db)
++    row = conn.execute("SELECT * FROM sink WHERE id=1").fetchone()
++    if row and not (row["committed_sha"] and SHA40.match(row["committed_sha"])):
++        return {"ok": False, "error": ERR_UNCONSUMED_FOUNDER_TAP,
++                "why": "the founder tap has no 40-hex committed_sha yet"}
++    conn.execute("DELETE FROM sink WHERE id=1")
++    conn.commit()
++    return {"ok": True, "error": None}
++
++
++def workflow_preflight(yaml_text: str, admission: dict | None = None) -> dict[str, Any]:
++    """I6: a workflow that can spawn zero jobs, or a lane that cannot be admitted, refuses early."""
++    if "jobs:" not in yaml_text or not re.search(r"^\s{2}\w+:", yaml_text, re.M):
++        return {"ok": False, "error": ERR_ZERO_JOB_WORKFLOW,
++                "why": "no job is declared, so every run would be 0 jobs in 0.0s"}
++    if "${{ runner." in yaml_text and re.search(r"^\s{4}env:", yaml_text, re.M):
++        block = re.search(r"^\s{4}env:(.*?)(^\s{4}\w+:|\Z)", yaml_text, re.M | re.S)
++        if block and "runner." in block.group(1):
++            return {"ok": False, "error": ERR_ZERO_JOB_WORKFLOW,
++                    "why": "the runner context is invalid in job-level env"}
++    a = admission or {}
++    missing = [k for k in ("claim", "sandbox_tools", "mergeable") if not a.get(k)]
++    if missing:
++        return {"ok": False, "error": ERR_ADMISSION_PRECONDITION_FAILED, "missing": missing}
++    return {"ok": True, "error": None}
++
++
++def main(argv: list[str]) -> int:
++    ap = argparse.ArgumentParser(description=__doc__)
++    ap.add_argument("cmd")
++    ap.add_argument("args", nargs="*")
++    ap.add_argument("--json", action="store_true")
++    a = ap.parse_args(argv)
++    out: dict[str, Any]
++    if a.cmd == "strike":
++        out = strike(a.args[0])
++    elif a.cmd == "bot-sync":
++        out = bot_sync(a.args[0], a.args[1] if len(a.args) > 1 else "")
++    elif a.cmd == "handoff":
++        out = handoff(a.args[0] if a.args else "PULL_NEXT_TICKET")
++    elif a.cmd == "watch-head":
++        out = watch_head(a.args[0], a.args[1])
++    elif a.cmd == "sink-write":
++        out = sink_write(a.args[0], a.args[1] if len(a.args) > 1 else "n")
++    elif a.cmd == "sink-read":
++        out = sink_read(a.args[0] if a.args else "n")
++    elif a.cmd == "sink-purge":
++        out = sink_purge()
++    elif a.cmd == "workflow-preflight":
++        out = workflow_preflight(open(a.args[0], encoding="utf-8").read())
++    else:
++        ap.error("unknown command: " + a.cmd)
++        return 2
++    print(json.dumps(out, sort_keys=True))
++    return 0 if out.get("ok") else 3
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
