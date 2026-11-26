@@ -1,5 +1,6 @@
 """Conservation of objective across acceptance, correction and takeover."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -75,5 +76,56 @@ def test_correction_cannot_replace_accepted_objective(tmp_path):
         assert restored["goal_digest"] == digest_of(record["goal"])
         assert restored["next_admissible_action"] == "resume original work"
         assert store.get_mission("root")["goal"] == record["goal"]
+    finally:
+        store.close()
+
+
+def test_legacy_checkpoint_uses_custody_goal(tmp_path):
+    store = MissionStore(tmp_path / "legacy.db")
+    try:
+        store.accept_mission(
+            {
+                "mission_id": "legacy",
+                "instruction_id": "instruction",
+                "mandate_id": "mandate",
+                "goal": "original",
+                "acceptance_contract_digest": "contract",
+                "risk_class": "LOW",
+            }
+        )
+        store.transition("legacy", "READY", "estate", "admit")
+        worker = dict.fromkeys(
+            (
+                "agent_adapter",
+                "provider",
+                "model",
+                "execution_host",
+                "failure_domain",
+                "worktree_id",
+                "base_sha",
+            ),
+            "fixture",
+        )
+        lease = store.acquire_lease("legacy", worker, now=1000)
+        store.write_checkpoint(
+            "legacy",
+            lease["attempt_id"],
+            lease["lease_epoch"],
+            {"source_revision": "fixture", "next_admissible_action": "resume"},
+            now=1001,
+        )
+        checkpoint = store.latest_checkpoint("legacy")
+        artifact = json.loads(checkpoint["artifact_json"])
+        del artifact["goal_digest"]
+        digest = digest_of({k: v for k, v in artifact.items() if k != "created_at"})
+        # Construct the exact pre-invariant checkpoint shape.
+        store.db.execute(
+            "UPDATE mission_checkpoints SET artifact_json=?, goal_digest='',"
+            " content_digest=? WHERE checkpoint_id=?",
+            (json.dumps(artifact), digest, checkpoint["checkpoint_id"]),
+        )
+        assert store.restore_latest_checkpoint("legacy")["goal_digest"] == digest_of(
+            "original"
+        )
     finally:
         store.close()
