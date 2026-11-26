@@ -23,11 +23,11 @@ images:
   # flux-system/estate-context-broker; the marker is how it finds the line. The placeholder is
   # the estate's convention for "not yet built": the number is 0, so any real build wins it.
   - name: ghcr.io/chidionyema/estate-context-broker
-    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:estate-context-broker:tag"}
+    newTag: main-15560-ecbde02f8f65fec7a8230b9cb5b8c752a1489a9f # {"$imagepolicy": "flux-system:estate-context-broker:tag"}
   # The engine's image, pinned to the same pod. The two must move together, so they are written
   # by ONE automation in ONE commit to this file.
   - name: ghcr.io/chidionyema/gortex-engine
-    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:gortex-engine:tag"}
+    newTag: main-15560-ecbde02f8f65fec7a8230b9cb5b8c752a1489a9f # {"$imagepolicy": "flux-system:gortex-engine:tag"}
   # build-multiarch pushes ghcr.io/chidionyema/estate-mcp:main-<run>-<sha> (crew#458 row 3, crew#516 CP3).
   # The first main build after this file merges writes the tag; until then the Deployment cannot
   # pull and Flux reports it. image-automation-controller rewrites the newTag line from
