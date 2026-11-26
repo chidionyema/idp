@@ -65,6 +65,40 @@ async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+async def _fetch_independent_yield(expected: dict[str, Any]) -> dict | None:
+    """Query a separately operated observer; transport is not authority."""
+    from urllib.parse import urlsplit
+
+    import httpx
+
+    url = os.environ.get("ESTATE_YIELD_VERIFIER_URL", "")
+    try:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            return None
+        async with httpx.AsyncClient(
+            timeout=5.0, follow_redirects=False, trust_env=False
+        ) as client:
+            async with client.stream("POST", url, json=expected) as response:
+                if response.status_code != 200:
+                    return None
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(data) + len(chunk) > 16384:
+                        return None
+                    data.extend(chunk)
+        result = json.loads(data)
+        return result if isinstance(result, dict) else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 @activity.defn
 async def verify_instruction_yield(inp: dict[str, Any]) -> str:
     """Independent authority, pinned by the trusted worker host.
@@ -79,6 +113,14 @@ async def verify_instruction_yield(inp: dict[str, Any]) -> str:
     expected = inp.get("expected")
     envelope = inp.get("envelope")
     key = os.environ.get("ESTATE_YIELD_VERIFIER_PUBKEY_HEX", "")
+    # A null envelope is a controller-owned reconciliation tick. The
+    # observer URL is host configuration, never supplied by an agent.
+    if (
+        envelope is None
+        and isinstance(expected, dict)
+        and re.fullmatch(r"[0-9a-fA-F]{64}", key)
+    ):
+        envelope = await _fetch_independent_yield(expected)
     if not (
         isinstance(expected, dict)
         and isinstance(envelope, dict)

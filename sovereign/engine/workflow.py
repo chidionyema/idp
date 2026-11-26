@@ -283,9 +283,21 @@ class SessionWorkflow:
         await self._receipt("recovery_required", "engine", reason)
         try:
             while not self._stop_requested:
-                await workflow.wait_condition(
-                    lambda: self._yield_proposal is not None or self._stop_requested
-                )
+                # Replay-safe upgrade: the controller, not a founder turn, wakes
+                # reconciliation. A timeout never grants mutation authority.
+                if workflow.patched("beast-autonomous-reconcile-v1"):
+                    try:
+                        await workflow.wait_condition(
+                            lambda: self._yield_proposal is not None
+                            or self._stop_requested,
+                            timeout=timedelta(seconds=30),
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await workflow.wait_condition(
+                        lambda: self._yield_proposal is not None or self._stop_requested
+                    )
                 if self._stop_requested:
                     break
                 proposal = self._yield_proposal

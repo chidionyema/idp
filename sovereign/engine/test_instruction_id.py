@@ -293,3 +293,51 @@ def test_worker_done_and_worker_exit_are_not_instruction_settlement():
     assert 'self._retain_instruction("worker-exit-unverified")' in source
     assert 'self._retain_instruction("worker-claim-unverified")' in source
     assert '"verify_instruction_yield"' in source
+
+
+def test_controller_poll_uses_same_signature_gate(monkeypatch):
+    import json
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from sovereign.engine import activities
+
+    signer = Ed25519PrivateKey.generate()
+    monkeypatch.setenv(
+        "ESTATE_YIELD_VERIFIER_PUBKEY_HEX", signer.public_key().public_bytes_raw().hex()
+    )
+    expected = {
+        "instruction_id": "INS-42",
+        "run_id": "current-run",
+        "epoch": 2,
+        "goal_sha256": "a" * 64,
+        "commit_sha": None,
+    }
+    receipt = {
+        **expected,
+        "action": "retry",
+        "ok": True,
+        "effect_ref": "observed-reconciliation",
+        "reconciled": True,
+    }
+    subject = (
+        b"meridian/instruction-yield-v1:"
+        + json.dumps(
+            receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+    )
+    observed = []
+
+    async def fetch(query):
+        observed.append(query)
+        return {"receipt": receipt, "signature": signer.sign(subject).hex()}
+
+    monkeypatch.setattr(activities, "_fetch_independent_yield", fetch)
+    request = {"expected": expected, "envelope": None}
+    assert asyncio.run(activities.verify_instruction_yield(request)) == "retry"
+    assert observed == [expected]
+    receipt["epoch"] = 1
+    assert asyncio.run(activities.verify_instruction_yield(request)) == "reject"
+    monkeypatch.delenv("ESTATE_YIELD_VERIFIER_PUBKEY_HEX")
+    assert asyncio.run(activities.verify_instruction_yield(request)) == "reject"
+    assert len(observed) == 2
