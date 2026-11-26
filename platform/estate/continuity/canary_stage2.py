@@ -14,20 +14,19 @@ def stage_two(store, receipt, work_dir, lease_a, lines, verifier_signer) -> int:
     from continuity import StaleFenceError
     from continuity.util import effect_receipt_subject
 
-    import time as _time
-
-    expires = store.db.execute(
-        "SELECT lease_expires_at FROM mission_attempts WHERE attempt_id=?",
-        (lease_a["attempt_id"],),
-    ).fetchone()["lease_expires_at"]
-    while _time.time() <= expires + 0.5:
-        _time.sleep(0.2)
-    takeover = store.needs_takeover("m-canary")
+    # The parent has already observed SIGKILL and wait() returned. Do not
+    # wait for another heartbeat or lease timeout to retain the obligation.
+    rec = store.observe_worker_exit(
+        "m-canary",
+        lease_a["attempt_id"],
+        lease_a["lease_epoch"],
+        returncode=receipt["kill"]["returncode"],
+        observation_ref="canary-process-wait",
+    )
     receipt["takeover_detection"] = {
-        "needed": takeover["takeover"],
-        "reasons": takeover["reasons"],
+        "needed": rec["action"] == "RECONCILE_AND_REASSIGN",
+        "reasons": [rec["failure_class"]],
     }
-    rec = store.begin_recovery("m-canary", "WORKER_KILLED", "sigkill-canary")
     receipt["fenced_attempt"] = rec["fenced_attempt"]
     store.transition("m-canary", "REASSIGNING", "recovery", "takeover")
     lease_b = store.acquire_lease(
