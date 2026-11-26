@@ -2,6 +2,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
+import tempfile
 import unittest
 import zipfile
 from pathlib import Path
@@ -89,6 +91,38 @@ class BridgeTests(unittest.TestCase):
     def test_refuse_mock(self):
         with self.assertRaises(BRIDGE.BridgeError):
             self.check(*fixture("src/generalPurposePersonaData.ts"))
+
+
+    def test_real_git_stage_and_verify(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            subprocess.check_call(["git", "init", "-q", str(root)])
+            BRIDGE.git(root, "config", "user.name", "fixture")
+            BRIDGE.git(root, "config", "user.email", "fixture@example.invalid")
+            BRIDGE.git(root, "commit", "--allow-empty", "-qm", "base")
+            base = BRIDGE.git(root, "rev-parse", "HEAD").decode().strip()
+            data, release = fixture()
+            release["base_sha"] = base
+            files = self.check(data, release)
+            BRIDGE.stage(root, files, release)
+            # A real Git commit here is a source fixture, not a founder seal.
+            BRIDGE.git(root, "commit", "-qm", "source fixture")
+            source = BRIDGE.git(root, "rev-parse", "HEAD").decode().strip()
+            self.assertEqual(BRIDGE.read_commit(root, source, release), files)
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "COMMIT_TRAILER"):
+                BRIDGE.verify_commit(root, source, files, release)
+            with self.assertRaisesRegex(BRIDGE.BridgeError, "STALE_BASE"):
+                BRIDGE.stage(root, files, release)
+
+    def test_refuse_cross_subsystem_and_ambiguous_source(self):
+        data, release = fixture()
+        release["paths"].append("tests/fixture.py")
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "CROSS_SUBSYSTEM"):
+            self.check(data, release)
+        release["paths"].pop()
+        release["source_commit"] = "b" * 40
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "AMBIGUOUS_SOURCE"):
+            self.check(data, release)
 
 
 if __name__ == "__main__":

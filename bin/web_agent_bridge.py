@@ -127,6 +127,8 @@ def approval(raw):
     )
     require(raw.get("source") in ("drive", "github"), "SOURCE")
     field = "archive_sha256" if raw["source"] == "drive" else "source_commit"
+    other = "source_commit" if raw["source"] == "drive" else "archive_sha256"
+    require(other not in raw, "AMBIGUOUS_SOURCE")
     length = 64 if field == "archive_sha256" else 40
     require(
         isinstance(raw.get(field), str)
@@ -136,6 +138,7 @@ def approval(raw):
     paths = raw.get("paths")
     require(isinstance(paths, list) and 0 < len(paths) <= MAX_FILES, "SCOPE")
     require(len(set(safe_path(p) for p in paths)) == len(paths), "DUPLICATE_SCOPE")
+    require(len({p.split("/")[0] for p in paths}) == 1, "CROSS_SUBSYSTEM")
     require(type(raw.get("claim_issue")) is int and raw["claim_issue"] > 0, "CLAIM")
     require(
         isinstance(raw.get("agent"), str)
