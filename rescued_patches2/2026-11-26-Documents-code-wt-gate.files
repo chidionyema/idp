@@ -1,0 +1,3 @@
+bin/estate-memory-mcp
+platform/estate/memory/plan.py
+tests/estate/test_plan_apply_contract.py
