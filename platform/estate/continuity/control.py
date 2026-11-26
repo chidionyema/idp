@@ -38,54 +38,57 @@ class ControlMixin:
             current = self._require(parent)
         root = current
         path = set()
-
-        def decision(mission):
-            identity = mission["mission_id"]
+        while True:
+            identity = current["mission_id"]
             if identity in path:
                 raise InvalidTransition("cyclic objective dependencies")
             path.add(identity)
-            if mission["state"] == "OPERATING":
-                path.remove(identity)
-                return None
-            if mission["revocation_epoch"] != 0:
-                return identity, "RECONCILE_AUTHORITY"
-            dependencies = mission["dependencies"]
+            state = current["state"]
+            if current["revocation_epoch"] != 0:
+                action = "RECONCILE_AUTHORITY"
+                break
+            if state == "OPERATING":
+                action = "VERIFY_EXISTING_OPERATING"
+                break
+            dependencies = current["dependencies"]
             if not isinstance(dependencies, list) or any(
                 not isinstance(dep, str) or not dep for dep in dependencies
             ):
                 raise InvalidTransition("invalid mission dependencies")
             for dep in dependencies:
                 required = self._require(dep)
-                result = decision(required)
-                if result is not None:
-                    return result
-            state = mission["state"]
-            if state in ACTIVE:
-                action = (
-                    "RECOVER"
-                    if self.needs_takeover(identity, now=now)["takeover"]
-                    else "CONTINUE"
-                )
-            elif state in ("RECOVERY_PENDING", "REASSIGNING"):
-                action = (
-                    "RESELECT"
-                    if mission["retry_budget_remaining"] > 0
-                    else "RECONCILE_CAPACITY"
-                )
-            elif state == "ACCEPTED":
-                action = "ADMIT"
-            elif state == "READY":
-                action = "CLAIM"
+                if (
+                    required["state"] != "OPERATING"
+                    or required["revocation_epoch"] != 0
+                ):
+                    current = required
+                    break
             else:
-                raise InvalidTransition("unknown mission state")
-            return identity, action
+                if state in ACTIVE:
+                    action = (
+                        "RECOVER"
+                        if self.needs_takeover(identity, now=now)["takeover"]
+                        else "CONTINUE"
+                    )
+                elif state in ("RECOVERY_PENDING", "REASSIGNING"):
+                    action = (
+                        "RESELECT"
+                        if current["retry_budget_remaining"] > 0
+                        else "RECONCILE_CAPACITY"
+                    )
+                elif state == "ACCEPTED":
+                    action = "ADMIT"
+                elif state == "READY":
+                    action = "CLAIM"
+                else:
+                    raise InvalidTransition("unknown mission state")
+                break
 
-        target = decision(root)
         return {
             "root_mission_id": root["mission_id"],
             "instruction_id": root["instruction_id"],
             "goal": root["goal"],
             "acceptance_contract_digest": root["acceptance_contract_digest"],
-            "target_mission_id": target[0] if target else root["mission_id"],
-            "action": target[1] if target else "VERIFY_EXISTING_OPERATING",
+            "target_mission_id": identity,
+            "action": action,
         }
