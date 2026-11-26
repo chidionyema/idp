@@ -755,7 +755,6 @@ def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
         mod.verify_agent_scope([])
 
 
-
 def test_auto_probe_caps_registry_minimum_and_rejects_forged_output_budget(tmp_path):
     from unittest import mock
 
@@ -787,16 +786,34 @@ def test_auto_probe_caps_registry_minimum_and_rejects_forged_output_budget(tmp_p
         (ValueError("REFUSED: AGENT_SCOPE_ESCAPE: 1 file(s)"), "AGENT_SCOPE_ESCAPE", 2),
         (ValueError("provider admission base mismatch"), "ADMISSION_BASE_MISMATCH", 2),
         (ValueError("credential-like fixture text"), "ADMISSION_INVALID", 2),
-        (FileNotFoundError("credential-like fixture text"), "LEGION_LAUNCH_CONFIGURATION", 70),
+        (
+            FileNotFoundError("credential-like fixture text"),
+            "LEGION_LAUNCH_CONFIGURATION",
+            70,
+        ),
     ],
 )
-def test_launch_failure_class_is_specific_without_secret_text(tmp_path, monkeypatch, capsys, exc, code, rc):
+def test_launch_failure_class_is_specific_without_secret_text(
+    tmp_path, monkeypatch, capsys, exc, code, rc
+):
     from unittest import mock
 
     mod = _auto_module()
     record_path = tmp_path / "admission.json"
     record_path.write_text("{}")
-    monkeypatch.setattr(sys, "argv", [str(ADMIT), "--out", str(tmp_path), "--launch-admitted", str(record_path), "--session-dir", str(tmp_path)])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(ADMIT),
+            "--out",
+            str(tmp_path),
+            "--launch-admitted",
+            str(record_path),
+            "--session-dir",
+            str(tmp_path),
+        ],
+    )
     with mock.patch.object(mod, "auto_launch", side_effect=exc):
         assert mod.main() == rc
     assert capsys.readouterr().out.strip() == f"REFUSED: {code}"

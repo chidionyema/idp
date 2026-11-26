@@ -297,9 +297,11 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
 
 def auto_probe(route: dict, env: dict) -> dict:
     if not zero_catalogue_cost(route):
-        return {"provider": route.get("provider", "UNKNOWN"),
-                "model": route.get("model", "UNKNOWN"),
-                "verdict": "cost-unverified"}
+        return {
+            "provider": route.get("provider", "UNKNOWN"),
+            "model": route.get("model", "UNKNOWN"),
+            "verdict": "cost-unverified",
+        }
     if (
         type(route.get("probe_tokens")) is not int
         or not 1 <= route["probe_tokens"] <= MAX_OUTPUT_TOKENS
@@ -423,9 +425,13 @@ def auto_select(
         # Defence in depth: reject injected or stale paid admission records
         # before invoking even an injected probe callback.
         if not zero_catalogue_cost(route):
-            observations.append({"provider": route.get("provider", "UNKNOWN"),
-                                 "model": route.get("model", "UNKNOWN"),
-                                 "verdict": "cost-unverified"})
+            observations.append(
+                {
+                    "provider": route.get("provider", "UNKNOWN"),
+                    "model": route.get("model", "UNKNOWN"),
+                    "verdict": "cost-unverified",
+                }
+            )
             continue
         provider = route["provider"]
         if provider in unavailable:
