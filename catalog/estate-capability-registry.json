@@ -7929,6 +7929,10 @@
             "edge": "imports"
           },
           {
+            "id": "cap:layer/platform-estate-continuity-util",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
             "edge": "imports"
           }
@@ -8278,6 +8282,7 @@
         "cap:layer/platform-estate-continuity-canary_stage2",
         "cap:layer/platform-estate-continuity-checkpoints",
         "cap:layer/platform-estate-continuity-effects",
+        "cap:layer/platform-estate-continuity-recovery",
         "cap:layer/platform-estate-continuity-transitions",
         "cap:layer/platform-estate-governance-checks",
         "cap:layer/platform-estate-governance-executor_permission",
