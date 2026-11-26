@@ -29,8 +29,11 @@ jobs:
           git config core.hooksPath .githooks
           git config user.name "Meridian Unit 0 cloud recovery"
           git config user.email "meridian-unit0@users.noreply.github.com"
-          git checkout "$source" -- platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py tests/estate/test_continuity_conserved_objective.py
+          git checkout "$source" -- platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py
           git commit -m "fix(continuity): conserve instruction and fence every unsettled worker exit" -m "Claim: #8415
+          Agent: meridian-obligation-custody"
+          git checkout "$source" -- tests/estate/test_continuity_conserved_objective.py
+          git commit -m "test(continuity): falsify narrative closure and objective substitution" -m "Claim: #8415
           Agent: meridian-obligation-custody"
           python3 -m pytest -q tests/test_continuity_operating_receipt.py tests/test_continuity_retry_budget.py tests/estate/test_continuity_conserved_objective.py
           python3 platform/estate/continuity/canary.py
@@ -71,7 +74,7 @@ jobs:
           set -euo pipefail
           git fetch "$RUNNER_TEMP/bundle/candidate.bundle" refs/heads/obligation-exit-boundary:refs/heads/obligation-exit-boundary
           tip=$(git rev-parse refs/heads/obligation-exit-boundary)
-          test "$(git rev-parse "$tip^")" = "$BASE"
+          test "$(git rev-parse "$tip^^")" = "$BASE"
           want=$(printf '%s\n' platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py tests/estate/test_continuity_conserved_objective.py | sort)
           actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$')
           test "$actual" = "$want"
@@ -87,7 +90,9 @@ jobs:
           done <<< "$want"
           git reset --hard "$BASE"
           git clean -f -- tests/estate/test_continuity_conserved_objective.py
-          git show -s --format=%B "$tip" | grep -q '^X-Idp-Signed: '
+          for c in $(git rev-list "$BASE..$tip"); do
+            git show -s --format=%B "$c" | grep -q '^X-Idp-Signed: '
+          done
           bin/claim-gate "$BASE" "$tip"
           ref=refs/heads/quarantine/8415-obligation-exit-boundary-20261126
           test -z "$(git ls-remote origin "$ref")"
