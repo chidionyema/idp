@@ -65,6 +65,11 @@ class CheckpointMixin:
             if body["mandate_version"] != m["mandate_version"]:
                 cur.execute("ROLLBACK")
                 raise StaleFenceError("checkpoint mandate_version is stale")
+            goal_digest = digest_of(m["goal"])
+            if "goal_digest" in body and body["goal_digest"] != goal_digest:
+                cur.execute("ROLLBACK")
+                raise CheckpointRejected("checkpoint cannot replace accepted objective")
+            body["goal_digest"] = goal_digest
             seq_row = cur.execute(
                 "SELECT COALESCE(MAX(sequence), -1) + 1 FROM"
                 " mission_checkpoints WHERE mission_id=?",
@@ -157,8 +162,23 @@ class CheckpointMixin:
             artifact = json.loads(cp["artifact_json"])
         except json.JSONDecodeError as exc:
             raise CheckpointRejected(f"checkpoint artifact unparsable: {exc}") from exc
+        if not isinstance(artifact, dict):
+            raise CheckpointRejected("checkpoint artifact is not an object")
         content = {k: v for k, v in artifact.items() if k != "created_at"}
-        if digest_of(content) != cp["content_digest"]:
+        if (
+            artifact.get("mission_id") != mission_id
+            or artifact.get("attempt_id") != cp["attempt_id"]
+            or artifact.get("sequence") != cp["sequence"]
+        ):
+            raise CheckpointRejected("checkpoint identity mismatch")
+        # Older sequence-zero records omitted sequence from the signed digest.
+        # Accept that exact legacy format only for the initial checkpoint.
+        legacy = {k: v for k, v in content.items() if k != "sequence"}
+        if digest_of(content) != cp["content_digest"] and not (
+            cp["sequence"] == 0
+            and cp["attempt_id"] is None
+            and digest_of(legacy) == cp["content_digest"]
+        ):
             raise CheckpointRejected("checkpoint digest mismatch")
         if (
             expect_mandate_version is not None
@@ -171,6 +191,8 @@ class CheckpointMixin:
         mission = self.get_mission(mission_id)
         if mission is None:
             raise CheckpointRejected(f"mission {mission_id} vanished")
+        if artifact.get("goal_digest") != digest_of(mission["goal"]):
+            raise CheckpointRejected("checkpoint objective does not match accepted goal")
         if artifact["mandate_version"] != mission["mandate_version"]:
             raise CheckpointRejected("checkpoint mandate is revoked or superseded")
         if mission["revocation_epoch"] > 0:
