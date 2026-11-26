@@ -397,7 +397,7 @@ def freshness_decision(
 # --- claims and paths -------------------------------------------------------------------------
 def repo_read_path(path: str) -> bool:
     """Repository-relative read names only; never Git internals or traversal."""
-    if not path or path.startswith("/") or "\\\" in path or "\x00" in path:
+    if not path or path.startswith("/") or chr(92) in path or "\x00" in path:
         return False
     parts = path.split("/")
     return all(
