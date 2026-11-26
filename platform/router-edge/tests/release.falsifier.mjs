@@ -245,13 +245,24 @@ test("a deployment whose own pool failed is kept, not rolled back onto a version
   assert.equal(shouldRollback({ liveSha: SHA, releasedSha: SHA, probeError: "" }), false);
 });
 
-import { completeSecretBundle, domainCutoverPlan, reconcileRetiredDomains } from "../scripts/release.mjs";
+import { completeSecretBundle, existingSecretNames, domainCutoverPlan, reconcileRetiredDomains } from "../scripts/release.mjs";
 import { selectCapabilities } from "../src/capability_pool.mjs";
 
-test("missing required bindings refuse before a release can deploy", () => {
-  assert.throws(() => completeSecretBundle({MERIDIAN_CLIENT_KEY:"c", MERIDIAN_ADMIN_KEY:"a"}), /MISSING_REQUIRED_WORKER_BINDINGS/);
-  const full = {MERIDIAN_CLIENT_KEY:"c", MERIDIAN_ADMIN_KEY:"a", SEED_MINIMAX_API_KEY:"m", SEED_DEEPSEEK_API_KEY:"d", SEED_GEMINI_API_KEY:"g"};
+test("missing auth or all vendor bindings refuse; alternative lanes do not block one another", () => {
+  const auth = {MERIDIAN_CLIENT_KEY:"c", MERIDIAN_ADMIN_KEY:"a"};
+  assert.throws(() => completeSecretBundle({MERIDIAN_CLIENT_KEY:"c"}), /MISSING_REQUIRED_WORKER_BINDINGS/);
+  assert.throws(() => completeSecretBundle(auth), /NO_CUSTODIED_VENDOR_BINDING/);
+  assert.deepEqual(completeSecretBundle({...auth, SEED_GEMINI_API_KEY:"g"}), {...auth,GEMINI_API_KEY:"g"});
+  assert.deepEqual(completeSecretBundle({...auth, SEED_GEMINI_API_KEY:" "}, rolePool(), ["GEMINI_API_KEY"]), auth);
+  const full = {...auth, SEED_MINIMAX_API_KEY:"m", SEED_DEEPSEEK_API_KEY:"d", SEED_GEMINI_API_KEY:"g"};
   assert.equal(Object.keys(completeSecretBundle(full)).length, 5);
+});
+test("existing secret inventory is name-only and malformed or absent inventory cannot prove custody", () => {
+  assert.deepEqual(existingSecretNames('[{"name":"GEMINI_API_KEY","type":"secret_text"}]'), ["GEMINI_API_KEY"]);
+  for (const raw of ["{}", "[null]", '[{"name":"GEMINI_API_KEY","type":"plain_text"}]']) {
+    assert.throws(() => existingSecretNames(raw), /UNPROVEN_WORKER_SECRET_INVENTORY/);
+  }
+  assert.throws(() => completeSecretBundle({MERIDIAN_CLIENT_KEY:"c",MERIDIAN_ADMIN_KEY:"a"},rolePool(),["unrelated"]), /NO_CUSTODIED_VENDOR_BINDING/);
 });
 
 test("output cap and tool capability are rejected before dispatch", () => {
