@@ -33,6 +33,7 @@ import os
 import re
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -142,8 +143,11 @@ def probe(lane: dict) -> dict:
 
 def main(argv: list[str]) -> int:
     config_path = Path(argv[1]) if len(argv) > 1 else DEFAULT_CONFIG
-    lanes = _lanes(config_path)
-    results = [probe(lane) for lane in lanes]
+    # The workflow parses stdout as one JSON document. Discard incidental
+    # Python-level provider output rather than forwarding it into public logs.
+    with open(os.devnull, "w", encoding="utf-8") as sink, redirect_stdout(sink):
+        lanes = _lanes(config_path)
+        results = [probe(lane) for lane in lanes]
     red = [r for r in results if r["status"] == "RED"]
     report = {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
