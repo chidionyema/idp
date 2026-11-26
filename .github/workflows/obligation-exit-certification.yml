@@ -37,6 +37,12 @@ jobs:
           Agent: meridian-obligation-custody"
           python3 -m pytest -q tests/test_continuity_operating_receipt.py tests/test_continuity_retry_budget.py tests/estate/test_continuity_conserved_objective.py
           python3 platform/estate/continuity/canary.py
+          bin/capability-index emit --write
+          if ! git diff --quiet -- catalog/estate-capability-registry.json; then
+            git add catalog/estate-capability-registry.json
+            git commit -m "chore(registry): refresh deterministic witness" -m "Claim: #8415
+          Agent: meridian-obligation-custody"
+          fi
           IDP_CI_FAST=1 IDP_CI_BASE="$BASE" bin/idp-ci
           git bundle create "$RUNNER_TEMP/candidate.bundle" obligation-exit-boundary "^$BASE"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -74,7 +80,9 @@ jobs:
           set -euo pipefail
           git fetch "$RUNNER_TEMP/bundle/candidate.bundle" refs/heads/obligation-exit-boundary:refs/heads/obligation-exit-boundary
           tip=$(git rev-parse refs/heads/obligation-exit-boundary)
-          test "$(git rev-parse "$tip^^")" = "$BASE"
+          git merge-base --is-ancestor "$BASE" "$tip"
+          test "$(git rev-list --count "$BASE..$tip")" -le 3
+          test "$(git rev-list --count "$BASE..$tip")" -ge 2
           want=$(printf '%s\n' platform/estate/continuity/accept_txn.py platform/estate/continuity/checkpoints.py platform/estate/continuity/recovery.py platform/estate/continuity/canary_stage2.py tests/estate/test_continuity_conserved_objective.py | sort)
           actual=$(git diff --name-only "$BASE" "$tip" | grep -v '^catalog/estate-capability-registry.json$')
           test "$actual" = "$want"
