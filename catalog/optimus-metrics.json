@@ -109,6 +109,30 @@
       "better": "lower",
       "owner": "estate",
       "description": "ordinary tool calls the plan gate refuses after a plan is declared: 1 before idp#8558, 0 after (a declared plan is LIVE; the scenario is required before the goal is claimed done)"
+    },
+    {
+      "name": "bootstrap.r2_scoped_gate",
+      "measure": [
+        "python3",
+        "-c",
+        "import pathlib; s=pathlib.Path('bin/idp-bootstrap-cloudflare').read_text() if pathlib.Path('bin/idp-bootstrap-cloudflare').exists() else ''; print('optimus.bootstrap.r2_scoped_gate=%d' % (1 if ('R2 gates only R2' in s and 'R2_SCOPE_FAILED' in s) else 0))"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "1 when an R2 mint failure gates only R2: DNS and Workers always mint, verify and vault (I-8455 Stage 1, idp#8519); baseline 0, target 1"
+    },
+    {
+      "name": "bootstrap.r2_scoped_warn_markers",
+      "measure": [
+        "bash",
+        "-c",
+        "f=bin/idp-bootstrap-cloudflare; [ -f \"$f\" ] && grep -c 'R2 gates only R2' \"$f\" || echo 0"
+      ],
+      "unit": "lines",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "Scoped R2 WARN markers in bin/idp-bootstrap-cloudflare (I-8455 Stage 1, idp#8519); baseline 0, target >=4"
     }
 
   ]

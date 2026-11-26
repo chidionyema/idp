@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/reference/policy/root-trust.md; crew#578).
-#   bin/idp-bootstrap-cloudflare              mint the DNS, Workers and R2 credentials, write vault entries cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_*
+#   bin/idp-bootstrap-cloudflare              mint the DNS and Workers credentials (always) and the R2 credential (when R2 succeeds — an R2 failure gates only R2, I-8455), write vault entries cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_*
 #   bin/idp-bootstrap-cloudflare --preflight  prove the vault and selected root-token or browser road, write nothing
 #   bin/idp-bootstrap-cloudflare --rotate     mint anew even though the vault entries already verify
 # R52 (founder 2026-08-29): with CLOUDFLARE_ROOT_TOKEN in the environment (oke-check apply reads repository
@@ -88,8 +88,16 @@ if [ "$MODE" = mint ]; then
   eng=$("$IDP/bin/idp-cloud" secret get prospector-engine-env 2>/dev/null || true)
   r2id=$(jq -r '.R2_ACCESS_KEY_ID // empty' <<<"${eng:-{\}}" 2>/dev/null || true)
   wrk=$("$IDP/bin/idp-cloud" secret get cloudflare-workers-token 2>/dev/null || true)
-  if [ -n "$dns" ] && verify "$dns" && [ -n "$r2id" ] && [ -n "$wrk" ] && verify "$wrk"; then
-    say ok cloudflare "DNS, R2 and Workers credentials all verify; kept (--rotate to mint anew)"; unset dns eng wrk; exit 0
+  if [ -n "$dns" ] && verify "$dns" && [ -n "$wrk" ] && verify "$wrk"; then
+    # I-8455 Stage 1: R2 is not the router's oxygen. DNS + Workers credentials are the
+    # deploy path; a missing or dead R2 entry gates only R2 consumers, reported scoped
+    # instead of forcing a full re-mint every run.
+    if [ -n "$r2id" ]; then
+      say ok cloudflare "DNS, R2 and Workers credentials all verify; kept (--rotate to mint anew)"
+    else
+      say WARN cloudflare "DNS and Workers credentials verify; no R2 entry in the vault — R2 gates only R2 (I-8455); kept (--rotate to mint anew)"
+    fi
+    unset dns eng wrk; exit 0
   fi
   unset wrk
   unset dns eng
@@ -223,14 +231,17 @@ wrkpol=$(jq -nc --arg s "$WS_GID" --arg r "$WR_GID" --arg ai "$WAI_GID" --arg a 
     {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$r}]}]')
 dnstok=$(mint "estate-dns $ZONE" "$dnspol") || fail mint "DNS token not created"
 MINTED_DNS_ID=$(jq -r .id <<<"$dnstok")
-r2tok=$(mint "estate-r2 $BUCKET" "$r2pol") || fail mint "R2 token not created"
-MINTED_R2_ID=$(jq -r .id <<<"$r2tok")
+# I-8455 Stage 1: an R2 mint failure is scoped to R2. DNS and Workers are the deploy
+# path and continue to mint, verify and vault regardless of what R2 does.
+R2_SCOPE_FAILED=""
+r2tok=$(mint "estate-r2 $BUCKET" "$r2pol") || { R2_SCOPE_FAILED="R2 token not created"; say WARN r2 "$R2_SCOPE_FAILED — R2 gates only R2 (I-8455); DNS and Workers continue"; }
+if [ -n "$R2_SCOPE_FAILED" ]; then MINTED_R2_ID=""; else MINTED_R2_ID=$(jq -r .id <<<"$r2tok"); fi
 wrktok=$(mint "estate-workers $ZONE" "$wrkpol") || fail mint "Workers token not created"
 MINTED_WRK_ID=$(jq -r .id <<<"$wrktok")
 WRK=$(jq -r .value <<<"$wrktok"); unset wrktok
 DNS=$(jq -r .value <<<"$dnstok"); R2_ID=$(jq -r .id <<<"$r2tok"); R2_VAL=$(jq -r .value <<<"$r2tok"); unset dnstok r2tok
 R2_SECRET=$(printf '%s' "$R2_VAL" | python3 -c 'import sys,hashlib; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())')
-say ok mint "DNS (zone $ZONE), R2 (account) and Workers (account+zone) tokens minted by the API"
+say ok mint "DNS (zone $ZONE) and Workers (account+zone) tokens minted by the API${R2_SCOPE_FAILED:+; R2 scoped-failed: $R2_SCOPE_FAILED}"
 
 # The zone-read child has done its work and is not a credential the estate keeps: it is deleted
 # in the same run, so the only tokens that outlive are the narrow ones (zone id, account id).
@@ -243,28 +254,36 @@ fi
 verify "$DNS" || fail verify "DNS token does not verify"
 cf "$DNS" GET "/zones/$ZONE_ID/dns_records?per_page=1" | jq -e .success >/dev/null || fail verify "DNS token cannot read $ZONE records"
 # Use the scoped R2 principal. Only a proved NoSuchBucket (10006) permits creation.
-bk=$(cf "$R2_VAL" GET "/accounts/$ACCOUNT_ID/r2/buckets/$BUCKET") || fail r2 "bucket GET transport failure"
-if ! jq -e '.success == true' <<<"$bk" >/dev/null 2>&1; then
-  code=$(jq -r '.errors[0].code // "unknown"' <<<"$bk" 2>/dev/null)
-  [ "$code" = 10006 ] || fail r2 "bucket GET refused by Cloudflare (code $code)"
-  created=$(cf "$R2_VAL" POST "/accounts/$ACCOUNT_ID/r2/buckets" "$(jq -nc --arg n "$BUCKET" '{name:$n}')") || fail r2 "bucket CREATE transport failure"
-  if ! jq -e '.success == true' <<<"$created" >/dev/null 2>&1; then
-    code=$(jq -r '.errors[0].code // "unknown"' <<<"$created" 2>/dev/null)
-    fail r2 "bucket CREATE refused by Cloudflare (code $code)"
+# I-8455 Stage 1: failure here is scoped — R2 gates only R2; DNS and Workers vault anyway.
+r2_ok=""
+if [ -n "${R2_VAL:-}" ]; then
+  bk=$(cf "$R2_VAL" GET "/accounts/$ACCOUNT_ID/r2/buckets/$BUCKET") || R2_SCOPE_FAILED="bucket GET transport failure"
+  if [ -z "$R2_SCOPE_FAILED" ] && ! jq -e '.success == true' <<<"$bk" >/dev/null 2>&1; then
+    code=$(jq -r '.errors[0].code // "unknown"' <<<"$bk" 2>/dev/null)
+    if [ "$code" != 10006 ]; then R2_SCOPE_FAILED="bucket GET refused by Cloudflare (code $code)"
+    elif ! created=$(cf "$R2_VAL" POST "/accounts/$ACCOUNT_ID/r2/buckets" "$(jq -nc --arg n "$BUCKET" '{name:$n}')") || ! jq -e '.success == true' <<<"$created" >/dev/null 2>&1; then
+      R2_SCOPE_FAILED="bucket $BUCKET neither exists nor could be created"
+    else r2_ok=created; fi
+  else [ -n "$bk" ] && jq -e '.success == true' <<<"$bk" >/dev/null 2>&1 && r2_ok=present
   fi
+  if [ -n "$R2_SCOPE_FAILED" ]; then say WARN r2 "$R2_SCOPE_FAILED — R2 gates only R2 (I-8455); DNS and Workers are vaulted anyway"; fi
 fi
 unset R2_VAL bk created
 verify "$WRK" || fail verify "Workers token does not verify"
 cf "$WRK" GET "/accounts/$ACCOUNT_ID/workers/scripts" | jq -e .success >/dev/null || fail verify "Workers token cannot list the account's scripts, so it cannot deploy one"
-say ok verify "DNS token reads $ZONE; bucket $BUCKET present; Workers token lists scripts"
+say ok verify "DNS token reads $ZONE${r2_ok:+; bucket $BUCKET $r2_ok}; Workers token lists scripts"
 
 # 6. vault, in-process, key names only
 # Do not revoke a token that may already have been committed to vault.
 ESCROW_STARTED=1
 printf '%s' "$DNS" > "$P/dns"; "$IDP/bin/idp-cloud" secret put cloudflare-api-token --file "$P/dns" >/dev/null || fail vault "cloudflare-api-token write refused"
 printf '%s' "$WRK" > "$P/wrk"; "$IDP/bin/idp-cloud" secret put cloudflare-workers-token --file "$P/wrk" >/dev/null || fail vault "cloudflare-workers-token write refused"
-printf 'V_ID=%s\nV_SECRET=%s\nV_ACCOUNT=%s\nV_BUCKET=%s\n' "$R2_ID" "$R2_SECRET" "$ACCOUNT_ID" "$BUCKET" > "$P/env"
-ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" --merge prospector-engine-env R2_ACCESS_KEY_ID=V_ID R2_SECRET_ACCESS_KEY=V_SECRET R2_ACCOUNT_ID=V_ACCOUNT R2_BUCKET=V_BUCKET >/dev/null || fail vault "prospector-engine-env R2_* write refused"
+if [ -n "$r2_ok" ]; then
+  printf 'V_ID=%s\nV_SECRET=%s\nV_ACCOUNT=%s\nV_BUCKET=%s\n' "$R2_ID" "$R2_SECRET" "$ACCOUNT_ID" "$BUCKET" > "$P/env"
+  ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" --merge prospector-engine-env R2_ACCESS_KEY_ID=V_ID R2_SECRET_ACCESS_KEY=V_SECRET R2_ACCOUNT_ID=V_ACCOUNT R2_BUCKET=V_BUCKET >/dev/null || fail vault "prospector-engine-env R2_* write refused"
+else
+  say WARN vault "prospector-engine-env.R2_* not written: R2 is scoped-failed (I-8455)"
+fi
 unset DNS R2_SECRET WRK
 # 7. a driver-born root dies with this process; the standing root (road a) is kept
 if [ -n "$NAME" ]; then
@@ -273,4 +292,4 @@ if [ -n "$NAME" ]; then
   revoked="root token revoked"
 else revoked="standing root kept"; fi
 unset ROOT
-say ok cloudflare "cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_* written; $revoked; ExternalSecrets refresh within 1h"
+say ok cloudflare "cloudflare-api-token + cloudflare-workers-token written${r2_ok:+ + prospector-engine-env.R2_*}; $revoked; ExternalSecrets refresh within 1h"
