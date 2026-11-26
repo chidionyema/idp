@@ -44,6 +44,9 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 EXIT_SCOPE = 2
 EXIT_CAPACITY = 75
+EXIT_EXECUTION = 70
+# Founder emergency output ceiling, per request. Not a mission-wide budget.
+MAX_OUTPUT_TOKENS = 1024
 PROBE_TIMEOUT_S = float(os.environ.get("LEGION_PROBE_TIMEOUT_S", "15"))
 
 # Provider lanes, OpenAI-compatible, as the estate already calls them
@@ -276,7 +279,9 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
                     "class": cls,
                     "price_in": cost_in,
                     "price_out": cost_out,
-                    "probe_tokens": max(256, model.get("min_output_tokens", 0)),
+                    "probe_tokens": min(
+                        MAX_OUTPUT_TOKENS, max(256, model.get("min_output_tokens", 0))
+                    ),
                 }
             )
     return sorted(
@@ -295,6 +300,15 @@ def auto_probe(route: dict, env: dict) -> dict:
         return {"provider": route.get("provider", "UNKNOWN"),
                 "model": route.get("model", "UNKNOWN"),
                 "verdict": "cost-unverified"}
+    if (
+        type(route.get("probe_tokens")) is not int
+        or not 1 <= route["probe_tokens"] <= MAX_OUTPUT_TOKENS
+    ):
+        return {
+            "provider": route.get("provider", "UNKNOWN"),
+            "model": route.get("model", "UNKNOWN"),
+            "verdict": "output-cap-refused",
+        }
     payload = {
         "model": route["model"],
         "messages": [
@@ -530,7 +544,9 @@ def auto_launch(
                                 "id": selected["model"],
                                 "name": selected["model"],
                                 "contextWindow": min(selected["context"], 32768),
-                                "maxTokens": 4096,
+                                "maxTokens": MAX_OUTPUT_TOKENS,
+                                # Admission proved max_tokens, not max_completion_tokens.
+                                "compat": {"maxTokensField": "max_tokens"},
                                 "input": ["text"],
                                 "reasoning": False,
                             }
@@ -597,9 +613,34 @@ def main() -> int:
                 args.session_dir,
                 dict(os.environ),
             )
-        except (ValueError, OSError, KeyError, TypeError):
-            print("REFUSED: provider admission invalid")
+        except subprocess.TimeoutExpired:
+            print("REFUSED: LEGION_HARNESS_TIMEOUT")
+            return EXIT_EXECUTION
+        except subprocess.CalledProcessError:
+            print("REFUSED: LEGION_WORKTREE_CHECK_FAILED")
+            return EXIT_EXECUTION
+        except ValueError as exc:
+            # Fixed classifications only; do not print arbitrary exception or provider text.
+            reason = str(exc)
+            if reason.startswith("REFUSED: AGENT_SCOPE_ESCAPE:"):
+                code = "AGENT_SCOPE_ESCAPE"
+            elif reason == "REFUSED: AGENT_EMPTY_PATCH":
+                code = "AGENT_EMPTY_PATCH"
+            elif reason == "REFUSED: AGENT_SCOPE_EMPTY":
+                code = "AGENT_SCOPE_EMPTY"
+            elif reason == "provider admission base mismatch":
+                code = "ADMISSION_BASE_MISMATCH"
+            elif reason == "provider admission mismatch":
+                code = "ADMISSION_PROVIDER_MISMATCH"
+            elif reason.startswith("COST_UNVERIFIED:"):
+                code = "COST_UNVERIFIED"
+            else:
+                code = "ADMISSION_INVALID"
+            print(f"REFUSED: {code}")
             return EXIT_SCOPE
+        except (OSError, KeyError, TypeError):
+            print("REFUSED: LEGION_LAUNCH_CONFIGURATION")
+            return EXIT_EXECUTION
     args.out.mkdir(parents=True, exist_ok=True)
     record: dict = {"harness": args.harness}
     try:

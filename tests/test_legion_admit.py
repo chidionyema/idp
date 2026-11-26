@@ -594,7 +594,8 @@ def test_auto_launcher_binds_base_model_and_isolates_key(tmp_path):
         assert '"apiKey": "$LEGION_SELECTED_KEY"' in config
         model = json.loads(config)["providers"]["estate-admitted"]["models"][0]
         assert model["contextWindow"] <= 32768
-        assert model["maxTokens"] == 4096
+        assert model["maxTokens"] == 1024
+        assert model["compat"]["maxTokensField"] == "max_tokens"
     with pytest.raises(ValueError, match="admission mismatch"):
         mod.auto_launch(
             tmp_path, record, "test", tmp_path, dict(env, ADMITTED_MODEL="fake")
@@ -752,3 +753,50 @@ def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
         mod.verify_agent_scope(["web/f0.txt"])
     with pytest.raises(ValueError, match="AGENT_SCOPE_EMPTY"):
         mod.verify_agent_scope([])
+
+
+
+def test_auto_probe_caps_registry_minimum_and_rejects_forged_output_budget(tmp_path):
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "north", models=("capable",))
+    path = tmp_path / "north.toml"
+    path.write_text(path.read_text() + "min_output_tokens=8192\n")
+    env = {"NORTH_API_KEY": "fixture-key"}
+    route = mod.auto_candidates(tmp_path, env)[0]
+    assert route["probe_tokens"] == 1024
+    with mock.patch("urllib.request.build_opener") as opener:
+        for cap in (1025, 8192, -1, True, None, "1024"):
+            assert mod.auto_probe({**route, "probe_tokens": cap}, env)["verdict"] == (
+                "output-cap-refused"
+            )
+        opener.assert_not_called()
+        reader = opener.return_value.open.return_value.__enter__.return_value
+        reader.read.return_value = b'{"model":"capable","choices":[{"message":{"tool_calls":[{"function":{"name":"legion_ready","arguments":"{\\"ready\\":true}"}}]}}]}'
+        assert mod.auto_probe(route, env)["verdict"] == "capacity"
+        request = opener.return_value.open.call_args.args[0]
+        assert json.loads(request.data)["max_tokens"] == 1024
+
+
+@pytest.mark.parametrize(
+    "exc,code,rc",
+    [
+        (subprocess.TimeoutExpired(["pi"], 240), "LEGION_HARNESS_TIMEOUT", 70),
+        (subprocess.CalledProcessError(1, ["git"]), "LEGION_WORKTREE_CHECK_FAILED", 70),
+        (ValueError("REFUSED: AGENT_SCOPE_ESCAPE: 1 file(s)"), "AGENT_SCOPE_ESCAPE", 2),
+        (ValueError("provider admission base mismatch"), "ADMISSION_BASE_MISMATCH", 2),
+        (ValueError("credential-like fixture text"), "ADMISSION_INVALID", 2),
+        (FileNotFoundError("credential-like fixture text"), "LEGION_LAUNCH_CONFIGURATION", 70),
+    ],
+)
+def test_launch_failure_class_is_specific_without_secret_text(tmp_path, monkeypatch, capsys, exc, code, rc):
+    from unittest import mock
+
+    mod = _auto_module()
+    record_path = tmp_path / "admission.json"
+    record_path.write_text("{}")
+    monkeypatch.setattr(sys, "argv", [str(ADMIT), "--out", str(tmp_path), "--launch-admitted", str(record_path), "--session-dir", str(tmp_path)])
+    with mock.patch.object(mod, "auto_launch", side_effect=exc):
+        assert mod.main() == rc
+    assert capsys.readouterr().out.strip() == f"REFUSED: {code}"
