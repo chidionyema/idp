@@ -192,7 +192,9 @@ class CheckpointMixin:
         if mission is None:
             raise CheckpointRejected(f"mission {mission_id} vanished")
         if artifact.get("goal_digest") != digest_of(mission["goal"]):
-            raise CheckpointRejected("checkpoint objective does not match accepted goal")
+            raise CheckpointRejected(
+                "checkpoint objective does not match accepted goal"
+            )
         if artifact["mandate_version"] != mission["mandate_version"]:
             raise CheckpointRejected("checkpoint mandate is revoked or superseded")
         if mission["revocation_epoch"] > 0:
