@@ -227,7 +227,7 @@ def test_the_answer_keeps_the_engines_ranking(monkeypatch):
         httpd.shutdown()
 
 
-def test_a_path_outside_the_claim_is_refused_at_the_door(monkeypatch):
+def test_committed_read_outside_legacy_claim_is_allowed(monkeypatch):
     engine = _setup(monkeypatch)
     httpd, base = _serve_in_thread()
     try:
@@ -244,9 +244,8 @@ def test_a_path_outside_the_claim_is_refused_at_the_door(monkeypatch):
                 },
             },
         )
-        assert out["result"]["isError"] is True
-        assert out["result"]["structuredContent"]["verdict"] == "PATH_REFUSED"
-        assert not engine.calls, "the engine was asked about a path outside the claim"
+        assert out["result"]["isError"] is False
+        assert engine.calls
     finally:
         httpd.shutdown()
 
@@ -327,8 +326,13 @@ def test_a_secret_in_the_answer_is_scrubbed_before_it_leaves(monkeypatch):
         httpd.shutdown()
 
 
-def test_a_request_without_a_claim_is_refused(monkeypatch):
+def test_a_request_without_a_claim_is_answered_without_github(monkeypatch):
     engine = _setup(monkeypatch)
+
+    def unavailable(_):
+        raise AssertionError("committed discovery must not contact GitHub")
+
+    monkeypatch.setattr(broker_server, "_issue_record", unavailable)
     httpd, base = _serve_in_thread()
     try:
         out = _rpc(
@@ -336,11 +340,39 @@ def test_a_request_without_a_claim_is_refused(monkeypatch):
             "tools/call",
             {"name": "estate_context", "arguments": {"task": "anything"}},
         )
-        assert out["result"]["isError"] is True
-        assert "claim" in out["result"]["structuredContent"]["reason"]
-        assert not engine.calls
+        assert out["result"]["isError"] is False
+        assert engine.calls
     finally:
         httpd.shutdown()
+
+
+def test_unclaimed_working_copy_and_alternate_view_are_refused(monkeypatch):
+    engine = _setup(monkeypatch)
+    for extra in ({"mode": "working_copy"}, {"view": "private-worktree"}):
+        result = broker_server.tool_estate_context({"task": "read", **extra})
+        assert result["isError"]
+    assert not engine.calls
+
+
+def test_unclaimed_traversal_is_refused_before_engine(monkeypatch):
+    engine = _setup(monkeypatch)
+    for path in ("../outside", "/etc/passwd", "pkg/../.git/config", ".git/config"):
+        result = broker_server.tool_estate_context({"task": "read", "paths": [path]})
+        assert result["isError"]
+        assert result["structuredContent"]["verdict"] == "PATH_REFUSED"
+    assert not engine.calls
+
+
+def test_engine_returned_symlink_cannot_escape_index(monkeypatch, tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not part of index", encoding="utf-8")
+    (root / "leak").symlink_to(outside)
+    monkeypatch.setattr(broker_server, "SOURCE_DIR", str(root))
+    assert not broker_server._excerpts_from(
+        {"working_set": [{"file": "leak"}]}, "abc123"
+    )
 
 
 def test_an_unknown_tool_is_an_error_not_a_crash(monkeypatch):
