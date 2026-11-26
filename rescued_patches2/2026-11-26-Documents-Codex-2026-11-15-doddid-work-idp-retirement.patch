@@ -1,0 +1,11 @@
+# RESCUED PATCH 2026-11-26-Documents-Codex-2026-11-15-doddid-work-idp-retirement
+# source worktree: /Users/roseonyema/Documents/Codex/2026-11-15/doddid/work/idp-retirement
+# source branch:   lane/retire-oke-command-entrypoints-20261115
+# source HEAD:     d76fda45666bd6ed460aa1090883f885e657d2e3
+# rescued at:      2026-11-26 (UTC) by the darwin sweep
+# tracked files changed: 1  untracked files included: 0
+# The worktree was READ, not written: no index was staged, no file changed there.
+# Apply with: git apply --3way 2026-11-26-Documents-Codex-2026-11-15-doddid-work-idp-retirement.patch  (from a checkout of lane/retire-oke-command-entrypoints-20261115)
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+old mode 100644
+new mode 100755
