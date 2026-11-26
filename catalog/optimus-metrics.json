@@ -65,13 +65,25 @@
     {
       "name": "bootstrap.r2_scoped_failures",
       "measure": [
-        "python3",
-        "tests/test_r2_decouple.py"
+        "bash",
+        "bin/optimus-r2-scoped-failures"
       ],
       "unit": "fatal_r2_fails_in_bootstrap_path",
       "better": "lower",
       "owner": "greenlane",
-      "description": "Fatal R2 failure points in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (I-8455 Stage 1: R2 gates only R2); baseline 2 (mint + bucket proof), target 0"
+      "description": "Fatal R2 failure points in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (I-8455 Stage 1: R2 gates only R2), counted as sites: the R2 mint path (fail mint \"R2 token not created\") plus every fatal 'fail r2' in the R2 bucket-proof path. Measured on main 2026-11-26 (dd4c1e8be): baseline 5 (1 mint + 4 bucket-proof), target 0 -- it reads 0 when I-8455 Stage 1 lands. The measure prints nothing and exits non-zero when it cannot judge the script, so the readback is UNKNOWN rather than a false 0 (idp#8575)"
+    },
+    {
+      "name": "bootstrap.r2_scoped_measure_reads",
+      "measure": [
+        "python3",
+        "-c",
+        "import pathlib,re,subprocess; p=pathlib.Path('bin/optimus-r2-scoped-failures'); r=subprocess.run(['bash',str(p)],capture_output=True,text=True); ok=bool(re.search(r'(?m)^optimus\\.bootstrap\\.r2_scoped_failures=-?\\d+$',r.stdout or '')); print('optimus.bootstrap.r2_scoped_measure_reads=%d' % (1 if ok else 0))"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "1 when the registered measure for bootstrap.r2_scoped_failures runs on main and prints a well-formed optimus.<name>=<number> line -- the readback is the deliverable, and a measure that cannot read is a metric that cannot fail (idp#8575); baseline 0, target 1"
     },
     {
       "name": "pr_age.red_runs_baseline_break",

@@ -383,6 +383,16 @@
       "remedy": "bin/claim-gate requires a SHIP-CONTRACT on the claim (accept probe, optimus metrics, failure-classes, debug-pack). Greenlane holds every landed lane in State.verifying, probes it on later full ticks, and posts OPERATIONAL or NOT OPERATIONAL with the evidence to the claim issue; bin/idp-greenlane re-arms while anything is verifying, bounded by the contract deadline.",
       "law": "AGENTS.md section 3: done means operational, proven by the system, not by its author (KARMA: ImproverCannotSelfCertify).",
       "status": "diagnosed"
+    },
+    {
+      "id": "DBG-039",
+      "title": "The registered Optimus measure prints no optimus line, so every readback of the metric is UNKNOWN and the gate never gates",
+      "symptom": "idp#8416's SHIP-CONTRACT names the metric bootstrap.r2_scoped_failures, and every operational receipt read 'Optimus short: bootstrap.r2_scoped_failures=UNKNOWN'. The registry entry was: {\"name\": \"bootstrap.r2_scoped_failures\", \"measure\": [\"python3\", \"tests/test_r2_decouple.py\"]}. The file tests/test_r2_decouple.py is absent from main (it exists only on lane/i8455-stage1-r2-scoped), and even when present it is a unittest.main() module: stdout is 0 bytes and carries no 'optimus.<name>=<number>' line. Measured 2026-11-26 on origin/main dd4c1e8be: python3 tests/test_r2_decouple.py -> exit 2; stdout bytes 0; optimus lines 0.",
+      "cause": "MEASURED: greenlane/github.py:_optimus_readings skips a measure whose exit status is not 0 and reads a number only from a stdout line matching ^optimus.<name>=<number>$, so a measure that cannot run on main, or runs but prints nothing, yields no reading; nothing at registration time checked that the measure argv could run on main and print that line, and the registry's own $comment ('A measure prints exactly optimus.<name>=<number>') was a promise no gate kept.",
+      "falsifier": "tests/estate/test_optimus_r2_scoped_failures.py (the known-bad fixture counts its fatal R2 sites, the known-good fixture reads 0, the cannot-judge fixture exits non-zero and prints no optimus line, the registered argv prints a well-formed line on main, and the registry's bootstrap.r2_scoped_measure_reads metric is 1).",
+      "remedy": "The measure of bootstrap.r2_scoped_failures is bin/optimus-r2-scoped-failures, which exists on main and prints exactly optimus.bootstrap.r2_scoped_failures=<n>, n being the fatal R2 failure sites in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (5 on main: the R2 mint path and the R2 bucket-proof path; 0 once I-8455 Stage 1 lands). The instrument exits non-zero and prints nothing when it cannot judge the script, so an unjudgeable subject is UNKNOWN and never a false 0. The registry also carries bootstrap.r2_scoped_measure_reads, which is 1 only when the registered measure prints a well-formed optimus line.",
+      "law": "AGENTS.md section 3 (proof, not assertion) and section 9 principle 1 (a gate that cannot fail is not a gate): a metric whose instrument cannot read is a metric that cannot gate, and UNKNOWN is not a pass.",
+      "status": "fixed"
     }
   ]
 }

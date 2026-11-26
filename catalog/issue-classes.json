@@ -348,6 +348,26 @@
       "recurrence_checks": [
         "2026-11-20"
       ]
+    },
+    {
+      "class": "metric-registered-without-a-reading-instrument",
+      "first_seen": "2026-11-26",
+      "instances": [
+        "catalog/optimus-metrics.json registered bootstrap.r2_scoped_failures with the measure ['python3','tests/test_r2_decouple.py'] -- a file absent from main, and a unittest module that prints no optimus.<name>=<number> line -- so every readback of idp#8416's SHIP-CONTRACT metric was UNKNOWN and a target-0 gate never gated (idp#8575, measured 2026-11-26)"
+      ],
+      "gap": "a metric is admitted to the registry on the strength of its NAME; nothing checked that its measure argv can run on main and print the optimus.<name>=<number> line the reader requires, so the reader recorded UNKNOWN forever",
+      "compensating_action": "every registered measure must run on main and print exactly optimus.<name>=<number>; a measure that cannot judge its subject exits non-zero and prints nothing, so the readback is UNKNOWN and never a false pass; the registry ships bootstrap.r2_scoped_measure_reads, which is 1 only when the registered measure prints a well-formed line",
+      "falsifier": "tests/estate/test_optimus_r2_scoped_failures.py: the known-bad fixture counts its fatal R2 sites, the known-good fixture reads 0, the cannot-judge fixture exits non-zero with no optimus line, and the registered argv prints a well-formed line on main (idp#8575)",
+      "owner": "governance",
+      "surfaces": [
+        "catalog",
+        "greenlane",
+        "ci"
+      ],
+      "status": "open",
+      "recurrence_checks": [
+        "2026-11-26"
+      ]
     }
   ]
 }
