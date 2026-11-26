@@ -60976,6 +60976,7 @@
           "--cached",
           "--commit-sha",
           "--contract",
+          "--defer-guarded",
           "--files",
           "--no-color",
           "--repo-root",

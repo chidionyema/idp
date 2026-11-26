@@ -185,7 +185,10 @@ def verify_proof_1_physical_reality(
 
 
 def verify_proof_2_boundary_and_gate(
-    commit_sha: str, changed_files: List[str], founder_seal_verified: bool = False
+    commit_sha: str,
+    changed_files: List[str],
+    founder_seal_verified: bool = False,
+    defer_guarded_to_push: bool = False,
 ) -> Tuple[bool, Dict]:
     for bad in BLACKLISTED_SHAS:
         if commit_sha.startswith(bad):
@@ -196,7 +199,28 @@ def verify_proof_2_boundary_and_gate(
     if not changed_files:
         return False, {"error": "PROOF_2_FAILED: Empty file set"}
 
+    # Pre-commit timing law (#8541, 2026-11-25). In .githooks/pre-commit the commit
+    # does not exist yet, so a seal on it can never be verified -- granting exemptions
+    # there is impossible and refusing there is a chicken-and-egg lock. With
+    # defer_guarded_to_push the boundary decision moves to the pre-push gate, which
+    # runs against the real commit SHA and still refuses unsigned guarded paths.
+    # The blacklist above is never deferred.
+    deferred: List[str] = []
+
+    def _defer(why: str) -> Tuple[bool, Dict]:
+        deferred.append(why)
+        return True, {
+            "proof_2_status": "PASS",
+            "deferred_to_push": deferred,
+            "note": "seal/boundary decision enforced at pre-push against the real commit",
+            "file_count": len(changed_files),
+        }
+
     if len(changed_files) > MAX_FILES_PER_CHANGE and not founder_seal_verified:
+        if defer_guarded_to_push:
+            return _defer(
+                f"{len(changed_files)} files exceeds MAX_FILES_PER_CHANGE ({MAX_FILES_PER_CHANGE})"
+            )
         return False, {
             "error": f"PROOF_2_FAILED: {len(changed_files)} files exceeds MAX_FILES_PER_CHANGE ({MAX_FILES_PER_CHANGE})"
         }
@@ -207,6 +231,8 @@ def verify_proof_2_boundary_and_gate(
             if (
                 path == guarded or path.startswith(guarded)
             ) and not founder_seal_verified:
+                if defer_guarded_to_push:
+                    return _defer(f"Guarded path '{path}' requires seal (enforced at pre-push)")
                 return False, {
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
@@ -214,6 +240,8 @@ def verify_proof_2_boundary_and_gate(
         subsystems.add(parts[0] if len(parts) > 1 else "root")
 
     if len(subsystems) > 1 and not founder_seal_verified:
+        if defer_guarded_to_push:
+            return _defer(f"Cross-subsystem mutation {sorted(subsystems)} (enforced at pre-push)")
         return False, {
             "error": f"PROOF_2_FAILED: Cross-subsystem mutation {sorted(subsystems)} blocked"
         }
@@ -253,12 +281,13 @@ def evaluate_three_independent_proofs(
     founder_seal_verified: bool = False,
     real_system_ts: int = None,
     staged: bool = False,
+    defer_guarded_to_push: bool = False,
 ) -> Tuple[bool, Dict]:
     ok1, p1 = verify_proof_1_physical_reality(
         repo_root, changed_files, expected_hashes, staged
     )
     ok2, p2 = verify_proof_2_boundary_and_gate(
-        commit_sha, changed_files, founder_seal_verified
+        commit_sha, changed_files, founder_seal_verified, defer_guarded_to_push
     )
     ok3, p3 = verify_proof_3_temporal_clock(claimed_unix_ts, real_system_ts)
 
@@ -301,6 +330,12 @@ if __name__ == "__main__":
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
     parser.add_argument("--contract", action="store_true")
     parser.add_argument(
+        "--defer-guarded",
+        action="store_true",
+        help="pre-commit mode: defer the seal/boundary decision to pre-push, where the "
+        "real commit SHA exists and its X-Idp-Auth trailer can be verified (#8541)",
+    )
+    parser.add_argument(
         "--staged",
         action="store_true",
         help="certify the index bytes a commit will contain, not the working tree",
@@ -320,6 +355,7 @@ if __name__ == "__main__":
         claimed_unix_ts=args.timestamp,
         founder_seal_verified=seal_verified(args.repo_root, args.commit_sha),
         staged=args.staged,
+        defer_guarded_to_push=args.defer_guarded,
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)
