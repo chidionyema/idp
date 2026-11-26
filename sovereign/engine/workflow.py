@@ -28,6 +28,7 @@ concurrent activities and a workflow attribute cannot see it.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import timedelta
 from typing import Any
 
@@ -106,6 +107,9 @@ class SessionWorkflow:
         self._decision_attestation: str = ""
         self._active_activity_handle: workflow.ActivityHandle | None = None
         self._refill: dict[str, Any] | None = None
+        self._yield_proposal: dict[str, Any] | None = None
+        self._yield_waiting = False
+        self._guarded_instruction = False
 
     # ---- signals ----
 
@@ -146,6 +150,20 @@ class SessionWorkflow:
     def refill(self, by: str, tokens: int, signed: bool = False) -> None:
         if self.status == "halted":
             self._refill = {"by": by, "tokens": int(tokens), "signed": bool(signed)}
+
+    @workflow.signal
+    def submit_independent_yield(self, envelope: dict[str, Any]) -> None:
+        """An untrusted transport, not an authorization or completion signal."""
+        if (
+            self._yield_waiting
+            and self._yield_proposal is None
+            and isinstance(envelope, dict)
+            and set(envelope) == {"receipt", "signature"}
+            and isinstance(envelope["receipt"], dict)
+            and isinstance(envelope["signature"], str)
+            and len(envelope["signature"]) == 128
+        ):
+            self._yield_proposal = envelope
 
     # ---- update ----
 
@@ -243,6 +261,67 @@ class SessionWorkflow:
             rec = self._pending_receipts.pop(0)
             await self._receipt(rec["kind"], rec["by"], rec.get("text", ""))
 
+    async def _retain_instruction(self, reason: str) -> str:
+        """Hold the obligation in Temporal, not the worker's conversation.
+
+        A separate verifier must certify the effect or safe reconciliation.
+        Never replay an uncertain external mutation merely because a worker
+        exited. Waiting consumes no model inference or runner lease.
+        """
+        self.status = "halted"
+        self.reason = reason
+        self.asking = None
+        self._yield_waiting = True
+        self._yield_proposal = None
+        expected = {
+            "instruction_id": self.instruction_id,
+            "run_id": workflow.info().run_id,
+            "epoch": self.step,
+            "goal_sha256": hashlib.sha256(self.task.encode()).hexdigest(),
+            "commit_sha": self.last_commit,
+        }
+        await self._receipt("recovery_required", "engine", reason)
+        try:
+            while not self._stop_requested:
+                await workflow.wait_condition(
+                    lambda: self._yield_proposal is not None or self._stop_requested
+                )
+                if self._stop_requested:
+                    break
+                proposal = self._yield_proposal
+                self._yield_proposal = None
+                try:
+                    verdict = await workflow.execute_activity(
+                        "verify_instruction_yield",
+                        {"expected": expected, "envelope": proposal},
+                        start_to_close_timeout=timedelta(
+                            seconds=self._receipt_activity_timeout_s
+                        ),
+                        retry_policy=RetryPolicy(maximum_attempts=1),
+                    )
+                except ActivityError:
+                    continue
+                if self._stop_requested:
+                    break
+                if verdict == "settle":
+                    self.status = "done"
+                    self.reason = ""
+                    self._fsm_terminate()
+                    await self._receipt("done", "independent-verifier", "")
+                    return "terminal"
+                if verdict == "retry" and self.budget_remaining > 0:
+                    self.status = "running"
+                    self.reason = ""
+                    await self._receipt("recover", "independent-verifier", "")
+                    return "retry"
+            self.status = "stopped"
+            self._fsm_terminate()
+            await self._receipt("stop", self.stopped_by or "unknown", self.reason)
+            return "terminal"
+        finally:
+            self._yield_waiting = False
+            self._yield_proposal = None
+
     # ---- FSM (R28/R30) ----
 
     def _fsm_cycle_head(self) -> str:
@@ -298,6 +377,9 @@ class SessionWorkflow:
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
         self.session_id = params["session_id"]
         self.instruction_id = params.get("instruction_id")
+        self._guarded_instruction = bool(self.instruction_id) and workflow.patched(
+            "independent-instruction-yield-v1"
+        )
         self.repo = params.get("repo")
         self.task = params["task"]
         self.runner = params.get("runner", "echo")
@@ -414,6 +496,14 @@ class SessionWorkflow:
                 return self._state()
 
             if result is None:
+                if self._guarded_instruction:
+                    self._fsm_advance()  # tool_use -> synthesis
+                    if (
+                        await self._retain_instruction("worker-exit-unverified")
+                        == "retry"
+                    ):
+                        continue
+                    return self._state()
                 self.status = "failed"
                 self._fsm_terminate()
                 await self._receipt("fail", "engine", "activity did not complete")
@@ -434,6 +524,11 @@ class SessionWorkflow:
             self.last_tokens = int(result.get("tokens", 0))
             spent = await self._budget("spend", self.last_tokens)
             self.budget_remaining = int(spent.get("remaining", 0))
+
+            if self._guarded_instruction and (result.get("done") or result.get("ask")):
+                if await self._retain_instruction("worker-claim-unverified") == "retry":
+                    continue
+                return self._state()
 
             if self.budget_remaining <= 0:
                 self.status = "halted"
