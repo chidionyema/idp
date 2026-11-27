@@ -388,6 +388,16 @@
       "gap": "a test that builds a scratch repo with `git -C <tmp>` inherited GIT_DIR from the hook that ran it, so its writes landed in the shared repository",
       "compensating_action": "tests strip GIT_* from every git child; the lifeboat rung runs node with the location variables unset",
       "falsifier": "tests/test_lifeboat_git_hermetic.py: GIT_DIR aimed at a victim repo; origin/main's test writes 'Synthetic test' into it, this change leaves it byte-identical"
+    },
+    {
+      "class": "agent-kills-its-own-model-path",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "session 21ea7eac ran launchctl bootout com.estate.pennyd while pennyd's :4200 listener served its ANTHROPIC_BASE_URL; every later model call died ECONNREFUSED and the session ended (idp#8598, measured 2026-11-27)"
+      ],
+      "gap": "nothing between an agent and the signal judged whether the target was the agent's own model, UI or harness path; the first guard matched command words, so it refused reads that named a service and let a resolved pid through",
+      "compensating_action": "the judge resolves the target (pid, pgid, pgrep pattern, launchd label) and refuses only the agent's own ancestors, other harnesses and protected listeners, in the hook, the shell layer and PATH shims alike, naming the restart door",
+      "falsifier": "estate/gates/tests/api-port-guard.test.py (GOV-015): 33/33 on the guard, 14/33 against an allow-all guard"
     }
   ]
 }

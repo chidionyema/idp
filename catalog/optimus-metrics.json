@@ -157,6 +157,18 @@
       "better": "lower",
       "owner": "idp-ci",
       "description": "1 when bin/idp-ci rung 1e reds a lane on a STALE-only facts store -- the passage of time, not the lane (idp#8602)"
+    },
+    {
+      "name": "guard.self_kill_cases_failing",
+      "measure": [
+        "python3",
+        "estate/gates/tests/api-port-guard.test.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "estate-gates",
+      "description": "falsifier cases the api-port-guard fails: an agent signalling its own model/UI path or another harness, or a read refused for mentioning a service (idp#8598)"
     }
   ]
 }
