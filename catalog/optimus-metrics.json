@@ -241,6 +241,18 @@
       "better": "lower",
       "owner": "claude-code",
       "description": "of four state reports on a tracked object (PR #N still open, a status-table row, a pull URL, a lane branch), how many the Stop hook's hand-back judge refuses (idp#8622)"
+    },
+    {
+      "name": "brief.unclean_endings_unreported",
+      "measure": [
+        "python3",
+        "tests/test_brief_names_unclean_endings.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claude-code",
+      "description": "of three sessions that did not end cleanly (Claude Code API error x3, Claude Code killed mid-tool, pi lane error), how many the session-start brief fails to name (idp#8624)"
     }
   ]
 }
