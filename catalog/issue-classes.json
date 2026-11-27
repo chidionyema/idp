@@ -398,6 +398,16 @@
       "gap": "nothing between an agent and the signal judged whether the target was the agent's own model, UI or harness path; the first guard matched command words, so it refused reads that named a service and let a resolved pid through",
       "compensating_action": "the judge resolves the target (pid, pgid, pgrep pattern, launchd label) and refuses only the agent's own ancestors, other harnesses and protected listeners, in the hook, the shell layer and PATH shims alike, naming the restart door",
       "falsifier": "estate/gates/tests/api-port-guard.test.py (GOV-015): 33/33 on the guard, 14/33 against an allow-all guard"
+    },
+    {
+      "class": "refusal-names-its-own-fix",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "pre-push claim-gate refused claude-code's own push of fix/api-port-guard (idp#8598) with 'heartbeat is 20m old (lapse is 15m): re-stamp' after a 20m wait on idp#8602; the fix was one mechanical comment the gate could post itself (idp#8609)"
+      ],
+      "gap": "a gate refused with a mechanical, unambiguous remedy and left the remedy to the agent",
+      "compensating_action": "claim-gate on a laptop renews the holder's own newest lapsed CLAIM (same paths, fresh heartbeat); CI stays read-only; a rival's or another agent's claim is never touched",
+      "falsifier": "tests/test_claim_gate_renews_its_own_lapsed_claim.py: 3 of 6 fail on main, 6/6 on the fix; --optimus reads 1 on main, 0 fixed"
     }
   ]
 }
