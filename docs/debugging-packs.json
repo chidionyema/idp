@@ -393,6 +393,16 @@
       "remedy": "The measure of bootstrap.r2_scoped_failures is bin/optimus-r2-scoped-failures, which exists on main and prints exactly optimus.bootstrap.r2_scoped_failures=<n>, n being the fatal R2 failure sites in bin/idp-bootstrap-cloudflare's DNS/Workers critical path (5 on main: the R2 mint path and the R2 bucket-proof path; 0 once I-8455 Stage 1 lands). The instrument exits non-zero and prints nothing when it cannot judge the script, so an unjudgeable subject is UNKNOWN and never a false 0. The registry also carries bootstrap.r2_scoped_measure_reads, which is 1 only when the registered measure prints a well-formed optimus line.",
       "law": "AGENTS.md section 3 (proof, not assertion) and section 9 principle 1 (a gate that cannot fail is not a gate): a metric whose instrument cannot read is a metric that cannot gate, and UNKNOWN is not a pass.",
       "status": "fixed"
+    },
+    {
+      "id": "DBG-040",
+      "title": "A compiler meant to compose with AGENTS.md replaced it, so meeting the token cap would have deleted the estate's authority",
+      "symptom": "MERIDIAN_ESTATE_CONTEXT_GOVERNANCE_V1.zip (sha256 cb13e9f77e046b25eda874c2bbe7cf98a35db5962e11fbc11a43fae4754f58c8) bin/estate_context_fleet_sync.py --compile, run on idp origin/main 8b1af4a60, wrote AGENTS.md as 800 bytes where 58,150 had been: 935 lines deleted, including the ESTATE_SUBSTRATE_AUTHORITY and ESTATE_CAPABILITY_ADVERTISING blocks. Its audit would then have passed the 1,500-token cap.",
+      "cause": "MEASURED: the kit's compile renders a whole file from the policy and writes it over the target; nothing in it reads the existing file, so the cap is met by subtraction of whatever was there. Its estimator (bytes/3.2 x 1.15) also over-counted AGENTS.md by about 50% against cl100k_base (20,898 vs 13,907), which made the gap look larger than it is.",
+      "falsifier": "tests/test_estate_context_fleet_sync.py composes the repository's real AGENTS.md and fails unless every original line survives in order and a second compile is identical; bin/estate_context_fleet_sync.py --self-test includes 'compose keeps every byte outside the block', 'the authority block stays first' and 'the historical marker stays line 1'.",
+      "remedy": "bin/estate_context_fleet_sync.py composes: one ESTATE_FLEET_CONTEXT_CONTRACT block, inserted after the existing authority blocks and replaced in place on re-run, every byte outside it untouched; malformed markers are refused (exit 2), never rewritten. The cap is enforced as a ratchet (hold or shrink, never grow) until the content trim lands.",
+      "status": "fixed",
+      "law": "AGENTS.md section 6 (one of each layer: the existing context compiler stays authoritative, a second writer of AGENTS.md is stitching) and section 9 principle 1 (a gate ships with a falsifier that fails on the known-bad input: here, the kit's own output)."
     }
   ]
 }
