@@ -349,6 +349,18 @@
       "better": "lower",
       "owner": "delivery",
       "description": "CRITICAL gem advisories in the lago-api base image's lock (ADVISORIES in the test) that lago-api.Dockerfile does not patch to the fixed version. 1 on main 186bc1952; 0 with idp#8658."
+    },
+    {
+      "name": "images.hindsight_api_critical_pkgs_unfloored",
+      "measure": [
+        "python3",
+        "tests/test_hindsight_api_pins.py",
+        "--optimus"
+      ],
+      "unit": "advisories",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "CRITICAL advisories in the hindsight-api vendor venv (ADVISORIES in the test) that hindsight-api.Dockerfile does not floor at the fixed version. 4 on main 43af9f558; 0 with idp#6113."
     }
   ]
 }
