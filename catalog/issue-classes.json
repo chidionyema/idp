@@ -398,6 +398,16 @@
       "gap": "nothing between an agent and the signal judged whether the target was the agent's own model, UI or harness path; the first guard matched command words, so it refused reads that named a service and let a resolved pid through",
       "compensating_action": "the judge resolves the target (pid, pgid, pgrep pattern, launchd label) and refuses only the agent's own ancestors, other harnesses and protected listeners, in the hook, the shell layer and PATH shims alike, naming the restart door",
       "falsifier": "estate/gates/tests/api-port-guard.test.py (GOV-015): 33/33 on the guard, 14/33 against an allow-all guard"
+    },
+    {
+      "class": "headless-agent-needs-an-approver",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "critical-watch woke four incident agents through agent-invoke.sh under --permission-mode acceptEdits (a9ee9b95, c3185745, 30573f96, eb4b4fa9, 02:25-02:32Z); declare_plan, the estate-plan CLI and the evidence read were each denied, the Bash hook refused everything until a plan existed, zero work (idp#8611)"
+      ],
+      "gap": "a headless dispatcher kept a permission mode that asks a human, so every prompt became a denial, including the path the estate's own hooks demand first",
+      "compensating_action": "agent-invoke.sh runs claude -p in auto with the estate-memory server and the estate-plan door allowed outright; enforcement stays in the hooks",
+      "falsifier": "tests/estate/test_agent_invoke_headless_can_plan.py: 2 of 3 fail on main, 3/3 on the fix; --optimus reads 2 on main, 0 fixed; real-CLI replay acceptEdits 2 denials, auto 0"
     }
   ]
 }

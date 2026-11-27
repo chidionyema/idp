@@ -169,6 +169,18 @@
       "better": "lower",
       "owner": "estate-gates",
       "description": "falsifier cases the api-port-guard fails: an agent signalling its own model/UI path or another harness, or a read refused for mentioning a service (idp#8598)"
+    },
+    {
+      "name": "dispatch.headless_plan_denials",
+      "measure": [
+        "python3",
+        "tests/estate/test_agent_invoke_headless_can_plan.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "critical-watch",
+      "description": "of the two denials measured on 2026-11-27 (the plan tools, and a permission mode that needs an approver), how many the headless launcher's claude argv still reproduces (idp#8611)"
     }
   ]
 }
