@@ -388,6 +388,16 @@
       "gap": "a test that builds a scratch repo with `git -C <tmp>` inherited GIT_DIR from the hook that ran it, so its writes landed in the shared repository",
       "compensating_action": "tests strip GIT_* from every git child; the lifeboat rung runs node with the location variables unset",
       "falsifier": "tests/test_lifeboat_git_hermetic.py: GIT_DIR aimed at a victim repo; origin/main's test writes 'Synthetic test' into it, this change leaves it byte-identical"
+    },
+    {
+      "class": "shared-env-name-taken-for-identity",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "~/.zshrc exports ESTATE_AGENT=estate-agent to every shell; bin/estate-memory-enforce read it as the agent and refused claude-code's Edit of estate/gates/tests/api-port-guard.test.py, a path claude-code's live claim on idp#8598 covered (idp#8606, measured 2026-11-27)"
+      ],
+      "gap": "claim-open refused the shared name as an identity while the write gate used it as one: two readers of one rule, no shared source",
+      "compensating_action": "the write gate parses claim-open's SHARED_AGENT_NAMES from source and judges a shared name as no identity; the push-time claim-gate still refuses a cross-agent collision",
+      "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py: 4 of 5 fail on main, 5/5 on the fix; --optimus reads the holder refusals"
     }
   ]
 }
