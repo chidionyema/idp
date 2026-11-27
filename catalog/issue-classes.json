@@ -495,6 +495,19 @@
       ],
       "gap": "the image's python -c build checks ran only inside build-multiarch after merge, so a plugin change that broke one shipped green and turned main red; the one test added after #6590 pinned a single assertion by regex",
       "compensating_action": "tests/test_estate_mcp_dockerfile_build_checks.py runs every python -c build check in estate-mcp.Dockerfile against the files it copies, before merge, with a falsifier that the stale d32c484a2 check fails; a check needing an image-only package is skipped by name, never passed (idp#8650)"
+    },
+    {
+      "class": "rust-image-builds-unlocked-below-floor",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "ground-truth: the Dockerfile never copied the committed Cargo.lock and built without --locked; a fresh resolve pulled icu_properties_data 2.4.0 (edition2024), which rust:1.82 cannot parse (build-multiarch run 46012162636)",
+        "edge-runtime: the lock pins candle-core 0.11.1, which calls __cpuid_count as a safe fn (safe from Rust 1.94.0); rust:1.89 fails E0133 (same run)"
+      ],
+      "gap": "no Rust image declared rust-version, one image (genesis-v1) had no lock and two built unlocked, and nothing tied a builder image's rust:<x.y> to the crate's floor, so a dependency could outrun the toolchain and only build-multiarch on main found it",
+      "compensating_action": "tests/test_rust_images_build_locked.py sweeps every Rust image bin/dockerfiles lists: committed Cargo.lock copied in, every cargo build --locked, rust-version declared (members inherit), rust:<x.y> >= rust-version; 11 violations on main 618156854, 0 with idp#8652",
+      "falsifier": "tests/test_rust_images_build_locked.py known-bad cases (ground-truth's main Dockerfile, edge-runtime's floor on rust:1.89, a workspace member that does not inherit) must be refused, and the known-good accepted",
+      "owner": "delivery",
+      "status": "open"
     }
   ]
 }

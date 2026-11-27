@@ -2,6 +2,10 @@
 resolver = "2"
 members = ["crates/penny-core", "crates/pennyd"]
 
+[workspace.package]
+# The Dockerfile pins rust:1.89; tests/test_rust_images_build_locked.py holds the two together.
+rust-version = "1.89"
+
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

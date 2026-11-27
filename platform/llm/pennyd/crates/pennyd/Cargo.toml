@@ -2,6 +2,7 @@
 name = "pennyd"
 version = "0.2.0"
 edition = "2021"
+rust-version.workspace = true
 description = "24/7 token-efficiency daemon: exact cache, cheap-first cascade, hard budgets, founder visibility"
 
 [dependencies]

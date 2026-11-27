@@ -2,6 +2,8 @@
 name = "edge-runtime"
 version = "0.1.0"
 edition = "2021"
+# candle-core 0.11.1 calls core::arch __cpuid_count as a safe fn, which it is from 1.94.0.
+rust-version = "1.94"
 
 [dependencies]
 anyhow = "1"
