@@ -21,6 +21,9 @@ FROM docker.io/debian:bookworm-slim
 # tcpSocket probe (which arrives on the pod's address) can never reach it, and an exec probe
 # inside the container can. The engine's liveness is therefore a real question asked of the
 # daemon itself, not a file that exists.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
  && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends curl ca-certificates \

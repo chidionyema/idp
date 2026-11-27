@@ -33,7 +33,8 @@ RUN apk add --no-cache curl ca-certificates && \
 
 # OCI CLI on Oracle Linux 9, pinned. jq for JSON parsing.
 FROM ghcr.io/oracle/oraclelinux:9
-ARG OCI_CLI_VERSION=3.94.1
+# 3.94.1 capped certifi <2026 (GHSA-6q48-6c7w-9gw2, fixed 2026.10.18); 3.97.1 needs >=2026.10.19. idp#8655.
+ARG OCI_CLI_VERSION=3.97.1
 RUN dnf install -y --nodocs python3.12 python3.12-pip jq && \
     python3.12 -m pip install --no-cache-dir "oci-cli==${OCI_CLI_VERSION}" && \
     dnf clean all && rm -rf /var/cache/dnf

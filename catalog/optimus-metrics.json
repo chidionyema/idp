@@ -301,6 +301,30 @@
       "better": "lower",
       "owner": "delivery",
       "description": "Pinned shapes where bin/lane-where answers GONE for a lane whose content is in main. 1 on main 618156854 (a lane landed after the clone's last fetch); 0 with idp#8653."
+    },
+    {
+      "name": "images.os_upgrade_layer_not_refreshable",
+      "measure": [
+        "python3",
+        "tests/test_os_upgrade_layers_refresh.py",
+        "--optimus"
+      ],
+      "unit": "images",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Images bin/dockerfiles lists whose OS-upgrade layer has no ARG OS_PACKAGES_AS_OF before it, so the GHCR layer cache replays it and published OS fixes never arrive. 15 on main 618156854; 0 with idp#8655."
+    },
+    {
+      "name": "portal.install_time_downloads_enabled",
+      "measure": [
+        "python3",
+        "tests/test_portal_install_skips_vanishing_downloads.py",
+        "--optimus"
+      ],
+      "unit": "violations",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Declared install-time downloads the portal never uses that are still enabled in backstage/package.json, plus a yarn.lock root that does not mirror its dependenciesMeta. 1 on main c82f68ea8; 0 with idp#8655."
     }
   ]
 }

@@ -67,6 +67,9 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 # and `install` never upgrades what the base already ships. On 2026-10-14 that left perl-base
 # at 5.36.0-7+deb12u3 with three CRITICALs fixed in deb12u4 (CVE-2026-8376, -42496, -13221),
 # and the scan refused this image.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN set -euo pipefail \
     && apt-get update \
     && apt-get upgrade -y --no-install-recommends \

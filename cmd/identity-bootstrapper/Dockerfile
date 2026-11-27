@@ -30,7 +30,8 @@ FROM ghcr.io/oracle/oraclelinux:9
 # The OCI CLI is not packaged in any Oracle Linux 9 repo the image carries (measured 2026-09-30:
 # `oci` and `*oci-cli*` absent from ol9_baseos/appstream/developer, oracle-epel-ol9 unavailable),
 # so it comes from PyPI, pinned. Only the OCI key path shells out to it; EPHEMERAL_KEY mode does not.
-ARG OCI_CLI_VERSION=3.94.1
+# 3.94.1 capped certifi <2026 (GHSA-6q48-6c7w-9gw2, fixed 2026.10.18); 3.97.1 needs >=2026.10.19. idp#8655.
+ARG OCI_CLI_VERSION=3.97.1
 RUN dnf install -y --nodocs python3.12 python3.12-pip jq && \
     python3.12 -m pip install --no-cache-dir "oci-cli==${OCI_CLI_VERSION}" && \
     dnf clean all && rm -rf /var/cache/dnf
