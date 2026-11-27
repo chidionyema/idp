@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Meridian Membrane Cockpit</title>
+  <style>
+    body {
+      width: 370px;
+      margin: 0;
+      padding: 14px;
+      background: #0b1120;
+      color: #f1f5f9;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    h1 {
+      font-size: 13px;
+      margin: 0 0 10px 0;
+      color: #f87171;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 6px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .stat {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 6px;
+      text-align: center;
+    }
+    .stat b { display: block; font-size: 15px; margin-top: 2px; }
+    .pass b { color: #4ade80; }
+    .blk b { color: #f87171; }
+    .bld b { color: #fbbf24; }
+    .section {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 6px;
+      padding: 9px;
+      margin-bottom: 10px;
+    }
+    .section-title {
+      font-weight: 700;
+      color: #93c5fd;
+      margin-bottom: 6px;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    label.row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 5px 0;
+      gap: 8px;
+    }
+    select, input[type="text"] {
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-family: inherit;
+      font-size: 11px;
+    }
+    input[type="text"] { width: 100%; box-sizing: border-box; margin-top: 4px; }
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    button {
+      flex: 1;
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary { background: #dc2626; border-color: #ef4444; }
+    button.verify { background: #0f766e; border-color: #14b8a6; }
+    #status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #86efac;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MERIDIAN WEB MEMBRANE v1.0 [FAIL-CLOSED]</h1>
+
+  <div class="grid">
+    <div class="stat pass">PASS<b id="s-pass">0</b></div>
+    <div class="stat blk">BLOCK<b id="s-block">0</b></div>
+    <div class="stat bld">BLIND<b id="s-blind">0</b></div>
+    <div class="stat">BYPASS<b id="s-bypass">0</b></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Estate Billing &amp; Topology Ledger</div>
+    <label class="row"><span>DSH Web (DeepSeek API_CREDIT)</span>
+      <select id="l-dsh"><option value="LIVE">LIVE</option><option value="EXHAUSTED">EXHAUSTED</option><option value="DEAD">DEAD</option></select>
+    </label>
+    <label class="row"><span>GLM / Z.ai (MONTHLY_SUB)</span>
+      <select id="l-glm"><option value="EXHAUSTED">EXHAUSTED</option><option value="LIVE">LIVE</option></select>
+    </label>
+    <label class="row"><span>Claude Code (MONTHLY_SUB)</span>
+      <select id="l-claude"><option value="LIVE">LIVE</option><option value="EXHAUSTED">EXHAUSTED</option></select>
+    </label>
+    <label class="row"><span>Local pennyd (127.0.0.1:4200)</span>
+      <select id="l-pennyd"><option value="DEAD">DEAD</option><option value="LIVE">LIVE</option></select>
+    </label>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Egress Gate Enforcement</div>
+    <label class="row"><span>Verifier Mode</span>
+      <select id="g-mode">
+        <option value="LOCAL_COMPILED_GATE">LOCAL_COMPILED_GATE (Instant)</option>
+        <option value="CLOUD_REMOTE_GATE">CLOUD_REMOTE_GATE (LAW 50)</option>
+      </select>
+    </label>
+    <input id="g-url" type="text" placeholder="https://egress-gate.meridianlabs.cloud/evaluate" />
+    <label class="row"><span>Strict 6-Field Contract on Proposals</span><input id="g-strict" type="checkbox" /></label>
+    <label class="row"><span>Allow Bootstrap CLI Chores (Break-Glass)</span><input id="g-chore" type="checkbox" /></label>
+    <label class="row"><span>Auto-Stamp Rejection into Prompt (Max 1)</span><input id="g-autoreject" type="checkbox" /></label>
+  </div>
+
+  <div class="btn-row">
+    <button id="btn-save" class="primary">Save Ledger &amp; Gates</button>
+    <button id="btn-selftest" class="verify">Run Live Falsifier</button>
+  </div>
+  <div class="btn-row">
+    <button id="btn-export">Export Audit JSONL</button>
+    <button id="btn-reset">Reset Counters</button>
+  </div>
+  <div id="status"></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
