@@ -178,3 +178,51 @@ def test_a_lane_head_that_is_in_main_is_landed_by_ancestry(work: Path):
     assert receipt.get("landed_by") == "ancestry", (
         f"the door did not land the lane by ancestry\n{receipt}"
     )
+
+
+def test_a_lane_landed_since_the_last_fetch_is_landed_not_gone(
+    work: Path, tmp_path: Path
+):
+    """Measured 2026-11-27: lane/fix/estate-mcp-build-checks-run-premerge squash-landed as
+    #8651 at 15:47Z and the engine deleted its ref; lane-where answered GONE "never landed, or
+    deleted while red" because the gone-ref path judged content against the clone's stale
+    origin/main and never fetched the main it had just read from ls-remote. After a fetch the
+    same lane read LANDED. A false GONE tells an agent to redo work that landed."""
+    _commit(work, "one", SUBJECT)
+    _git(work, "push", "-q", "origin", "main")
+    _git(work, "checkout", "-q", "-b", "lane/landed-elsewhere")
+    _commit(work, "two", "feat: the lane's own work")
+    _git(work, "push", "-q", "origin", "lane/landed-elsewhere")
+    _git(work, "checkout", "-q", "main")
+
+    # The engine lands it from another clone and deletes the ref; this clone never fetches.
+    engine = tmp_path / "engine"
+    _git(tmp_path, "clone", "-q", str(tmp_path / "origin.git"), str(engine))
+    _git(engine, "checkout", "-q", "main")
+    _commit(engine, "two", "feat: the lane's own work (#1)")
+    _git(engine, "push", "-q", "origin", "main", ":lane/landed-elsewhere")
+
+    code, out = _where(work, "lane/landed-elsewhere")
+
+    assert code == 0, (
+        f"a lane that landed since the last fetch was not recognised\n{out}"
+    )
+    assert "LANDED" in out and "GONE" not in out, out
+
+
+if __name__ == "__main__":
+    import sys
+
+    if "--optimus" in sys.argv:
+        # One case per false-GONE shape this file pins; a case that fails is a false GONE.
+        rc = pytest.main(
+            [
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                f"{__file__}::{test_a_lane_landed_since_the_last_fetch_is_landed_not_gone.__name__}",
+            ]
+        )
+        print(f"optimus.lane_where.false_gone_cases={0 if rc == 0 else 1}")
+        raise SystemExit(0)
+    raise SystemExit("run under pytest, or with --optimus")
