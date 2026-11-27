@@ -1,0 +1,129 @@
+# meridian-drive-outbox-harvester — Kit 1 / Onboarding Bridge (meridian-full-ship-and-onboard-kit-20261123-v1)
+#
+# Pulls verified bundles from Meridian-Submit-Outbox into submit/** with CLAIM
+# + SHIP-CONTRACT commit trailers and writes JSON receipts back to Drive.
+#
+# This is the ingestion half of Gemini Web's engineering capability: bundles
+# dropped into Meridian-Submit-Outbox are materialized as submit/<name> commits
+# that submit-gate fast-gates and promotes to lane/<name>, waking Greenlane.
+#
+# Triggered on a cadence, on demand, and when the outbox signals a new bundle
+# (repository_dispatch). It is deliberately NOT triggered by submit/** pushes so
+# harvesting a bundle cannot re-trigger itself.
+#
+# NOTE (Drive source/target): this kit's spec names Google Drive
+# Meridian-Submit-Outbox (source) and Drive receipts/ (destination). No Drive
+# client or OAuth credentials exist in this repo, so bundle ingestion reads from
+# the repo bundles/ directory and receipts are persisted as workflow artifacts.
+# Drop the kit's Drive client in and re-point OUTBOX_SRC / RECEIPT_DEST when it
+# lands.
+name: Meridian drive-outbox harvester
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: "Bundle name to harvest (defaults to all in outbox source)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [meridian-outbox]
+concurrency:
+  group: drive-outbox-harvester-${{ github.run_id }}
+  cancel-in-progress: true
+permissions:
+  contents: write   # create submit/<name> branches and push
+  pull-requests: read
+  actions: write    # workflow artifact upload
+jobs:
+  harvest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Harvest each bundle into submit/<name>
+        id: harvest
+        if: "steps.bundles.outputs.bundle_count != ''"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OUTBOX_SRC: ${{ vars.MERIDIAN_OUTBOX_SRC || './bundles' }}
+          RECEIPT_DEST: ${{ vars.MERIDIAN_RECEIPT_DEST || 'receipts' }}
+        run: |
+          set -euo pipefail
+          git config user.name "estate-agents[bot]"
+          git config user.email "estate-agents[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git fetch -q --depth=1 origin main
+          name=""
+          while IFS= read -r bundle; do
+            [ -n "$bundle" ] || continue
+            name="$(basename "$bundle" .zip)"
+            branch="submit/${name}"
+            echo "harvesting $bundle -> $branch"
+            work=".harvest/$name"
+            rm -rf "$work"; mkdir -p "$work"
+            if [ -f "./bundles/$bundle" ]; then
+              unzip -oq "./bundles/$bundle" -d "$work"
+            elif [ -f "$OUTBOX_SRC/$bundle" ]; then
+              unzip -oq "$OUTBOX_SRC/$bundle" -d "$work"
+            else
+              echo "bundle not found: $bundle" >&2; continue
+            fi
+            git checkout -q -B "$branch" origin/main
+            cp -r "$work"/. .
+            git add -A
+            if git diff --cached --quiet; then
+              echo "no changes for $bundle"; continue
+            fi
+            git commit -q -m "chore(meridian): harvest $bundle into submit/$name CLAIM: chidionyema/idp SHIP-CONTRACT: meridian-drive-outbox-harvester/v1 Agent: meridian-drive-outbox-harvester Bundle: $bundle Source: $OUTBOX_SRC/$bundle" >/dev/null
+            git push -q origin "+$branch"
+            echo "promoted $bundle -> $branch (submit-gate will fast-gate and Greenlane-promote it)"
+          done < .harvest/bundle.list
+          echo "harvested=$name" >> "$GITHUB_OUTPUT"
+      - name: Write harvest receipt
+        id: receipt
+        if: "steps.harvest.outputs.harvested != ''"
+        run: |
+          set -euo pipefail
+          mkdir -p "$RECEIPT_DEST"
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          path="$RECEIPT_DEST/meridian-drive-outbox-harvester_receipt_${ts}.json"
+          printf '{"schema":"meridian-drive-outbox-harvester/v1","kind":"drive_outbox_harvester_receipt","branch":"submit/%s","generated_at":"%sZ"}\n' "$name" "$(date -u +%Y-%m-%dT%H:%M:%S)" > "$path"
+          echo "receipt_path=$path" >> "$GITHUB_OUTPUT"
+      - name: Persist harvest receipt artifact
+        if: "steps.receipt.outputs.receipt_path != ''"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: drive-outbox-harvester-receipt
+          path: ${{ steps.receipt.outputs.receipt_path }}
+          retention-days: 90
+          if-no-files-found: error
+      - name: Summarize
+        if: steps.receipt.outputs.receipt_path != ''
+        run: |
+          echo "## Meridian drive-outbox harvester" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch submit/${name}: ${{ steps.receipt.outputs.receipt_path }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: Resolve bundles to harvest
+        id: bundles
+        env:
+          OUTBOX_SRC: ${{ vars.MERIDIAN_OUTBOX_SRC || './bundles' }}
+          BUNDLE: ${{ github.event.inputs.bundle }}
+        run: |
+          set -euo pipefail
+          mkdir -p .harvest
+          if [ -n "$BUNDLE" ]; then
+            echo "$BUNDLE" > .harvest/bundle.list
+          elif [ -d "$OUTBOX_SRC" ]; then
+            find "$OUTBOX_SRC" -maxdepth 1 -type f -printf '%f\n' | sort > .harvest/bundle.list || true
+          else
+            : > .harvest/bundle.list
+          fi
+          if [ ! -s .harvest/bundle.list ]; then
+            echo "no bundles to harvest" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "bundle_count=$(wc -l < .harvest/bundle.list)" >> "$GITHUB_OUTPUT"

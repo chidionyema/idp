@@ -1,0 +1,145 @@
+# meridian-red-main-triage — Kit 1 / Onboarding Bridge (meridian-full-ship-and-onboard-kit-20261123-v1)
+#
+# Hydrates exact red CI failure logs into receipts/ so every web agent reads
+# real failure lines in Pass 1 with zero copy-paste.
+#
+# Triggered when ci.yml or fast-gate.yml goes red on main, on demand, and on a
+# cadence. Reads the failing run's jobs and logs through `gh` (the same pattern
+# as .estate/libexec/ci-errors.sh), extracts the exact failing annotation and
+# the last 20 log lines, and writes a machine-readable receipt.
+#
+# NOTE (Drive target): this kit's spec names Google Drive receipts/ as the
+# destination. No Drive client or OAuth credentials exist in this repo, so the
+# receipt is written to receipts/ and persisted as a workflow artifact here.
+# Drop the kit's Drive client in and re-point RECEIPT_DEST to drive: when it
+# lands.
+name: Meridian red-main triage
+on:
+  workflow_run:
+    workflows: [ci.yml, fast-gate.yml]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Actions run databaseId to triage (defaults to latest red)"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/15 * * * *"
+  repository_dispatch:
+    types: [meridian-triage]
+concurrency:
+  group: red-main-triage-${{ github.run_id }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write   # workflow artifact upload
+jobs:
+  triage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: Resolve the red run to triage
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ github.event.inputs.run_id }}"
+          if [ -z "$RUN_ID" ] && [ -n "${{ github.event.workflow_run.id }}" ]; then
+            RUN_ID="${{ github.event.workflow_run.id }}"
+          fi
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID=$(gh run list --repo "$REPO" --status failure --limit 1 \
+              --json databaseId -q '.[0].databaseId')
+          fi
+          if [ -z "$RUN_ID" ]; then
+            echo "no red run to triage" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          gh run view "$RUN_ID" --repo "$REPO" \
+            --json displayTitle,headBranch,conclusion,url \
+            -q '"run: \(.headBranch)  \(.conclusion)  \(.url)"' >> "$GITHUB_STEP_SUMMARY"
+      - name: Gather exact failing lines
+        id: errors
+        if: steps.run.outcome == 'success' && steps.run.outputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          REPO="${REPO}"; RUN="${RUN_ID}"
+          out=$(mktemp); : > "$out"
+          echo "=== failing jobs/steps ===" >> "$out"
+          gh api "repos/$REPO/actions/runs/$RUN/jobs" \
+            --jq '.jobs[] | select(.conclusion=="failure") | .name as $j | .steps[] | select(.conclusion=="failure") | "\($j) -> \(.name)"' \
+            >> "$out" 2>/dev/null || true
+          echo >> "$out"
+          echo "=== exact error lines (last 20 per failing job) ===" >> "$out"
+          for JOB in $(gh api "repos/$REPO/actions/runs/$RUN/jobs" \
+              --jq '.jobs[] | select(.conclusion=="failure") | .id'); do
+            JOB_NAME=$(gh api "repos/$REPO/actions/jobs/$JOB" --jq '.name')
+            echo "--- $JOB_NAME ---" >> "$out"
+            gh api "repos/$REPO/actions/jobs/$JOB/logs" 2>/dev/null \
+              | grep -nE 'FAIL|error:|Error|panic|AssertionError|failed' \
+              | grep -vE 'git clone|sig-notation|::|node_modules|xterm|HTMLCanvas' \
+              | tail -20 >> "$out" || true
+            echo >> "$out"
+          done
+          if [ ! -s "$out" ]; then echo "(no error lines extracted)" >> "$out"; fi
+          echo "log_path=$out" >> "$GITHUB_OUTPUT"
+          echo "log_len=$(wc -l < "$out")" >> "$GITHUB_OUTPUT"
+      - name: Write triage receipt
+        id: receipt
+        if: steps.errors.outputs.log_path != ''
+        env:
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+          RECEIPT_DEST: ${{ vars.MERIDIAN_RECEIPT_DEST || 'receipts' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RECEIPT_DEST"
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          path="$RECEIPT_DEST/red_main_triage_receipt_${RUN_ID}_${ts}.json"
+          python3 - "$path" "$RUN_ID" "$REPO" "${{ steps.errors.outputs.log_path }}" <<'PY'
+          import json, sys, pathlib, datetime
+          path, run_id, repo, log_path = sys.argv[1:5]
+          lines = pathlib.Path(log_path).read_text().splitlines()
+          receipt = {
+            "schema": "meridian-red-main-triage/v1",
+            "kind": "red_main_triage_receipt",
+            "repo": repo,
+            "run_id": int(run_id),
+            "run_url": f"https://github.com/{repo}/actions/runs/{run_id}",
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "failing_lines": lines[-20:],
+            "line_count": len(lines),
+            "note": "Drive receipt target pending kit Drive client; receipt also persisted as a workflow artifact.",
+          }
+          pathlib.Path(path).write_text(json.dumps(receipt, indent=2) + "\n")
+          print(path)
+          PY
+          echo "receipt_path=$path" >> "$GITHUB_OUTPUT"
+          echo "receipt_len=$(wc -c < "$path")" >> "$GITHUB_OUTPUT"
+      - name: Persist receipt artifact
+        if: steps.receipt.outputs.receipt_path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: red-main-triage-receipt
+          path: ${{ steps.receipt.outputs.receipt_path }}
+          retention-days: 90
+          if-no-files-found: error
+      - name: Summarize
+        if: steps.receipt.outputs.receipt_path != ''
+        run: |
+          echo "## Meridian red-main triage" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run ${{ steps.run.outputs.run_id }}: ${{ steps.receipt.outputs.receipt_len }} bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "Receipt: ${{ steps.receipt.outputs.receipt_path }}" >> "$GITHUB_STEP_SUMMARY"
+
