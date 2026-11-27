@@ -69,6 +69,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(minutes=15)
+# idp#8609: set by main() on a laptop, None in CI. A push by the holder renews the holder's own
+# lapsed claim instead of refusing it with "re-stamp"; see renewer().
+RENEW = None
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
 RUNNER_PIN = re.compile(r"^\s*runs-on:\s*ubuntu-\d{2}\.\d{2}\s*$", re.M)
 _PRS: dict[
@@ -735,12 +738,20 @@ def verdict(
                     f"{stale_min}m ago (lapse is 15m). Post CLAIM agent={agent} "
                     f"paths=<files> heartbeat=<UTC now> and re-push"
                 )
+            elif RENEW is not None and RENEW(
+                ref_repo or repo, int(num), agent, c["paths"]
+            ):
+                # idp#8609: the holder's own newest CLAIM, renewed by the holder's own push --
+                # exactly what a manual re-stamp by that name does, so it is judged live below.
+                pass
             else:
                 problems.append(
                     f"{where} heartbeat is {stale_min}m old (lapse is 15m): re-stamp "
                     f"CLAIM agent={agent} paths=... heartbeat=<UTC now> to keep working"
                 )
-            continue
+                continue
+            if c["agent"] != agent:
+                continue
         if c["agent"] != agent:
             problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
             continue
@@ -998,11 +1009,41 @@ def optimus_reading(now: datetime) -> str:
     return f"optimus.claims.ship_contract_enforced={1 if enforced else 0}"
 
 
+def renewer(env=os.environ):
+    """The heartbeat renewal a push by the holder may perform, or None where the gate must only
+    read. CI (GITHUB_ACTIONS, CI) judges read-only: there the pusher is a runner, not the agent.
+    CLAIM_GATE_NO_RENEW=1 turns it off on a laptop."""
+    if env.get("GITHUB_ACTIONS") or env.get("CI") or env.get("CLAIM_GATE_NO_RENEW"):
+        return None
+
+    def renew(repo: str, num: int, agent: str, paths: str) -> bool:
+        hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        body = f"CLAIM agent={agent} paths={paths} heartbeat={hb}"
+        try:
+            argv = ["gh", "api", "-X", "POST", f"repos/{repo}/issues/{num}/comments"]
+            argv += ["-f", f"body={body}"]
+            r = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if r.returncode == 0:
+            print(f"ok    claim-gate  renewed {repo}#{num}: {body}")
+        return r.returncode == 0
+
+    return renew
+
+
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--optimus"]:
         print(optimus_reading(datetime.now(timezone.utc)))
         return 0
     base, head = argv[1], argv[2]
+    global RENEW
+    RENEW = renewer()
     repo = repo_slug()
     num, author = pr_context(repo, head)
 
