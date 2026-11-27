@@ -385,6 +385,18 @@
       "better": "lower",
       "owner": "governance",
       "description": "Of the DoF repair lock, the founder's governance and the pin, how many a copy of bin/estate-memory-enforce deployed alone (as bin/estate-memory-install deploys it) cannot read when it judges a path in an idp checkout. 3 on main 0f9d86375, 0 with idp#8660's sweep."
+    },
+    {
+      "name": "images.hindsight_api_floor_sites_unchecked",
+      "measure": [
+        "python3",
+        "tests/test_hindsight_api_pins.py",
+        "--optimus"
+      ],
+      "unit": "interpreters",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "1 when hindsight-api.Dockerfile's build-time floor check, run against a fake image tree, passes uv 0.12.5 in the system interpreter (usr/local/lib/python3.11/site-packages), which Trivy fails. 1 on main 86a662e3c (main run 46049122666); 0 with idp#8667."
     }
   ]
 }
