@@ -76,12 +76,21 @@ def alive(pid):
 
 tmp = tempfile.mkdtemp(prefix="apg-")
 decoy_bin = os.path.join(tmp, "estatedecoy")
-subprocess.run(
-    ["cc", "-O", "-o", decoy_bin, os.path.join(HERE, "estatedecoy.c")], check=True
-)
+# A copy of the binary THIS process runs, named estatedecoy, so pgrep -x and killall see that
+# name. Not sys.executable: on macOS that is a launcher that re-execs as .../MacOS/Python, which
+# would rename the decoy back. The copy finds libpython by leaf name through dyld's fallback
+# path (sys.base_prefix holds it in a framework build; on Linux the variable is inert).
+if os.path.exists("/proc/self/exe"):
+    running = os.path.realpath("/proc/self/exe")
+else:
+    running = subprocess.run(
+        ["ps", "-o", "comm=", "-p", str(os.getpid())], capture_output=True, text=True
+    ).stdout.strip()
+shutil.copy2(running, decoy_bin)
 port = free_port()
 decoy = subprocess.Popen(
-    [decoy_bin, str(port)],
+    [decoy_bin, "-I", os.path.join(HERE, "estatedecoy.py"), str(port)],
+    env=dict(os.environ, DYLD_FALLBACK_LIBRARY_PATH=sys.base_prefix),
     start_new_session=True,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
