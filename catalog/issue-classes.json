@@ -418,6 +418,16 @@
       "gap": "claim-open refused the shared name as an identity while the write gate used it as one: two readers of one rule, no shared source",
       "compensating_action": "the write gate parses claim-open's SHARED_AGENT_NAMES from source and judges a shared name as no identity; the push-time claim-gate still refuses a cross-agent collision",
       "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py: 4 of 5 fail on main, 5/5 on the fix; --optimus reads the holder refusals"
+    },
+    {
+      "class": "completion-notice-lost-on-transient-failure",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "~/.estate/bin/estate-notify-done made one urlopen per chunk and raised on any URLError or non-ok answer; it lived untracked in ~/.estate/bin with no source in idp, so a Telegram or network blip at the end of a turn meant the founder never heard the work was done (idp#8619, measured 2026-11-27)"
+      ],
+      "gap": "the notifier every harness calls had no retry, no outbox and no versioned source, so its failure mode was silence and no gate could see it",
+      "compensating_action": "bin/estate-notify-done is versioned and installed by estate-runtime-sync; it retries transient failures under a 15 s budget, queues an undeliverable completion (redacted, 0600) in ~/.estate/notifications/telegram-outbox, drains it on every later call or --flush, and retires a refused one to dead/ by name",
+      "falsifier": "tests/test_notify_done_never_loses_a_completion.py runs the real script against a local fake Telegram; the installed one-attempt notifier fails it, the fix passes; --optimus reads completions lost"
     }
   ]
 }

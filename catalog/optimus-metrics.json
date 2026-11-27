@@ -193,6 +193,18 @@
       "better": "lower",
       "owner": "estate-memory",
       "description": "shared ESTATE_AGENT spellings (claim-open's SHARED_AGENT_NAMES plus case/space variants) under which the write gate refuses a holder its own live claim (idp#8606)"
+    },
+    {
+      "name": "notify.completions_lost",
+      "measure": [
+        "python3",
+        "tests/test_notify_done_never_loses_a_completion.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claude-code",
+      "description": "of two completions, the first sent while Telegram is unreachable and the second once it is back, how many the founder never receives (idp#8619; the one-attempt notifier loses 1)"
     }
   ]
 }
