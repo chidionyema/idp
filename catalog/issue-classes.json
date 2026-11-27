@@ -378,6 +378,16 @@
       "gap": "a lane gate refused on a verdict the lane cannot cause or fix (an expired validity window), so every lane was held hostage to the store owner's re-measure",
       "compensating_action": "a lane gate refuses only what the lane can cause (CONTRADICTED, TAMPERED, a verdict-less crash); aged rows warn by row and name the owner's door",
       "falsifier": "tests/test_idp_ci_facts_rung.py: stale-warns and contradicted-fails; 3 of 7 cases fail against origin/main's rung"
+    },
+    {
+      "class": "test-git-writes-the-hook-repo",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "pre-push of fix/facts-stale-is-not-the-lane ran platform/lifeboat/test/seal-cli.test.mjs with the hook's GIT_DIR; its `git -C <tmp> init` and `git config user.name` wrote core.bare=true and 'Synthetic test' into ~/Documents/code/idp/.git/config, and every worktree on the machine failed 'must be run in a work tree' until repaired by hand (idp#8602, measured 2026-11-27 07:00:05)"
+      ],
+      "gap": "a test that builds a scratch repo with `git -C <tmp>` inherited GIT_DIR from the hook that ran it, so its writes landed in the shared repository",
+      "compensating_action": "tests strip GIT_* from every git child; the lifeboat rung runs node with the location variables unset",
+      "falsifier": "tests/test_lifeboat_git_hermetic.py: GIT_DIR aimed at a victim repo; origin/main's test writes 'Synthetic test' into it, this change leaves it byte-identical"
     }
   ]
 }
