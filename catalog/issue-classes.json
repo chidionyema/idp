@@ -557,6 +557,18 @@
       "falsifier": "python3 tests/test_legion_admit.py --optimus runs bin/legion-admit end to end with every HTTPS connection trapped: no record and UNFIT both refused with 0 connections, FIT reaches the probe; prints 0 against main c82f68e's legion-admit and 1 with the gate",
       "owner": "greenlane",
       "status": "open"
+    },
+    {
+      "class": "hook-reads-sibling-absent-from-deployed-copy",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "idp#8660: ~/.estate/memory/bin/estate-memory-enforce read SHARED_AGENT_NAMES from claim-open beside itself; the deployed bin has none, so ESTATE_AGENT=estate-agent was taken as the identity and claude-ins00037-takeover was refused its own live claim on #8658 (Write/Edit unusable for the session)"
+      ],
+      "gap": "a hook resolved a rule file relative to its own location; its tests loaded it from bin/ where the file sits, while the copy harnesses run is deployed alone, so the fix (#8606) passed its tests and never applied on the real path",
+      "compensating_action": "estate-memory-enforce reads claim-open from the idp checkout that holds the edited path first, then from its own bin",
+      "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py runs the hook from a bin/ without claim-open: the branch admits the holder, the sibling-only resolver refuses it; the metric reads 1 for main 43af9f558 and 0 with idp#8660",
+      "owner": "governance",
+      "status": "open"
     }
   ]
 }

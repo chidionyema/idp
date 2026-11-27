@@ -337,6 +337,18 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when bin/legion-admit --harness auto, run end to end with a dummy key and every HTTPS connection trapped locally, refuses an auto route with no FIT record and one with an UNFIT record with zero provider connections, and admits a fresh FIT record at launch settings to the probe. 0 on main c82f68e; 1 with idp#3525."
+    },
+    {
+      "name": "hooks.enforce_shared_name_unresolved_when_relocated",
+      "measure": [
+        "python3",
+        "tests/test_enforce_shared_agent_name_is_no_identity.py",
+        "--optimus"
+      ],
+      "unit": "deadlocks",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when estate-memory-enforce, copied alone into a bin/ without claim-open (the deployed layout), refuses a live claim's holder under ESTATE_AGENT=estate-agent. 1 on main 43af9f558; 0 with idp#8660."
     }
   ]
 }
