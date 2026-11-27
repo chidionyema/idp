@@ -115,11 +115,33 @@ def found(text: str) -> list[str]:
     return out
 
 
+_FENCE = re.compile(r"^\s*(```|~~~).*?^\s*\1.*?$", re.S | re.M)
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+
+
+def prose_only(text: str) -> str:
+    """Remove the shapes where a phrase is a LABEL, not a hand-back.
+
+    Friction #5, measured 2026-11-27: the stop hook flagged the literal table cell
+    "Still open" in a status report -- a row heading, not an offer to continue. The
+    founder's rule is about what the turn DOES, so a phrase inside a table row, a
+    code fence or an inline code span is not evidence of handing work back.
+
+    Deliberately narrow: headings and prose are untouched, so a real
+    "Still open: ..." or "want me to ...?" still blocks.
+    """
+    out = _FENCE.sub("", text)
+    out = _TABLE_ROW.sub("", out)
+    out = _INLINE_CODE.sub("", out)
+    return out
+
+
 def judge(text: str, stop_hook_active: bool = False) -> dict:
     """{"block": bool, "reason": str, "found": [...]}. Allows on anything it cannot judge."""
     if stop_hook_active or not isinstance(text, str) or not text.strip():
         return {"block": False, "reason": "", "found": []}
-    hits = found(text)
+    hits = found(prose_only(text))
     if not hits or evidenced_blocker(text):
         return {"block": False, "reason": "", "found": hits}
     return {

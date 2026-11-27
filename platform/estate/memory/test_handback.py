@@ -150,3 +150,19 @@ def test_cli_check_roundtrip():
 def test_directive_names_the_blocker_evidence():
     for needle in ("estate-execute", "exit status", "operational and proven"):
         assert needle in handback.DIRECTIVE
+
+
+def test_a_phrase_inside_a_table_row_is_a_label_not_a_handback():
+    """Friction #5, measured 2026-11-27: the stop hook blocked a status report whose
+    table had a column headed "Still open". A row label is not an offer to continue."""
+    report = "| Seam | State |\n|---|---|\n| Still open | needs the Allow click |\n"
+    assert not handback.judge(report)["block"]
+
+
+def test_a_phrase_inside_a_code_fence_is_not_a_handback():
+    assert not handback.judge("```\nStill open: example\n```")["block"]
+
+
+def test_a_real_handback_still_blocks_after_the_label_exemption():
+    assert handback.judge("Done. Still open: the deploy.")["block"]
+    assert handback.judge("Want me to continue?")["block"]
