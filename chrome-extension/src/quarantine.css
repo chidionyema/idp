@@ -1,0 +1,166 @@
+/* Meridian Pre-Render Quarantine Membrane */
+[data-meridian-state="quarantined"] > :not(.meridian-membrane-banner),
+[data-meridian-state="blocked"] > :not(.meridian-membrane-banner),
+[data-meridian-state="blind"] > :not(.meridian-membrane-banner) {
+  filter: blur(14px) !important;
+  opacity: 0.06 !important;
+  max-height: 92px !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  transition: opacity 0.15s ease;
+}
+
+.meridian-membrane-banner {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  margin: 8px 0 10px 0 !important;
+  z-index: 99999 !important;
+  position: relative !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+  pointer-events: auto !important;
+  user-select: text !important;
+}
+
+.meridian-banner-quarantined {
+  background: #0f172a !important;
+  color: #93c5fd !important;
+  border: 1px solid #3b82f6 !important;
+}
+
+.meridian-banner-pass {
+  background: #052e16 !important;
+  color: #bbf7d0 !important;
+  border: 1px solid #16a34a !important;
+  padding: 6px 12px !important;
+}
+
+.meridian-banner-blocked {
+  background: #2b0a0d !important;
+  color: #fecaca !important;
+  border: 2px solid #dc2626 !important;
+}
+
+.meridian-banner-blind {
+  background: #2c1a04 !important;
+  color: #fde68a !important;
+  border: 2px solid #f59e0b !important;
+}
+
+.meridian-banner-bypassed {
+  background: #3b1d06 !important;
+  color: #fed7aa !important;
+  border: 1px dashed #fb923c !important;
+  padding: 6px 12px !important;
+}
+
+.meridian-banner-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.meridian-code-pill {
+  display: inline-block !important;
+  background: rgba(220, 38, 38, 0.25) !important;
+  border: 1px solid #ef4444 !important;
+  color: #fca5a5 !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  margin: 4px 6px 0 0 !important;
+  font-size: 11px !important;
+}
+
+.meridian-violation-list {
+  margin: 8px 0 0 0 !important;
+  padding-left: 16px !important;
+  color: #fee2e2 !important;
+}
+
+.meridian-violation-list li {
+  margin: 4px 0 !important;
+}
+
+.meridian-excerpt {
+  display: block !important;
+  color: #fca5a5 !important;
+  opacity: 0.85 !important;
+  font-size: 11px !important;
+  margin-top: 2px !important;
+}
+
+.meridian-btn-row {
+  display: flex !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+  margin-top: 10px !important;
+}
+
+.meridian-btn {
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 5px 10px !important;
+  border-radius: 5px !important;
+  cursor: pointer !important;
+  border: 1px solid transparent !important;
+}
+
+.meridian-btn-reject {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.meridian-btn-bypass {
+  background: transparent !important;
+  color: #fcd34d !important;
+  border-color: #d97706 !important;
+}
+
+.meridian-btn-reeval {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #475569 !important;
+}
+
+/* Floating Cockpit Pill */
+#meridian-floating-pill {
+  position: fixed !important;
+  bottom: 14px !important;
+  right: 14px !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #dc2626 !important;
+  border-radius: 999px !important;
+  padding: 6px 12px !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-size: 11px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45) !important;
+}
+
+#meridian-floating-pill button {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #475569 !important;
+  border-radius: 999px !important;
+  padding: 3px 8px !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+}
+
+#meridian-floating-pill button:hover {
+  background: #dc2626 !important;
+  border-color: #ef4444 !important;
+}
