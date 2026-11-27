@@ -80,7 +80,7 @@ door = None
 door_error = ""
 try:
     import door  # noqa: E402
-except Exception as _door_exc:  # noqa: BLE001 - a broken door is a refusal, never a crash
+except (Exception, SystemExit) as _door_exc:  # noqa: BLE001 - a broken door is a refusal, never a crash (local_store exits on a missing dependency, idp#8672)
     door_error = f"{type(_door_exc).__name__}: {_door_exc}"
 
 # The DoF repair lock, decided HERE (edit time) instead of only at merge. dof-gate is a

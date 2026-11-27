@@ -213,7 +213,7 @@ def publish(
             timeout=15,
         )
         out["memory"] = {"ok": True, "result": result}
-    except Exception as exc:  # noqa: BLE001 - the door can fail for network reasons
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - network, or local_store exiting on a missing dependency (idp#8672)
         out["memory"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     out["telegram"] = telegram(page)
     out["facts"] = facts
