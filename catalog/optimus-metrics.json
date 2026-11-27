@@ -169,6 +169,18 @@
       "better": "lower",
       "owner": "estate-gates",
       "description": "falsifier cases the api-port-guard fails: an agent signalling its own model/UI path or another harness, or a read refused for mentioning a service (idp#8598)"
+    },
+    {
+      "name": "claims.holder_lapse_refusals",
+      "measure": [
+        "python3",
+        "tests/test_claim_gate_renews_its_own_lapsed_claim.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claims",
+      "description": "1 when claim-gate on a laptop refuses a push whose only fault is the pusher's own lapsed heartbeat, 0 when the push renews it (idp#8609)"
     }
   ]
 }
