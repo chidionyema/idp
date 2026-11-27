@@ -406,6 +406,44 @@ def pin_verdict(path: str | None = None):
     )
 
 
+DOF_CACHE = os.path.expanduser("~/.cache/estate/dof-incidents.json")
+DOF_CACHE_TTL = 120
+
+
+def _dof_incidents(
+    open_inc, registry, cache: str | None = None, ttl: int | None = None
+):
+    """The open incidents as an edit-time reader sees them, or None when they cannot be read.
+
+    idp#8669: dof-gate turns an unreadable list into the fail-closed `dof-probe` sentinel, which
+    is right at merge (health unproven). At edit time the same sentinel refused every idp write
+    fleet-wide when the anonymous GitHub budget (60/h) ran out, because this hook read the list on
+    every write. Here the sentinel means "unknown" -- the merge gate still judges -- and a readable
+    list is reused for `ttl` seconds so writes stop spending the budget.
+    """
+    cache = cache or DOF_CACHE
+    ttl = DOF_CACHE_TTL if ttl is None else ttl
+    try:
+        with open(cache) as f:
+            seen = json.load(f)
+        if 0 <= time.time() - seen["at"] < ttl and isinstance(seen["incidents"], list):
+            return seen["incidents"]
+    except Exception:
+        pass
+    incidents = open_inc(registry)
+    if any(i.get("id") == "dof-probe" and i.get("issue") is None for i in incidents):
+        return None
+    try:
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        tmp = f"{cache}.{os.getpid()}"
+        with open(tmp, "w") as f:
+            json.dump({"at": time.time(), "incidents": incidents}, f)
+        os.replace(tmp, cache)
+    except OSError:
+        pass
+    return incidents
+
+
 def dof_verdict(path: str):
     """(ok, reason): may this file be edited under the current critical-service lease?
 
@@ -429,8 +467,10 @@ def dof_verdict(path: str):
     except Exception:
         return None, "DoF registry unreadable: nothing to decide"
     try:
-        incidents = open_inc(registry)
+        incidents = _dof_incidents(open_inc, registry)
     except Exception:
+        incidents = None
+    if incidents is None:
         return None, "incident list unreadable: fail open, merge gate still judges"
     if not incidents:
         return True, "L0: no critical incident open"

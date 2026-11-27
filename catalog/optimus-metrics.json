@@ -397,6 +397,18 @@
       "better": "lower",
       "owner": "delivery",
       "description": "1 when hindsight-api.Dockerfile's build-time floor check, run against a fake image tree, passes uv 0.12.5 in the system interpreter (usr/local/lib/python3.11/site-packages), which Trivy fails. 1 on main 86a662e3c (main run 46049122666); 0 with idp#8667."
+    },
+    {
+      "name": "hooks.enforce_refuses_on_unreadable_incidents",
+      "measure": [
+        "python3",
+        "tests/test_enforce_dof_unreadable_fails_open.py",
+        "--optimus"
+      ],
+      "unit": "refusals",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when estate-memory-enforce's dof_verdict refuses a write because dof-gate could not read the incident list (the dof-probe sentinel). 1 on main b04af78dc (refused every idp write fleet-wide on 2026-11-27 when the anonymous GitHub budget ran out); 0 with idp#8669."
     }
   ]
 }

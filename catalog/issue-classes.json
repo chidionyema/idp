@@ -595,6 +595,18 @@
       "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py runs the hook from a bin/ without claim-open: the branch admits the holder, the sibling-only resolver refuses it; the metric reads 1 for main 43af9f558 and 0 with idp#8660; tests/test_enforce_sibling_rules_resolve_when_relocated.py judges a repo path with a relocated copy and counts the rules it loses (metric hooks.enforce_rules_lost_when_relocated: 3 on main, 0 with the fix)",
       "owner": "governance",
       "status": "open"
+    },
+    {
+      "class": "edit-time-reader-inherits-merge-fail-closed-sentinel",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "estate-memory-enforce dof_verdict, deployed 2026-11-27 18:58 UTC after idp#8660: dof-gate.open_incidents returned the dof-probe sentinel ('incident list unreadable: HTTP Error 403: rate limit exceeded', anonymous core 60/h exhausted by one read per write) and the hook refused every idp write as outside every repairScope; deployment rolled back from backup (idp#8669)"
+      ],
+      "gap": "the merge gate's fail-closed sentinel for an unreadable incident list was consumed by the edit-time hook as a real incident, contradicting the hook's own ok=None-on-unreadable contract, and the hook spent one unauthenticated API call per write",
+      "compensating_action": "estate-memory-enforce._dof_incidents maps the dof-probe sentinel to None (unknown; the merge gate still judges) and reuses a readable list for 120 s",
+      "falsifier": "tests/test_enforce_dof_unreadable_fails_open.py: the sentinel is unknown, a real incident still refuses, the cache serves within TTL and never stores the sentinel; a hook that passes the sentinel through refuses. hooks.enforce_refuses_on_unreadable_incidents 1 on main b04af78dc, 0 with idp#8669",
+      "owner": "governance",
+      "status": "open"
     }
   ]
 }
