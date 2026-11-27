@@ -1,0 +1,28 @@
+#!/bin/sh
+# install-api-port-guard -- put the judge, the shell layer and the PATH shims where every harness's
+# shell finds them (Claude Code, Codex, OpenCode, DSH, pi). Idempotent; every copy is an atomic
+# rename, so no shell ever sources half a file.
+#     estate/gates/install-api-port-guard
+set -eu
+SRC=$(cd "$(dirname "$0")" && pwd)
+HOOKS="$HOME/.estate/hooks"
+BIN="$HOME/.local/bin"
+mkdir -p "$HOOKS" "$BIN"
+put() {
+    tmp="$2.tmp.$$"
+    cp "$1" "$tmp"
+    chmod "$3" "$tmp"
+    mv -f "$tmp" "$2"
+    echo "ok    install  $2 $(shasum -a 256 "$2" | cut -c1-12)"
+}
+put "$SRC/api-port-guard" "$HOOKS/api-port-guard" 755
+put "$SRC/shell-guard.sh" "$HOOKS/shell-guard.sh" 644
+for b in kill pkill killall launchctl; do put "$SRC/shims/$b" "$BIN/$b" 755; done
+LINE='[ -f "$HOME/.estate/hooks/shell-guard.sh" ] && . "$HOME/.estate/hooks/shell-guard.sh"'
+if ! grep -qF "$LINE" "$HOME/.zshenv" 2>/dev/null; then
+    printf '\n# [estate-shell-guard] every zsh\n%s\nexport BASH_ENV="$HOME/.estate/hooks/shell-guard.sh"\n' "$LINE" >> "$HOME/.zshenv"
+fi
+if [ "$(uname)" = Darwin ]; then
+    /bin/launchctl setenv BASH_ENV "$HOOKS/shell-guard.sh"  # harnesses launchd starts
+fi
+echo "ok    install  zshenv + BASH_ENV wired; prove it: python3 $SRC/tests/api-port-guard.test.py"
