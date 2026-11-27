@@ -34,6 +34,9 @@ USER root
 # 2026-11-27): certifi GHSA-6q48-6c7w-9gw2 (emSign roots), claude-agent-sdk CVE-2026-96620,
 # pillow CVE-2026-112393/112398/112403/112900/96639, uv GHSA-hq85-5cpj-mr62. The python -c
 # after the install refuses the build if any of them is still below its floor.
+# idp#8667: Trivy scans every site-packages in the image, not only the venv; main run 46049122666
+# failed on uv 0.12.5 in the base image's system interpreter (/usr/local). The system uv is raised
+# too, and the check walks every site-packages/dist-packages under /usr and /app.
 ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
@@ -41,12 +44,18 @@ RUN apt-get update \
     && uv pip install --python /app/api/.venv/bin/python --no-cache \
         'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0' 'authlib>=1.9.0' \
         'certifi>=2026.10.18' 'claude-agent-sdk>=0.2.121' 'pillow>=13.0.0' 'uv>=0.13.4' \
+    && /usr/local/bin/python3 -m pip install --no-cache-dir --root-user-action=ignore 'uv>=0.13.4' \
     && /app/api/.venv/bin/python -c "\
-import importlib.metadata as m; \
+import glob, importlib.metadata as m; \
 floors = {'certifi': '2026.10.18', 'claude-agent-sdk': '0.2.121', 'pillow': '13.0.0', 'uv': '0.13.4'}; \
 key = lambda v: tuple(int(x) for x in v.split('.')[:3]); \
 low = {n: m.version(n) for n, f in floors.items() if key(m.version(n)) < key(f)}; \
 print({n: m.version(n) for n in floors}); \
+sites = [s for r in ('/usr', '/app') for k in ('site', 'dist') for s in glob.glob(r + '/**/' + k + '-packages', recursive=True)]; \
+found = [(s, d.metadata['Name'].lower(), d.version) for s in sites for d in m.distributions(path=[s]) if (d.metadata['Name'] or '').lower() in floors]; \
+low.update({s + ':' + n: v for s, n, v in found if key(v) < key(floors[n])}); \
+print(sorted(found)); \
+assert any(s.startswith('/usr/') for s in sites), sites; \
 assert not low, low"
 RUN mkdir -p /opt/hindsight-models/hub \
     && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 /app/api/.venv/bin/python -c "\

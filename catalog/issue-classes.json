@@ -574,11 +574,12 @@
       "class": "vendor-python-cve-floor-missing",
       "first_seen": "2026-11-27",
       "instances": [
-        "hindsight-api (vectorize-io/hindsight-api:0.9.2) main build-multiarch run 46043500706: Trivy CRITICAL on certifi 2025.10.5, claude-agent-sdk 0.2.87, pillow 12.3.0, uv 0.12.5 in /app/api/.venv; no image published"
+        "hindsight-api (vectorize-io/hindsight-api:0.9.2) main build-multiarch run 46043500706: Trivy CRITICAL on certifi 2025.10.5, claude-agent-sdk 0.2.87, pillow 12.3.0, uv 0.12.5 in /app/api/.venv; no image published",
+        "hindsight-api main build-multiarch run 46049122666 (86a662e3c, after idp#6113): Trivy CRITICAL uv 0.12.5 GHSA-hq85-5cpj-mr62 in usr/local/lib/python3.11/site-packages, the base image system interpreter; the floor was asserted in the venv alone (idp#8667)"
       ],
       "gap": "the vendor venv's fixable CRITICALs were floored by hand per advisory (pyjwt, anyio, ...), with no list of which advisories the Dockerfile owes, so a new advisory surfaced only as a red main build",
       "compensating_action": "hindsight-api.Dockerfile installs floors for certifi, claude-agent-sdk, pillow and uv and asserts the installed versions at build time",
-      "falsifier": "tests/test_hindsight_api_pins.py counts a missing floor and a floor below the fix; the metric reads 4 on main 43af9f558 and 0 with idp#6113",
+      "falsifier": "tests/test_hindsight_api_pins.py counts a missing floor and a floor below the fix; the metric reads 4 on main 43af9f558 and 0 with idp#6113; since idp#8667 it also runs the Dockerfile's own check against a fake image tree, which must refuse a low package in any interpreter and a scan that found none under /usr, falsified on a venv-only check (images.hindsight_api_floor_sites_unchecked 1 on main 86a662e3c, 0 with idp#8667)",
       "owner": "delivery",
       "status": "open"
     },
@@ -586,11 +587,12 @@
       "class": "hook-reads-sibling-absent-from-deployed-copy",
       "first_seen": "2026-11-27",
       "instances": [
-        "idp#8660: ~/.estate/memory/bin/estate-memory-enforce read SHARED_AGENT_NAMES from claim-open beside itself; the deployed bin has none, so ESTATE_AGENT=estate-agent was taken as the identity and claude-ins00037-takeover was refused its own live claim on #8658 (Write/Edit unusable for the session)"
+        "idp#8660: ~/.estate/memory/bin/estate-memory-enforce read SHARED_AGENT_NAMES from claim-open beside itself; the deployed bin has none, so ESTATE_AGENT=estate-agent was taken as the identity and claude-ins00037-takeover was refused its own live claim on #8658 (Write/Edit unusable for the session)",
+        "~/.estate/memory/bin/estate-memory-enforce loaded dof_gate=False, governance=False, pin-open=False (the checkout's copy: all True, measured 2026-11-27), so the DoF repair lock, the founder's freeze and lockdown, and the pin failed open for every agent"
       ],
       "gap": "a hook resolved a rule file relative to its own location; its tests loaded it from bin/ where the file sits, while the copy harnesses run is deployed alone, so the fix (#8606) passed its tests and never applied on the real path",
       "compensating_action": "estate-memory-enforce reads claim-open from the idp checkout that holds the edited path first, then from its own bin",
-      "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py runs the hook from a bin/ without claim-open: the branch admits the holder, the sibling-only resolver refuses it; the metric reads 1 for main 43af9f558 and 0 with idp#8660",
+      "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py runs the hook from a bin/ without claim-open: the branch admits the holder, the sibling-only resolver refuses it; the metric reads 1 for main 43af9f558 and 0 with idp#8660; tests/test_enforce_sibling_rules_resolve_when_relocated.py judges a repo path with a relocated copy and counts the rules it loses (metric hooks.enforce_rules_lost_when_relocated: 3 on main, 0 with the fix)",
       "owner": "governance",
       "status": "open"
     }
