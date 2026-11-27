@@ -544,6 +544,19 @@
       "falsifier": "tests/test_portal_install_skips_vanishing_downloads.py refuses main's manifest (no dependenciesMeta), a lockfile that does not mirror the manifest, and built: true; accepts the known-good",
       "owner": "delivery",
       "status": "open"
+    },
+    {
+      "class": "legion-admits-unfit-lane",
+      "first_seen": "2026-11-23",
+      "instances": [
+        "agent-sandbox runs 45208405763 and 45211748601: admission SUCCESS on a model that answered the capacity probe, then the real pi session exited 2 with provider 'no status' and a zero patch (#8061)",
+        "2026-11-27: openrouter nvidia/nemotron-3.5-lightning:free passed every capacity probe and failed every real mission with an empty patch"
+      ],
+      "gap": "admission proved only that a model answers a one-token probe, not that it can complete a mission at the launch settings the worker gets, so inference was spent on lanes known to return empty patches",
+      "compensating_action": "bin/legion-admit refuses an auto route without a fresh estate.lane-fitness.v1 FIT record measured at the launch settings (context 32768, max_tokens 4096), before any probe (idp#3525)",
+      "falsifier": "python3 tests/test_legion_admit.py --optimus runs bin/legion-admit end to end with every HTTPS connection trapped: no record and UNFIT both refused with 0 connections, FIT reaches the probe; prints 0 against main c82f68e's legion-admit and 1 with the gate",
+      "owner": "greenlane",
+      "status": "open"
     }
   ]
 }
