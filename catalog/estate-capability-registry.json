@@ -30854,7 +30854,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/claim-gate",
         "cap:tool/idp-install-hooks"
       ],
       "cost": {
@@ -31339,10 +31338,6 @@
       "writer": "repo",
       "path": "bin/claim-gate",
       "depends_on": [
-        {
-          "id": "cap:tool/catalog-merge",
-          "edge": "invokes"
-        },
         {
           "id": "cap:tool/claim-open",
           "edge": "invokes"
