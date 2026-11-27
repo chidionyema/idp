@@ -441,6 +441,16 @@
       "gap": "a headless dispatcher kept a permission mode that asks a human, so every prompt became a denial, including the path the estate's own hooks demand first",
       "compensating_action": "agent-invoke.sh runs claude -p in auto with the estate-memory server and the estate-plan door allowed outright; enforcement stays in the hooks",
       "falsifier": "tests/estate/test_agent_invoke_headless_can_plan.py: 2 of 3 fail on main, 3/3 on the fix; --optimus reads 2 on main, 0 fixed; real-CLI replay acceptEdits 2 denials, auto 0"
+    },
+    {
+      "class": "lane-lapses-in-the-queue",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "idp#8619, idp#8622 and idp#8611's r2 lane: stamped, pushed, PR opened, agent stopped (AGENTS.md section 2); the Greenlane adopted them at 08:21:38Z and judged them in CI at 08:40Z, where claim-gate is read-only, and all three went RED on 'heartbeat is 24m old (lapse is 15m): re-stamp' (2026-11-27)"
+      ],
+      "gap": "claim-gate judged the holder's own heartbeat at the moment CI ran, so the queue's wait counted against an agent that had obeyed 'open the PR, then STOP'; CI cannot renew, and a RED lane is not re-judged until a new head",
+      "compensating_action": "bin/claim-gate judges the holder's own newest CLAIM at the head's author date (authored_at; the committer date moves on a queue rebase): live then is live; a rival's newer claim, another agent's lapsed claim and work authored after the lapse still refuse",
+      "falsifier": "tests/test_claim_gate_lapse_at_head_time.py drives the real judge() on a temp repository whose head carries a real author date, in CI's read-only mode: main 1 failed 4 passed, the fix 5 passed; --optimus reads the measured case (1 -> 0)"
     }
   ]
 }

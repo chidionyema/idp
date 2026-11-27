@@ -217,6 +217,18 @@
       "better": "lower",
       "owner": "critical-watch",
       "description": "of the two denials measured on 2026-11-27 (the plan tools, and a permission mode that needs an approver), how many the headless launcher's claude argv still reproduces (idp#8611)"
+    },
+    {
+      "name": "claims.queue_lapse_refusals",
+      "measure": [
+        "python3",
+        "tests/test_claim_gate_lapse_at_head_time.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claude-code",
+      "description": "1 when claim-gate in CI refuses a head authored one minute after its holder's claim, judged 24 minutes later (the measured 2026-11-27 queue wait); 0 when the wait no longer lapses it (idp#8629)"
     }
   ]
 }
