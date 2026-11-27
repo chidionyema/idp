@@ -752,3 +752,217 @@ def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
         mod.verify_agent_scope(["web/f0.txt"])
     with pytest.raises(ValueError, match="AGENT_SCOPE_EMPTY"):
         mod.verify_agent_scope([])
+
+
+# -- fitness gate (founder 2026-11-27: "know well ahead of time at the point of admission") --------
+
+
+def _fit(
+    tmp_path,
+    provider,
+    model,
+    verdict="FIT",
+    reason="test-passes",
+    hours=6,
+    ctx=32768,
+    mx=4096,
+):
+    import time as _t
+
+    led = tmp_path / "fitness"
+    led.mkdir(exist_ok=True)
+    exp = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() + hours * 3600))
+    (led / f"{provider}-{model.replace('/', '_')}.json").write_text(
+        json.dumps(
+            {
+                "schema": "estate.lane-fitness.v1",
+                "provider": provider,
+                "model": model,
+                "verdict": verdict,
+                "reason": reason,
+                "context_window": ctx,
+                "max_tokens": mx,
+                "expires_at": exp,
+            }
+        )
+    )
+    return led
+
+
+def _route(provider="north", model="m", context=1_000_000):
+    return {"provider": provider, "model": model, "context": context}
+
+
+def test_a_lane_with_no_fitness_record_is_refused_not_assumed(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    kept, refused = mod.fitness_filter([_route()], tmp_path / "absent", _t.time())
+    assert kept == [] and refused[0]["verdict"] == "no-fitness-record"
+    kept, refused = mod.fitness_filter([_route()], None, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "no-fitness-record"
+
+
+def test_the_measured_dead_lane_is_refused_before_inference(tmp_path):
+    # MEASURED 2026-11-27: nemotron-3.5-lightning:free answered every probe, failed every mission.
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(
+        tmp_path,
+        "openrouter",
+        "nvidia/nemotron-3.5-lightning:free",
+        "UNFIT",
+        "empty-patch",
+    )
+    kept, refused = mod.fitness_filter(
+        [_route("openrouter", "nvidia/nemotron-3.5-lightning:free")], led, _t.time()
+    )
+    assert kept == [] and refused[0]["verdict"] == "unfit:empty-patch"
+
+
+def test_a_fresh_fit_record_at_launch_settings_admits(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m")
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [_route()] and refused == []
+
+
+def test_an_expired_fit_record_is_refused(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m", hours=-1)
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "fitness-expired"
+
+
+def test_fitness_measured_under_other_settings_is_not_evidence(tmp_path):
+    # Fit at 131k is no evidence for the 32k launch window the worker actually gets.
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m", ctx=131072)
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "measured-under-other-settings"
+
+
+# -- end to end through main(): no provider is contacted for an unfit lane (idp#3525) ----------
+# The checks above judge fitness_filter alone. These run bin/legion-admit --harness auto as the
+# worker does, with no secret and no network: GROQ_API_KEY is a dummy so the registry's free groq
+# routes are candidates, and HTTPS_PROXY points at a local trap that counts and drops every
+# connection, so a probe is an observed attempt at inference, never a real request.
+
+
+def _gate_run(repo, out, ledger):
+    import socketserver
+
+    hits = []
+
+    class _Trap(socketserver.BaseRequestHandler):
+        def handle(self):
+            hits.append(self.client_address)
+
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Trap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    trap = f"http://127.0.0.1:{srv.server_address[1]}"
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "TASK": "Do it.\nScope: web/f0.txt\n",
+        "GROQ_API_KEY": "measure-dummy",
+        "HTTPS_PROXY": trap,
+        "https_proxy": trap,
+        "LEGION_PROBE_TIMEOUT_S": "3",
+    }
+    if ledger is not None:
+        env["LEGION_FITNESS_DIR"] = str(ledger)
+    try:
+        r = subprocess.run(
+            [sys.executable, str(ADMIT), "--harness", "auto", "--out", str(out)],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    return r, len(hits)
+
+
+def _ledger_for_registry(tmp_path, verdict):
+    import time as _t
+
+    mod = _auto_module()
+    routes = mod.auto_candidates(
+        ROOT / "platform/llm/pennyd/providers", {"GROQ_API_KEY": "x"}
+    )
+    assert routes, "the registry offers no free groq route to measure against"
+    led = tmp_path / f"ledger-{verdict}"
+    led.mkdir()
+    exp = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() + 6 * 3600))
+    for i, r in enumerate(routes):
+        (led / f"{i}.json").write_text(
+            json.dumps(
+                {
+                    "schema": "estate.lane-fitness.v1",
+                    "provider": r["provider"],
+                    "model": r["model"],
+                    "verdict": verdict,
+                    "reason": "empty-patch" if verdict != "FIT" else "test-passes",
+                    "context_window": min(r["context"], 32768),
+                    "max_tokens": 4096,
+                    "expires_at": exp,
+                }
+            )
+        )
+    return led
+
+
+def test_e2e_no_fitness_record_refuses_before_any_provider_is_contacted(repo, tmp_path):
+    empty = tmp_path / "ledger-empty"
+    empty.mkdir()
+    r, hits = _gate_run(repo, tmp_path / "o", empty)
+    assert r.returncode == 75, r.stdout + r.stderr
+    assert hits == 0 and record(tmp_path / "o")["decision"] == "REFUSED_UNFIT"
+    assert "NO_FIT_LANE before inference" in r.stdout
+
+
+def test_e2e_an_unfit_record_refuses_before_any_provider_is_contacted(repo, tmp_path):
+    r, hits = _gate_run(repo, tmp_path / "o", _ledger_for_registry(tmp_path, "UNFIT"))
+    assert r.returncode == 75, r.stdout + r.stderr
+    assert hits == 0 and record(tmp_path / "o")["decision"] == "REFUSED_UNFIT"
+
+
+def test_e2e_a_fresh_fit_record_is_admitted_to_the_probe(repo, tmp_path):
+    # Positive control: the gate is not a wall. A FIT lane reaches the capacity probe (the trap
+    # counts it); the probe then fails on transport, which is capacity's verdict, not fitness's.
+    r, hits = _gate_run(repo, tmp_path / "o", _ledger_for_registry(tmp_path, "FIT"))
+    rec = record(tmp_path / "o")
+    assert hits >= 1, r.stdout + r.stderr
+    assert rec["fitness"] == [] and rec["decision"] != "REFUSED_UNFIT"
+
+
+if __name__ == "__main__":
+    if "--optimus" in sys.argv:
+        # 1 only when all three hold: no record and an UNFIT record are both refused with zero
+        # provider connections, and a fresh FIT record reaches the probe. Main before idp#3525: 0.
+        rc = pytest.main(
+            [
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                __file__
+                + "::test_e2e_no_fitness_record_refuses_before_any_provider_is_contacted",
+                __file__
+                + "::test_e2e_an_unfit_record_refuses_before_any_provider_is_contacted",
+                __file__ + "::test_e2e_a_fresh_fit_record_is_admitted_to_the_probe",
+            ]
+        )
+        print(f"optimus.legion.fitness_gate_enforced={1 if rc == 0 else 0}")
+        raise SystemExit(0)
+    raise SystemExit("run under pytest, or with --optimus")
