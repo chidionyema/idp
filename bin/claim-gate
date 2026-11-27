@@ -268,6 +268,18 @@ def has_commit(sha: str) -> bool:
     )
 
 
+def authored_at(*shas: str) -> datetime | None:
+    """When the work was made: the author date of the first of `shas` git can read, else None
+    (judged at `now`, the old rule). The author date, not the committer date: a rebase by the
+    queue rewrites the committer date to the moment it waited until (idp#8629)."""
+    for sha in shas:
+        try:
+            return datetime.fromisoformat(git("log", "-1", "--format=%aI", sha).strip())
+        except (subprocess.CalledProcessError, ValueError):
+            continue
+    return None
+
+
 def lane_text(base: str, lane_head: str, squash: str) -> str:
     """The commit messages of the lane a squash came from.
 
@@ -697,10 +709,17 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
 
 
 def verdict(
-    text: str, files: list[str], repo: str, fetch, now: datetime, head: str = ""
+    text: str,
+    files: list[str],
+    repo: str,
+    fetch,
+    now: datetime,
+    head: str = "",
+    made_at: datetime | None = None,
 ) -> list[str]:
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
-    (issue dict, comments list)."""
+    (issue dict, comments list). `made_at` is when the work was authored (idp#8629): the holder's
+    own claim is judged live when it was live then, so a queue's wait never lapses it."""
     refs = CLAIM_REF.findall(text)
     # The same issue, once per commit (2026-10-28). A lane's commits each carry the two
     # trailers, so the text this gate reads -- `git log --format=%B base..head` -- holds one
@@ -782,6 +801,13 @@ def verdict(
                     f"{stale_min}m ago (lapse is 15m). Post CLAIM agent={agent} "
                     f"paths=<files> heartbeat=<UTC now> and re-push"
                 )
+            elif made_at is not None and made_at - hb <= MAX_AGE:
+                # idp#8629: the holder's own newest CLAIM was live when this head was authored.
+                # The lane then waited in the queue -- 08:21 adopted, 08:40 judged in CI, where
+                # nothing renews -- and an agent that obeyed "open the PR, then STOP" went RED
+                # for the wait. A rival's newer CLAIM still refuses below; so does work
+                # authored after the holder's claim had lapsed.
+                pass
             elif RENEW is not None and RENEW(
                 ref_repo or repo, int(num), agent, c["paths"]
             ):
@@ -879,9 +905,10 @@ def judge(
                 continue
             lane_head = m.group(1)
             text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
+            made = authored_at(lane_head, c)
             problems += [
                 f"lane {lane_head[:9]}: {p}"
-                for p in verdict(text, files, repo, fetch, now, head)
+                for p in verdict(text, files, repo, fetch, now, head, made)
             ]
         return problems
     diff = git("diff", f"{base}...{head}")
@@ -893,7 +920,7 @@ def judge(
     if dependency_pin_only(files, diff):
         return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
-    return verdict(text, files, repo, fetch, now, head)
+    return verdict(text, files, repo, fetch, now, head, authored_at(head))
 
 
 def pr_of_head(repo: str, head: str) -> tuple[str, str]:
