@@ -12,6 +12,7 @@ ancestor. Exit 0 only when every case holds; residual gaps are printed by name, 
         (the law gate's falsifier: the same cases against a guard that refuses nothing must fail)
 """
 
+import contextlib
 import json
 import os
 import shutil
@@ -96,10 +97,8 @@ D = decoy.pid
 
 def _teardown():
     for p in (decoy, sleeper):
-        try:
+        with contextlib.suppress(OSError, NameError):  # already gone, or never started
             p.kill()
-        except Exception:
-            pass
     shutil.rmtree(tmp, ignore_errors=True)
 
 

@@ -43,6 +43,7 @@ outage it exists to prevent. Only a verdict (exit 2) refuses.
 ENV. ESTATE_GUARD_AGENT_ROOT=<pid> declares an extra agent root (CI and the falsifier
 use it). It can only widen what is protected, never narrow it.
 """
+
 import json
 import os
 import re
@@ -52,15 +53,47 @@ import sys
 
 STATIC_PORTS = {3080, 4200, 4000}
 PORT_ENV = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "ESTATE_ROUTER_URL", "PENNYD_URL")
-PROTECTED_LABELS = ("ai.estate.dsh-web", "com.estate.pennyd", "ai.estate.litellm", "ai.estate.dsh")
-AGENT_COMM = {"claude", "codex", "opencode", "opencode.real", "gemini", "pi", "dsh", "cline"}
+PROTECTED_LABELS = (
+    "ai.estate.dsh-web",
+    "com.estate.pennyd",
+    "ai.estate.litellm",
+    "ai.estate.dsh",
+)
+AGENT_COMM = {
+    "claude",
+    "codex",
+    "opencode",
+    "opencode.real",
+    "gemini",
+    "pi",
+    "dsh",
+    "cline",
+}
 AGENT_CMDLINE = re.compile(
     r"@deepseek-ai/dsh/|/dsh/lib/bin\.js|pi-coding-agent|/bin/pi(\s|$)|@openai/codex|opencode-ai"
 )
 VERBS = {"kill", "pkill", "killall", "launchctl", "systemctl"}
 LAUNCHCTL_REMOVE = {"bootout", "unload", "remove", "stop", "kill"}
-SYSTEMCTL_STOP = {"stop", "kill", "restart", "disable", "mask", "try-restart", "reload-or-restart"}
-WRAPPERS = {"sudo", "env", "command", "builtin", "exec", "nohup", "time", "nice", "caffeinate"}
+SYSTEMCTL_STOP = {
+    "stop",
+    "kill",
+    "restart",
+    "disable",
+    "mask",
+    "try-restart",
+    "reload-or-restart",
+}
+WRAPPERS = {
+    "sudo",
+    "env",
+    "command",
+    "builtin",
+    "exec",
+    "nohup",
+    "time",
+    "nice",
+    "caffeinate",
+}
 SHELLS = {"sh", "bash", "zsh", "dash"}
 TIMEOUT = 4
 
@@ -71,7 +104,7 @@ class Blind(Exception):
 
 def run(argv, timeout=TIMEOUT):
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)  # noqa: S603 - argv is the guard's own fixed tool list
         return p.returncode, p.stdout
     except FileNotFoundError:
         return 127, ""
@@ -106,8 +139,12 @@ def ps_table():
             if len(parts) < 4 or not parts[0].isdigit():
                 continue
             pid = int(parts[0])
-            tab[pid] = (int(parts[1]), int(parts[2]), os.path.basename(parts[3].strip()),
-                        cmdline.get(pid, parts[3]))
+            tab[pid] = (
+                int(parts[1]),
+                int(parts[2]),
+                os.path.basename(parts[3].strip()),
+                cmdline.get(pid, parts[3]),
+            )
         _PS = tab
     return _PS
 
@@ -167,9 +204,13 @@ def protected_ports():
 
 def listeners(ports):
     lsof = "/usr/sbin/lsof" if os.path.exists("/usr/sbin/lsof") else "lsof"
-    argv = [lsof, "-nP", "-sTCP:LISTEN", "-FPn"] + ["-iTCP:%d" % p for p in sorted(ports)]
+    argv = [lsof, "-nP", "-sTCP:LISTEN", "-FPn"] + [
+        "-iTCP:%d" % p for p in sorted(ports)
+    ]
     rc, out = run(argv)
-    if rc == 127:  # no lsof (minimal Linux): ss names the owner as users:(("name",pid=N,...))
+    if (
+        rc == 127
+    ):  # no lsof (minimal Linux): ss names the owner as users:(("name",pid=N,...))
         found = {}
         _, out = run(["ss", "-Hltnp"])
         for line in out.splitlines():
@@ -443,8 +484,12 @@ def hook(raw):
         payload = json.loads(raw) if raw.strip() else {}
     except ValueError:
         return 0
-    cmd = (payload.get("tool_input") or {}).get("command") or payload.get("command") or ""
-    if not isinstance(cmd, str) or not re.search(r"\b(kill|pkill|killall|launchctl|systemctl)\b", cmd):
+    cmd = (
+        (payload.get("tool_input") or {}).get("command") or payload.get("command") or ""
+    )
+    if not isinstance(cmd, str) or not re.search(
+        r"\b(kill|pkill|killall|launchctl|systemctl)\b", cmd
+    ):
         return 0
     try:
         cmds = simple_commands(cmd)
@@ -455,7 +500,9 @@ def hook(raw):
         if verb not in VERBS:
             continue
         if verb in ("kill", "launchctl", "systemctl"):
-            argv = [a for a in argv if not re.search(r"[$`]", a)]  # unexpanded: shell layer's job
+            argv = [
+                a for a in argv if not re.search(r"[$`]", a)
+            ]  # unexpanded: shell layer's job
         rc = judge(argv)
         if rc:
             return rc
