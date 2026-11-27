@@ -2,6 +2,7 @@
 name = "genesis-harness-v1"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89"
 description = "Portable 5-tool deterministic coding harness for Genesis Lane 1/3 hybrid execution"
 
 [dependencies]

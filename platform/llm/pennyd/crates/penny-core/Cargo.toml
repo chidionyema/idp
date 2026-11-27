@@ -2,6 +2,7 @@
 name = "penny-core"
 version = "0.2.0"
 edition = "2021"
+rust-version.workspace = true
 description = "Token-efficiency engine: exact cache, budgets, cheap-first routing, hash-chained decision log"
 
 [dependencies]
