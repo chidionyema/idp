@@ -854,115 +854,46 @@ def test_fitness_measured_under_other_settings_is_not_evidence(tmp_path):
 # worker does, with no secret and no network: GROQ_API_KEY is a dummy so the registry's free groq
 # routes are candidates, and HTTPS_PROXY points at a local trap that counts and drops every
 # connection, so a probe is an observed attempt at inference, never a real request.
+# The checks live in tests/legion_fitness_gate.py, standard library only, because Greenlane's
+# judge runs that file as the Optimus measure with a bare python3 that has no pytest.
 
 
-def _gate_run(repo, out, ledger):
-    import socketserver
+def _gate_module():
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
 
-    hits = []
-
-    class _Trap(socketserver.BaseRequestHandler):
-        def handle(self):
-            hits.append(self.client_address)
-
-    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Trap)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    trap = f"http://127.0.0.1:{srv.server_address[1]}"
-    env = {
-        "PATH": os.environ.get("PATH", ""),
-        "HOME": os.environ.get("HOME", ""),
-        "TASK": "Do it.\nScope: web/f0.txt\n",
-        "GROQ_API_KEY": "measure-dummy",
-        "HTTPS_PROXY": trap,
-        "https_proxy": trap,
-        "LEGION_PROBE_TIMEOUT_S": "3",
-    }
-    if ledger is not None:
-        env["LEGION_FITNESS_DIR"] = str(ledger)
-    try:
-        r = subprocess.run(
-            [sys.executable, str(ADMIT), "--harness", "auto", "--out", str(out)],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    finally:
-        srv.shutdown()
-        srv.server_close()
-    return r, len(hits)
-
-
-def _ledger_for_registry(tmp_path, verdict):
-    import time as _t
-
-    mod = _auto_module()
-    routes = mod.auto_candidates(
-        ROOT / "platform/llm/pennyd/providers", {"GROQ_API_KEY": "x"}
+    loader = SourceFileLoader(
+        "legion_fitness_gate", str(ROOT / "tests/legion_fitness_gate.py")
     )
-    assert routes, "the registry offers no free groq route to measure against"
-    led = tmp_path / f"ledger-{verdict}"
-    led.mkdir()
-    exp = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() + 6 * 3600))
-    for i, r in enumerate(routes):
-        (led / f"{i}.json").write_text(
-            json.dumps(
-                {
-                    "schema": "estate.lane-fitness.v1",
-                    "provider": r["provider"],
-                    "model": r["model"],
-                    "verdict": verdict,
-                    "reason": "empty-patch" if verdict != "FIT" else "test-passes",
-                    "context_window": min(r["context"], 32768),
-                    "max_tokens": 4096,
-                    "expires_at": exp,
-                }
-            )
-        )
-    return led
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
 
 
-def test_e2e_no_fitness_record_refuses_before_any_provider_is_contacted(repo, tmp_path):
-    empty = tmp_path / "ledger-empty"
-    empty.mkdir()
-    r, hits = _gate_run(repo, tmp_path / "o", empty)
-    assert r.returncode == 75, r.stdout + r.stderr
-    assert hits == 0 and record(tmp_path / "o")["decision"] == "REFUSED_UNFIT"
-    assert "NO_FIT_LANE before inference" in r.stdout
+@pytest.mark.parametrize(
+    "check",
+    [
+        "check_no_record_refused",
+        "check_unfit_record_refused",
+        "check_fit_record_reaches_probe",
+    ],
+)
+def test_e2e_fitness_gate_before_any_provider_is_contacted(check, tmp_path):
+    assert getattr(_gate_module(), check)(tmp_path) == ""
 
 
-def test_e2e_an_unfit_record_refuses_before_any_provider_is_contacted(repo, tmp_path):
-    r, hits = _gate_run(repo, tmp_path / "o", _ledger_for_registry(tmp_path, "UNFIT"))
-    assert r.returncode == 75, r.stdout + r.stderr
-    assert hits == 0 and record(tmp_path / "o")["decision"] == "REFUSED_UNFIT"
-
-
-def test_e2e_a_fresh_fit_record_is_admitted_to_the_probe(repo, tmp_path):
-    # Positive control: the gate is not a wall. A FIT lane reaches the capacity probe (the trap
-    # counts it); the probe then fails on transport, which is capacity's verdict, not fitness's.
-    r, hits = _gate_run(repo, tmp_path / "o", _ledger_for_registry(tmp_path, "FIT"))
-    rec = record(tmp_path / "o")
-    assert hits >= 1, r.stdout + r.stderr
-    assert rec["fitness"] == [] and rec["decision"] != "REFUSED_UNFIT"
-
-
-if __name__ == "__main__":
-    if "--optimus" in sys.argv:
-        # 1 only when all three hold: no record and an UNFIT record are both refused with zero
-        # provider connections, and a fresh FIT record reaches the probe. Main before idp#3525: 0.
-        rc = pytest.main(
-            [
-                "-q",
-                "-p",
-                "no:cacheprovider",
-                __file__
-                + "::test_e2e_no_fitness_record_refuses_before_any_provider_is_contacted",
-                __file__
-                + "::test_e2e_an_unfit_record_refuses_before_any_provider_is_contacted",
-                __file__ + "::test_e2e_a_fresh_fit_record_is_admitted_to_the_probe",
-            ]
-        )
-        print(f"optimus.legion.fitness_gate_enforced={1 if rc == 0 else 0}")
-        raise SystemExit(0)
-    raise SystemExit("run under pytest, or with --optimus")
+def test_the_measure_needs_no_pytest_and_reads_1():
+    # -I drops user site-packages, as the judge's bare python3 has none: the measure must run
+    # there and print a reading, or Greenlane reads UNKNOWN for a gate that holds (b6407).
+    r = subprocess.run(
+        [sys.executable, "-I", str(ROOT / "tests/legion_fitness_gate.py")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stderr
+    assert (
+        r.stdout.strip().splitlines()[-1] == "optimus.legion.fitness_gate_enforced=1"
+    ), r.stderr
