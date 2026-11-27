@@ -16,6 +16,9 @@ ARG TARGETARCH
 # The base floats, so its packages move under the build (sovereign-worker.Dockerfile records
 # the same reasoning): upgrade so the image carries the security pocket of the suite it was
 # built from.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*

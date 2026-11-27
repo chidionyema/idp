@@ -520,6 +520,30 @@
       "falsifier": "tests/test_lane_where.py::test_a_lane_landed_since_the_last_fetch_is_landed_not_gone lands a lane from a second clone, deletes its ref, and requires LANDED from the stale clone; on main it prints the exact false GONE",
       "owner": "delivery",
       "status": "open"
+    },
+    {
+      "class": "os-upgrade-layer-replayed-from-cache",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "main build-multiarch run 46012162636: lago-api amd64 printed `#8 CACHED` for apt-get upgrade while Trivy refused libbrotli1 1.1.0-2+b7 (fixed 1.1.0-2+deb13u1); lago-front brotli-libs 1.2.0-r1 the same way; the 04:23 daily sweep rescanned the same cached layers"
+      ],
+      "gap": "build-multiarch reads its layer cache from GHCR, and an OS-upgrade RUN has the same text and parent every build, so BuildKit replays it and no published OS fix ever reaches the image; nothing could change that layer's cache key",
+      "compensating_action": "every OS-upgrade RUN in an image bin/dockerfiles lists is preceded in its stage by ARG OS_PACKAGES_AS_OF (default = date of the change, so landing re-runs it; build-multiarch passing the UTC date keeps it daily); tests/test_os_upgrade_layers_refresh.py sweeps all images: 15 on main 618156854, 0 with idp#8655",
+      "falsifier": "tests/test_os_upgrade_layers_refresh.py known-bad cases (lago-api and lago-front as on main, a partial --only-upgrade, an ARG after the RUN, an ARG in an earlier stage, a commented ARG) must be refused and the known-good accepted",
+      "owner": "delivery",
+      "status": "open"
+    },
+    {
+      "class": "portal-install-downloads-vanished-binary",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "queue/b6405 portal-build job 140621394801: onnxruntime-node@1.21.0 postinstall fetched onnxruntime-linux-x64-gpu-1.21.0.tgz from GitHub releases, 404 Not Found, so `yarn install --immutable` failed for every lane touching backstage/ or sovereign/requirements.txt"
+      ],
+      "gap": "backstage's yarn install ran a third-party postinstall that downloads an optional CUDA binary from a URL the estate does not control; nothing declared which install scripts fetch from the network, so the asset's removal turned every portal lane red and would break the image build on its next cache miss",
+      "compensating_action": "backstage/package.json dependenciesMeta marks onnxruntime-node built: false (its CPU binaries for linux x64 and arm64 ship in the npm package; the download adds only the CUDA provider no runner or pod has), mirrored in the yarn.lock root workspace entry",
+      "falsifier": "tests/test_portal_install_skips_vanishing_downloads.py refuses main's manifest (no dependenciesMeta), a lockfile that does not mirror the manifest, and built: true; accepts the known-good",
+      "owner": "delivery",
+      "status": "open"
     }
   ]
 }

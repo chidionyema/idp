@@ -13,6 +13,9 @@
 FROM docker.io/getlago/front:v1.52.1
 # Alpine base: libcrypto3 3.3.3-r0 is CVE-2026-31789 (CRITICAL, fixed in 3.3.7-r0) and the
 # build's scan refuses it (run 33967534541); the upgrade takes the fixed package.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apk upgrade --no-cache
 RUN sed -i -e 's/listen 80;/listen 8080;/' -e 's/listen \[::\]:80;/listen [::]:8080;/' /etc/nginx/conf.d/default.conf \
     && sed -i -e '/^user  nginx;/d' -e 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \

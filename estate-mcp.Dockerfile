@@ -14,6 +14,9 @@ FROM docker.io/python:3.13-slim
 # See sovereign-worker.Dockerfile: the base floats, and on 2026-09-12 an upstream rebuild
 # shipped perl-base 5.40.1-6 with three CRITICAL CVEs (CVE-2026-13221, CVE-2026-42496,
 # CVE-2026-8376) against a fix already published as 5.40.1-6+deb13u1.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
  && apt-get upgrade -y \
  && rm -rf /var/lib/apt/lists/*
