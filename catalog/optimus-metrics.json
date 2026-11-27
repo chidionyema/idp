@@ -265,6 +265,18 @@
       "better": "lower",
       "owner": "context",
       "description": "Estimated tokens (bytes/4 x 1.15, errs high against cl100k_base) of the rule files every agent auto-loads in this repository before its first tool call: AGENTS.md, CLAUDE.md and their peers. The cap is 1500 (policy/context-policy.v1.json); 17353 on main 8b1af4a60 (idp#8492)."
+    },
+    {
+      "name": "estate_mcp.build_checks_failing",
+      "measure": [
+        "python3",
+        "tests/test_estate_mcp_dockerfile_build_checks.py",
+        "--optimus"
+      ],
+      "unit": "cases",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Cases where estate-mcp.Dockerfile's python -c build checks fail against the files the image copies, measured before merge. 1 against main c8dc5b538 (the stale _invoke_remote check that turned build-multiarch red); 0 with idp#8650."
     }
   ]
 }

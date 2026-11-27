@@ -485,6 +485,16 @@
       "falsifier": "bin/estate_context_fleet_sync.py --self-test (14 known-bad/known-good cases, exit 0; a mutant admitting growth exits 1) and tests/test_estate_context_fleet_sync.py, which composes the real AGENTS.md and requires every original line to survive",
       "owner": "context",
       "status": "open"
+    },
+    {
+      "class": "dockerfile-build-check-drifts-from-code",
+      "first_seen": "2026-10-19",
+      "instances": [
+        "#6590 renamed intent ci-status to ci.status; estate-mcp.Dockerfile still searched for the old name, so from 2026-10-19 16:47Z no estate-mcp image shipped for ~40 h",
+        "idp#8061 replaced the plugin's laptop door (_invoke_remote) with the cloud door (_invoke_cloud); estate-mcp.Dockerfile:110 still asserted _invoke_remote, so every build-multiarch on main failed from d32c484a2 (run 46012162636, 2026-11-27)"
+      ],
+      "gap": "the image's python -c build checks ran only inside build-multiarch after merge, so a plugin change that broke one shipped green and turned main red; the one test added after #6590 pinned a single assertion by regex",
+      "compensating_action": "tests/test_estate_mcp_dockerfile_build_checks.py runs every python -c build check in estate-mcp.Dockerfile against the files it copies, before merge, with a falsifier that the stale d32c484a2 check fails; a check needing an image-only package is skipped by name, never passed (idp#8650)"
     }
   ]
 }
