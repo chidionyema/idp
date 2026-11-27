@@ -619,6 +619,18 @@
       "falsifier": "tests/test_enforce_survives_a_door_that_exits.py: the hook loads with door=None when `import door` raises SystemExit, and an Exception-only guard dies; the sweep finds zero unguarded door imports in the repo and flags a planted Exception-only guard. memory.door_imports_crash_on_exit 4 on main 6b7932fd3, 0 with idp#8672; hooks.enforce_dies_when_door_exits 1 on main, 0 with idp#8672",
       "owner": "governance",
       "status": "open"
+    },
+    {
+      "class": "empty-cli-stdout-misread-as-blind",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "chidionyema/idp#7387: require_idle_command_queue json.loads('') on an idle OCI Run Command queue; runs 45465084919, 45670865333, 45870698471, 46042527394 refused BLIND before submitting"
+      ],
+      "gap": "The OCI CLI prints nothing on stdout when a --query result is empty (cli_util.py sends the notice to stderr); a parser that requires JSON turns the safe idle case into BLIND and refuses every recovery run.",
+      "compensating_action": "Exit-0 empty stdout is an empty list; any other non-JSON stays BLIND and carries the first 200 raw bytes.",
+      "falsifier": "tests/estate/test_run_command_empty_queue.py (the unguarded parse reverts to blind on '')",
+      "owner": "recovery",
+      "status": "open"
     }
   ]
 }
