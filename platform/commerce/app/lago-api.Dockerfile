@@ -39,6 +39,9 @@ RUN rubylib="$(ruby -e 'puts RbConfig::CONFIG["rubylibdir"]')" \
 # lago-api-gem-patch.rb rewrites Gemfile.lock from the fetched gems' own specs and refuses a lock
 # any dependency line would break. The replaced versions are uninstalled so the scan reads only
 # what loads, and the last command proves what bundler loads.
+# The load check requires what the app's config/application.rb requires (`rails/all`), never a
+# framework alone: activestorage 8.0.5.2 reads OpenSSL at load and relies on Rails having
+# required it, so `require "active_storage"` by itself fails where the app boots (run 46047259207).
 COPY lago-api-gem-patch.rb /tmp/gem-patch.rb
 RUN mkdir /tmp/gems && cd /tmp/gems \
     && for g in actioncable actionmailbox actionmailer actionpack actiontext actionview activejob \
@@ -54,7 +57,7 @@ RUN mkdir /tmp/gems && cd /tmp/gems \
          gem uninstall --ignore-dependencies --executables "$name" --version "$version" || exit 1; done < /tmp/gems-replaced \
     && rm -rf /tmp/gems /tmp/gem-patch.rb /tmp/gems-replaced \
     && bundle check \
-    && bundle exec ruby -e 'want = { "activestorage" => "8.0.5.2", "actionview" => "8.0.5.2", "rails-html-sanitizer" => "1.7.2", "loofah" => "2.25.3", "nokogiri" => "1.19.5" }; bad = want.reject { |n, v| Gem.loaded_specs[n] && Gem.loaded_specs[n].version.to_s == v && Gem::Specification.find_all_by_name(n).map { |s| s.version.to_s }.uniq == [v] }; abort "not the only, loaded version: #{bad}" unless bad.empty?; require "active_storage"; require "nokogiri"; puts "patched #{want}"'
+    && bundle exec ruby -e 'want = { "activestorage" => "8.0.5.2", "actionview" => "8.0.5.2", "rails-html-sanitizer" => "1.7.2", "loofah" => "2.25.3", "nokogiri" => "1.19.5" }; bad = want.reject { |n, v| Gem.loaded_specs[n] && Gem.loaded_specs[n].version.to_s == v && Gem::Specification.find_all_by_name(n).map { |s| s.version.to_s }.uniq == [v] }; abort "not the only, loaded version: #{bad}" unless bad.empty?; require "rails/all"; require "nokogiri"; puts "patched #{want}"'
 RUN groupadd --gid 1000 lago \
     && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin lago \
     && mkdir -p /app/tmp/pids /app/tmp/cache /app/log /app/storage \
