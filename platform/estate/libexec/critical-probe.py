@@ -267,7 +267,10 @@ def probe_memory_plane(
     sys.path.insert(0, str(pkg))
     try:
         import door  # noqa: E402 -- the estate's own client, located above
-    except Exception as exc:  # pragma: no cover -- only on a broken install
+    except (
+        Exception,
+        SystemExit,
+    ) as exc:  # local_store exits on a missing dependency (idp#8672)
         return (
             False,
             "the memory client could not be imported: %s: %s"
