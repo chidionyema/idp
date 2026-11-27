@@ -24,6 +24,7 @@ Never prints a credential or the provider's response body.
 from __future__ import annotations
 
 import argparse
+import calendar
 import hashlib
 import importlib.util
 import json
@@ -365,6 +366,60 @@ def auto_probe(route: dict, env: dict) -> dict:
 COOLDOWN_S = {"rate-limited": 3600, "funding": 86400, "authentication": 86400}
 
 
+# The launch settings every admitted auto route runs under (auto_launch). Fitness is only
+# evidence for the configuration that was measured, so the gate compares against these.
+LAUNCH_CONTEXT_CAP = 32768
+LAUNCH_MAX_TOKENS = 4096
+
+
+def fitness_filter(routes: list[dict], ledger: Path | None, now: float) -> tuple[list[dict], list[dict]]:
+    """Admit only routes with a fresh FIT verdict from bin/lane-fitness (idp#3525 UX-02).
+
+    Founder, 2026-11-27: "we should never have a dead lane, we should know well ahead of time at
+    the point of admission". A probe that answers proves the lane is reachable, not that it can do
+    a mission: MEASURED 2026-11-27, openrouter nemotron-3.5-lightning:free passed every capacity
+    probe and failed every real mission with an empty patch. Unknown is refused, never assumed:
+    no ledger, no record, an expired record, or a record measured under other launch settings.
+    """
+    kept, refused = [], []
+    for r in routes:
+        rec = None
+        if ledger is not None:
+            for f in sorted(ledger.glob("*.json")) if ledger.is_dir() else []:
+                try:
+                    d = json.loads(f.read_text())
+                except (OSError, ValueError):
+                    continue
+                if (
+                    d.get("schema") == "estate.lane-fitness.v1"
+                    and d.get("provider") == r["provider"]
+                    and d.get("model") == r["model"]
+                ):
+                    rec = d
+                    break
+        why = None
+        if rec is None:
+            why = "no-fitness-record"
+        elif rec.get("context_window") != min(r["context"], LAUNCH_CONTEXT_CAP) or rec.get(
+            "max_tokens"
+        ) != LAUNCH_MAX_TOKENS:
+            why = "measured-under-other-settings"
+        else:
+            try:
+                expires = calendar.timegm(time.strptime(rec["expires_at"], "%Y-%m-%dT%H:%M:%SZ"))
+            except (KeyError, TypeError, ValueError):
+                expires = 0
+            if expires <= now:
+                why = "fitness-expired"
+            elif rec.get("verdict") != "FIT":
+                why = f"unfit:{rec.get('reason', 'unknown')}"
+        if why is None:
+            kept.append(r)
+        else:
+            refused.append({"provider": r["provider"], "model": r["model"], "verdict": why})
+    return kept, refused
+
+
 def load_cooldown(path: Path | None, now: float) -> dict:
     """{provider: until_epoch} still in force; an unreadable file is an empty one."""
     if not path or not path.is_file():
@@ -529,8 +584,8 @@ def auto_launch(
                             {
                                 "id": selected["model"],
                                 "name": selected["model"],
-                                "contextWindow": min(selected["context"], 32768),
-                                "maxTokens": 4096,
+                                "contextWindow": min(selected["context"], LAUNCH_CONTEXT_CAP),
+                                "maxTokens": LAUNCH_MAX_TOKENS,
                                 "input": ["text"],
                                 "reasoning": False,
                             }
@@ -572,6 +627,12 @@ def main() -> int:
     ap.add_argument("--failover", default=os.environ.get("LEGION_FAILOVER", "0"))
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--launch-admitted", type=Path)
+    ap.add_argument(
+        "--fitness-dir",
+        type=Path,
+        default=Path(os.environ["LEGION_FITNESS_DIR"]) if os.environ.get("LEGION_FITNESS_DIR") else None,
+        help="bin/lane-fitness ledger; an auto route without a fresh FIT record is refused",
+    )
     ap.add_argument("--session-dir", type=Path)
     ap.add_argument(
         "--skip-capacity", action="store_true", help="scope only (tests, dry admission)"
@@ -628,13 +689,21 @@ def main() -> int:
         cooldown = load_cooldown(args.cooldown_file, now)
         try:
             routes = auto_candidates(registry, dict(os.environ))
+            routes, unfit = fitness_filter(routes, args.fitness_dir, now)
             chosen, probes = auto_select(
                 routes, dict(os.environ), cooldown=cooldown, now=now
             )
         except (ValueError, OSError, KeyError, TypeError):
-            chosen, probes = None, []
+            chosen, probes, unfit = None, [], []
         save_cooldown(args.cooldown_file, cooldown, now)
         record["probes"] = probes
+        record["fitness"] = unfit
+        if chosen is None and unfit and not probes:
+            record["decision"] = "REFUSED_UNFIT"
+            (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))
+            summary = ", ".join(f"{u['provider']}/{u['model']}={u['verdict']}" for u in unfit)
+            print(f"::error::REFUSED: NO_FIT_LANE before inference: {summary}")
+            return EXIT_CAPACITY
         if chosen is None:
             record["decision"] = "REFUSED_CAPACITY"
             (args.out / "admission.json").write_text(json.dumps(record, sort_keys=True))

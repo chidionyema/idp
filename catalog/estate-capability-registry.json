@@ -56386,6 +56386,7 @@
           "--cooldown-file",
           "--exclude-standard",
           "--failover",
+          "--fitness-dir",
           "--harness",
           "--launch-admitted",
           "--mission-env",
