@@ -373,6 +373,18 @@
       "better": "lower",
       "owner": "governance",
       "description": "1 when estate-memory-enforce, copied alone into a bin/ without claim-open (the deployed layout), refuses a live claim's holder under ESTATE_AGENT=estate-agent. 1 on main 43af9f558; 0 with idp#8660."
+    },
+    {
+      "name": "hooks.enforce_rules_lost_when_relocated",
+      "measure": [
+        "python3",
+        "tests/test_enforce_sibling_rules_resolve_when_relocated.py",
+        "--optimus"
+      ],
+      "unit": "rules",
+      "better": "lower",
+      "owner": "governance",
+      "description": "Of the DoF repair lock, the founder's governance and the pin, how many a copy of bin/estate-memory-enforce deployed alone (as bin/estate-memory-install deploys it) cannot read when it judges a path in an idp checkout. 3 on main 0f9d86375, 0 with idp#8660's sweep."
     }
   ]
 }

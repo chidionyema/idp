@@ -89,42 +89,79 @@ except Exception as _door_exc:  # noqa: BLE001 - a broken door is a refusal, nev
 # and not a second rule: the rule is dof-gate's, loaded from the same registry, so the write
 # gate and the merge gate cannot disagree about what 'repair-only' means.
 _BIN_ROOT = os.path.dirname(os.path.realpath(__file__))
-try:
-    import importlib.util as _ilu
-    from importlib.machinery import SourceFileLoader as _SFL
+_SIBLINGS: dict = {}
 
-    _dof_spec = _ilu.spec_from_file_location(
-        "dof_gate",
-        os.path.join(_BIN_ROOT, "dof-gate"),
-        loader=_SFL("dof_gate", os.path.join(_BIN_ROOT, "dof-gate")),
-    )
-    dof_gate = _ilu.module_from_spec(_dof_spec)
-    _dof_spec.loader.exec_module(dof_gate)
-    _DOF = (
-        dof_gate.open_incidents,
-        dof_gate.scope_of,
-        dof_gate.glob_match,
-        dof_gate.load_registry,
-    )
-except (
-    Exception
-):  # the rule cannot be read here: nothing to decide, and never deadlock a write
-    dof_gate = None  # type: ignore
-    _DOF = None
+
+def _sibling(rel: str, root: str | None = None) -> str | None:
+    """Where this hook reads a sibling rule `rel` (repo-relative) from: the idp checkout being
+    written first, then the tree it sits in.
+
+    Every harness runs the copy bin/estate-memory-install deploys to ~/.estate/memory/bin, and
+    that copy carries none of bin/dof-gate, bin/pin-open or platform/estate/governance. Read only
+    beside itself, the deployed hook loaded dof_gate=False, governance=False and pin-open=False
+    (measured 2026-11-27) while the same file in a checkout loaded all three, so the DoF repair
+    lock, the founder's freeze and lockdown, and the pin all failed OPEN for every agent (class
+    hook-reads-sibling-absent-from-deployed-copy, idp#8660). The checkout under edit carries
+    the rules, and it is the checkout the rule is about.
+    """
+    for base in ([root] if root else []) + [os.path.join(_BIN_ROOT, "..")]:
+        candidate = os.path.normpath(os.path.join(base, rel))
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+# DoF: bin/dof-gate is a script, not a module, so it is loaded by path. Why a second reader and
+# not a second rule: the rule is dof-gate's, loaded from the same registry, so the write gate and
+# the merge gate cannot disagree about what 'repair-only' means.
+def _load_dof(root: str | None = None):
+    src = _sibling("bin/dof-gate", root)
+    if src is None:
+        return None
+    if src not in _SIBLINGS:
+        try:
+            import importlib.util as _ilu
+            from importlib.machinery import SourceFileLoader as _SFL
+
+            spec = _ilu.spec_from_file_location(
+                "dof_gate", src, loader=_SFL("dof_gate", src)
+            )
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _SIBLINGS[src] = (
+                mod.open_incidents,
+                mod.scope_of,
+                mod.glob_match,
+                mod.load_registry,
+            )
+        except (
+            Exception
+        ):  # the rule cannot be read: nothing to decide, never deadlock a write
+            _SIBLINGS[src] = None
+    return _SIBLINGS[src]
+
 
 # The founder's governance: frozen paths and session lockdown. Harness-agnostic on purpose --
 # this hook is what pi and Claude Code both go through, so the rule is the same everywhere.
-_GOV_ROOT = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)), "..", "platform", "estate"
-)
-if _GOV_ROOT not in sys.path:
-    sys.path.insert(0, _GOV_ROOT)
-try:
-    from governance import freeze as _freeze  # noqa: E402
-    from governance import ledger as _ledger  # noqa: E402
-except ImportError:  # the estate tree is not deployed here: the rule cannot be decided
-    _freeze = None  # type: ignore
-    _ledger = None  # type: ignore
+def _load_gov(root: str | None = None):
+    src = _sibling("platform/estate/governance", root)
+    if src is None:
+        return None, None
+    if src not in _SIBLINGS:
+        parent = os.path.dirname(src)
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+        try:
+            from governance import freeze, ledger  # noqa: E402
+
+            _SIBLINGS[src] = (freeze, ledger)
+        except ImportError:  # the estate tree is not here: the rule cannot be decided
+            _SIBLINGS[src] = (None, None)
+    return _SIBLINGS[src]
+
+
+_DOF = _load_dof()
+_freeze, _ledger = _load_gov()
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 BRIEFED = re.compile(
@@ -320,7 +357,7 @@ def focus_verdict(path: str, rows, agent: str):
 PIN_DOOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pin-open")
 
 
-def pin_verdict():
+def pin_verdict(path: str | None = None):
     """(ok, reason): may this session start any work other than its open issue?
 
     Founder, 2026-11-10: "any agent that tried to report an issue already logged once must be
@@ -336,11 +373,12 @@ def pin_verdict():
     ok=None means BLIND (the ledger could not be read): fail OPEN here, because the merge gate and
     the pin door itself still judge, and a hook that refuses on an unreadable file is R14.
     """
-    if not os.path.exists(PIN_DOOR):
+    door = _sibling("bin/pin-open", git_root_if_idp(path) if path else None) or PIN_DOOR
+    if not os.path.exists(door):
         return None, "pin-open door absent: nothing to decide"
     try:
         r = subprocess.run(  # noqa: S603 - fixed argv, our own door
-            [sys.executable, PIN_DOOR, "--json"],
+            [sys.executable, door, "--json"],
             capture_output=True,
             text=True,
             timeout=20,
@@ -378,12 +416,13 @@ def dof_verdict(path: str):
     the SAME registry and the SAME scope_of/glob_match -- this is a second reader, not a second
     rule. ok=None means unknown (no open incidents read; fail open like every other gate).
     """
-    if _DOF is None:
-        return None, "DoF registry unreadable: nothing to decide"
-    open_inc, scope_of, glob_match, load_registry = _DOF
     root = git_root_if_idp(path)
     if root is None:
         return True, "not in the idp checkout"
+    rules = _load_dof(root)
+    if rules is None:
+        return None, "DoF registry unreadable: nothing to decide"
+    open_inc, scope_of, glob_match, load_registry = rules
     rel = os.path.relpath(real(path), root)
     try:
         registry, _ = load_registry(None)
@@ -422,17 +461,18 @@ def governance_verdict(path: str, sid: str):
     green. Both are read from the shared governance state, so every runtime sees the same
     answer.
     """
-    if _freeze is None or _ledger is None:
-        return True, "governance state unavailable: nothing to decide"
     root = git_root_if_idp(path)
     if root is None:
         return True, "not in the idp checkout"
+    freeze, ledger = _load_gov(root)
+    if freeze is None or ledger is None:
+        return True, "governance state unavailable: nothing to decide"
     rel = os.path.relpath(path, root)
-    frozen, entry = _freeze.is_frozen(rel)
+    frozen, entry = freeze.is_frozen(rel)
     if frozen:
-        return False, _freeze.refusal(rel)
-    if sid and _ledger.is_locked(sid):
-        state = _ledger.get_session_state(sid)
+        return False, freeze.refusal(rel)
+    if sid and ledger.is_locked(sid):
+        state = ledger.get_session_state(sid)
         return False, (
             f"this session is under lockdown for {state.get('violation_class', 'a law')} "
             f"(locked {state.get('locked_at', '?')}). No writes, no pushes: plug the hole "
@@ -569,7 +609,7 @@ def pre(data: dict) -> int:
         record("pre", "refuse", dof_why, session=sid, tool=tool, path=path)
         deny_pre(f"Refused by the DoF repair lock. {dof_why}")
         return 0
-    pin_ok, pin_why = pin_verdict()
+    pin_ok, pin_why = pin_verdict(path)
     if pin_ok is False:
         record("pre", "refuse", pin_why, session=sid, tool=tool, path=path)
         deny_pre(pin_why)
