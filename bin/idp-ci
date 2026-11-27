@@ -885,7 +885,8 @@ if [ "$FAST" = 1 ]; then
         say "FAIL  lifeboat  Node.js 22+ required; got $(node --version 2>/dev/null)"
         fail=1
       else
-        lifeboat_out=$(cd "$IDP/platform/lifeboat" && node --test test/*.test.mjs 2>&1)
+        # no GIT_* from the hook: a test's `git -C <tmp> init` must not re-init this repo (idp#8602)
+        lifeboat_out=$(cd "$IDP/platform/lifeboat" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_PREFIX node --test test/*.test.mjs 2>&1)
         lifeboat_rc=$?
         if [ "$lifeboat_rc" -eq 0 ]; then
           say "ok    lifeboat $(printf '%s' "$lifeboat_out" | grep -E '^# (tests|pass|fail) ' | tr '\n' ' ')"
