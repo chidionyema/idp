@@ -557,6 +557,18 @@
       "falsifier": "python3 tests/test_legion_admit.py --optimus runs bin/legion-admit end to end with every HTTPS connection trapped: no record and UNFIT both refused with 0 connections, FIT reaches the probe; prints 0 against main c82f68e's legion-admit and 1 with the gate",
       "owner": "greenlane",
       "status": "open"
+    },
+    {
+      "class": "vendor-gem-cve-patch-line-overlooked",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "lago-api (getlago/api v1.52.1) activestorage 8.0.5.1, CVE-2026-122006 / GHSA-f3w6-w445-fwh9 CRITICAL: idp#8655 recorded it as fixed only by Lago v1.57.0 (Rails 8.1), while the advisory also lists 8.0.5.2 on the locked line"
+      ],
+      "gap": "a CRITICAL in a vendor image's bundled gem was read as waiting on the vendor's next release; nothing checked the advisory's ranges for a patch on the line the image already locks, and nothing could move a vendor lockfile safely inside the build",
+      "compensating_action": "lago-api.Dockerfile fetches Rails 8.0.5.2 and the closure its one dependency change needs (rails-html-sanitizer 1.7.2, loofah 2.25.3, nokogiri 1.19.5); platform/commerce/app/lago-api-gem-patch.rb rewrites Gemfile.lock from the fetched specs and refuses an inconsistent lock; the old versions are uninstalled and the build asserts the loaded versions",
+      "falsifier": "tests/test_lago_api_gem_patch.py refuses a dependent left behind, a broken requirement, a downgrade and a target the lock lacks (the lock is left untouched), and accepts the known-good; the metric counts main's Dockerfile as 1",
+      "owner": "delivery",
+      "status": "open"
     }
   ]
 }
