@@ -431,6 +431,17 @@
       "gap": "every shipping lane appends one class and one metric to the same list end, and git's line merge calls any two such lanes a conflict although they never touched each other's entries",
       "compensating_action": "bin/catalog-merge merges the keyed catalogs by identity (three-way per key; the same key changed differently still conflicts); .gitattributes names the files; claim-gate's merge-check passes main's rule and driver, the Greenlane's cherry-pick passes the driver, bin/idp-install-hooks wires it for local rebases",
       "falsifier": "tests/test_catalog_keyed_merge.py: two different keys merge at the driver, at claim-gate and at the Greenlane pick; the same key written twice, unparseable JSON, an unknown path and a duplicate key still conflict (main: 11 of 14 fail)"
+    },
+    {
+      "class": "session-death-invisible-to-next-session",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "session 21ea7eac ended on three consecutive 'API Error: Connection refused' messages after booting out the listener serving its own ANTHROPIC_BASE_URL; the founder typed 'go on' twice into it and the next session started blind (2026-11-26)",
+        "the first real run of the fix named 20 Claude Code sessions in 24 h that did not end cleanly, 19 on 'You've hit your 5-hour limit' and 1 on ECONNREFUSED, none of them reported anywhere (idp#8624, measured 2026-11-27)"
+      ],
+      "gap": "the fleet reports every session as 'stopped', so a session that died on an API error or mid-turn was indistinguishable from one that finished, and session start carried no ending",
+      "compensating_action": "platform/estate/memory/session_end.py classifies each transcript tail (Claude Code and pi) as ENDED, API-ERROR or MID-TURN; bin/estate-brief, which every runtime's session start runs, names the unclean endings of the last 24 h grouped by cause with the transcript path",
+      "falsifier": "tests/test_brief_names_unclean_endings.py runs the real bin/estate-brief on a temp HOME of Claude Code and pi transcripts: main 3 failed 1 passed, the fix 4 passed; --optimus reads unreported unclean endings (3 -> 0)"
     }
   ]
 }
