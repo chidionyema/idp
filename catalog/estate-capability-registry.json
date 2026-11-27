@@ -34713,6 +34713,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/estate-memory-install",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/estate-memory-required",
           "edge": "invokes"
         },
@@ -34769,6 +34773,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-memory-enforce",
         "cap:tool/estate-memory-mcp",
         "cap:tool/estate-runtime-sync",
         "cap:tool/pi-plan-lock-install"
