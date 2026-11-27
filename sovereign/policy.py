@@ -1,7 +1,9 @@
-"""The living policy, read from AGENTS.md (crew#219 R38, spec v1.0 section 6
-"File 5: AGENTS.md -- living policy").
+"""The living policy, read from docs/agents/living-policy.md (crew#219 R38, spec v1.0
+section 6 "File 5: AGENTS.md -- living policy").
 
-AGENTS.md at the repository root carries one fenced ```toml block. That block
+The block lived in AGENTS.md until idp#8636 moved every section but the kernel out of the
+Turn-1 rule files; it now lives, verbatim, in docs/agents/living-policy.md, which AGENTS.md
+routes to. That file carries one fenced ```toml block. That block
 is the only place the budget defaults, the model routing table, the merge
 criteria, the FSM rules and the agent capability declarations are written
 down. This module parses it, and sovereign/config.py builds its
@@ -40,6 +42,7 @@ except ImportError:  # pragma: no cover - py310 on this machine
 
 AGENTS_MD_ENV = "SB_POLICY_AGENTS_MD"
 AGENTS_MD_FILENAME = "AGENTS.md"
+POLICY_DOC = Path("docs") / "agents" / "living-policy.md"
 FENCE = "```"
 FENCE_LANG = "toml"
 
@@ -50,14 +53,20 @@ class PolicyError(RuntimeError):
     built-in numbers is no policy at all."""
 
 
+def checkout_root() -> Path:
+    """The repository this module runs in: two parents up from this file
+    (sovereign/policy.py sits directly under the repository root)."""
+    return Path(__file__).resolve().parent.parent
+
+
 def agents_md_path() -> Path:
-    """The AGENTS.md this checkout runs under. Two parents up from this
-    file (sovereign/policy.py sits directly under the repository root),
-    never a literal path."""
+    """The policy document this checkout runs under, docs/agents/living-policy.md
+    (the name is kept for its callers). Computed from this file's location,
+    never a literal path; SB_POLICY_AGENTS_MD overrides it."""
     override = os.environ.get(AGENTS_MD_ENV)
     if override:
         return Path(override)
-    return Path(__file__).resolve().parent.parent / AGENTS_MD_FILENAME
+    return checkout_root() / POLICY_DOC
 
 
 def console_lanes(repo_root: Path | None = None) -> set[str]:
@@ -74,7 +83,7 @@ def console_lanes(repo_root: Path | None = None) -> set[str]:
 
     Read as text, like the config check beside it: this carries no yaml parser.
     """
-    root = repo_root or agents_md_path().parent
+    root = repo_root or checkout_root()
     consoles = root / "platform" / "vendors" / "consoles.yaml"
     if not consoles.is_file():
         return set()

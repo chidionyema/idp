@@ -297,8 +297,11 @@ def door() -> dict:
             "The Pi capability surface also exposes a free-form command door (estate_execute), "
             "and the Claude Code surface reaches the shell through the tool, not through an "
             "intent. The law and the machine differ.",
-            "AGENTS.md",
-            line_of(os.path.join(IDP, "AGENTS.md"), "## 7. Execution"),
+            "docs/agents/layers-and-execution.md",
+            line_of(
+                os.path.join(IDP, "docs", "agents", "layers-and-execution.md"),
+                "## 7. Execution",
+            ),
         ),
     }
 

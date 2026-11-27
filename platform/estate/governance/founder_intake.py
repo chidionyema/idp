@@ -254,8 +254,9 @@ def publish(record: Dict[str, Any]) -> Dict[str, Any]:
     try:
         import door  # type: ignore
     except (
-        ImportError
-    ) as exc:  # pragma: no cover - the door is always there in the estate
+        ImportError,
+        SystemExit,
+    ) as exc:  # local_store exits on a missing dependency (idp#8672)
         return {"ok": False, "error": f"memory door unavailable: {exc}"}
     content = (
         "Founder prompt analysed. objectives="
