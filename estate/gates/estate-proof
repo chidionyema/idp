@@ -30,6 +30,19 @@ def _clean_env():
     env = dict(os.environ)
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
         env.pop(key, None)
+    # [nvm-always-on] This runs from git hooks, whose PATH often lacks the nvm bin dir that
+    # holds npm. With no npm, `npm run build` fails, build_ok stays 0, the proof can never be
+    # ok, and EVERY commit on the machine is refused -- a tool that exists appearing absent,
+    # the class secret-load documents. Resolve it the same way: PATH first, then nvm, then the
+    # usual installers, and only prepend a directory that actually contains the binary.
+    if not shutil.which("npm", path=env.get("PATH", "")):
+        import glob
+        cands = sorted(glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")), reverse=True)
+        cands += ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
+        for cand in cands:
+            if os.path.isfile(os.path.join(cand, "npm")):
+                env["PATH"] = os.pathsep.join([cand, env.get("PATH", "/usr/bin:/bin")])
+                break
     return env
 
 
