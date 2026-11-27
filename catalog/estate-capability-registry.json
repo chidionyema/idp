@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 316,
     "service": 122,
-    "tool": 528,
+    "tool": 529,
     "workflow": 110
   },
   "records": [
@@ -30777,6 +30777,61 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/catalog-merge",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "catalog-merge -- a three-way merge driver for the keyed catalogs (idp#8615).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/claim-gate",
+        "cap:tool/idp-install-hooks"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/catalog-merge",
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/catalog-platform",
       "schema_version": 1,
       "kind": "tool",
@@ -31215,6 +31270,7 @@
       },
       "consumers": [
         "cap:tool/advisory-remediation",
+        "cap:tool/catalog-merge",
         "cap:tool/catalog-render",
         "cap:tool/claim-open",
         "cap:tool/estate-memory-enforce",
@@ -31235,6 +31291,10 @@
       "writer": "repo",
       "path": "bin/claim-gate",
       "depends_on": [
+        {
+          "id": "cap:tool/catalog-merge",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/claim-open",
           "edge": "invokes"
@@ -46274,6 +46334,10 @@
       "writer": "repo",
       "path": "bin/idp-install-hooks",
       "depends_on": [
+        {
+          "id": "cap:tool/catalog-merge",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-ci",
           "edge": "invokes"

@@ -193,6 +193,18 @@
       "better": "lower",
       "owner": "estate-memory",
       "description": "shared ESTATE_AGENT spellings (claim-open's SHARED_AGENT_NAMES plus case/space variants) under which the write gate refuses a holder its own live claim (idp#8606)"
+    },
+    {
+      "name": "catalog.disjoint_registration_conflicts",
+      "measure": [
+        "python3",
+        "tests/test_catalog_keyed_merge.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claims",
+      "description": "catalog files claim-gate's merge-check calls conflicting when two lanes register DIFFERENT keys in the real catalogs (main before idp#8615: 2, fix: 0)"
     }
   ]
 }

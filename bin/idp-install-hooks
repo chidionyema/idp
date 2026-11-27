@@ -143,6 +143,13 @@ else
   git config --local core.hooksPath .githooks
   echo "ok    hooks   core.hooksPath set to .githooks (was: ${cur:-unset})"
 fi
+# idp#8615: the keyed catalogs (.gitattributes `merge=estate-catalog`) merge by identity, so a
+# local rebase of two lanes that each registered a class or a metric does not stop on a conflict.
+# Shared by every worktree of this clone; a branch without bin/catalog-merge fails the driver,
+# which git reports as the conflict it would have reported anyway.
+git config --local merge.estate-catalog.name "keyed catalog merge (bin/catalog-merge)"
+git config --local merge.estate-catalog.driver "python3 bin/catalog-merge %O %A %B %P"
+echo "ok    hooks   merge.estate-catalog driver set (bin/catalog-merge)"
 # Per-checkout hook secret. .githooks/commit-msg stamps every commit with an HMAC keyed
 # by this file so CI can refuse commits that bypassed the hooks with --no-verify, and its
 # header has always said "bin/idp-install-hooks provisions the secret" -- but this script

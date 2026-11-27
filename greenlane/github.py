@@ -20,6 +20,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -677,7 +678,14 @@ class GitHubBackend:
         """
         attrs = Path(tempfile.mkdtemp(prefix="greenlane-attrs-")) / "attributes"
         attrs.write_text(f"{WITNESS} merge=estate-witness\n")
+        # The keyed catalogs merge by identity (idp#8615): the pick runs in a checkout of main,
+        # so main's .gitattributes names the files and main's bin/catalog-merge is the driver,
+        # resolved from that worktree. A main without the driver fails it, which git treats as
+        # the conflict it reported before, so this is never looser than the line merge.
+        catalog = f"{shlex.quote(sys.executable)} bin/catalog-merge %O %A %B %P"
         return [
+            "-c",
+            f"merge.estate-catalog.driver={catalog}",
             "-c",
             "merge.estate-witness.driver=true",
             "-c",
