@@ -53,6 +53,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# The estate's ONE 'one subsystem' limit. This file used to carry its own copy of the
+# rule, at a different granularity (the first TWO path segments), so it refused scopes
+# the commit gate admits -- two files in bin/ were 'two subsystems', and a code+test
+# scope was refused outright (idp#8649). One source, one answer.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from verify_three_proofs import subsystems_of  # noqa: E402 - the one source of the limit
+
 # The block a session must paste, and it must name the commit it proved.
 BEGIN = "BDD-PROOF"
 END = "END-BDD-PROOF"
@@ -680,10 +687,7 @@ def verify_admission_block(body: str) -> tuple[bool, str]:
         return False, "ADMISSION_REFUSED: duplicate scope paths"
     if len(scope) > MAX_ADMISSION_PATHS:
         return False, f"ADMISSION_REFUSED: {len(scope)} paths exceeds {MAX_ADMISSION_PATHS}"
-    subsystems = {
-        "/".join(x.split("/")[:2]) if len(x.split("/")) > 1 else x.split("/")[0]
-        for x in scope
-    }
+    subsystems = subsystems_of(scope)
     if len(subsystems) > 1:
         return False, f"ADMISSION_REFUSED: cross-subsystem scope {sorted(subsystems)}"
     expected = hashlib.sha256(
