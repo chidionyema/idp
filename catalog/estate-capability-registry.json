@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 317,
     "service": 122,
-    "tool": 529,
+    "tool": 530,
     "workflow": 110
   },
   "records": [
@@ -37242,6 +37242,72 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate_context_fleet_sync.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate_context_fleet_sync -- the Turn-1 rule budget: compose the fleet contract, gate the bloat.",
+      "contract": {
+        "inputs": [
+          "--audit",
+          "--base",
+          "--check",
+          "--compile",
+          "--name-only",
+          "--optimus",
+          "--policy",
+          "--quiet",
+          "--repo-root",
+          "--self-test",
+          "--verify"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-ci"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate_context_fleet_sync.py",
+      "depends_on": [
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/exec-daemon",
       "schema_version": 1,
       "kind": "tool",
@@ -40567,6 +40633,10 @@
         },
         {
           "id": "cap:tool/estate-read",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate_context_fleet_sync.py",
           "edge": "invokes"
         },
         {
@@ -60156,6 +60226,7 @@
         "cap:tool/estate-state-page",
         "cap:tool/estate-surface-map",
         "cap:tool/estate-work-status",
+        "cap:tool/estate_context_fleet_sync.py",
         "cap:tool/exec-daemon",
         "cap:tool/fleetview-frontend-launchd",
         "cap:tool/fleetview-launchd",
