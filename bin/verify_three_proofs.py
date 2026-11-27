@@ -50,16 +50,50 @@ GHOST_SCAN_EXEMPT = frozenset(
 MAX_FILES_PER_CHANGE = 5
 MAX_CLOCK_DRIFT_SECONDS = 300
 
+# A test companion is the PROOF that rides with the code, never a second subsystem of it.
+# The estate's convention: a falsifier lives in tests/ (or beside the code it covers).
+# Two laws used to contradict here -- "one subsystem per change" (proof 2) and "every code
+# change ships with a test" -- so a code+test change could never be admitted and every
+# agent handed it back (idp#8649, measured 2026-11-27: PROOF_2_FAILED cross-subsystem
+# mutation ['platform', 'tests']). The boundary MOVES, it does not disappear: a change that
+# spans two CODE subsystems is still refused, and a guarded path still needs the seal.
+COMPANION_TEST_ROOTS = ("tests",)
+
 
 def lane_contract() -> str:
     """The bounds this enforcer applies, printed for the worker before it works."""
     return "\n".join(
         [
-            "LANE CONTRACT: one subsystem (one top-level directory), "
+            "LANE CONTRACT: one subsystem (one top-level directory) plus that change's own "
+            "test companions (tests/), "
             f"at most {MAX_FILES_PER_CHANGE} files in one change, no .github/ or .githooks/ edits,",
             "and no guarded path without a Founder seal.",
         ]
     )
+
+
+def is_companion_path(path: str) -> bool:
+    """True when the path is a test companion of the code it rides with."""
+    parts = path.strip("/").split("/")
+    return bool(parts) and parts[0] in COMPANION_TEST_ROOTS
+
+
+def subsystems_of(paths: List[str]) -> set:
+    """The estate's ONE 'one subsystem' limit: a top-level directory.
+
+    A companion test path never forms a subsystem of its own. A change with no code path
+    at all is the single 'tests' subsystem. This is the single source of the limit:
+    bin/verify_three_proofs.py proof 2, bin/idp-bdd-proof-gate's ADMISSION block and
+    bin/idp-differential-falsifier's path binding all read it, so the copies cannot
+    drift apart again (R7).
+    """
+    code = set()
+    for path in paths:
+        if is_companion_path(path):
+            continue
+        parts = path.strip("/").split("/")
+        code.add(parts[0] if len(parts) > 1 else "root")
+    return code or {"tests"}
 
 
 def _introduced_lines(repo_root: str, rel_path: str) -> str:
@@ -201,7 +235,6 @@ def verify_proof_2_boundary_and_gate(
             "error": f"PROOF_2_FAILED: {len(changed_files)} files exceeds MAX_FILES_PER_CHANGE ({MAX_FILES_PER_CHANGE})"
         }
 
-    subsystems = set()
     for path in changed_files:
         for guarded in GUARDED_PATHS:
             if (
@@ -210,8 +243,7 @@ def verify_proof_2_boundary_and_gate(
                 return False, {
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
-        parts = path.strip("/").split("/")
-        subsystems.add(parts[0] if len(parts) > 1 else "root")
+    subsystems = subsystems_of(changed_files)
 
     if len(subsystems) > 1 and not founder_seal_verified:
         return False, {

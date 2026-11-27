@@ -21,6 +21,7 @@ case below is a case the old gate got wrong, and the exit codes are the contract
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -82,7 +83,9 @@ def fake_gh(tmp_path: Path, out: str = "", listing: str = "", rc: int = 0) -> Pa
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$FAKE_GH_LOG"\n'
         'case "$*" in\n'
-        '  *"pr list"*) f="$FAKE_GH_LIST" ;;\n'
+        # The gate reads REST, never GraphQL (bin/idp-bdd-proof-gate, 2026-11-14): a
+        # LISTING is `pulls?head=`, a single pull request is `pulls/<number>`.
+        '  *"pulls?"*) f="$FAKE_GH_LIST" ;;\n'
         '  *) f="$FAKE_GH_OUT" ;;\n'
         "esac\n"
         '[ -n "$f" ] && [ -f "$f" ] && cat "$f"\n'
@@ -108,8 +111,33 @@ def pr_payload(number: int, body: str, head: str = HEAD) -> dict:
     }
 
 
+def admission_block(base: str = HEAD, scope: list[str] | None = None) -> str:
+    """The ADMISSION block the JSON mode requires (I-8107): base, scope, digest.
+
+    The digest is the one the gate recomputes: sha256 over {base, sorted scope}. The
+    gate grew this requirement after this falsifier was written, so every fixture here
+    carried no admission and the suite was RED on main (13 failures, measured 2026-11-27
+    on c8dc5b538). The fixtures now carry the block the gate demands, so a refusal is a
+    refusal of the PROOF, not an accident of a missing declaration.
+    """
+    paths = scope if scope is not None else ["tests/test_bdd_proof_gate.py"]
+    digest = hashlib.sha256(
+        json.dumps({"base": base, "scope": sorted(paths)}, sort_keys=True).encode()
+    ).hexdigest()
+    return (
+        "ADMISSION\n"
+        f"base: {base}\n"
+        f"scope: {json.dumps(sorted(paths))}\n"
+        f"digest: {digest}\n"
+        "END-ADMISSION\n"
+    )
+
+
 def proof_body(head: str = HEAD, evidence: str = "31 scenarios (31 passed)") -> str:
-    return f"BDD-PROOF\nhead: {head}\ncommand: npm run bdd\n{evidence}\nEND-BDD-PROOF\n"
+    return (
+        f"BDD-PROOF\nhead: {head}\ncommand: npm run bdd\n{evidence}\nEND-BDD-PROOF\n"
+        + admission_block()
+    )
 
 
 # -- the JSON mode: one predicate, both directions ------------------------------------------
@@ -138,7 +166,11 @@ def test_json_mode_refuses_a_body_with_no_block() -> None:
         [],
         clean_env(),
         stdin=json.dumps(
-            {"title": "t", "headRefOid": HEAD, "body": "I ran the suite and it passed."}
+            {
+                "title": "t",
+                "headRefOid": HEAD,
+                "body": "I ran the suite and it passed." + admission_block(),
+            }
         ),
     )
     assert rc == 1, err
@@ -151,13 +183,15 @@ def test_json_mode_refuses_a_block_that_only_asserts_in_prose() -> None:
     rc, _out, err = run_gate(
         [],
         clean_env(),
-        stdin=json.dumps({"title": "t", "headRefOid": HEAD, "body": prose}),
+        stdin=json.dumps(
+            {"title": "t", "headRefOid": HEAD, "body": prose + admission_block()}
+        ),
     )
     assert rc == 1, err
 
 
 def test_json_mode_refuses_a_block_that_names_no_head() -> None:
-    body = "BDD-PROOF\n31 scenarios (31 passed)\nEND-BDD-PROOF"
+    body = "BDD-PROOF\n31 scenarios (31 passed)\nEND-BDD-PROOF" + admission_block()
     rc, _out, err = run_gate(
         [],
         clean_env(),
@@ -355,7 +389,7 @@ def test_live_mode_grades_the_pull_request_with_the_named_head_branch(
     env["PATH"] = f"{bindir}:{env['PATH']}"
     rc, _out, err = run_gate(["--live"], env)
     assert rc == 0, f"rc={rc} err={err}"
-    assert said(log.read_text(), "--head"), "the branch was not used to find the PR"
+    assert said(log.read_text(), "head="), "the branch was not used to find the PR"
 
 
 def test_live_mode_is_not_applicable_when_the_head_branch_has_no_pull_request(
@@ -456,15 +490,20 @@ def test_the_live_mode_and_the_json_mode_refuse_the_same_pull_request(
     cases = [
         ("exact head", proof_body(HEAD), 0),
         ("wrong head", proof_body(OTHER), 1),
-        ("no block", "just a description", 1),
+        ("no block", "just a description" + admission_block(), 1),
         (
             "prose only",
             "BDD-PROOF\nhead: "
             + HEAD
-            + "\ni ran the tests and they passed\nEND-BDD-PROOF",
+            + "\ni ran the tests and they passed\nEND-BDD-PROOF"
+            + admission_block(),
             1,
         ),
-        ("no head named", "BDD-PROOF\n31 scenarios (31 passed)\nEND-BDD-PROOF", 1),
+        (
+            "no head named",
+            "BDD-PROOF\n31 scenarios (31 passed)\nEND-BDD-PROOF" + admission_block(),
+            1,
+        ),
     ]
     for name, body, expected in cases:
         json_rc, _o, _e = run_gate(
@@ -580,7 +619,7 @@ def test_live_rerun_recovers_same_head_proof_corrected_after_event(
         ),
     )
     assert rc == 0, f"{out} {err}"
-    assert log.read_text().count("pr view 4242") == 1
+    assert log.read_text().count("pulls/4242") == 1
 
 
 def test_live_rerun_never_accepts_changed_head_from_same_pr(tmp_path: Path) -> None:
