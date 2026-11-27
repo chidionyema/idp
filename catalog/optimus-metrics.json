@@ -277,6 +277,18 @@
       "better": "lower",
       "owner": "delivery",
       "description": "Cases where estate-mcp.Dockerfile's python -c build checks fail against the files the image copies, measured before merge. 1 against main c8dc5b538 (the stale _invoke_remote check that turned build-multiarch red); 0 with idp#8650."
+    },
+    {
+      "name": "rust.image_lock_floor_violations",
+      "measure": [
+        "python3",
+        "tests/test_rust_images_build_locked.py",
+        "--optimus"
+      ],
+      "unit": "violations",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Rule violations across the Rust images bin/dockerfiles lists: no committed or copied Cargo.lock, cargo build without --locked, no rust-version, or a rust:<x.y> builder below it. 11 on main 618156854 (genesis-v1, edge-runtime, ground-truth, pennyd); 0 with idp#8652."
     }
   ]
 }
