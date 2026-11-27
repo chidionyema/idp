@@ -145,7 +145,18 @@
       "better": "higher",
       "owner": "estate-context",
       "description": "Actual broker policy invocation with deterministic engine fixture; read committed index without GitHub claim lookup, reject traversal and unclaimed working-copy. Source-policy proof only, not a deployed endpoint measurement."
+    },
+    {
+      "name": "ci.facts_rung_time_reds",
+      "measure": [
+        "python3",
+        "tests/test_idp_ci_facts_rung.py",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "lower",
+      "owner": "idp-ci",
+      "description": "1 when bin/idp-ci rung 1e reds a lane on a STALE-only facts store -- the passage of time, not the lane (idp#8602)"
     }
-
   ]
 }

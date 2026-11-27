@@ -368,6 +368,16 @@
       "recurrence_checks": [
         "2026-11-26"
       ]
+    },
+    {
+      "class": "gate-reds-on-time-not-the-lane",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "bin/idp-ci rung 1e failed every push from the Mac once eight 30-day rows in ~/.estate/facts.jsonl aged out together; no lane had touched them (idp#8602, measured 2026-11-27)"
+      ],
+      "gap": "a lane gate refused on a verdict the lane cannot cause or fix (an expired validity window), so every lane was held hostage to the store owner's re-measure",
+      "compensating_action": "a lane gate refuses only what the lane can cause (CONTRADICTED, TAMPERED, a verdict-less crash); aged rows warn by row and name the owner's door",
+      "falsifier": "tests/test_idp_ci_facts_rung.py: stale-warns and contradicted-fails; 3 of 7 cases fail against origin/main's rung"
     }
   ]
 }
