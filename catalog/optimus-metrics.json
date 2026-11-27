@@ -330,8 +330,7 @@
       "name": "legion.fitness_gate_enforced",
       "measure": [
         "python3",
-        "tests/test_legion_admit.py",
-        "--optimus"
+        "tests/legion_fitness_gate.py"
       ],
       "unit": "bool",
       "better": "higher",
