@@ -86,6 +86,8 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+          seed_app_id: ${{ secrets.SEED_APP_ID }}
+          seed_pem_b64: ${{ secrets.SEED_PEM_B64 }}
       - name: land every pull request that is finished
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
