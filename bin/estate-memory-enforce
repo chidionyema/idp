@@ -246,7 +246,7 @@ def covers(row: dict, rel: str) -> bool:
     )
 
 
-def _shared_agent_names() -> frozenset:
+def _shared_agent_names(bin_dir: str = "") -> frozenset:
     """bin/claim-open's SHARED_AGENT_NAMES, read from its source, never a second copy.
 
     `~/.zshrc` exports ESTATE_AGENT=estate-agent to every shell, so the variable names the
@@ -254,11 +254,16 @@ def _shared_agent_names() -> frozenset:
     by it; reading it here AS the identity refused every holder its own claim (idp#8606). The
     literal is parsed, not imported: importing claim-open resolves the repo and tools on every
     hook call. Unreadable = an empty set, which is the old behaviour, never a deadlock.
+
+    `bin_dir` names where to look. The INSTALLED hook (~/.estate/memory/bin) has no claim-open
+    beside it, so at import time this read is empty there and the fix above was inert where it
+    runs (measured 2026-11-27, session 40fa894f: `test -e ~/.estate/memory/bin/claim-open` rc=1).
+    focus_verdict therefore also reads the claim-open of the checkout being edited.
     """
     import ast
 
     try:
-        with open(os.path.join(_BIN_ROOT, "claim-open")) as f:
+        with open(os.path.join(bin_dir or _BIN_ROOT, "claim-open")) as f:
             tree = ast.parse(f.read())
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
@@ -278,13 +283,15 @@ SHARED_AGENT_NAMES = _shared_agent_names()
 
 def focus_verdict(path: str, rows, agent: str):
     """(ok, reason): is there a live claim covering `path`? ok=None means unknown."""
-    # A shared name is no identity: judge as if ESTATE_AGENT were unset (idp#8606).
-    if agent.strip().lower() in SHARED_AGENT_NAMES:
-        agent = ""
     path = real(path)
     root = git_root_if_idp(path)
     if root is None:
         return True, "not in the idp checkout"
+    # A shared name is no identity: judge as if ESTATE_AGENT were unset (idp#8606). The set is
+    # claim-open's: beside this hook when it runs from a checkout, else the edited checkout's own.
+    shared = SHARED_AGENT_NAMES or _shared_agent_names(os.path.join(root, "bin"))
+    if agent.strip().lower() in shared:
+        agent = ""
     if rows is None:
         return None, "claim ledger unreadable"
     rel = os.path.relpath(path, root)
