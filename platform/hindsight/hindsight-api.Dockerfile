@@ -26,12 +26,16 @@ USER root
 # PyJWT 2.13.0 (CVE-2026-102268), anyio 4.11.0 (CVE-2026-63374), sentence-transformers 5.2.0
 # (CVE-2026-68770). Every pin in the venv admits the fixed versions (anyio<5, pyjwt<3,
 # sentence-transformers>=5); the gate below proves the newer sentence-transformers still gives
-# the vectors already stored.
+# the vectors already stored. idp#8655 (main run 46012162636): libbrotli1 1.1.0-2+b7 (CVE-2026-111497)
+# needs the whole upgrade, not perl-base alone; Authlib 1.6.12 (CVE-2026-96760) is fixed in 1.9.0.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+    && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && uv pip install --python /app/api/.venv/bin/python --no-cache \
-        'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0'
+        'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0' 'authlib>=1.9.0'
 RUN mkdir -p /opt/hindsight-models/hub \
     && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 /app/api/.venv/bin/python -c "\
 from huggingface_hub import snapshot_download; \

@@ -13,6 +13,9 @@
 FROM docker.io/getlago/api:v1.52.1
 # The scan that gates this image also fails the base on libgnutls30t64 (CVE-2026-33845),
 # which Debian security already ships fixed; upgrading takes whatever the base is behind on.
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*

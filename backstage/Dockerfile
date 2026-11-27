@@ -112,6 +112,9 @@ RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid
 
 # --- stage 4: the runtime image -----------------------------------------------
 FROM node:24-trixie-slim
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
