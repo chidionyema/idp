@@ -104,7 +104,7 @@ def test_every_routing_alias_exists_in_the_litellm_config() -> None:
     """A routing entry naming an alias llm/config.yaml does not declare
     would route to nothing. Read as text: the runtime carries no yaml
     parser, and `model_name:` lines are the whole contract."""
-    repo_root = policy.agents_md_path().parent
+    repo_root = policy.checkout_root()
     litellm = (repo_root / "llm" / "config.yaml").read_text()
     declared = set(
         re.findall(r"^\s*-\s*model_name:\s*(\S+)", litellm, flags=re.MULTILINE)
