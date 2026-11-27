@@ -38,10 +38,31 @@ DIRECTIVE = (
     "exit status, and the line it printed."
 )
 
+
 # Phrases that return work to the reader. Narrow on purpose: each is hand-back phrasing, not a word
 # an honest report would contain.
+class _UnreferencedStillOpen:
+    """`still open` on a line that names no tracked object (idp#8622).
+
+    AGENTS.md section 2 orders "open the PR, then STOP", so "PR #8618 is still open" is the report
+    the law requires: the work is held by an issue, a PR or a Greenlane lane, not handed to the
+    reader. Only the line is judged, so a reference elsewhere in the turn excuses nothing, and the
+    "Still open:" list heading below stays a hand-back whatever it names.
+    """
+
+    _rx = re.compile(r"\bstill[ -]open\b", re.I)
+    _ref = re.compile(r"#\d{3,}\b|/(?:pull|issues)/\d+\b|\blane/[\w./-]+")
+
+    def search(self, prose: str):
+        for line in prose.splitlines():
+            m = self._rx.search(line)
+            if m and not self._ref.search(line):
+                return m
+        return None
+
+
 HANDBACK = (
-    ("still open", re.compile(r"\bstill[ -]open\b", re.I)),
+    ("still open", _UnreferencedStillOpen()),
     (
         "deferred-work heading",
         re.compile(

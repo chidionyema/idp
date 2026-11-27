@@ -451,6 +451,16 @@
       "gap": "claim-gate judged the holder's own heartbeat at the moment CI ran, so the queue's wait counted against an agent that had obeyed 'open the PR, then STOP'; CI cannot renew, and a RED lane is not re-judged until a new head",
       "compensating_action": "bin/claim-gate judges the holder's own newest CLAIM at the head's author date (authored_at; the committer date moves on a queue rebase): live then is live; a rival's newer claim, another agent's lapsed claim and work authored after the lapse still refuse",
       "falsifier": "tests/test_claim_gate_lapse_at_head_time.py drives the real judge() on a temp repository whose head carries a real author date, in CI's read-only mode: main 1 failed 4 passed, the fix 5 passed; --optimus reads the measured case (1 -> 0)"
+    },
+    {
+      "class": "state-report-judged-as-handback",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "the Stop hook refused claude-code's turn because a status-table cell read 'Still open' for an issue held by a Greenlane lane; AGENTS.md section 2 requires exactly that report after opening a PR (idp#8622, measured 2026-11-27)"
+      ],
+      "gap": "the hand-back judge matched the words 'still open' anywhere in prose, so it could not tell work handed to the reader from work held by an issue, a PR or a lane",
+      "compensating_action": "platform/estate/memory/handback.py judges 'still open' per line and allows it only where that line names a tracked object (#NNN, a pull/issues URL, lane/...); the 'Still open:' list heading and every question form still block",
+      "falsifier": "tests/test_handback_state_report_is_not_handback.py: main refuses 4 of 4 state reports, the fix 0, and 6 hand-back forms still block; --optimus reads the refusals"
     }
   ]
 }
