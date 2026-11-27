@@ -607,6 +607,18 @@
       "falsifier": "tests/test_enforce_dof_unreadable_fails_open.py: the sentinel is unknown, a real incident still refuses, the cache serves within TTL and never stores the sentinel; a hook that passes the sentinel through refuses. hooks.enforce_refuses_on_unreadable_incidents 1 on main b04af78dc, 0 with idp#8669",
       "owner": "governance",
       "status": "open"
+    },
+    {
+      "class": "door-import-guard-lets-systemexit-escape",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "Greenlane judged idp#8660 NOT OPERATIONAL at 2026-11-27T19:10:55Z on hooks.enforce_shared_name_unresolved_when_relocated=UNKNOWN: in a checkout without pydantic, platform/estate/memory/local_store.py raised SystemExit, bin/estate-memory-enforce's `except Exception` around `import door` let it escape, and the hook died on import, so every measure loading it (idp#8660 x2, idp#8669) printed nothing (idp#8672)"
+      ],
+      "gap": "a defensive `try: import door` caught only Exception/ImportError while local_store signals a missing dependency with SystemExit, so the caller crashed instead of returning its verdict; the measures passed only on the author's host, which has pydantic in its user site",
+      "compensating_action": "the four guarded door imports (bin/estate-memory-enforce, platform/estate/governance/founder_intake.py, platform/estate/governance/state_page.py, platform/estate/libexec/critical-probe.py) also catch SystemExit; an AST sweep refuses any new one that does not",
+      "falsifier": "tests/test_enforce_survives_a_door_that_exits.py: the hook loads with door=None when `import door` raises SystemExit, and an Exception-only guard dies; the sweep finds zero unguarded door imports in the repo and flags a planted Exception-only guard. memory.door_imports_crash_on_exit 4 on main 6b7932fd3, 0 with idp#8672; hooks.enforce_dies_when_door_exits 1 on main, 0 with idp#8672",
+      "owner": "governance",
+      "status": "open"
     }
   ]
 }

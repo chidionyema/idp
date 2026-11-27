@@ -408,6 +408,30 @@
       "better": "lower",
       "owner": "governance",
       "description": "1 when estate-memory-enforce's dof_verdict refuses a write because dof-gate could not read the incident list (the dof-probe sentinel). 1 on main b04af78dc (refused every idp write fleet-wide on 2026-11-27 when the anonymous GitHub budget ran out); 0 with idp#8669."
+    },
+    {
+      "name": "memory.door_imports_crash_on_exit",
+      "measure": [
+        "python3",
+        "tests/test_enforce_survives_a_door_that_exits.py",
+        "--optimus"
+      ],
+      "unit": "imports",
+      "better": "lower",
+      "owner": "governance",
+      "description": "Guarded `import door`/`import local_store` sites in bin, platform, greenlane and mcp whose handlers let SystemExit escape (local_store exits on a missing dependency), so the caller crashes instead of returning its verdict. 4 on main 6b7932fd3; 0 with idp#8672."
+    },
+    {
+      "name": "hooks.enforce_dies_when_door_exits",
+      "measure": [
+        "python3",
+        "tests/test_enforce_survives_a_door_that_exits.py",
+        "--optimus"
+      ],
+      "unit": "crashes",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when bin/estate-memory-enforce dies on import because `import door` raised SystemExit (local_store without pydantic), which made every measure loading the hook UNKNOWN to Greenlane (idp#8660 judged NOT OPERATIONAL 2026-11-27T19:10:55Z). 1 on main 6b7932fd3; 0 with idp#8672."
     }
   ]
 }
