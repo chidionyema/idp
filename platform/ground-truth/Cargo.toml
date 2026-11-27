@@ -2,6 +2,7 @@
 name = "genesis-ground-truth"
 version = "0.9.1"
 edition = "2021"
+rust-version = "1.89"
 description = "Real-time event-driven ground-truth projection, monotonic fencing gate, and universal agent prerequisite engine for Meridian / Genesis"
 
 [lib]

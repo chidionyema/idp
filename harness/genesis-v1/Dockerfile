@@ -1,9 +1,9 @@
 # Multi-stage portable OCI image for genesis-harness-v1 (Lane 1 Cloudflare Containers / Lane 2 / Lane 3)
-FROM rust:1.83-slim-bookworm AS builder
+FROM rust:1.89-slim-bookworm AS builder
 WORKDIR /build
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates     && rm -rf /var/lib/apt/lists/*     && useradd -m -u 10001 harness

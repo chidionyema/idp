@@ -1,11 +1,11 @@
 # Multi-arch (linux/arm64 + linux/amd64) build for Lane 1 Cloudflare Containers & Lane 2 OCI ARM A1
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.89-slim-bookworm AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 COPY src ./src
-RUN cargo build --release --bins
+RUN cargo build --release --bins --locked
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
