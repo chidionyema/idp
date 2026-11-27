@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Refuse a command that would cut the agent's own connection to its model.
+
+Friction #1, measured 2026-11-27: session 21ea7eac ran
+`launchctl bootout com.estate.pennyd` while pennyd was serving
+ANTHROPIC_BASE_URL=:4200. Every call afterwards died with ECONNREFUSED and the
+session could not recover, because the process it needed was the one it killed.
+
+This is a PreToolUse hook: stdin is the Claude Code hook payload. Exit 2 blocks
+the call and shows stderr to the agent. Exit 0 allows it.
+
+Design rules, in order:
+  1. Fail OPEN. Any parse/exec error returns 0. A guard that bricks the session
+     is the same failure it exists to prevent.
+  2. Only destructive verbs are considered: kill, pkill, killall, launchctl
+     bootout|stop|unload, systemctl stop. Reading (`lsof`, `ps`) is never blocked.
+  3. Judge the target, not the syntax: protected = a PID that is currently
+     LISTENING on a protected port, or a protected launchd label by name.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+# Ports an agent's own model/UI connection is known to use on this estate.
+STATIC_PORTS = {3080, 4200, 4000}
+PROTECTED_LABELS = (
+    "ai.estate.dsh-web",
+    "com.estate.pennyd",
+    "ai.estate.litellm",
+    "ai.estate.dsh",
+)
+
+DESTRUCTIVE = re.compile(r"\b(kill|pkill|killall|bootout|unload)\b", re.I)
+LAUNCHCTL_STOP = re.compile(r"launchctl\s+(bootout|stop|unload|kill)", re.I)
+
+
+def ports_from_env():
+    ports = set()
+    for var in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "ESTATE_ROUTER_URL", "PENNYD_URL"):
+        val = os.environ.get(var, "")
+        m = re.search(r":(\d{2,5})(?:/|$|\s)", val)
+        if m:
+            try:
+                ports.add(int(m.group(1)))
+            except ValueError:
+                pass
+    return ports
+
+
+def listening_pids(port):
+    try:
+        out = subprocess.run(["lsof", "-nP", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                             capture_output=True, text=True, timeout=5).stdout
+        return {int(p) for p in out.split() if p.isdigit()}
+    except Exception:
+        return set()
+
+
+def main():
+    try:
+        raw = sys.stdin.read()
+        payload = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        return 0
+
+    if payload.get("tool_name") not in ("Bash", "BashOutput", ""):
+        return 0
+    cmd = (payload.get("tool_input") or {}).get("command") or payload.get("command") or ""
+    if not cmd.strip():
+        return 0
+
+    destructive = bool(DESTRUCTIVE.search(cmd)) or bool(LAUNCHCTL_STOP.search(cmd))
+    if not destructive:
+        return 0
+
+    protected_ports = STATIC_PORTS | ports_from_env()
+    pids = {}
+    for port in protected_ports:
+        for pid in listening_pids(port):
+            pids[pid] = port
+
+    # 1. named launchd label
+    for label in PROTECTED_LABELS:
+        if label in cmd and LAUNCHCTL_STOP.search(cmd):
+            sys.stderr.write(
+                f"REFUSED by api-port-guard: {label} is a protected estate service.\n"
+                f"Killing it cuts this session's own connection to its model, and the session\n"
+                f"cannot recover afterwards (measured: 21ea7eac, ECONNREFUSED).\n"
+                f"If the service really must stop, do it from outside the agent session.\n"
+            )
+            return 2
+
+    # 2. a PID that is listening on a protected port
+    for pid, port in pids.items():
+        if re.search(rf"(?<![\d-]){pid}(?![\d-])", cmd):
+            sys.stderr.write(
+                f"REFUSED by api-port-guard: PID {pid} owns port {port}, which this session is\n"
+                f"using for its model or UI connection. Killing it disconnects the agent from itself.\n"
+                f"Nothing else in the command was evaluated.\n"
+            )
+            return 2
+
+    # 3. pkill/killall by pattern that matches an estate service name
+    if re.search(r"\b(pkill|killall)\b", cmd, re.I):
+        for name in ("pennyd", "dsh-web", "dsh", "litellm"):
+            if re.search(rf"\b{re.escape(name)}\b", cmd):
+                sys.stderr.write(
+                    f"REFUSED by api-port-guard: pattern kill of '{name}' can take down the\n"
+                    f"service this session is talking to. Target the process you actually mean,\n"
+                    f"or stop it outside the agent session.\n"
+                )
+                return 2
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        sys.exit(0)  # fail open, always
