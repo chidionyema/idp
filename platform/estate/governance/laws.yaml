@@ -341,3 +341,26 @@ laws:
       check:
         type: command
         argv: ["python3", "bin/architecture-diagram-check"]
+
+  - id: GOV-015
+    law: >-
+      An agent may not signal or unload the process its own model or UI path runs through,
+      its own harness, or another agent's harness. The refusal names the door (restart with
+      launchctl kickstart -k, never remove), and the judge reads the resolved target, never
+      the words of the command, so a read that mentions a service is never refused.
+    source: >-
+      founder, 2026-11-27 ("we have to eliminate all dead ends in estate"; "we need to think
+      all agents, so not just claude code, opencode also"). Measured the same day: session
+      21ea7eac ran launchctl bootout com.estate.pennyd while pennyd served its
+      ANTHROPIC_BASE_URL and every later call died ECONNREFUSED (idp#8598).
+    severity: block
+    check:
+      type: command
+      argv: ["python3", "estate/gates/tests/api-port-guard.test.py"]
+    falsifier:
+      files: {}
+      check:
+        type: command
+        cwd: "."
+        argv: ["python3", "estate/gates/tests/api-port-guard.test.py",
+               "--guard", "estate/gates/tests/fixtures/allow-all-guard"]
