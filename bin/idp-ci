@@ -583,8 +583,10 @@ fi
 #     quotes -- a saving percentage, a process count, a row count -- used to come from comments,
 #     docs and summaries, and nothing in the estate could contradict them: bin/epistemic_firewall
 #     grades whether a tool call happened, not whether the number is right, which is why it never
-#     bit. This rung re-runs the command that produced each fact and fails on STALE,
-#     CONTRADICTED, UNWITNESSED or TAMPERED. Two stores: one committed with the repo, which CI can
+#     bit. This rung re-runs the command that produced each fact and fails on CONTRADICTED or
+#     TAMPERED -- what a lane can cause. STALE (the window ran out) and UNWITNESSED (this tree
+#     cannot re-measure) are warnings that name each row: no lane caused them, and reding every
+#     push for the passage of time was a dead end (idp#8602). Two stores: one committed with the repo, which CI can
 #     check, and the operator's, whose instruments read this machine and so only this machine can
 #     check. No store at all is a skip that prints its reason -- never a silent pass, because a
 #     rung that always skips is not a rung. It sits here, before the heavy rungs, because this is
@@ -595,17 +597,25 @@ for _fs in "$IDP"/facts/*.jsonl "$HOME/.estate/facts.jsonl"; do
   facts_n=$((facts_n + 1))
   if out=$("$IDP/bin/estate-claim-check" --store "$_fs" verify 2>&1); then
     say "ok    facts    $(basename "$_fs"): $(printf '%s' "$out" | tail -1)"
-  elif printf '%s\n' "$out" | grep -qE '^(CONTRADICTED|STALE|TAMPERED)'; then
+  elif printf '%s\n' "$out" | grep -qE '^(CONTRADICTED|TAMPERED)'; then
     say "FAIL  facts    $(basename "$_fs"): a stored fact no longer holds"
-    printf '%s\n' "$out" | grep -vE '^(PASS|[0-9]+/[0-9]+ facts)' | head -8 | sed 's/^/      /'
+    printf '%s\n' "$out" | grep -E '^(CONTRADICTED|TAMPERED)' | head -8 | sed 's/^/      /'
+    fail=1
+  elif ! printf '%s\n' "$out" | grep -qE '^(STALE|UNWITNESSED)'; then
+    # verify failed and named no row: a crash is not a verdict, and unknown = refuse (section 9, 1)
+    say "FAIL  facts    $(basename "$_fs"): verify failed without a verdict"
+    printf '%s\n' "$out" | tail -4 | sed 's/^/      /'
     fail=1
   else
-    # UNWITNESSED only: this tree cannot re-measure the instrument (its input lives in
-    # another checkout). No lane broke it, so it reports without reding the lane --
-    # 2026-10-25 audit: operator-store instruments with checkout-relative paths redded
-    # every lane from every foreign tree. The owning tree still sees the defect.
-    say "warn  facts    $(basename "$_fs"): unwitnessed here, nothing contradicted"
-    printf '%s\n' "$out" | grep '^UNWITNESSED' | head -4 | sed 's/^/      /'
+    # STALE / UNWITNESSED only. UNWITNESSED: this tree cannot re-measure the instrument (its
+    # input lives in another checkout) -- 2026-10-25 audit: operator-store instruments with
+    # checkout-relative paths redded every lane from every foreign tree. STALE: the validity
+    # window ran out -- 2026-11-27: eight 30-day rows aged out together and redded every push
+    # from the Mac (idp#8602). Neither is caused by the lane, so each reports by row and names
+    # the store owner's door; the store's own `verify` still exits 1 on them.
+    say "warn  facts    $(basename "$_fs"): nothing contradicted; aged or unwitnessed rows below"
+    printf '%s\n' "$out" | grep -E '^(STALE|UNWITNESSED)' | head -8 | sed 's/^/      /'
+    say "      re-measure: bin/estate-claim-check --store $_fs add --id <id> ..., or retire <id>"
   fi
 done
 [ "$facts_n" -gt 0 ] || say "skip  facts    no witness store here or in the repo: nothing to re-execute"
