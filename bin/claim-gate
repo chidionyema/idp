@@ -61,8 +61,10 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -435,6 +437,40 @@ def _judge_base() -> tuple[str, str]:
     return "", ""
 
 
+def catalog_merge_args(ref: str, tmp: str) -> list[str]:
+    """`git -c` args that merge the keyed catalogs by identity, with MAIN's rule and driver.
+
+    Every shipping lane appends one entry to catalog/issue-classes.json and one to
+    catalog/optimus-metrics.json, so git's line merge called any two such lanes a conflict:
+    four rebases across three lanes in one session on 2026-11-27 (idp#8615). bin/catalog-merge
+    merges them by key; a real same-key disagreement still conflicts.
+
+    Both pieces are read from `ref`, never from this checkout: merge-tree takes attributes from
+    the working tree, so a lane's own .gitattributes or driver would otherwise judge the lane.
+    A `ref` without the rule or the driver gets no args, i.e. git's own line merge, as before.
+    """
+    attrs = _git_proc("show", f"{ref}:.gitattributes")
+    driver = _git_proc("show", f"{ref}:bin/catalog-merge")
+    if (
+        attrs.returncode
+        or driver.returncode
+        or "merge=estate-catalog" not in attrs.stdout
+    ):
+        return []
+    attrs_path, driver_path = Path(tmp, "attributes"), Path(tmp, "catalog-merge")
+    attrs_path.write_text(attrs.stdout, encoding="utf-8")
+    driver_path.write_text(driver.stdout, encoding="utf-8")
+    command = (
+        f"{shlex.quote(sys.executable)} {shlex.quote(str(driver_path))} %O %A %B %P"
+    )
+    return [
+        "-c",
+        f"core.attributesFile={attrs_path}",
+        "-c",
+        f"merge.estate-catalog.driver={command}",
+    ]
+
+
 def merge_problems(head: str) -> list[str]:
     """Refuse a lane that no longer merges onto main (idp#8387).
 
@@ -453,7 +489,15 @@ def merge_problems(head: str) -> list[str]:
             f"merge-check cannot judge {head[:9]}: this checkout can see neither origin/main nor "
             "BASE. Run `git fetch origin main` and push again; an unread main is not a clean merge."
         ]
-    proc = _git_proc("merge-tree", "--write-tree", "--name-only", ref, head)
+    with tempfile.TemporaryDirectory(prefix="claim-gate-merge-") as tmp:
+        proc = _git_proc(
+            *catalog_merge_args(ref, tmp),
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            ref,
+            head,
+        )
     if proc.returncode == 0:
         return []
     # `--write-tree --name-only`: line 1 is the tree oid, then one path per conflict, then a blank

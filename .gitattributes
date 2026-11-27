@@ -2,3 +2,9 @@
 # and git cannot know that without being told. crew learned this on 2026-09-08 when two pull
 # requests each appended one guard row and the second could not merge; this file exists so idp
 # never spends a session on the same nothing.
+
+# Keyed catalogs. Every shipping lane appends one class and one metric, so two lanes that never
+# touched each other's work conflicted on the same last lines (idp#8615). bin/catalog-merge merges
+# them by identity; the same key changed differently on both sides is still a conflict.
+catalog/issue-classes.json merge=estate-catalog
+catalog/optimus-metrics.json merge=estate-catalog
