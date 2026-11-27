@@ -12,6 +12,9 @@
 FROM ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
 
 USER root
+# idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
+# a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         postgresql-18-partman \

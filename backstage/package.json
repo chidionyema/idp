@@ -58,6 +58,11 @@
     "file-type": "^21.3.1",
     "@huggingface/transformers@npm:^3.5.1": "patch:@huggingface/transformers@npm%3A3.8.1#~/.yarn/patches/@huggingface-transformers-npm-3.8.1-6020b4ef11.patch"
   },
+  "dependenciesMeta": {
+    "onnxruntime-node": {
+      "built": false
+    }
+  },
   "prettier": "@backstage/cli/config/prettier",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs}": [
