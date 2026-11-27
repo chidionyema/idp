@@ -431,6 +431,16 @@
       "gap": "every shipping lane appends one class and one metric to the same list end, and git's line merge calls any two such lanes a conflict although they never touched each other's entries",
       "compensating_action": "bin/catalog-merge merges the keyed catalogs by identity (three-way per key; the same key changed differently still conflicts); .gitattributes names the files; claim-gate's merge-check passes main's rule and driver, the Greenlane's cherry-pick passes the driver, bin/idp-install-hooks wires it for local rebases",
       "falsifier": "tests/test_catalog_keyed_merge.py: two different keys merge at the driver, at claim-gate and at the Greenlane pick; the same key written twice, unparseable JSON, an unknown path and a duplicate key still conflict (main: 11 of 14 fail)"
+    },
+    {
+      "class": "headless-agent-needs-an-approver",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "critical-watch woke four incident agents through agent-invoke.sh under --permission-mode acceptEdits (a9ee9b95, c3185745, 30573f96, eb4b4fa9, 02:25-02:32Z); declare_plan, the estate-plan CLI and the evidence read were each denied, the Bash hook refused everything until a plan existed, zero work (idp#8611)"
+      ],
+      "gap": "a headless dispatcher kept a permission mode that asks a human, so every prompt became a denial, including the path the estate's own hooks demand first",
+      "compensating_action": "agent-invoke.sh runs claude -p in auto with the estate-memory server and the estate-plan door allowed outright; enforcement stays in the hooks",
+      "falsifier": "tests/estate/test_agent_invoke_headless_can_plan.py: 2 of 3 fail on main, 3/3 on the fix; --optimus reads 2 on main, 0 fixed; real-CLI replay acceptEdits 2 denials, auto 0"
     }
   ]
 }
