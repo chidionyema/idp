@@ -169,6 +169,28 @@ def test_the_dockerfile_runs_the_patch_and_reaches_every_advisory_fix():
     assert unpatched(text) == []
 
 
+def boot_requires(dockerfile: str) -> list[str]:
+    """The libraries the build's load check requires after the patch, in order."""
+    m = re.search(r"puts \"patched #\{want\}\"", dockerfile)
+    line = dockerfile[: m.start()].rsplit("bundle exec ruby -e", 1)[-1] if m else ""
+    return re.findall(r'require "([^"]+)"', line)
+
+
+def test_the_load_check_boots_rails_the_way_the_app_does():
+    # getlago/api v1.52.1 config/application.rb: `require "rails/all"`. A framework required on
+    # its own skips what Rails loads first: activestorage 8.0.5.2 raised
+    # `uninitialized constant ActiveStorage::OpenSSL` on main run 46047259207.
+    assert boot_requires(DOCKERFILE.read_text())[0] == "rails/all"
+
+
+def test_falsifier_a_check_that_requires_one_framework_alone_is_refused():
+    landed = (
+        "bundle exec ruby -e 'want = {}; "
+        'require "active_storage"; require "nokogiri"; puts "patched #{want}"\''
+    )
+    assert boot_requires(landed)[0] != "rails/all"
+
+
 def test_falsifier_the_metric_counts_a_dockerfile_without_the_patch():
     assert unpatched("FROM docker.io/getlago/api:v1.52.1\n") == ["activestorage"]
     assert unpatched(
