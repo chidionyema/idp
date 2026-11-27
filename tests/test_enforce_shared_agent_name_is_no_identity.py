@@ -116,3 +116,28 @@ def test_the_hook_reads_claim_opens_set_not_a_copy():
     assert enforce.SHARED_AGENT_NAMES, (
         "an empty set would silently restore the dead end"
     )
+
+
+def holder_refusals() -> int:
+    """The registered measure: under each shared name, is the holder refused its own claim?"""
+    import tempfile
+
+    enforce = load_enforce()
+    names = sorted(claim_open_names()) + [" Estate-Agent ", "OTTO"]
+    with tempfile.TemporaryDirectory(prefix="shared-agent-") as tmp:
+        checkout = idp_checkout(Path(tmp) / "repo")
+        rows = [{"live": True, "agent": "claude-code", "paths": "docs/*"}]
+        note = str(checkout / "docs" / "note.md")
+        return sum(
+            1 for n in names if enforce.focus_verdict(note, rows, n)[0] is not True
+        )
+
+
+if __name__ == "__main__":
+    import sys
+
+    if "--optimus" not in sys.argv:
+        sys.exit(
+            "usage: python3 tests/test_enforce_shared_agent_name_is_no_identity.py --optimus"
+        )
+    print(f"optimus.enforce.shared_name_holder_refusals={holder_refusals()}")
