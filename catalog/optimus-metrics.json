@@ -181,6 +181,18 @@
       "better": "lower",
       "owner": "claims",
       "description": "1 when claim-gate on a laptop refuses a push whose only fault is the pusher's own lapsed heartbeat, 0 when the push renews it (idp#8609)"
+    },
+    {
+      "name": "enforce.shared_name_holder_refusals",
+      "measure": [
+        "python3",
+        "tests/test_enforce_shared_agent_name_is_no_identity.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "estate-memory",
+      "description": "shared ESTATE_AGENT spellings (claim-open's SHARED_AGENT_NAMES plus case/space variants) under which the write gate refuses a holder its own live claim (idp#8606)"
     }
   ]
 }
