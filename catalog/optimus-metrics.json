@@ -253,6 +253,18 @@
       "better": "lower",
       "owner": "claude-code",
       "description": "of three sessions that did not end cleanly (Claude Code API error x3, Claude Code killed mid-tool, pi lane error), how many the session-start brief fails to name (idp#8624)"
+    },
+    {
+      "name": "context.turn1_rule_tokens",
+      "measure": [
+        "python3",
+        "bin/estate_context_fleet_sync.py",
+        "--optimus"
+      ],
+      "unit": "tokens",
+      "better": "lower",
+      "owner": "context",
+      "description": "Estimated tokens (bytes/4 x 1.15, errs high against cl100k_base) of the rule files every agent auto-loads in this repository before its first tool call: AGENTS.md, CLAUDE.md and their peers. The cap is 1500 (policy/context-policy.v1.json); 17353 on main 8b1af4a60 (idp#8492)."
     }
   ]
 }
