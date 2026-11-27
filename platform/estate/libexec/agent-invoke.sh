@@ -167,7 +167,13 @@ $INCIDENT"
 (
 	cd "$REPO" 2>/dev/null || cd "$HOME" || exit 1
 	export CLAUDE_CONFIG_DIR
-	bounded "$FLEET_SECONDS" "$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits \
+	# idp#8611: a headless run has no one to approve, so every permission prompt is a denial.
+	# Measured 2026-11-27: under acceptEdits four incident agents were denied declare_plan, the
+	# estate-plan CLI and the evidence file, while the Bash hook refused everything until a plan
+	# was declared -- zero work. `auto` is the classifier interactive sessions are judged by; the
+	# plan doors every hook demands are allowed outright. Enforcement stays in the hooks.
+	bounded "$FLEET_SECONDS" "$CLAUDE" -p "$PROMPT" --permission-mode auto \
+		--allowedTools mcp__estate-memory "Bash($HOME/.estate/memory/bin/estate-plan *)" \
 		--max-turns 21 --settings "$FLEET_SETTINGS"
 	echo "exit=$?" >>"$LOG"
 ) >>"$LOG" 2>&1 </dev/null &

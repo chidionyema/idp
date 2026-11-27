@@ -205,6 +205,18 @@
       "better": "lower",
       "owner": "claims",
       "description": "catalog files claim-gate's merge-check calls conflicting when two lanes register DIFFERENT keys in the real catalogs (main before idp#8615: 2, fix: 0)"
+    },
+    {
+      "name": "dispatch.headless_plan_denials",
+      "measure": [
+        "python3",
+        "tests/estate/test_agent_invoke_headless_can_plan.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "critical-watch",
+      "description": "of the two denials measured on 2026-11-27 (the plan tools, and a permission mode that needs an approver), how many the headless launcher's claude argv still reproduces (idp#8611)"
     }
   ]
 }
