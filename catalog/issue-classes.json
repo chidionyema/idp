@@ -485,6 +485,19 @@
       "falsifier": "bin/estate_context_fleet_sync.py --self-test (14 known-bad/known-good cases, exit 0; a mutant admitting growth exits 1) and tests/test_estate_context_fleet_sync.py, which composes the real AGENTS.md and requires every original line to survive",
       "owner": "context",
       "status": "open"
+    },
+    {
+      "class": "web-advice-reaches-agents-unfiltered",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "web AI advice told DSH Web to run exhausted monthly zai/glm-5.3 as its reserve model, a billing-class collision into a DeepSeek API lane (membrane vector V1_BILLING_COLLISION)",
+        "web AI advice told the founder to export ANTHROPIC_API_KEY and set claude-sonnet-secondary for monthly Claude Code (vector V2_CLAUDE_API_KEY_LEAK)"
+      ],
+      "gap": "prose copied from a web AI session into an agent or the founder's terminal crossed no gate, so billing-class collisions, API-key leaks and founder CLI chores arrived as instructions",
+      "compensating_action": "the membrane Chrome extension (chrome-extension/src) evaluates every egress with gate-engine.js and quarantines BLOCKED text before it can be copied",
+      "falsifier": "node chrome-extension/tests/falsifier.mjs: 12 vectors (11 known-bad, 1 known-good) must be judged right, and both an admit-all and a block-all stub engine must be caught (exit 1)",
+      "owner": "membrane",
+      "status": "open"
     }
   ]
 }
