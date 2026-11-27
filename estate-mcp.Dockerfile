@@ -89,17 +89,17 @@ print('estate-mcp tools register:', sorted(got))"
 # The name is the canonical `ci.status` (#6590 renamed it from ci-status). This line still named
 # the old one, so from 2026-10-19 16:47Z every estate-mcp build failed here and none shipped --
 # the search was right (ci.status ranked first); the assertion was looking for a file now gone.
-# tests/test_estate_mcp_build_check_names_a_real_intent.py holds the name to the library.
+# tests/test_estate_mcp_dockerfile_build_checks.py runs every check below before merge (idp#8650).
 RUN cd /tmp && python -c "import importlib.util; \
 spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); \
 n=len(m._load_intents()); assert n >= 50, 'only %d intents in /app/intents' % n; \
 hit=m._estate_list({'query': 'ci status'}); assert '## intent ci.status' in hit, hit[:300]; \
 print('estate-mcp intent library:', n, 'intents, search finds ci.status')"
-# THE BUILD FAILS IF THE POD CANNOT REACH THE GOVERNED DOOR (idp#7579 P1).
+# THE BUILD FAILS IF THE POD CANNOT REACH THE GOVERNED DOOR (idp#7579 P1; cloud door idp#8061).
 #
 # The pod ships the intent LIBRARY and no executor and no plan ledger, so its intent path is
-# only honest if it REACHES the laptop's door. This proves, in the image that ships:
-#   1. the forwarding helper exists and names the two configuration keys;
+# only honest if it REACHES the cloud door. This proves, in the image that ships:
+#   1. the cloud door helper exists and names its configuration keys;
 #   2. the image carries NO local executor and NO plan ledger -- a second gate in the pod would
 #      be a second truth about the same work, and the gate stays laptop-owned;
 #   3. with no door configured the plugin REFUSES in plain words: it can never answer "ok" for
@@ -107,13 +107,13 @@ print('estate-mcp intent library:', n, 'intents, search finds ci.status')"
 RUN cd /tmp && python -c "import importlib.util,os,sys; \
 spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); \
 sys.modules['estate_mcp']=m; spec.loader.exec_module(m); \
-assert hasattr(m,'_invoke_remote'), 'no laptop forwarding helper in the plugin'; \
-assert m.LAPTOP_INTENT_URL_ENV and m.LAPTOP_INTENT_TOKEN_FILE_ENV, 'forwarding keys missing'; \
+assert hasattr(m,'_invoke_cloud'), 'no cloud door helper in the plugin'; \
+assert m.CLOUD_INTENT_URL_ENV and m.CLOUD_INTENT_TOKEN_FILE_ENV, 'cloud door keys missing'; \
 assert not os.path.exists('/app/platform/estate/bin/estate-execute'), 'the pod must not ship an executor'; \
 assert not os.path.exists('/app/platform/estate/memory/plan.py'), 'the pod must not ship a plan ledger'; \
-os.environ.pop('ESTATE_LAPTOP_INTENT_URL',None); os.environ.pop('ESTATE_LAPTOP_INTENT_TOKEN_FILE',None); \
+[os.environ.pop(k,None) for k in (m.CLOUD_INTENT_URL_ENV,m.CLOUD_INTENT_URL_FILE_ENV,m.CLOUD_INTENT_TOKEN_FILE_ENV,m.CLOUD_INTENT_TOKEN_ENV)]; \
 out=m._estate_invoke({'intent':'ci.status'}); \
-assert 'no local executor' in out, out; \
-print('estate-mcp reaches the laptop door, and says so when it cannot')"
+assert out.startswith('BLIND: no governed cloud intent door'), out; \
+print('estate-mcp reaches the cloud door, and says so when it cannot')"
 USER datasette
 EXPOSE 8001
