@@ -30,12 +30,24 @@ USER root
 # needs the whole upgrade, not perl-base alone; Authlib 1.6.12 (CVE-2026-96760) is fixed in 1.9.0.
 # idp#8655: the GHCR layer cache replays an unchanged upgrade, so a published fix never arrived;
 # a new value here (build-multiarch passes the UTC date) re-runs the layer below.
+# Floors for the vendor venv's fixable CRITICALs (idp#6113, measured on main run 46043500706,
+# 2026-11-27): certifi GHSA-6q48-6c7w-9gw2 (emSign roots), claude-agent-sdk CVE-2026-96620,
+# pillow CVE-2026-112393/112398/112403/112900/96639, uv GHSA-hq85-5cpj-mr62. The python -c
+# after the install refuses the build if any of them is still below its floor.
 ARG OS_PACKAGES_AS_OF=2026-11-27
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && uv pip install --python /app/api/.venv/bin/python --no-cache \
-        'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0' 'authlib>=1.9.0'
+        'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0' 'authlib>=1.9.0' \
+        'certifi>=2026.10.18' 'claude-agent-sdk>=0.2.121' 'pillow>=13.0.0' 'uv>=0.13.4' \
+    && /app/api/.venv/bin/python -c "\
+import importlib.metadata as m; \
+floors = {'certifi': '2026.10.18', 'claude-agent-sdk': '0.2.121', 'pillow': '13.0.0', 'uv': '0.13.4'}; \
+key = lambda v: tuple(int(x) for x in v.split('.')[:3]); \
+low = {n: m.version(n) for n, f in floors.items() if key(m.version(n)) < key(f)}; \
+print({n: m.version(n) for n in floors}); \
+assert not low, low"
 RUN mkdir -p /opt/hindsight-models/hub \
     && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 /app/api/.venv/bin/python -c "\
 from huggingface_hub import snapshot_download; \

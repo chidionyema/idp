@@ -39395,7 +39395,8 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
-        "cap:tool/idp-pr-scope-audit"
+        "cap:tool/idp-pr-scope-audit",
+        "cap:tool/verify_three_proofs.py"
       ],
       "cost": {
         "estimate": null,
@@ -42449,7 +42450,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/pre-push-wall.py"
+        "cap:tool/pre-push-wall.py",
+        "cap:tool/verify_three_proofs.py"
       ],
       "cost": {
         "estimate": null,
@@ -61208,6 +61210,14 @@
       "depends_on": [
         {
           "id": "cap:tool/idp-auth-verify",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bdd-proof-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-differential-falsifier",
           "edge": "invokes"
         }
       ],

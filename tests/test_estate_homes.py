@@ -352,6 +352,11 @@ def test_the_json_board_carries_the_ladders(tmp_path, serve, capsys):
             "providers_ok": ["p1", "p2"],
             "down": [],
             "unasked": [],
+            # The board carries the leg that is declared but not provisioned (ADR 0037's
+            # ladder has a home for every leg). The gate's own expectation had not caught
+            # up with the field, so the suite was RED on main (measured 2026-11-27 on
+            # c8dc5b538).
+            "not_provisioned": [],
         }
     ]
 
