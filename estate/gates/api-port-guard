@@ -1,0 +1,537 @@
+#!/usr/bin/env python3
+"""api-port-guard -- refuse a signal that would cut an agent off from itself.
+
+WHY. 2026-11-27, session 21ea7eac ran `launchctl bootout com.estate.pennyd` while
+pennyd (:4200) served its ANTHROPIC_BASE_URL. Every later model call died with
+ECONNREFUSED and the session could not recover: it had removed the process it needed.
+The first guard (9ea3f11f0) judged the words of the command, so it also refused reads
+that merely mentioned a service (`rg "pkill pennyd"`), shims refused on any guard
+fault, and every `kill -0` liveness probe paid for three lsof calls.
+
+THE RULE (judge the resolved target, never the words of the command):
+  An AGENT may not send a destructive signal to, or unload, a process that is
+    (a) its own harness or an ancestor of it (claude, codex, opencode, dsh, pi, gemini,
+        and the terminal/launchd job that holds them),
+    (b) another agent's harness that is not its own descendant (AGENTS.md section 5:
+        never restart another agent's process), or
+    (c) LISTENING on a port the agent's model or UI path uses: 3080 dsh-web, 4200
+        pennyd, 4000 litellm, plus the port named by ANTHROPIC_BASE_URL /
+        OPENAI_BASE_URL / ESTATE_ROUTER_URL / PENNYD_URL,
+  nor bootout/unload/remove/stop a launchd job that owns such a process or whose
+  label is a declared estate service.
+  A caller that is not an agent (the founder's terminal, launchd watchdogs, cron) is
+  never judged: only an agent cuts itself off mid-turn.
+
+THE DOOR (every refusal names it): a router that must be restarted is restarted, not
+removed -- `launchctl kickstart -k gui/$UID/<label>` kills and relaunches it, and the
+session's next call reconnects. kickstart -k is refused only for (a) and (b).
+
+ENTRY POINTS (one judge, three doors):
+  --argv VERB ARGS...  the shell layer (shell-guard.sh functions, PATH shims) passes
+                       the already-expanded argv. Exit 2 = refused, anything else allows.
+  stdin JSON           a harness PreToolUse hook ({"tool_input":{"command":...}}). The
+                       text is tokenised; only simple commands whose argv[0] is a signal
+                       verb are judged, and `sh|bash|zsh -c STRING` is judged recursively.
+                       Arguments the text cannot resolve ($(...)) are left to the shell
+                       layer, which sees them expanded.
+  --self-check         prints what it would protect, for an operator.
+
+FAILURE POLICY. A fault in the guard allows the call and prints
+`api-port-guard: BLIND <reason>` on stderr: a guard that breaks every shell is the
+outage it exists to prevent. Only a verdict (exit 2) refuses.
+
+ENV. ESTATE_GUARD_AGENT_ROOT=<pid> declares an extra agent root (CI and the falsifier
+use it). It can only widen what is protected, never narrow it.
+"""
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+STATIC_PORTS = {3080, 4200, 4000}
+PORT_ENV = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "ESTATE_ROUTER_URL", "PENNYD_URL")
+PROTECTED_LABELS = (
+    "ai.estate.dsh-web",
+    "com.estate.pennyd",
+    "ai.estate.litellm",
+    "ai.estate.dsh",
+)
+AGENT_COMM = {
+    "claude",
+    "codex",
+    "opencode",
+    "opencode.real",
+    "gemini",
+    "pi",
+    "dsh",
+    "cline",
+}
+AGENT_CMDLINE = re.compile(
+    r"@deepseek-ai/dsh/|/dsh/lib/bin\.js|pi-coding-agent|/bin/pi(\s|$)|@openai/codex|opencode-ai"
+)
+VERBS = {"kill", "pkill", "killall", "launchctl", "systemctl"}
+LAUNCHCTL_REMOVE = {"bootout", "unload", "remove", "stop", "kill"}
+SYSTEMCTL_STOP = {
+    "stop",
+    "kill",
+    "restart",
+    "disable",
+    "mask",
+    "try-restart",
+    "reload-or-restart",
+}
+WRAPPERS = {
+    "sudo",
+    "env",
+    "command",
+    "builtin",
+    "exec",
+    "nohup",
+    "time",
+    "nice",
+    "caffeinate",
+}
+SHELLS = {"sh", "bash", "zsh", "dash"}
+TIMEOUT = 4
+
+
+class Blind(Exception):
+    pass
+
+
+def run(argv, timeout=TIMEOUT):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)  # noqa: S603 - argv is the guard's own fixed tool list
+        return p.returncode, p.stdout
+    except FileNotFoundError:
+        return 127, ""
+    except subprocess.TimeoutExpired as e:
+        raise Blind(f"{argv[0]} timed out after {timeout}s") from e
+
+
+# ---------------------------------------------------------------- process table
+_PS = None
+
+
+def ps_table():
+    """pid -> (ppid, pgid, comm, cmdline), read once per call.
+
+    Two reads, because ps pads and truncates every column but the last one: with comm
+    first, /Users/.../node came back as "/Users/roseonyem" and no harness was recognised.
+    """
+    global _PS
+    if _PS is None:
+        rc, out = run(["/bin/ps", "-A", "-o", "pid=,ppid=,pgid=,comm="])
+        rc2, out2 = run(["/bin/ps", "-A", "-o", "pid=,command="])
+        if rc or rc2:
+            raise Blind(f"ps exit {rc or rc2}")
+        cmdline = {}
+        for line in out2.splitlines():
+            parts = line.split(None, 1)
+            if parts and parts[0].isdigit():
+                cmdline[int(parts[0])] = parts[1] if len(parts) > 1 else ""
+        tab = {}
+        for line in out.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 4 or not parts[0].isdigit():
+                continue
+            pid = int(parts[0])
+            tab[pid] = (
+                int(parts[1]),
+                int(parts[2]),
+                os.path.basename(parts[3].strip()),
+                cmdline.get(pid, parts[3]),
+            )
+        _PS = tab
+    return _PS
+
+
+def is_agent(pid):
+    row = ps_table().get(pid)
+    return bool(row) and (row[2] in AGENT_COMM or bool(AGENT_CMDLINE.search(row[3])))
+
+
+def ancestors(pid):
+    tab, chain, seen = ps_table(), [], set()
+    while pid > 0 and pid not in seen:
+        seen.add(pid)
+        chain.append(pid)
+        if pid == 1 or pid not in tab:
+            break
+        pid = tab[pid][0]
+    return chain
+
+
+def descendants(root):
+    kids = {}
+    for pid, row in ps_table().items():
+        kids.setdefault(row[0], []).append(pid)
+    out, stack = set(), [root]
+    while stack:
+        for k in kids.get(stack.pop(), []):
+            if k not in out:
+                out.add(k)
+                stack.append(k)
+    return out
+
+
+def agent_context():
+    """(agent_pid, protected ancestors) -- (None, set()) when no agent is calling."""
+    roots = [p for p in ancestors(os.getppid()) if is_agent(p)]
+    extra = os.environ.get("ESTATE_GUARD_AGENT_ROOT", "")
+    if extra.isdigit() and int(extra) in ps_table():
+        roots.append(int(extra))
+    if not roots:
+        return None, set()
+    above = set()
+    for r in roots:
+        above.update(p for p in ancestors(r) if p != 1)
+    return roots[0], above
+
+
+# ---------------------------------------------------------------- protected set
+def protected_ports():
+    ports = set(STATIC_PORTS)
+    for var in PORT_ENV:
+        m = re.search(r":(\d{2,5})(?:[/\s]|$)", os.environ.get(var, ""))
+        if m:
+            ports.add(int(m.group(1)))
+    return ports
+
+
+def listeners(ports):
+    lsof = "/usr/sbin/lsof" if os.path.exists("/usr/sbin/lsof") else "lsof"
+    argv = [lsof, "-nP", "-sTCP:LISTEN", "-FPn"] + [
+        "-iTCP:%d" % p for p in sorted(ports)
+    ]
+    rc, out = run(argv)
+    if (
+        rc == 127
+    ):  # no lsof (minimal Linux): ss names the owner as users:(("name",pid=N,...))
+        found = {}
+        _, out = run(["ss", "-Hltnp"])
+        for line in out.splitlines():
+            m = re.search(r":(\d+)\s", line)
+            if m and int(m.group(1)) in ports:
+                for pid in re.findall(r"pid=(\d+)", line):
+                    found[int(pid)] = int(m.group(1))
+        return found
+    found, pid = {}, None
+    for line in out.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            pid = int(line[1:])
+        elif line.startswith("n") and pid:
+            m = re.search(r":(\d+)$", line)
+            if m and int(m.group(1)) in ports:
+                found[pid] = int(m.group(1))
+    return found
+
+
+def protected(agent, above):
+    """-> (hard: never signal, soft: restart only), each pid -> reason."""
+    mine = descendants(agent)
+    hard = {p: "the agent's own harness or an ancestor of it" for p in above}
+    for pid in ps_table():
+        if pid not in mine and pid not in hard and pid != os.getpid() and is_agent(pid):
+            hard[pid] = (
+                "another agent's harness (AGENTS.md section 5: never restart another agent's process)"
+            )
+    soft = {
+        p: f"listening on :{port}, a port this agent's model/UI path uses"
+        for p, port in listeners(protected_ports()).items()
+    }
+    return hard, soft
+
+
+# ---------------------------------------------------------------- argv -> targets
+SIGNAL_RE = re.compile(r"^-(\d+|[A-Z][A-Z0-9+-]*)$")
+
+
+def targets_kill(args):
+    """-> (pids, process groups, all-processes). Signal 0 and -l target nothing."""
+    pids, groups, everything = set(), set(), False
+    sig_seen, i = False, 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-l", "-L"):
+            return set(), set(), False
+        if a in ("-s", "-n") and not sig_seen:
+            if i + 1 < len(args) and args[i + 1] in ("0", "SIG0"):
+                return set(), set(), False
+            sig_seen, i = True, i + 2
+            continue
+        if a == "--":
+            sig_seen, i = True, i + 1
+            continue
+        if not sig_seen and SIGNAL_RE.match(a):
+            if a in ("-0", "-SIG0"):
+                return set(), set(), False
+            sig_seen, i = True, i + 1
+            continue
+        sig_seen = True
+        if re.fullmatch(r"-?\d+", a):
+            n = int(a)
+            if n == -1:
+                everything = True
+            elif n < 0:
+                groups.add(-n)
+            elif n == 0:
+                groups.add(os.getpgrp())
+            else:
+                pids.add(n)
+        i += 1
+    return pids, groups, everything
+
+
+def targets_pkill(args):
+    rest, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if (i == 0 and SIGNAL_RE.match(a)) or a == "-I" or a.startswith("--signal="):
+            i += 1
+            continue
+        if a == "--signal":
+            i += 2
+            continue
+        rest.append(a)
+        i += 1
+    if not rest:
+        return set()
+    rc, out = run(["pgrep"] + rest)
+    if rc not in (0, 1):
+        raise Blind(f"pgrep exit {rc} for {rest!r}")
+    return {int(x) for x in out.split() if x.isdigit()}
+
+
+def targets_killall(args):
+    if sys.platform == "darwin":
+        _, out = run(["/usr/bin/killall", "-s"] + args)  # -s: show, send nothing
+        return {int(m) for m in re.findall(r"^kill -\S+ (\d+)$", out, re.M)}
+    pids = set()
+    for n in (a for a in args if not a.startswith("-")):
+        _, out = run(["pgrep", "-x", n])
+        pids |= {int(x) for x in out.split() if x.isdigit()}
+    return pids
+
+
+def _plist_label(path):
+    rc, out = run(["/usr/bin/plutil", "-extract", "Label", "raw", "-o", "-", path])
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def _label_pid(label):
+    uid = os.getuid()
+    for domain in (f"gui/{uid}", f"user/{uid}", "system"):
+        rc, out = run(["/bin/launchctl", "print", f"{domain}/{label}"])
+        if rc == 0:
+            m = re.search(r"^\s*pid = (\d+)", out, re.M)
+            return int(m.group(1)) if m else None
+    return None
+
+
+def targets_launchctl(args):
+    """-> (labels, pids, restart_only)."""
+    if not args:
+        return set(), set(), False
+    sub, rest, restart = args[0], args[1:], False
+    if sub == "kickstart":
+        if not any(a.startswith("-") and "k" in a for a in rest):
+            return set(), set(), False
+        restart = True
+    elif sub not in LAUNCHCTL_REMOVE:
+        return set(), set(), False
+    if sub == "kill" and rest:
+        rest = rest[1:]  # launchctl kill SIGNAL service-target
+    labels = set()
+    for a in rest:
+        if a.startswith("-"):
+            continue
+        p = os.path.expanduser(a)
+        if a.endswith(".plist") or os.path.isfile(p):
+            lb = _plist_label(p)
+            if lb:
+                labels.add(lb)
+            continue
+        seg = a.rstrip("/").split("/")
+        if len(seg) >= 3 or (len(seg) == 1 and "." in seg[0]):
+            labels.add(seg[-1])
+    return labels, {p for p in map(_label_pid, labels) if p}, restart
+
+
+def targets_systemctl(args):
+    words = [a for a in args if not a.startswith("-")]
+    if not words or words[0] not in SYSTEMCTL_STOP:
+        return set(), set()
+    pids = set()
+    for u in words[1:]:
+        _, out = run(["systemctl", "show", "-p", "MainPID", "--value", u])
+        if out.strip().isdigit() and int(out.strip()) > 0:
+            pids.add(int(out.strip()))
+    return set(words[1:]), pids
+
+
+# ---------------------------------------------------------------- the judge
+def refuse(msg):
+    sys.stderr.write("REFUSED by api-port-guard: " + msg.rstrip() + "\n")
+    return 2
+
+
+def judge(argv):
+    if not argv or os.path.basename(argv[0]) not in VERBS:
+        return 0
+    verb, args = os.path.basename(argv[0]), argv[1:]
+    labels, restart, everything, groups = set(), False, False, set()
+    if verb == "kill":
+        pids, groups, everything = targets_kill(args)
+    elif verb == "pkill":
+        pids = targets_pkill(args)
+    elif verb == "killall":
+        pids = targets_killall(args)
+    elif verb == "launchctl":
+        labels, pids, restart = targets_launchctl(args)
+    else:
+        labels, pids = targets_systemctl(args)
+    if not (pids or groups or everything or labels):
+        return 0
+
+    agent, above = agent_context()
+    if agent is None:
+        return 0  # the founder, launchd and cron are never judged
+
+    hard, soft = protected(agent, above)
+    tab = ps_table()
+    if everything:
+        pids = set(tab)
+    for g in groups:
+        pids |= {p for p, row in tab.items() if row[1] == g}
+    pids.discard(os.getpid())
+    cmd = " ".join(shlex.quote(a) for a in argv)
+    label = next(iter(sorted(labels)), "<label>")
+
+    for pid in sorted(pids):
+        name = tab.get(pid, (0, 0, "?"))[2]
+        if pid in hard:
+            return refuse(
+                f"`{cmd}` targets PID {pid} ({name}), {hard[pid]}.\n"
+                "Signalling it ends this agent's own session or another agent's work. Leave it\n"
+                "running; if it must stop, the founder or its supervisor stops it outside the agent tree."
+            )
+        if pid in soft and not restart:
+            return refuse(
+                f"`{cmd}` targets PID {pid} ({name}), {soft[pid]}.\n"
+                "Removing it disconnects this agent from its own model (21ea7eac died this way).\n"
+                f"Door: restart, do not remove -- `launchctl kickstart -k gui/{os.getuid()}/{label}`\n"
+                "relaunches it and the next call reconnects."
+            )
+    if not restart:
+        for lb in sorted(labels):
+            if lb in PROTECTED_LABELS:
+                return refuse(
+                    f"`{cmd}` removes {lb}, a declared estate service on an agent's model/UI path.\n"
+                    f"Door: `launchctl kickstart -k gui/{os.getuid()}/{lb}` restarts it without removing it."
+                )
+    return 0
+
+
+# ---------------------------------------------------------------- hook mode
+PUNCT = ";&|()<>"
+
+
+def simple_commands(text, depth=0):
+    """Split shell text into argv lists at ; & | ( ) < > and newlines, quote-aware."""
+    if depth > 3:
+        return []
+    lex = shlex.shlex(text.replace("\n", " ; "), posix=True, punctuation_chars=PUNCT)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    cmds, cur = [], []
+    for tok in lex:
+        if tok and all(c in PUNCT for c in tok):
+            if cur:
+                cmds.append(cur)
+            cur = []
+        else:
+            cur.append(tok)
+    if cur:
+        cmds.append(cur)
+    out = []
+    for argv in cmds:
+        while argv and (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0])
+            or os.path.basename(argv[0]) in WRAPPERS
+        ):
+            w, argv = os.path.basename(argv[0]), argv[1:]
+            while w == "sudo" and argv and argv[0].startswith("-"):
+                argv = argv[1:]
+        if argv and os.path.basename(argv[0]) == "timeout":
+            argv = argv[2:]
+        if len(argv) >= 3 and os.path.basename(argv[0]) in SHELLS:
+            for j in range(1, len(argv) - 1):
+                if argv[j].startswith("-") and "c" in argv[j]:
+                    out += simple_commands(argv[j + 1], depth + 1)
+                    break
+            continue
+        if argv:
+            out.append(argv)
+    return out
+
+
+def hook(raw):
+    try:
+        payload = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        return 0
+    cmd = (
+        (payload.get("tool_input") or {}).get("command") or payload.get("command") or ""
+    )
+    if not isinstance(cmd, str) or not re.search(
+        r"\b(kill|pkill|killall|launchctl|systemctl)\b", cmd
+    ):
+        return 0
+    try:
+        cmds = simple_commands(cmd)
+    except ValueError:
+        return 0  # unbalanced quotes: the shell layer judges it when it runs
+    for argv in cmds:
+        verb = os.path.basename(argv[0])
+        if verb not in VERBS:
+            continue
+        if verb in ("kill", "launchctl", "systemctl"):
+            argv = [
+                a for a in argv if not re.search(r"[$`]", a)
+            ]  # unexpanded: shell layer's job
+        rc = judge(argv)
+        if rc:
+            return rc
+    return 0
+
+
+def self_check():
+    agent, above = agent_context()
+    print(f"agent={agent} ancestors={sorted(above)} ports={sorted(protected_ports())}")
+    if agent:
+        hard, soft = protected(agent, above)
+        for p, why in sorted({**soft, **hard}.items()):
+            print(f"  {p:>7} {ps_table().get(p, (0, 0, '?'))[2]:<16} {why}")
+    return 0
+
+
+def main(argv):
+    if argv[:1] == ["--argv"]:
+        return judge(argv[1:])
+    if argv[:1] == ["--self-check"]:
+        return self_check()
+    return hook(sys.stdin.read())
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except SystemExit:
+        raise
+    except BaseException as e:  # noqa: BLE001 -- fail open, and say so
+        sys.stderr.write(f"api-port-guard: BLIND {type(e).__name__}: {e}\n")
+        sys.exit(0)
