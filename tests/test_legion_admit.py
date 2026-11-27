@@ -752,3 +752,83 @@ def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
         mod.verify_agent_scope(["web/f0.txt"])
     with pytest.raises(ValueError, match="AGENT_SCOPE_EMPTY"):
         mod.verify_agent_scope([])
+
+
+# -- fitness gate (founder 2026-11-27: "know well ahead of time at the point of admission") --------
+
+
+def _fit(tmp_path, provider, model, verdict="FIT", reason="test-passes", hours=6, ctx=32768, mx=4096):
+    import time as _t
+
+    led = tmp_path / "fitness"
+    led.mkdir(exist_ok=True)
+    exp = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() + hours * 3600))
+    (led / f"{provider}-{model.replace('/', '_')}.json").write_text(
+        json.dumps(
+            {
+                "schema": "estate.lane-fitness.v1",
+                "provider": provider,
+                "model": model,
+                "verdict": verdict,
+                "reason": reason,
+                "context_window": ctx,
+                "max_tokens": mx,
+                "expires_at": exp,
+            }
+        )
+    )
+    return led
+
+
+def _route(provider="north", model="m", context=1_000_000):
+    return {"provider": provider, "model": model, "context": context}
+
+
+def test_a_lane_with_no_fitness_record_is_refused_not_assumed(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    kept, refused = mod.fitness_filter([_route()], tmp_path / "absent", _t.time())
+    assert kept == [] and refused[0]["verdict"] == "no-fitness-record"
+    kept, refused = mod.fitness_filter([_route()], None, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "no-fitness-record"
+
+
+def test_the_measured_dead_lane_is_refused_before_inference(tmp_path):
+    # MEASURED 2026-11-27: nemotron-3.5-lightning:free answered every probe, failed every mission.
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "openrouter", "nvidia/nemotron-3.5-lightning:free", "UNFIT", "empty-patch")
+    kept, refused = mod.fitness_filter(
+        [_route("openrouter", "nvidia/nemotron-3.5-lightning:free")], led, _t.time()
+    )
+    assert kept == [] and refused[0]["verdict"] == "unfit:empty-patch"
+
+
+def test_a_fresh_fit_record_at_launch_settings_admits(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m")
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [_route()] and refused == []
+
+
+def test_an_expired_fit_record_is_refused(tmp_path):
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m", hours=-1)
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "fitness-expired"
+
+
+def test_fitness_measured_under_other_settings_is_not_evidence(tmp_path):
+    # Fit at 131k is no evidence for the 32k launch window the worker actually gets.
+    import time as _t
+
+    mod = _auto_module()
+    led = _fit(tmp_path, "north", "m", ctx=131072)
+    kept, refused = mod.fitness_filter([_route()], led, _t.time())
+    assert kept == [] and refused[0]["verdict"] == "measured-under-other-settings"
