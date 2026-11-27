@@ -1,5 +1,5 @@
 {
-  "revision": "2026-11-19",
+  "revision": "2026-11-23",
   "note": "One record per failure class. A class may occur once; a second instance of an open class is a governance failure, not a new incident.",
   "classes": [
     {
@@ -344,6 +344,26 @@
       "status": "open",
       "recurrence_checks": [
         "2026-11-20"
+      ]
+    },
+    {
+      "class": "declared-argument-read-as-a-shell-variable",
+      "first_seen": "2026-11-23",
+      "instances": [
+        "platform/estate/intents/ci.run.yaml read BRANCH=\"${branch}\" as a shell variable (idp#8463, 2026-11-23): interpolate() renders {{var}} and <<var>> only, so the pushed branch was empty and `gh run list --branch \"\"` filtered on no branch at all -- measured on chidionyema/gemini-sync, `--branch \"\"` returns every run in the repository and `--branch does-not-exist` returns none -- so the lookup returned the newest queued run of ANY branch and the intent watched it and reported its verdict as this branch's"
+      ],
+      "gap": "the intent-render test asked bash -n whether the step is valid shell, and an unset shell variable is valid shell, so a step that never received its argument passed a green test; nothing asked whether a declared argument was substituted at all",
+      "compensating_action": "the intent substitutes the declared argument with {{branch}} and identifies the run by the sha that was pushed instead of by a status that changes under the lookup; tests/test_a_declared_argument_is_substituted_not_shell_referenced.py refuses any step that reads a declared argument as a shell variable without substituting it in the same step, and the sweep measured exactly one instance estate-wide (this intent)",
+      "falsifier": "tests/test_a_declared_argument_is_substituted_not_shell_referenced.py: test_no_intent_step_reads_a_declared_argument_as_a_shell_variable fails on the previous ci.run.yaml (one violation, argument branch) and passes on the fixed one; test_the_falsifier_rejects_the_intent_that_shipped proves the check can fail (idp#8463)",
+      "owner": "platform",
+      "surfaces": [
+        "intent",
+        "ci",
+        "git"
+      ],
+      "status": "open",
+      "recurrence_checks": [
+        "2026-11-23"
       ]
     }
   ]
