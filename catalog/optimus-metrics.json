@@ -289,6 +289,18 @@
       "better": "lower",
       "owner": "delivery",
       "description": "Rule violations across the Rust images bin/dockerfiles lists: no committed or copied Cargo.lock, cargo build without --locked, no rust-version, or a rust:<x.y> builder below it. 11 on main 618156854 (genesis-v1, edge-runtime, ground-truth, pennyd); 0 with idp#8652."
+    },
+    {
+      "name": "lane_where.false_gone_cases",
+      "measure": [
+        "python3",
+        "tests/test_lane_where.py",
+        "--optimus"
+      ],
+      "unit": "cases",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Pinned shapes where bin/lane-where answers GONE for a lane whose content is in main. 1 on main 618156854 (a lane landed after the clone's last fetch); 0 with idp#8653."
     }
   ]
 }

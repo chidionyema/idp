@@ -508,6 +508,18 @@
       "falsifier": "tests/test_rust_images_build_locked.py known-bad cases (ground-truth's main Dockerfile, edge-runtime's floor on rust:1.89, a workspace member that does not inherit) must be refused, and the known-good accepted",
       "owner": "delivery",
       "status": "open"
+    },
+    {
+      "class": "lane-where-judges-stale-main",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "lane/fix/estate-mcp-build-checks-run-premerge squash-landed as #8651 at 15:47Z; lane-where answered GONE 'never landed, or deleted while red' from a clone whose origin/main predated the landing; after a fetch the same command answered LANDED"
+      ],
+      "gap": "the gone-ref path read main_sha from ls-remote but judged landed_by_content against the clone's last-fetched origin/main, and a missing witness was reported as GONE instead of BLIND",
+      "compensating_action": "bin/lane-where fetches main before judging a gone ref and answers BLIND (exit 2) when origin/main cannot be brought to the ls-remote sha (idp#8653)",
+      "falsifier": "tests/test_lane_where.py::test_a_lane_landed_since_the_last_fetch_is_landed_not_gone lands a lane from a second clone, deletes its ref, and requires LANDED from the stale clone; on main it prints the exact false GONE",
+      "owner": "delivery",
+      "status": "open"
     }
   ]
 }
