@@ -55,7 +55,9 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -o pipefail
-          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   ticket-verify  no App token: ${tok:0:160}"; exit 2; }
+          # stdout is the credential; OIDC and vault diagnostics remain on stderr.
+          tok=$(bin/idp-github-app token ticket-verifier) || { echo "BLIND   ticket-verify  App token mint failed" >&2; exit 2; }
+          [[ "$tok" =~ ^ghs_[A-Za-z0-9_.-]+$ ]] || { echo "BLIND   ticket-verify  invalid App token shape" >&2; exit 2; }
           echo "::add-mask::$tok"
           echo "tok=$tok" >> "$GITHUB_OUTPUT"
           apply=--apply

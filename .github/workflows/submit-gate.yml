@@ -100,11 +100,79 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Collect failed fast-gate evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run = os.environ["GITHUB_RUN_ID"]
+          sha = os.environ["SHA"]
+          details = []
+
+          def api(path, raw=False):
+              args = ["gh", "api", path]
+              if raw:
+                  args += ["--allow-escape-sequences"]
+              else:
+                  args += ["--paginate", "--slurp"]
+              result = subprocess.run(args, capture_output=True, text=True, check=True)
+              return result.stdout if raw else json.loads(result.stdout)
+
+          def clean(text):
+              text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+              text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
+              text = re.sub(r"\b(?:gh[sopur]_[A-Za-z0-9_.-]+|github_pat_[A-Za-z0-9_]+)", "[REDACTED]", text)
+              return text.replace("```", "''' ")
+
+          try:
+              pages = api(f"repos/{repo}/actions/runs/{run}/jobs")
+              if isinstance(pages, dict):
+                  pages = [pages]
+              jobs = [job for page in pages for job in page["jobs"]
+                      if job.get("conclusion") == "failure"
+                      and job.get("head_sha") == sha
+                      and job.get("name", "").startswith("gate /")]
+              if not jobs:
+                  details.append("UNKNOWN: no failed fast-gate job for this exact head.")
+              for job in jobs:
+                  details.append(f"Job: {job['name']} ({job['id']})")
+                  try:
+                      check = job["check_run_url"].rsplit("/", 1)[1]
+                      pages = api(f"repos/{repo}/check-runs/{check}/annotations")
+                      if pages and isinstance(pages[0], dict):
+                          pages = [pages]
+                      for page in pages:
+                          for note in page:
+                              details.append(f"{note.get('path', '?')}:{note.get('start_line', '?')}: {note.get('message', '')}")
+                  except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
+                      details.append("UNKNOWN: failure annotations could not be read.")
+                  try:
+                      lines = api(f"repos/{repo}/actions/jobs/{job['id']}/logs", raw=True).splitlines()
+                      ends = [i for i, line in enumerate(lines)
+                              if "Process completed with exit code" in line]
+                      if ends:
+                          lines = lines[:ends[-1] + 1]
+                      details.append("Last 20 failure log lines:\n" + "\n".join(lines[-20:]))
+                  except (subprocess.SubprocessError, ValueError):
+                      details.append("UNKNOWN: failed-job logs could not be read.")
+          except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
+              details.append("UNKNOWN: failed-job inventory could not be read.")
+          Path("failure-details.txt").write_text(clean("\n".join(details))[:12000] + "\n")
+          PY
       - name: Post the failing run to the claim issue
         env:
           GH_TOKEN: ${{ github.token }}
@@ -120,10 +188,17 @@ jobs:
             echo "BLIND   submit-gate  $REF ($SHA) failed and names no Claim: trailer; no owner to tell"
             exit 1
           fi
-          gh api "repos/${GITHUB_REPOSITORY}/issues/${claim}/comments" -X POST -f body="<!-- submit-gate head=${SHA} -->
+          cat > owner-comment.md <<EOF
+          <!-- submit-gate head=${SHA} -->
           **submit door: \`${REF}\` failed the fast gate** -- owner \`${agent:-unknown}\`.
 
           - head: \`${SHA}\`
           - failing run: ${RUN}
-          - next: fix on \`${REF}\` and push again; only a green commit is promoted to \`lane/${REF#submit/}\`." >/dev/null
+          - next: use the evidence below to correct the failed gate; validate the exact revised head before another push.
+
+          \`\`\`text
+          $(cat failure-details.txt)
+          \`\`\`
+          EOF
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${claim}/comments" -X POST -F body=@owner-comment.md >/dev/null
           echo "told claim #${claim} (${agent:-unknown})"
