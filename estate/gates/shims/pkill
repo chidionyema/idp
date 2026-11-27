@@ -1,0 +1,9 @@
+#!/bin/sh
+# estate api-port-guard PATH shim for pkill: execvp callers skip shell functions, so they land here.
+# Only a verdict (exit 2) refuses; any fault runs the real pkill.
+G="${ESTATE_GUARD:-$HOME/.estate/hooks/api-port-guard}"
+if [ -r "$G" ]; then
+    /usr/bin/python3 -I "$G" --argv pkill "$@"
+    [ $? -eq 2 ] && exit 1
+fi
+exec /usr/bin/pkill "$@"

@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+# Known-bad api-port-guard for the GOV-015 falsifier: it refuses nothing.
+import sys
+
+sys.exit(0)
