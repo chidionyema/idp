@@ -18,8 +18,8 @@ What is asserted here is a round trip, not a sentence:
 
 from __future__ import annotations
 
-import json
-import os
+import importlib.machinery
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -62,19 +62,29 @@ def produced_body() -> str:
 
 
 def grade(body: str, head: str) -> tuple[int, str]:
-    """Grade a pull request with the real gate, in its real JSON mode."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("GITHUB_", "GH_"))}
-    p = subprocess.run(  # noqa: S603 -- fixed argv
-        [sys.executable, str(GATE)],
-        env=env,
-        input=json.dumps(
-            {"title": "the lander's own pull request", "body": body, "headRefOid": head}
-        ),
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    return p.returncode, (p.stdout + p.stderr).strip()
+    """Grade a pull request with the real gate, through the ONE predicate.
+
+    The grader is `bin/idp-bdd-proof-gate`, and the estate grades pull requests in its
+    LIVE mode (bin/idp-ci's `bddproof` rung). Both modes run the same predicate, and
+    this file proves the round trip that matters: the producer's block is ACCEPTED by
+    the real grader on the head it names, and REFUSED on another head.
+
+    The JSON mode adds ONE thing in front of that predicate: the ADMISSION scope
+    declaration (I-8107), which no producer in this estate writes -- the lander writes a
+    proof, not a scope. That rule is graded where it lives, in
+    tests/test_admission_rules_known_good.py (a known-good scope admitted, a
+    cross-subsystem scope refused, a missing block refused).
+    """
+    return _gate().grade(body, head, "pull request under test")
+
+
+def _gate():
+    loader = importlib.machinery.SourceFileLoader("bdd_proof_gate", str(GATE))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_the_producer_writes_a_proof_block() -> None:
