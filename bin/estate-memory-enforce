@@ -246,8 +246,41 @@ def covers(row: dict, rel: str) -> bool:
     )
 
 
+def _shared_agent_names() -> frozenset:
+    """bin/claim-open's SHARED_AGENT_NAMES, read from its source, never a second copy.
+
+    `~/.zshrc` exports ESTATE_AGENT=estate-agent to every shell, so the variable names the
+    machine, not the agent. claim-open refuses that name as an identity, so no claim is ever held
+    by it; reading it here AS the identity refused every holder its own claim (idp#8606). The
+    literal is parsed, not imported: importing claim-open resolves the repo and tools on every
+    hook call. Unreadable = an empty set, which is the old behaviour, never a deadlock.
+    """
+    import ast
+
+    try:
+        with open(os.path.join(_BIN_ROOT, "claim-open")) as f:
+            tree = ast.parse(f.read())
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "SHARED_AGENT_NAMES"
+                for t in node.targets
+            ):
+                return frozenset(
+                    n.lower() for n in ast.literal_eval(node.value.args[0])
+                )
+    except (OSError, SyntaxError, ValueError, AttributeError, IndexError):
+        pass
+    return frozenset()
+
+
+SHARED_AGENT_NAMES = _shared_agent_names()
+
+
 def focus_verdict(path: str, rows, agent: str):
     """(ok, reason): is there a live claim covering `path`? ok=None means unknown."""
+    # A shared name is no identity: judge as if ESTATE_AGENT were unset (idp#8606).
+    if agent.strip().lower() in SHARED_AGENT_NAMES:
+        agent = ""
     path = real(path)
     root = git_root_if_idp(path)
     if root is None:
@@ -294,7 +327,10 @@ def pin_verdict():
         return None, "pin-open door absent: nothing to decide"
     try:
         r = subprocess.run(  # noqa: S603 - fixed argv, our own door
-            [sys.executable, PIN_DOOR, "--json"], capture_output=True, text=True, timeout=20
+            [sys.executable, PIN_DOOR, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
         )
     except Exception as exc:  # BLIND is not a refusal
         return None, f"pin-open unreachable: {type(exc).__name__}: {exc}"
@@ -314,7 +350,7 @@ def pin_verdict():
         f"issue {e.get('issue') or e.get('id')} is open and is now your only work. "
         f"THE ERROR: {str(e.get('error', ''))[:300]} "
         f"WHAT TO DO: {str(e.get('do', ''))[:300]} "
-        f"Close it with proof: bin/pin-open resolve {e.get('id')} --proof \"<command and output>\". "
+        f'Close it with proof: bin/pin-open resolve {e.get("id")} --proof "<command and output>". '
         "Logging it again is the swarm the founder banned."
     )
 
@@ -415,8 +451,10 @@ def _in_repair_window(path: str) -> bool:
     can be repaired by an agent that is itself refused; it can never be used to work around it.
     """
     try:
-        required = os.path.join(os.path.dirname(os.path.realpath(__file__)), "estate-memory-required")
-        r = subprocess.run(
+        required = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "estate-memory-required"
+        )
+        r = subprocess.run(  # noqa: S603 - argv is this checkout's own door, fixed
             [sys.executable, required, "--json"],
             capture_output=True,
             text=True,
@@ -481,7 +519,14 @@ def pre(data: dict) -> int:
                 path=path,
             )
         else:
-            record("pre", "refuse", "memory door unreachable", session=sid, tool=tool, path=path)
+            record(
+                "pre",
+                "refuse",
+                "memory door unreachable",
+                session=sid,
+                tool=tool,
+                path=path,
+            )
             deny_pre(
                 "Estate memory is unreachable, so this session cannot be briefed and may not "
                 "work. Memory is required, not optional (founder order 2026-11-10).\n\n"
@@ -558,7 +603,7 @@ def publish_session(data: dict, calls: list) -> None:
         # the hook, so the door can find it by walking the process tree. Publication itself
         # is plan.py's: one definition of a pointer, a marker and an ordered plan call.
         plan.publish_session(sid, pid=os.getppid(), calls=calls, overwrite=True)
-    except Exception:  # noqa: BLE001 - a missing pointer must not break the session
+    except Exception:  # noqa: BLE001, S110 - a missing pointer must not break the session
         pass
 
 

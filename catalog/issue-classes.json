@@ -408,6 +408,16 @@
       "gap": "a gate refused with a mechanical, unambiguous remedy and left the remedy to the agent",
       "compensating_action": "claim-gate on a laptop renews the holder's own newest lapsed CLAIM (same paths, fresh heartbeat); CI stays read-only; a rival's or another agent's claim is never touched",
       "falsifier": "tests/test_claim_gate_renews_its_own_lapsed_claim.py: 3 of 6 fail on main, 6/6 on the fix; --optimus reads 1 on main, 0 fixed"
+    },
+    {
+      "class": "shared-env-name-taken-for-identity",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "~/.zshrc exports ESTATE_AGENT=estate-agent to every shell; bin/estate-memory-enforce read it as the agent and refused claude-code's Edit of estate/gates/tests/api-port-guard.test.py, a path claude-code's live claim on idp#8598 covered (idp#8606, measured 2026-11-27)"
+      ],
+      "gap": "claim-open refused the shared name as an identity while the write gate used it as one: two readers of one rule, no shared source",
+      "compensating_action": "the write gate parses claim-open's SHARED_AGENT_NAMES from source and judges a shared name as no identity; the push-time claim-gate still refuses a cross-agent collision",
+      "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py: 4 of 5 fail on main, 5/5 on the fix; --optimus reads the holder refusals"
     }
   ]
 }
