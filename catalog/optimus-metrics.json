@@ -205,6 +205,18 @@
       "better": "lower",
       "owner": "claims",
       "description": "catalog files claim-gate's merge-check calls conflicting when two lanes register DIFFERENT keys in the real catalogs (main before idp#8615: 2, fix: 0)"
+    },
+    {
+      "name": "handback.state_reports_refused",
+      "measure": [
+        "python3",
+        "tests/test_handback_state_report_is_not_handback.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "claude-code",
+      "description": "of four state reports on a tracked object (PR #N still open, a status-table row, a pull URL, a lane branch), how many the Stop hook's hand-back judge refuses (idp#8622)"
     }
   ]
 }
