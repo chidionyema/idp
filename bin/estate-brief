@@ -32,6 +32,7 @@ sys.path.insert(
 )
 import door  # noqa: E402
 import focus  # noqa: E402
+import session_end  # noqa: E402
 
 ITEM_CHARS = 400
 
@@ -107,8 +108,12 @@ def state_section() -> str:
         root = os.path.abspath(os.path.join(os.path.dirname(gp), ".."))
         return state_page.current(root)
     except Exception as exc:  # never block a session on the page
-        print(f"estate-brief: no state page ({type(exc).__name__}: {str(exc)[:120]})", file=sys.stderr)
+        print(
+            f"estate-brief: no state page ({type(exc).__name__}: {str(exc)[:120]})",
+            file=sys.stderr,
+        )
         return ""
+
 
 # The focus rules live in platform/estate/memory/focus.py, shared with bin/estate-memory-mcp:
 # the hook alone retired ghosts and the tools agents call mid-session did not (idp#6543).
@@ -135,6 +140,18 @@ def drop_stale_focus(items: list, cache_path: str | None = None):
     return kept, dropped
 
 
+def endings_section() -> str:
+    """Which sessions died and how (idp#8624): the fleet calls every one of them `stopped`."""
+    try:
+        return session_end.render(session_end.unclean())
+    except Exception as exc:  # never block a session on it
+        print(
+            f"estate-brief: no session endings ({type(exc).__name__}: {str(exc)[:120]})",
+            file=sys.stderr,
+        )
+        return ""
+
+
 def render(brief: dict) -> str:
     def lines(items):
         return [f"- {' '.join(i['text'].split())[:ITEM_CHARS]}" for i in items]
@@ -147,7 +164,15 @@ def render(brief: dict) -> str:
     ]
     register = focus.render_register(brief.get("active_focus"))
     page = state_section()
-    if not recent and not relevant and not lessons and not register and not page:
+    endings = brief.get("endings", "")
+    if (
+        not recent
+        and not relevant
+        and not lessons
+        and not register
+        and not page
+        and not endings
+    ):
         return ""
     out = [
         "<estate-memory>",
@@ -160,6 +185,8 @@ def render(brief: dict) -> str:
         out += ["Nearest to this task:", *relevant]
     if lessons:
         out += ["Recent lessons (graph):", *lessons]
+    if endings:
+        out.append(endings)
     if register:
         out.append(register)
     if page:
@@ -198,6 +225,7 @@ def main(argv: list[str]) -> int:
     brief["relevant"], _ = drop_stale_focus(brief.get("relevant", []))
     brief["active_focus"] = focus.live_focus()
     brief["lessons"] = graph_lessons(args.limit)
+    brief["endings"] = endings_section()
     text = render(brief)
     if text:
         print(text)
