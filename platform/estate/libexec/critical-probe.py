@@ -52,6 +52,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
+# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
+# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
+# finds it beside itself, because the runtime sync stages it there.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_router  # noqa: E402
+
 STATE = Path(os.environ.get("ESTATE_STATE_DIR", str(HOME / ".estate")))
 HEARTBEATS = STATE / "heartbeats"
 
@@ -81,7 +90,7 @@ ROUTER_CORE_LANES = (
 )
 
 ROUTER_RUNGS = (
-    ("cloud", os.environ.get("ESTATE_ROUTER_BASE", "https://llm.mumchimp.com")),
+    ("cloud", os.environ.get("ESTATE_ROUTER_BASE") or estate_router()),
     ("laptop", os.environ.get("ESTATE_ROUTER_FALLBACK", "http://127.0.0.1:4000")),
 )
 
@@ -350,6 +359,17 @@ def probe_router_lanes(timeout: float = 8.0) -> tuple[bool, str, dict]:
     """
     attempts: list[dict] = []
     for rung, base in ROUTER_RUNGS:
+        if not base:
+            # The zone is unknown, so the cloud rung has no address. Saying so is the honest
+            # attempt; dialling a guessed host would be the lie.
+            attempts.append(
+                {
+                    "rung": rung,
+                    "url": "",
+                    "error": "the estate's zone is unknown, so the router cannot be named",
+                }
+            )
+            continue
         url = base.rstrip("/") + "/v1/models"
         t0 = time.time()
         try:

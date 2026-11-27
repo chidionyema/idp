@@ -40,6 +40,30 @@ DIR = os.path.expanduser(os.environ.get("ESTATE_BREAKS_DIR", "~/.estate/breaks")
 SELF = os.path.abspath(__file__)
 PY = sys.executable or "python3"
 
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml, and this gate asks
+# the one resolver for it (lib/estate_zone.py) instead of spelling it. This gate runs on the hot
+# path of every tool call of every hooked agent, so a resolver that cannot answer must leave the
+# host empty and the probes unbuilt -- never raise, never take the hook down.
+_ZONE = ""
+try:
+    _LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(SELF))), "lib")
+    if os.path.isfile(os.path.join(_LIB, "estate_zone.py")) and _LIB not in sys.path:
+        sys.path.insert(0, _LIB)
+    from estate_zone import estate_zone
+
+    _ZONE = estate_zone()
+except Exception:  # noqa: BLE001 -- a broken import must not take the hook down
+    _ZONE = os.environ.get("ESTATE_ZONE", "").strip()
+_MCP_HOST = f"https://mcp.{_ZONE}" if _ZONE else ""
+_ROUTER_HOST = f"https://llm.{_ZONE}" if _ZONE else ""
+# The break's own log lines name the router host; the pattern follows the zone, so a migration
+# does not leave the gate watching a host the estate no longer answers on.
+_ROUTER_BREAK = (
+    r"llm\.%s.*(fail|unreachable|timeout|EOF)" % re.escape(_ZONE)
+    if _ZONE
+    else r"router\.(cloud|edge).*(fail|unreachable|timeout|EOF)"
+)
+
 DEFAULT_PROTOCOLS = {
     "memory-door": {
         "critical": True,
@@ -50,7 +74,7 @@ DEFAULT_PROTOCOLS = {
             r"memdoor",
             r"no MCP_GATEWAY_KEY",
         ],
-        "probes": ["%s %s probe-http https://mcp.mumchimp.com/" % (PY, SELF)],
+        "probes": [f"{PY} {SELF} probe-http {_MCP_HOST}/"] if _MCP_HOST else [],
         "roundtrip": [],  # ADD a real authenticated remember+recall round trip here; transport-only proof is weaker
         "repair_scope": [],  # path globs agents may edit while this break is open, e.g. "*/cloudflare/*"
         "required_action": "Restore the memory door (or move it off the dead cluster). Name who must act and give the exact command.",
@@ -60,10 +84,10 @@ DEFAULT_PROTOCOLS = {
         "owner": "founder / holder of the OCI account",
         "patterns": [
             r"router\.cloud\.completion",
-            r"llm\.mumchimp\.com.*(fail|unreachable|timeout|EOF)",
+            _ROUTER_BREAK,
             r"router.*(SPOF|single point of failure)",
         ],
-        "probes": ["%s %s probe-http https://llm.mumchimp.com/" % (PY, SELF)],
+        "probes": [f"{PY} {SELF} probe-http {_ROUTER_HOST}/"] if _ROUTER_HOST else [],
         "roundtrip": [],
         "repair_scope": [],
         "required_action": "Restore the LLM router (or point agents at the Cloudflare router). Name who must act and give the exact command.",

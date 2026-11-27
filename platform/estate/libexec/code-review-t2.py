@@ -20,7 +20,16 @@ from pathlib import Path
 
 HOME = Path.home()
 IDP = HOME / "Documents/code/idp"
-ROUTER = "https://llm.mumchimp.com/v1/chat/completions"
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
+# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
+# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
+# finds it beside itself, because the runtime sync stages it there.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_router  # noqa: E402
+
+ROUTER = estate_router("/v1/chat/completions")
 # The router this tier calls is the cluster's, and its key is model-allowlisted
 # (default, ollama, deepseek, gemini, kimi, minimax, minimax_m27, groq, ... --
 # 'gpt-4o-mini' was never on it, so this tier could not have made a call). The

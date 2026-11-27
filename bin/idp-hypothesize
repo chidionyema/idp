@@ -62,6 +62,14 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
+# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
+_LIB = Path(__file__).resolve().parents[1] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_router, estate_zone  # noqa: E402
 
 EXIT_OK, EXIT_USAGE, EXIT_NO_HYP, EXIT_DEGRADED = 0, 2, 3, 4
 
@@ -83,7 +91,7 @@ LAYER_PRIORS_DEFAULT = {
 LAYER_ORDER = ["caller", "checkout", "script", "config", "daemon", "upstream"]
 
 DEFAULT_ROUTER_PORT = 4000
-DEFAULT_ROUTER_URL = "https://llm.mumchimp.com"
+DEFAULT_ROUTER_URL = estate_router()
 EXT_DIR = "$HOME/.pi/agent/extensions"
 
 ERROR_PATTERNS = [
@@ -516,7 +524,7 @@ def synthesize(
         )
 
     script = script or ctx.get("script") or "estate-execute"
-    host = host or _host_of(ctx) or "llm.mumchimp.com"
+    host = host or _host_of(ctx) or ("llm." + estate_zone() if estate_zone() else "")
     port = port or ctx.get("port") or str(DEFAULT_ROUTER_PORT)
     url = url or ctx.get("url") or DEFAULT_ROUTER_URL
     if url.endswith("/"):

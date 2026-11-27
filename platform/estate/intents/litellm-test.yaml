@@ -5,7 +5,7 @@ args:
 steps:
   - name: call
     cmd: |
-      curl -sS https://llm.mumchimp.com/v1/chat/completions \
+      curl -sS https://llm.${ESTATE_ZONE}/v1/chat/completions \
         -H "Authorization: Bearer $LITELLM_API_KEY" \
         -H "Content-Type: application/json" \
         -d "{\"model\":\"{{model}}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \

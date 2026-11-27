@@ -35,13 +35,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "packages" / "aei" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
+# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
+LIB = REPO_ROOT / "lib"
+if (LIB / "estate_zone.py").is_file() and str(LIB) not in sys.path:
+    sys.path.insert(0, str(LIB))
 
 from aei.estate import emitter, identity, router_call, task, tool, verification  # noqa: E402
 from aei.core import utc_now  # noqa: E402
+from estate_zone import estate_router  # noqa: E402
 
 TOKEN_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "token"
 PORT_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "port"
-DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
+DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL") or estate_router()
 
 
 def _collector_url() -> str:

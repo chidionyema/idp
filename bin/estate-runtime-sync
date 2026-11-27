@@ -343,6 +343,20 @@ def stage() -> list[str]:
             shutil.copy2(f, STATE / "bin" / name)
             (STATE / "bin" / name).chmod(0o755)
             notes.append(f"bin/{name}")
+    # The estate's zone resolver (lib/estate_zone.py) is a MODULE, not a launcher. The staged
+    # executor and the staged libexec scripts import it by name, and Python puts a script's own
+    # directory on the path, so it is staged BESIDE them: in ~/.estate/bin, ~/.estate/libexec and
+    # ~/.estate/lib. It comes from the same tree as the scripts that import it, so the two are
+    # never out of step (the tree copy finds it by path; the staged copy finds it beside itself).
+    resolver = TREE / "lib" / "estate_zone.py"
+    if resolver.exists():
+        for sub in ("bin", "libexec", "lib"):
+            dst = STATE / sub / "estate_zone.py"
+            if dst.exists() and filecmp.cmp(resolver, dst, False):
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolver, dst)
+            notes.append(f"{sub}/estate_zone.py")
     return notes
 
 

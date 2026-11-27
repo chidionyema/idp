@@ -36,7 +36,10 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 BREWFILE="$IDP/infra/macos/Brewfile"
 LD_DIR="$IDP/infra/macos/LaunchDaemons"
 SPIRE_TEMPLATE="$IDP/infra/macos/spire-agent.conf.template"
-ESTATE_ZONE="${ESTATE_ZONE:-mumchimp.com}"
+# The estate's DNS zone is declared once, in clusters/<cluster>/estate-config.yaml. This script
+# asks for it instead of spelling it: a shell default that carries the zone is the commonest way a
+# literal hides (bin/estate-zone-gate refuses one).
+ESTATE_ZONE="${ESTATE_ZONE:-$(sed -n 's/^[[:space:]]*ESTATE_ZONE:[[:space:]]*//p' "$IDP"/clusters/*/estate-config.yaml 2>/dev/null | head -1)}"
 SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN:-estate.internal}"
 
 # --- print helpers ---------------------------------------------------------
@@ -51,7 +54,8 @@ usage() {
 Usage: bin/idp-mac-provision {install|upgrade|uninstall|status|doctor|self-test}
 
 Options (env vars):
-  ESTATE_ZONE            DNS zone the estate lives under (default: mumchimp.com)
+  ESTATE_ZONE            DNS zone the estate lives under (default: the zone declared in
+                         clusters/*/estate-config.yaml)
   SPIRE_TRUST_DOMAIN     SPIFFE trust domain (default: estate.internal)
   IDP_MAC_PROVISION_DRY  1 = run with --dry-run writes
 

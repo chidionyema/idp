@@ -10,6 +10,7 @@ Usage:
 All executor logs go to stderr. Intent output goes to stdout.
 No heredocs. No pipes. No exit traps. All SQL via parameterized queries.
 """
+
 import sqlite3
 import subprocess
 import sys
@@ -22,8 +23,8 @@ from datetime import datetime, timezone
 import uuid
 
 # ---- Paths ---------------------------------------------------------------
-HOME    = Path.home()
-DB      = HOME / ".estate" / "estate.db"
+HOME = Path.home()
+DB = HOME / ".estate" / "estate.db"
 INTENTS = HOME / ".estate" / "intents"
 
 # The door's module lives beside the repo (mcp/plugins), and this script lives in
@@ -39,12 +40,24 @@ if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
 _HARNESS = Path(__file__).resolve().parent.parent / "harness"
 if _HARNESS.is_dir() and str(_HARNESS) not in sys.path:
     sys.path.insert(0, str(_HARNESS))
+
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml. This file asks
+# the one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling
+# it: a reader that carries the zone is a reader that goes stale at the next migration. The tree
+# copy finds the module through the path below; the staged copy under ~/.estate/bin finds it
+# beside itself, because the runtime sync stages it there.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_zone  # noqa: E402
+
 try:
     from fs_guard import check_command_allowed
 except ImportError:
 
     def check_command_allowed(cmd):  # fail open, never closed, on an import problem
         return True, "OK"
+
 
 # The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
 # this script asks it one question per command and never interprets a plan itself.
@@ -60,8 +73,13 @@ EXPLICIT_SESSION = ""
 # Merged is operating (docs/tickets/2026-09-27-merged-is-operating.md): the executor runs only
 # intents from the root-owned release estate-converge cut from main. ~/.estate/intents is a link
 # into it. A hand copy is refused; an unmerged intent runs only through --from, labelled.
-CURRENT  = Path(os.environ.get("ESTATE_PREFIX") or "/usr/local/estate") / "releases" / "current"
+CURRENT = (
+    Path(os.environ.get("ESTATE_PREFIX") or "/usr/local/estate")
+    / "releases"
+    / "current"
+)
 FROM_DIR = None
+
 
 def log(*args, **kw):
     print(*args, file=sys.stderr, **kw)
@@ -73,16 +91,20 @@ def admit(intent_path):
         log(f"[estate] UNMERGED: {intent_path} (--from {FROM_DIR})")
         return "unmerged"
     if not CURRENT.exists():
-        log("[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger; "
-            "running the local copy")
+        log(
+            "[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger; "
+            "running the local copy"
+        )
         return "unconverged"
     try:
         Path(intent_path).resolve().relative_to(CURRENT.resolve())
         return ""
     except ValueError:
-        log(f"[estate] REFUSED: {intent_path} is not in the current release "
+        log(
+            f"[estate] REFUSED: {intent_path} is not in the current release "
             f"{CURRENT.resolve()}. Merge it to main (estate-converge delivers it within "
-            "minutes) or test it with: estate-execute --from <worktree> <intent>")
+            "minutes) or test it with: estate-execute --from <worktree> <intent>"
+        )
         sys.exit(2)
 
 
@@ -90,13 +112,17 @@ def not_merged_hint(name):
     """An intent that exists only as a moved-aside hand copy: say so, exit 2."""
     for variant in dict.fromkeys([name, name.replace(".", "-")]):
         for copy in sorted(HOME.glob(f".estate/intents.pre-converge-*/{variant}.yaml")):
-            log(f"[estate] NOT MERGED: {name} exists only as a hand copy at {copy}. "
-                "Merge it to main or run it with --from <worktree>")
+            log(
+                f"[estate] NOT MERGED: {name} exists only as a hand copy at {copy}. "
+                "Merge it to main or run it with --from <worktree>"
+            )
             sys.exit(2)
+
 
 # ---- Step output cache (keyed by step name) ---------------------------------
 # Filled by run_steps, consumed by subsequent `from:` steps
 STEP_OUTPUTS = {}  # {step_name: {"stdout": str, "rc": int, "json": obj}}
+
 
 # ---- DB init ------------------------------------------------------------
 def init_db():
@@ -146,21 +172,24 @@ def init_db():
     conn.commit()
     return conn
 
+
 # ---- Policy gate (ML dept loop A, docs/specs/2026-09-29-machine-learning-dept.md) ----
 # The environment decides before the step runs, from what it has recorded: the intent's own
 # outcomes over the last 30 days. Beta(1+not_ok, 1+ok) posterior mean; a decision only once
 # it has seen POLICY_MIN_N runs. ESTATE_POLICY=shadow (default) records what it would do and
 # never blocks; =enforce refuses (exit 3) or holds (sleep); =off skips the read entirely.
-POLICY_MIN_N     = 5
-POLICY_REFUSE_P  = 0.80
-POLICY_HOLD_P    = 0.50
+POLICY_MIN_N = 5
+POLICY_REFUSE_P = 0.80
+POLICY_HOLD_P = 0.50
 POLICY_HOLD_MAX_S = 10
+
 
 def policy_decide(conn, ticket_id, intent_name, session_id=""):
     mode = os.environ.get("ESTATE_POLICY", "shadow")
     if mode == "off":
         return "allow", None
     import time as _t
+
     t0 = _t.perf_counter()
     n, not_ok = conn.execute(
         "SELECT COUNT(*), SUM(status != 'ok') FROM intent_tickets "
@@ -182,7 +211,18 @@ def policy_decide(conn, ticket_id, intent_name, session_id=""):
         "INSERT INTO policy_decisions "
         "(ticket_id,intent,session_id,n,not_ok,p_fail,decision,mode,latency_us,at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (ticket_id, intent_name, session_id, n, not_ok, p_fail, decision, mode, latency_us, now),
+        (
+            ticket_id,
+            intent_name,
+            session_id,
+            n,
+            not_ok,
+            p_fail,
+            decision,
+            mode,
+            latency_us,
+            now,
+        ),
     )
     conn.commit()
     reason = f"{not_ok}/{n} runs not ok in 30d, p_fail={p_fail:.2f}, {latency_us}us"
@@ -198,6 +238,7 @@ def policy_decide(conn, ticket_id, intent_name, session_id=""):
     if decision == "hold":
         _t.sleep(min(POLICY_HOLD_MAX_S, POLICY_HOLD_MAX_S * p_fail))
     return decision, reason
+
 
 def _policy_event(session_id, decision, mode, intent_name, reason, now):
     # One estate.agent gate event per decision, through the same outbox fleetview-backend
@@ -235,16 +276,27 @@ def _policy_event(session_id, decision, mode, intent_name, reason, now):
             )
         """)
         import time as _t
+
         ob.execute(
             "INSERT INTO outbox (created_at,session_id,runtime,kind,phase,payload,next_attempt_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (_t.time(), payload["session_id"], "claude-code", "gate", "executing",
-             json.dumps(payload), _t.time()),
+            (
+                _t.time(),
+                payload["session_id"],
+                "claude-code",
+                "gate",
+                "executing",
+                json.dumps(payload),
+                _t.time(),
+            ),
         )
         ob.commit()
         ob.close()
-    except sqlite3.Error as exc:  # the gate never fails an intent because the bus is busy
+    except (
+        sqlite3.Error
+    ) as exc:  # the gate never fails an intent because the bus is busy
         log(f"[estate] policy event not queued: {exc}")
+
 
 # ---- Ticket ops ----------------------------------------------------------
 def open_ticket(conn, intent_name, harness, goal=""):
@@ -254,25 +306,28 @@ def open_ticket(conn, intent_name, harness, goal=""):
     conn.execute(
         "INSERT INTO intent_tickets "
         "(id,intent,harness,goal,started_at,status) VALUES (?,?,?,?,?,?)",
-        (ticket_id, intent_name, harness, goal, now, "running")
+        (ticket_id, intent_name, harness, goal, now, "running"),
     )
     conn.commit()
     return ticket_id
+
 
 def log_step(conn, ticket_id, idx, cmd, rc, dur_ms):
     conn.execute(
         "INSERT INTO step_runs "
         "(ticket_id,step_idx,cmd,exit_code,duration_ms,ran_at) VALUES (?,?,?,?,?,?)",
-        (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat())
+        (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
+
 
 def close_ticket(conn, ticket_id, status, error=None):
     conn.execute(
         "UPDATE intent_tickets SET completed_at=?,status=?,error=? WHERE id=?",
-        (datetime.now(timezone.utc).isoformat(), status, error, ticket_id)
+        (datetime.now(timezone.utc).isoformat(), status, error, ticket_id),
     )
     conn.commit()
+
 
 # ---- Argument resolution ------------------------------------------------
 def resolve_args(intent, raw_args):
@@ -301,6 +356,7 @@ def resolve_args(intent, raw_args):
             except (ValueError, TypeError):
                 resolved[name] = 0
     return resolved
+
 
 # ---- Interpolation ------------------------------------------------------
 def interpolate(cmd, args):
@@ -335,6 +391,7 @@ def interpolate_parts(cmd, args):
         cmd = cmd.replace("{{" + name + "}}", quoted)
         cmd = cmd.replace("<<" + name + ">>", raw)
     return cmd, "\n".join(raw_parts)
+
 
 # ---- Composition helpers --------------------------------------------------
 def _resolve_from(prev_name, prev_output):
@@ -374,9 +431,12 @@ def _read_intent(name):
         admit(path)
     except SystemExit:
         # A composed step fails like a missing intent, so the ticket still closes.
-        raise FileNotFoundError(f"intent refused: {name} is not in the current release") from None
+        raise FileNotFoundError(
+            f"intent refused: {name} is not in the current release"
+        ) from None
     with open(path) as f:
         import yaml
+
         return yaml.safe_load(f), path.stem
 
 
@@ -427,10 +487,19 @@ def _plan_contract():
     # repository layout: <repo>/platform/estate/bin/estate-execute -> parents[1] is platform/estate
     candidates.append(here.parents[1] / "memory" / "plan.py")
     # staged layout: <root>/bin/estate-execute with the contract under <root>/memory/...
-    candidates.append(here.parents[1] / "memory" / "platform" / "estate" / "memory" / "plan.py")
+    candidates.append(
+        here.parents[1] / "memory" / "platform" / "estate" / "memory" / "plan.py"
+    )
     # the runtime tree
     candidates.append(
-        Path(os.path.expanduser("~")) / ".estate" / "runtime" / "idp" / "platform" / "estate" / "memory" / "plan.py"
+        Path(os.path.expanduser("~"))
+        / ".estate"
+        / "runtime"
+        / "idp"
+        / "platform"
+        / "estate"
+        / "memory"
+        / "plan.py"
     )
     for path in candidates:
         try:
@@ -438,7 +507,9 @@ def _plan_contract():
                 continue
             import importlib.util
 
-            spec = importlib.util.spec_from_file_location("estate_plan_contract", str(path))
+            spec = importlib.util.spec_from_file_location(
+                "estate_plan_contract", str(path)
+            )
             if spec is None or spec.loader is None:
                 continue
             module = importlib.util.module_from_spec(spec)
@@ -472,7 +543,9 @@ def _plan_refusal(command, session_id, reason, detail):
     if module is None:
         return
     try:
-        module.record_refusal(command, session_id, reason=reason, detail=detail, source="intent-door")
+        module.record_refusal(
+            command, session_id, reason=reason, detail=detail, source="intent-door"
+        )
     except Exception:  # noqa: BLE001 - recording must never break the door
         pass
     try:
@@ -534,12 +607,16 @@ def _intent_budget(intent):
         try:
             budget, provenance = int(declared), "door_s"
         except (TypeError, ValueError):
-            raise SystemExit(f"estate-execute: door_s must be whole seconds, got {declared!r}") from None
+            raise SystemExit(
+                f"estate-execute: door_s must be whole seconds, got {declared!r}"
+            ) from None
     elif intent.get("timeout") is not None:
         try:
             budget, provenance = int(intent["timeout"]), "timeout (deprecated)"
         except (TypeError, ValueError):
-            raise SystemExit(f"estate-execute: timeout must be whole seconds, got {intent['timeout']!r}") from None
+            raise SystemExit(
+                f"estate-execute: timeout must be whole seconds, got {intent['timeout']!r}"
+            ) from None
         log(
             "[estate] DEPRECATED: this intent declares `timeout:` at the top level. The field the "
             "door reads is `door_s:`; the old name is honoured so a live intent does not break, "
@@ -569,7 +646,7 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
             args[name] = out.get("stdout", "")
 
     for idx, step in enumerate(steps):
-        step_name = step.get("name", f"step-{idx+1}")
+        step_name = step.get("name", f"step-{idx + 1}")
         on_fail = step.get("on_fail", "halt" if halt_on_fail else "continue")
 
         # Inject previous step output
@@ -588,7 +665,7 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                     sub_args[k] = v
 
             indent = "  " * (depth + 1)
-            log(f"[step {idx+1} / {step_name}] COMPOSE → {sub_name}")
+            log(f"[step {idx + 1} / {step_name}] COMPOSE → {sub_name}")
             if depth > 4:
                 log(f"{indent}ERROR: composition depth exceeded (max 5)")
                 rc = 1
@@ -616,7 +693,9 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
         elif "cmd" in step:
             cmd_tmpl = step["cmd"]
             cmd, agent_raw = interpolate_parts(cmd_tmpl, args)
-            log(f"[step {idx+1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+            log(
+                f"[step {idx + 1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}"
+            )
 
             t0 = datetime.now(timezone.utc)
             # A step may narrow the intent's budget, never widen it. The default is the budget
@@ -631,7 +710,9 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                 try:
                     step_timeout = int(declared_step)
                 except (TypeError, ValueError):
-                    bad_bound = f"step timeout must be whole seconds, got {declared_step!r}"
+                    bad_bound = (
+                        f"step timeout must be whole seconds, got {declared_step!r}"
+                    )
                     step_timeout = budget
                 else:
                     if step_timeout > budget:
@@ -660,7 +741,12 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                     log_step(conn, ticket_id, idx, cmd, rc, 0)
                     failed += 1
                     if on_fail == "halt":
-                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused")
+                        close_ticket(
+                            conn,
+                            ticket_id,
+                            "halted",
+                            f"step {idx + 1} ({step_name}) refused",
+                        )
                         return "halted"
                     continue
                 # The read/write boundary judges the AGENT's content, not the estate's own step
@@ -675,18 +761,29 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                     log_step(conn, ticket_id, idx, cmd, rc, 0)
                     failed += 1
                     if on_fail == "halt":
-                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: {fs_reason}")
+                        close_ticket(
+                            conn,
+                            ticket_id,
+                            "halted",
+                            f"step {idx + 1} ({step_name}) refused: {fs_reason}",
+                        )
                         return "halted"
                     continue
                 try:
                     result = subprocess.run(  # noqa: S602
-                        cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=step_timeout,
                     )
                     rc = result.returncode
                     stdout = result.stdout
                     stderr = result.stderr
                 except subprocess.TimeoutExpired as exc:
-                    log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED")
+                    log(
+                        f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED"
+                    )
                     rc = 124
                     stdout = exc.stdout or ""
                     stderr = exc.stderr or ""
@@ -718,13 +815,17 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                 print(stdout.rstrip("\n"))
 
         else:
-            log(f"[step {idx+1} / {step_name}] ERROR: step has no `cmd` or `intent` field")
+            log(
+                f"[step {idx + 1} / {step_name}] ERROR: step has no `cmd` or `intent` field"
+            )
             rc = 1
 
         if rc != 0:
             failed += 1
             if on_fail == "halt":
-                close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) failed")
+                close_ticket(
+                    conn, ticket_id, "halted", f"step {idx + 1} ({step_name}) failed"
+                )
                 return "halted"
 
     status = "ok" if failed == 0 else "broken"
@@ -740,8 +841,9 @@ def _run_composed(intent_name, args, depth=0):
     for k, v in args.items():
         if k in sub_intent.get("args", {}):
             sub_args[k] = v
-    sub_args.update({k: v for k, v in args.items()
-                    if k not in sub_args and not k.startswith("_")})
+    sub_args.update(
+        {k: v for k, v in args.items() if k not in sub_args and not k.startswith("_")}
+    )
 
     conn = init_db()
     t_id = f"SUB-{uuid.uuid4().hex[:8]}"
@@ -755,9 +857,11 @@ def _run_composed(intent_name, args, depth=0):
             stdout_parts.append(out["stdout"])
     return rc, "\n".join(stdout_parts)
 
+
 # ---- Commands -----------------------------------------------------------
 def cmd_list():
     import yaml
+
     log("Available intents:")
     for f in sorted(INTENTS.glob("*.yaml")):
         name = f.stem
@@ -771,6 +875,7 @@ def cmd_list():
         log(f"  {name}")
         if desc:
             log(f"    {desc}")
+
 
 def cmd_run(intent_name, raw_args):
     # Handle --intent=<name> when called as: estate-execute pi --intent=<name>
@@ -799,6 +904,7 @@ def cmd_run(intent_name, raw_args):
     label = admit(intent_path)
 
     import yaml
+
     with open(intent_path) as f:
         intent = yaml.safe_load(f)
 
@@ -806,7 +912,9 @@ def cmd_run(intent_name, raw_args):
     args = resolve_args(intent, raw_args)
     ticket_id = open_ticket(conn, intent_name, label or "direct")
     session = _session_identity()
-    log(f"[estate] intent={intent_name}  ticket={ticket_id}  session={session or 'anonymous'}")
+    log(
+        f"[estate] intent={intent_name}  ticket={ticket_id}  session={session or 'anonymous'}"
+    )
     policy_decide(conn, ticket_id, intent_name, session or "")
     _record_intent(intent_name, session)
 
@@ -827,6 +935,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
 
     import yaml
     import tempfile
+
     with open(intent_path) as f:
         intent = yaml.safe_load(f)
 
@@ -835,16 +944,32 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     harness_label = f"{harness_name}+{label}" if label else harness_name
     ticket_id = open_ticket(conn, intent_name, harness_label, goal)
     session = _session_identity()
-    log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}  "
-        f"session={session or 'anonymous'}")
+    log(
+        f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}  "
+        f"session={session or 'anonymous'}"
+    )
     policy_decide(conn, ticket_id, intent_name, session or "")
     _record_intent(intent_name, session)
 
     # --- Build session HOME with allowlisted tools + runtime deps -------
     tools = intent.get("tools", [])
     # Always include these runtime deps regardless of intent
-    always = ["node", "python3", "bash", "sh", "cat", "ls", "mkdir",
-               "rm", "grep", "rg", "sed", "awk", "git", "gh"]
+    always = [
+        "node",
+        "python3",
+        "bash",
+        "sh",
+        "cat",
+        "ls",
+        "mkdir",
+        "rm",
+        "grep",
+        "rg",
+        "sed",
+        "awk",
+        "git",
+        "gh",
+    ]
     needed = list(dict.fromkeys(always + tools))  # dedupe, always first
     session_home = Path(tempfile.mkdtemp(prefix="estate-session."))
     (session_home / ".bin").mkdir()
@@ -855,10 +980,16 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
 
     # --- Environment scrub (keep real HOME — curl needs it for cert lookup) ------
     scrub_vars = [
-        "MINIMAX_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_DIRECT_KEY",
-        "ANTHROPIC_DIRECT_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY",
-        "CEREBRAS_API_KEY", "KUBECONFIG",
-        "MINIMAX_BASE_URL", "DEEPSEEK_BASE_URL",
+        "MINIMAX_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "OPENAI_DIRECT_KEY",
+        "ANTHROPIC_DIRECT_KEY",
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "CEREBRAS_API_KEY",
+        "KUBECONFIG",
+        "MINIMAX_BASE_URL",
+        "DEEPSEEK_BASE_URL",
     ]
     for var in scrub_vars:
         os.environ.pop(var, None)
@@ -883,8 +1014,23 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     if agent_key:
         os.environ["OPENAI_API_KEY"] = agent_key
         os.environ["ANTHROPIC_API_KEY"] = agent_key
-    os.environ["OPENAI_BASE_URL"] = "https://llm.mumchimp.com/v1"
-    os.environ["ANTHROPIC_BASE_URL"] = "https://llm.mumchimp.com/v1"
+    # The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml, and the
+    # executor asks the one resolver for it (lib/estate_zone.py) rather than spelling it. It is
+    # exported here, so every step this session runs -- including the shell steps whose URLs are
+    # written ${ESTATE_ZONE} -- knows the zone without carrying it. A zone that cannot be
+    # resolved is not a zone: the harness must not fall back to somebody's default endpoint, so
+    # the session stops here and says why.
+    _zone = estate_zone()
+    if not _zone:
+        log(
+            "ERROR: the estate's zone is unknown: no ESTATE_ZONE in the environment and no "
+            "declaration in clusters/*/estate-config.yaml"
+        )
+        sys.exit(2)
+    os.environ["ESTATE_ZONE"] = _zone
+    _router = os.environ.get("ESTATE_ROUTER_URL") or f"https://llm.{_zone}"
+    os.environ["OPENAI_BASE_URL"] = _router + "/v1"
+    os.environ["ANTHROPIC_BASE_URL"] = _router + "/v1"
     os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
     os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
 
@@ -892,10 +1038,19 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     pf_loaded = False
     if Path("/etc/pf.anchors/estate-session").exists():
         import subprocess as _sub
+
         r = _sub.run(
-            ["sudo", "pfctl", "-a", "estate-session", "-f",  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
-             "/etc/pf.anchors/estate-session"],
-            capture_output=True, text=True, timeout=5,
+            [
+                "sudo",
+                "pfctl",
+                "-a",
+                "estate-session",
+                "-f",  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
+                "/etc/pf.anchors/estate-session",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pf_loaded = r.returncode == 0
         if pf_loaded:
@@ -910,10 +1065,13 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
         shutil.rmtree(session_home, ignore_errors=True)
         if pf_loaded:
             import subprocess as _sub
+
             _sub.run(
                 ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
+
     atexit.register(cleanup)
 
     # Reset step outputs for fresh session
@@ -933,6 +1091,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     if not real_bin.exists():
         # Fallback: find on original PATH
         import shutil as sh
+
         orig_path = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         found = sh.which(harness_name, path=orig_path)
         if found:
@@ -964,6 +1123,7 @@ if __name__ == "__main__":
 
     if sys.argv[1] == "--show" and len(sys.argv) >= 3:
         import yaml
+
         name = sys.argv[2]
         path = INTENTS / f"{name}.yaml"
         if not path.exists():
@@ -973,14 +1133,14 @@ if __name__ == "__main__":
             d = yaml.safe_load(f)
         log(f"name: {name}")
         log(f"description: {d.get('description', '')}")
-        if d.get('args'):
+        if d.get("args"):
             log("args:")
-            for k, v in d['args'].items():
+            for k, v in d["args"].items():
                 log(f"  {k}: {v}")
-        if d.get('steps'):
+        if d.get("steps"):
             log(f"steps: {len(d['steps'])}")
-            for i, s in enumerate(d['steps']):
-                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
+            for i, s in enumerate(d["steps"]):
+                log(f"  {i + 1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
         sys.exit(0)
 
     harness_name = None

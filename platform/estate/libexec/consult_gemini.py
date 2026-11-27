@@ -4,7 +4,7 @@
 Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.5-flash]
                         [max_bytes=400000] [timeout=70]
 
-One door. The call goes to the estate router (llm.mumchimp.com), never to Google direct, so
+One door. The call goes to the estate router (llm.<the estate's zone>), never to Google direct, so
 spend lands on the router ledger and under its daily ceiling. If the consultant lane refuses or
 is slow the helper retries once on the neutral `default` lane and SAYS SO in the output: a
 consultant that quietly answers as a different model is worse than one that fails loudly.
@@ -24,7 +24,16 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
+# The estate's zone is declared once, in clusters/<cluster>/estate-config.yaml; this file asks the
+# one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of spelling it.
+# The tree copy finds the module through the path below; the staged copy under ~/.estate/libexec
+# finds it beside itself, because the runtime sync stages it there.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_router  # noqa: E402
+
+ROUTER = os.environ.get("ESTATE_ROUTER_URL") or estate_router()
 # The router's `gemini` lane named gemini-2.5-flash, which Google 404s for new users
 # (measured 2026-10-30), so it silently fell back to MiniMax. The lane now names
 # gemini-3.5-flash (2026-10-30), so the alias and this name ask for the same model. The name
@@ -189,6 +198,13 @@ def _repo_reviews_dir():
 
 def main(argv):
     a = parse_args(argv)
+    if not ROUTER:
+        print(
+            "consult.gemini FAILED: the estate's zone is unknown (no ESTATE_ZONE in the "
+            "environment, no declaration in clusters/*/estate-config.yaml); the router this "
+            "call goes through cannot be named, so no call is made."
+        )
+        return 2
     files = [f for f in a.get("files", "").split(",") if f]
     key = os.environ.get("LITELLM_API_KEY") or os.environ.get("ESTATE_AGENT_KEY", "")
     try:

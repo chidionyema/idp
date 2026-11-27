@@ -60,15 +60,17 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
-# The estate's DNS zone. The one place it is written is clusters/oke/estate-config.yaml
-# (ESTATE_ZONE: mumchimp.com); every platform file says ${ESTATE_ZONE} and the zone gate
-# refuses a literal. This is the fallback for a runtime install that has no checkout to read
-# it from and no ESTATE_ZONE in the environment.
-ESTATE_ZONE_DEFAULT = "mumchimp.com"
-
-# The one place the zone is written, when this script runs from a checkout.
-ZONE_CONFIG_RELATIVE = ("clusters", "oke", "estate-config.yaml")
+# The estate's DNS zone is declared once, in clusters/<cluster>/estate-config.yaml, and this file
+# asks the one resolver for it (lib/estate_zone.py, the estate_spatial.py pattern) instead of
+# spelling it and instead of knowing which cluster tree holds the declaration. The tree copy
+# finds the module through the path below; the staged copy under ~/.estate/libexec finds it
+# beside itself, because the runtime sync stages it there.
+_LIB = Path(__file__).resolve().parents[3] / "lib"
+if (_LIB / "estate_zone.py").is_file() and str(_LIB) not in sys.path:
+    sys.path.insert(0, str(_LIB))
+from estate_zone import estate_zone  # noqa: E402
 
 CLUSTER_TIMEOUT = 20  # a cluster link that cannot be read is blind, not a hang
 HEAL_TIMEOUT = 45  # flux reconcile has its own 2m budget; we give up first
@@ -316,22 +318,13 @@ def probe_workflow(workflow: str, run=None) -> tuple:
 # BLIND, and that is the whole point of the BLIND state.
 # --------------------------------------------------------------------------------------
 def resolve_zone() -> str:
-    """The estate's DNS zone, from the environment, the checkout, or the declared default."""
-    zone = os.environ.get("ESTATE_ZONE", "").strip()
-    if zone:
-        return zone
-    here = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.abspath(os.path.join(here, "..", "..", ".."))
-    config = os.path.join(root, *ZONE_CONFIG_RELATIVE)
-    if os.path.exists(config):
-        try:
-            with open(config, "r", encoding="utf-8") as handle:
-                for line in handle:
-                    if line.strip().startswith("ESTATE_ZONE:"):
-                        return line.split(":", 1)[1].strip().strip('"')
-        except OSError:
-            pass
-    return ESTATE_ZONE_DEFAULT
+    """The estate's DNS zone, from the environment or from the file that declares it.
+
+    The declaration is the estate's one source; this function asks the one resolver for it.
+    An unknown zone is an empty string, and the probes that need it say BLIND rather than
+    dialling a host they cannot name.
+    """
+    return estate_zone()
 
 
 def probe_http(link: dict, zone: str) -> tuple:
