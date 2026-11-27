@@ -1,0 +1,39 @@
+{
+  "registered_context_failure_classes": [
+    {
+      "code": "FC_TURN1_BLOATED_RULES",
+      "description": "Auto-injected repo rule files exceed 1,500 tokens, causing Turn-1 context rot across Cline/Codex/agent-sandbox.",
+      "exit_code": 43,
+      "mechanical_gate": "bin/estate_context_fleet_sync.py",
+      "severity": "P1_STRUCTURAL"
+    },
+    {
+      "code": "FC_CONTEXT_PREFIX_THRASH",
+      "description": "Agent or middleware mutated system prompt or tool schema mid-session, destroying KV-cache hit ratio.",
+      "error_code": "ERR_KV_PREFIX_THRASH",
+      "mechanical_gate": "context_governor.ContextGovernor.evaluate_ingress",
+      "severity": "P1_STRUCTURAL"
+    },
+    {
+      "code": "FC_GATEWAY_BYPASS_RAW_PROVIDER",
+      "description": "Fleet client config routes directly to upstream provider host instead of meridian-router-edge.",
+      "exit_code": 43,
+      "mechanical_gate": "bin/estate_context_fleet_sync.py",
+      "severity": "P0_STRUCTURAL"
+    },
+    {
+      "code": "FC_SUBAGENT_BUDGET_AMPLIFICATION",
+      "description": "Sub-agent inherited parent transcript (>4k brief) or exceeded hierarchical mission aggregate cap.",
+      "error_code": "ERR_MISSION_AGGREGATE_BUDGET_EXCEEDED",
+      "mechanical_gate": "context_governor.ContextGovernor.evaluate_ingress",
+      "severity": "P1_STRUCTURAL"
+    },
+    {
+      "code": "FC_MEMORY_PROBE_POLLUTION",
+      "description": "Self-test probe records or non-CURRENT authority memories injected into active context.",
+      "mechanical_gate": "context_governor.filter_authoritative_memories",
+      "severity": "P1_STRUCTURAL"
+    }
+  ],
+  "schema_version": "1.0.0"
+}

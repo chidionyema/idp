@@ -1,4 +1,5 @@
 import type { ReserveRequest, ReserveResponse, SettleRequest } from "./types";
+import { contextSnapshot, recordContext } from "./context-shadow";
 
 interface ReservationEntry {
   estimatedUsd: number;
@@ -67,6 +68,8 @@ export class BudgetLedgerDO implements DurableObject {
     const nowMs = Date.now();
 
     try {
+      if (request.method === "GET" && url.pathname === "/context/status") return contextSnapshot(this.state.storage);
+      if (request.method === "POST" && url.pathname === "/context/observe") return recordContext(this.state, await request.json());
       if (request.method === "GET" && url.pathname === "/status") {
         const snap = await this.load(nowMs);
         const reservedUsd = this.sumReserved(snap);

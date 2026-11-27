@@ -1,0 +1,12 @@
+# Drop-in patch for platform/estate/governance/laws.yaml
+context_governance_laws:
+  - id: LAW_CONTEXT_BUDGET_COHERENCE
+    version: "1.0.0"
+    enforcement: PHASED_SHADOW_TO_HARD_FAIL_CLOSED
+    applies_to: [lane_1_cloudflare, lane_2_oci, lane_3_github_actions, cline, codex, opencode, agent_sandbox]
+    invariant: >
+      All fleet agents route exclusively through meridian-router-edge (BudgetLedgerDO) with
+      role-clamped reasoning effort, immutable KV-cache prefixes, recoverable >4KB tool
+      pointer externalization (preserving failure traces), bounded non-renewable critical-section
+      leases, and Turn-1 auto-injected rule ceilings <= 1,500 tokens.
+    mechanical_gate: bin/estate_context_fleet_sync.py

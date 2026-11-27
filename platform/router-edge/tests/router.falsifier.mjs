@@ -4,6 +4,7 @@ import worker, { BudgetLedgerDO, RoutingStateDO } from "../dist/index.js";
 
 function createMemoryStorage() {
   const store = new Map();
+  let transactionQueue = Promise.resolve();
   return {
     async get(key) {
       return store.has(key) ? structuredClone(store.get(key)) : undefined;
@@ -12,7 +13,9 @@ function createMemoryStorage() {
       store.set(key, structuredClone(val));
     },
     async transaction(fn) {
-      return await fn();
+      const job = transactionQueue.then(fn);
+      transactionQueue = job.then(() => {}, () => {});
+      return await job;
     },
   };
 }
@@ -111,7 +114,7 @@ assert.equal(seedRes.status, 200);
 const calls = [];
 globalThis.fetch = async (url, init) => {
   const parsed = JSON.parse(init.body);
-  calls.push({ url: String(url), max_tokens: parsed.max_tokens, model: parsed.model });
+  calls.push({ url: String(url), max_tokens: parsed.max_tokens, model: parsed.model, messages: parsed.messages });
 
   if (String(url).includes("mock.groq.local")) {
     return new Response(JSON.stringify({ error: "request too large" }), { status: 413 });
@@ -194,4 +197,74 @@ const res4 = await worker.fetch(
 );
 assert.equal(res4.status, 401);
 
+// Context governance observes authenticated ingress through the real Worker and ledger classes.
+// Financial refusals remain independent of observer health.
+await drain();
+const contextStatusRequest = (key = "admin-secret-test") => new Request(
+  "https://llm.meridianlabs.cloud/admin/v1/context", { headers: { authorization: `Bearer ${key}` } }
+);
+const contextRes = await worker.fetch(contextStatusRequest(), env, ctx);
+assert.equal(contextRes.status, 200, "context governance is not wired into the existing ledger");
+const context = await contextRes.json();
+assert.equal(context.phase, "SHADOW");
+assert.equal(context.observations, 3, "wrong-key request must not enter context telemetry");
+assert(context.estimatedTokens > 0);
+assert(!JSON.stringify(context).includes("x".repeat(100)), "raw prompts must not be persisted or exposed");
+assert.equal((await worker.fetch(contextStatusRequest("wrong-key"), env, ctx)).status, 401);
+
+// Only the observer fails here. Inference and the financial ledger must still work.
+await worker.fetch(new Request("https://llm.meridianlabs.cloud/admin/v1/budget", {
+  method: "POST", headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
+  body: JSON.stringify({ dailyLimitUsd: 25, resetSpend: true }),
+}), env, ctx);
+const originalLedger = env.BUDGET_LEDGER;
+env.BUDGET_LEDGER = {
+  ...originalLedger,
+  get(id) {
+    const stub = originalLedger.get(id);
+    return { fetch(input, init) {
+      if (String(input).includes("/context/observe")) return Promise.reject(new Error("observer unavailable"));
+      return stub.fetch(input, init);
+    } };
+  },
+};
+const observerFailureResponse = await worker.fetch(new Request("https://llm.meridianlabs.cloud/v1/chat/completions", {
+  method: "POST", headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
+  body: JSON.stringify({ model: "role:coder", messages: [{ role: "user", content: "OBSERVER_FAILURE_CANARY" }] }),
+}), env, ctx);
+await drain();
+assert.equal(observerFailureResponse.status, 200, "SHADOW outage must not interrupt inference");
+env.BUDGET_LEDGER = originalLedger;
+
+const largeMessages = [{ role: "user", content: "x".repeat(120000) }];
+const largeResponse = await worker.fetch(new Request("https://llm.meridianlabs.cloud/v1/chat/completions", {
+  method: "POST", headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
+  body: JSON.stringify({ model: "role:coder", messages: largeMessages }),
+}), env, ctx);
+await drain();
+assert.equal(largeResponse.status, 200, "SHADOW must not interrupt a valid over-cap request");
+assert.deepEqual(calls.at(-1).messages, largeMessages, "context observer must not compact or mutate requests");
+const largeSnapshot = await (await worker.fetch(contextStatusRequest(), env, ctx)).json();
+assert.equal(largeSnapshot.observations, 4);
+assert.equal(largeSnapshot.lastObservation.role, "role:surgical-patch");
+assert(largeSnapshot.lastObservation.estimatedTokens > 28000);
+assert.equal(largeSnapshot.cacheHitRatio, null, "unmeasured cache coverage must stay UNKNOWN");
+
+const persistentStorage = createMemoryStorage();
+const contextLedger = new BudgetLedgerDO({ storage: persistentStorage });
+const directObservation = i => contextLedger.fetch(new Request("https://ledger.internal/context/observe", {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ scope: i.toString(16).padStart(64, "0"), role: "role:ops-dispatch", sourceSha: env.COMMIT_SHA,
+    request: { model: "test", messages: [{ role: "user", content: "PRIVATE_CONTEXT_SENTINEL" }] } }),
+}));
+for (let i = 0; i < 130; i++) assert.equal((await directObservation(i)).status, 200);
+await Promise.all(Array.from({ length: 10 }, (_, i) => directObservation(200 + i)));
+const restartedLedger = new BudgetLedgerDO({ storage: persistentStorage });
+const persisted = await (await restartedLedger.fetch(new Request("https://ledger.internal/context/status"))).json();
+assert.equal(persisted.observations, 140, "concurrent observations must persist across object restart");
+assert.equal(persisted.retainedSessions, 128, "observer storage must be bounded");
+assert.equal(await persistentStorage.get("ledger_state_v1"), undefined, "observer must not initialise/reset financial state");
+assert(!JSON.stringify(persisted).includes("PRIVATE_CONTEXT_SENTINEL"));
+
 console.log("ALL 4 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)");
+console.log("CONTEXT SHADOW INTEGRATION PASSED (real ingress, admin auth, privacy, observer outage isolation)");

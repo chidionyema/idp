@@ -1,5 +1,6 @@
 import { BudgetLedgerDO } from "./ledger-do";
 import { RoutingStateDO } from "./routing-do";
+import { observeContext } from "./context-shadow";
 import type {
   BackendCandidate,
   ChatCompletionRequest,
@@ -215,6 +216,10 @@ export default {
         return getRoutingStub(env).fetch("https://routing.internal/circuits");
       }
 
+      if (url.pathname === "/admin/v1/context" && request.method === "GET") {
+        return getLedgerStub(env).fetch("https://ledger.internal/context/status");
+      }
+
       if (url.pathname === "/admin/v1/budget") {
         const targetPath = request.method === "POST" ? "/configure" : "/status";
         return getLedgerStub(env).fetch(`https://ledger.internal${targetPath}`, {
@@ -254,6 +259,7 @@ export default {
 
       const routingStub = getRoutingStub(env);
       const ledgerStub = getLedgerStub(env);
+      ctx.waitUntil(observeContext(ledgerStub, request, body, role, clientToken, commitSha).catch(() => {}));
 
       // Step A: Capability-aware Battalion Admission Plan
       const planRes = await routingStub.fetch("https://routing.internal/plan", {
