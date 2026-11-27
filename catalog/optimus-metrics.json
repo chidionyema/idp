@@ -193,6 +193,18 @@
       "better": "lower",
       "owner": "estate-memory",
       "description": "shared ESTATE_AGENT spellings (claim-open's SHARED_AGENT_NAMES plus case/space variants) under which the write gate refuses a holder its own live claim (idp#8606)"
+    },
+    {
+      "name": "dispatch.headless_plan_denials",
+      "measure": [
+        "python3",
+        "tests/estate/test_agent_invoke_headless_can_plan.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "critical-watch",
+      "description": "of the two denials measured on 2026-11-27 (the plan tools, and a permission mode that needs an approver), how many the headless launcher's claude argv still reproduces (idp#8611)"
     }
   ]
 }

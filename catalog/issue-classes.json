@@ -418,6 +418,16 @@
       "gap": "claim-open refused the shared name as an identity while the write gate used it as one: two readers of one rule, no shared source",
       "compensating_action": "the write gate parses claim-open's SHARED_AGENT_NAMES from source and judges a shared name as no identity; the push-time claim-gate still refuses a cross-agent collision",
       "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py: 4 of 5 fail on main, 5/5 on the fix; --optimus reads the holder refusals"
+    },
+    {
+      "class": "headless-agent-needs-an-approver",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "critical-watch woke four incident agents through agent-invoke.sh under --permission-mode acceptEdits (a9ee9b95, c3185745, 30573f96, eb4b4fa9, 02:25-02:32Z); declare_plan, the estate-plan CLI and the evidence read were each denied, the Bash hook refused everything until a plan existed, zero work (idp#8611)"
+      ],
+      "gap": "a headless dispatcher kept a permission mode that asks a human, so every prompt became a denial, including the path the estate's own hooks demand first",
+      "compensating_action": "agent-invoke.sh runs claude -p in auto with the estate-memory server and the estate-plan door allowed outright; enforcement stays in the hooks",
+      "falsifier": "tests/estate/test_agent_invoke_headless_can_plan.py: 2 of 3 fail on main, 3/3 on the fix; --optimus reads 2 on main, 0 fixed; real-CLI replay acceptEdits 2 denials, auto 0"
     }
   ]
 }
