@@ -418,6 +418,19 @@
       "gap": "claim-open refused the shared name as an identity while the write gate used it as one: two readers of one rule, no shared source",
       "compensating_action": "the write gate parses claim-open's SHARED_AGENT_NAMES from source and judges a shared name as no identity; the push-time claim-gate still refuses a cross-agent collision",
       "falsifier": "tests/test_enforce_shared_agent_name_is_no_identity.py: 4 of 5 fail on main, 5/5 on the fix; --optimus reads the holder refusals"
+    },
+    {
+      "class": "keyed-catalog-line-conflict",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "#8606 rebased by hand twice on catalog/issue-classes.json + catalog/optimus-metrics.json",
+        "#8609 push refused: does not merge onto origin/main (catalog)",
+        "#8611 rebased by hand on the same two files",
+        "Greenlane lane/fix/shared-agent-name-is-no-identity RED: does not merge onto refs/remotes/origin/main: catalog/issue-classes.json, catalog/optimus-metrics.json"
+      ],
+      "gap": "every shipping lane appends one class and one metric to the same list end, and git's line merge calls any two such lanes a conflict although they never touched each other's entries",
+      "compensating_action": "bin/catalog-merge merges the keyed catalogs by identity (three-way per key; the same key changed differently still conflicts); .gitattributes names the files; claim-gate's merge-check passes main's rule and driver, the Greenlane's cherry-pick passes the driver, bin/idp-install-hooks wires it for local rebases",
+      "falsifier": "tests/test_catalog_keyed_merge.py: two different keys merge at the driver, at claim-gate and at the Greenlane pick; the same key written twice, unparseable JSON, an unknown path and a duplicate key still conflict (main: 11 of 14 fail)"
     }
   ]
 }

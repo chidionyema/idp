@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""catalog-merge -- a three-way merge driver for the keyed catalogs (idp#8615).
+
+    git config merge.estate-catalog.driver 'python3 bin/catalog-merge %O %A %B %P'
+    (.gitattributes names the files; claim-gate and the Greenlane pass the driver themselves)
+
+Every lane that ships registers its class in catalog/issue-classes.json and its metric in
+catalog/optimus-metrics.json, and each appends one entry at the end of the same list. Git's line
+merge sees two edits to the same last lines and calls it a conflict, so two lanes that never
+touched each other's work refused each other at pre-push and in the Greenlane. Measured
+2026-11-27: four rebases across three lanes in one session (#8606, #8609, #8611), each fixed by
+hand with the same union.
+
+This driver merges by IDENTITY, not by line. Per entry (keyed by its identity field) and per
+top-level field, the usual three-way rule: both sides agree -> keep it; one side changed it ->
+take that side; both sides changed it differently -> CONFLICT (exit 1). A deletion is a change.
+So two new entries with different keys merge, and two lanes that wrote the same key differently
+still conflict, because that is a real disagreement a person or agent must settle.
+
+Anything it cannot judge is a conflict, never a guess: an unknown path, unparseable JSON, a
+collection that is not a list of keyed objects, or a duplicate key. Exit 1 leaves %A as ours,
+which is exactly git's own conflict outcome.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+
+# path -> (collection field, identity field). One table: a new keyed catalog is one row here and
+# one line in .gitattributes.
+SCHEMAS = {
+    "catalog/issue-classes.json": ("classes", "class"),
+    "catalog/optimus-metrics.json": ("metrics", "name"),
+}
+_ABSENT = object()
+
+
+class Conflict(Exception):
+    """A difference this driver will not decide."""
+
+
+def _index(doc: object, coll: str, key: str, side: str) -> dict:
+    if not isinstance(doc, dict) or not isinstance(doc.get(coll), list):
+        raise Conflict(f"{side}: no `{coll}` list")
+    out: dict = {}
+    for entry in doc[coll]:
+        if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
+            raise Conflict(f"{side}: a `{coll}` entry has no string `{key}`")
+        if entry[key] in out:
+            raise Conflict(f"{side}: `{entry[key]}` appears twice")
+        out[entry[key]] = entry
+    return out
+
+
+def _pick(name: str, base: object, ours: object, theirs: object) -> object:
+    if ours == theirs:
+        return ours
+    if ours == base:
+        return theirs
+    if theirs == base:
+        return ours
+    raise Conflict(f"`{name}` changed differently on both sides")
+
+
+def merge(base: object, ours: object, theirs: object, coll: str, key: str) -> dict:
+    """The merged document, or Conflict. Order: ours, then theirs' new entries in their order."""
+    o = _index(base, coll, key, "base")
+    a = _index(ours, coll, key, "ours")
+    b = _index(theirs, coll, key, "theirs")
+    merged: dict = {}
+    for field in list(ours) + [f for f in theirs if f not in ours]:
+        if field == coll:
+            merged[coll] = None  # placeholder keeps the field's position
+            continue
+        value = _pick(
+            field,
+            base.get(field, _ABSENT),
+            ours.get(field, _ABSENT),
+            theirs.get(field, _ABSENT),
+        )
+        if value is not _ABSENT:
+            merged[field] = value
+    entries = []
+    for ident in list(a) + [k for k in b if k not in a]:
+        value = _pick(
+            f"{coll}[{ident}]",
+            o.get(ident, _ABSENT),
+            a.get(ident, _ABSENT),
+            b.get(ident, _ABSENT),
+        )
+        if value is not _ABSENT:
+            entries.append(value)
+    merged[coll] = entries
+    return merged
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 4:
+        print("usage: catalog-merge BASE OURS THEIRS PATH", file=sys.stderr)
+        return 2
+    base_p, ours_p, theirs_p, path = argv
+    if path not in SCHEMAS:
+        print(f"CONFLICT catalog-merge  {path}: not a keyed catalog", file=sys.stderr)
+        return 1
+    coll, key = SCHEMAS[path]
+    try:
+        docs = []
+        for p in (base_p, ours_p, theirs_p):
+            with open(p, encoding="utf-8") as fh:
+                docs.append(json.load(fh))
+        result = merge(*docs, coll, key)
+    except (OSError, ValueError, Conflict) as exc:
+        print(f"CONFLICT catalog-merge  {path}: {exc}", file=sys.stderr)
+        return 1
+    with open(ours_p, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
