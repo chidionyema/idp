@@ -217,6 +217,16 @@ def main() -> int:
         local_head = _local_head(branch)
         if local_head:
             receipt["head"] = local_head
+            # Judge against the main ls-remote just read, never the clone's last fetch. Measured
+            # 2026-11-27: lane/fix/estate-mcp-build-checks-run-premerge squash-landed as #8651 and
+            # read GONE here, because origin/main in this clone predated the landing (idp#8653).
+            # A main that cannot be fetched is a missing witness: BLIND, never GONE.
+            run(["git", "fetch", "-q", "--no-tags", "origin",
+                 "refs/heads/main:refs/remotes/origin/main"])
+            if run(["git", "rev-parse", "--verify", "--quiet", "origin/main"])[1].strip() != main_sha:
+                print(f"BLIND   lane-where  {branch}  origin/main could not be fetched to "
+                      f"{main_sha[:12]}; cannot judge whether the lane landed")
+                return 2
             landed, landed_by = landed_by_content(local_head)
             if landed:
                 receipt.update(landed=True, landed_by=landed_by, verdict="LANDED")
