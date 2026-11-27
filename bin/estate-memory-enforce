@@ -246,30 +246,42 @@ def covers(row: dict, rel: str) -> bool:
     )
 
 
-def _shared_agent_names() -> frozenset:
+def _shared_agent_names(root: str | None = None) -> frozenset:
     """bin/claim-open's SHARED_AGENT_NAMES, read from its source, never a second copy.
 
     `~/.zshrc` exports ESTATE_AGENT=estate-agent to every shell, so the variable names the
     machine, not the agent. claim-open refuses that name as an identity, so no claim is ever held
     by it; reading it here AS the identity refused every holder its own claim (idp#8606). The
     literal is parsed, not imported: importing claim-open resolves the repo and tools on every
-    hook call. Unreadable = an empty set, which is the old behaviour, never a deadlock.
+    hook call.
+
+    WHERE it is read from (idp#8660): the hook every harness runs is the deployed copy in
+    ~/.estate/memory/bin, and nothing deploys claim-open beside it. Reading only the sibling gave
+    that copy an empty set, so the deadlock #8606 fixed came back on every real call. The idp
+    checkout holding the edited path is the authority the claim ledger speaks for, so its
+    bin/claim-open is read first, then the hook's own bin. Unreadable everywhere = an empty set.
     """
     import ast
 
-    try:
-        with open(os.path.join(_BIN_ROOT, "claim-open")) as f:
-            tree = ast.parse(f.read())
+    candidates = [os.path.join(root, "bin", "claim-open")] if root else []
+    candidates.append(os.path.join(_BIN_ROOT, "claim-open"))
+    for candidate in candidates:
+        try:
+            with open(candidate) as f:
+                tree = ast.parse(f.read())
+        except (OSError, SyntaxError, ValueError):
+            continue
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(
                 isinstance(t, ast.Name) and t.id == "SHARED_AGENT_NAMES"
                 for t in node.targets
             ):
-                return frozenset(
-                    n.lower() for n in ast.literal_eval(node.value.args[0])
-                )
-    except (OSError, SyntaxError, ValueError, AttributeError, IndexError):
-        pass
+                try:
+                    return frozenset(
+                        n.lower() for n in ast.literal_eval(node.value.args[0])
+                    )
+                except (ValueError, AttributeError, IndexError):
+                    break
     return frozenset()
 
 
@@ -278,13 +290,14 @@ SHARED_AGENT_NAMES = _shared_agent_names()
 
 def focus_verdict(path: str, rows, agent: str):
     """(ok, reason): is there a live claim covering `path`? ok=None means unknown."""
-    # A shared name is no identity: judge as if ESTATE_AGENT were unset (idp#8606).
-    if agent.strip().lower() in SHARED_AGENT_NAMES:
-        agent = ""
     path = real(path)
     root = git_root_if_idp(path)
     if root is None:
         return True, "not in the idp checkout"
+    # A shared name is no identity: judge as if ESTATE_AGENT were unset (idp#8606), with the
+    # names read from the checkout being edited, wherever this hook copy lives (idp#8660).
+    if agent.strip().lower() in (SHARED_AGENT_NAMES | _shared_agent_names(root)):
+        agent = ""
     if rows is None:
         return None, "claim ledger unreadable"
     rel = os.path.relpath(path, root)

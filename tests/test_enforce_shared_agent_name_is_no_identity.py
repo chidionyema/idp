@@ -19,7 +19,10 @@ from __future__ import annotations
 import ast
 import importlib.machinery
 import importlib.util
+import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -27,8 +30,13 @@ BIN = REPO / "bin" / "estate-memory-enforce"
 CLAIM_OPEN = REPO / "bin" / "claim-open"
 
 
-def load_enforce():
-    loader = importlib.machinery.SourceFileLoader("estate_memory_enforce", str(BIN))
+def load_enforce(path: Path = BIN):
+    # The hook's own imports (focus, handback, plan) resolve relative to its location; a
+    # relocated copy finds them through the repo's tree, as the deployed copy finds its own.
+    memory = str(REPO / "platform" / "estate" / "memory")
+    if memory not in sys.path:
+        sys.path.append(memory)
+    loader = importlib.machinery.SourceFileLoader("estate_memory_enforce", str(path))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -141,3 +149,51 @@ if __name__ == "__main__":
             "usage: python3 tests/test_enforce_shared_agent_name_is_no_identity.py --optimus"
         )
     print(f"optimus.enforce.shared_name_holder_refusals={holder_refusals()}")
+
+
+def relocated_refuses_the_holder(source: Path, scratch: Path) -> bool:
+    """The deployed layout: the hook alone in a bin/ with no claim-open beside it (idp#8660).
+
+    True when that copy refuses a holder its own claim under the shared name, the measured
+    deadlock: `~/.estate/memory/bin/estate-memory-enforce` refused claude-ins00037-takeover's
+    live claim on #8658 because ESTATE_AGENT=estate-agent and the sibling read found nothing.
+    """
+    deployed = scratch / "deployed" / "bin"
+    deployed.mkdir(parents=True)
+    shutil.copy(source, deployed / "estate-memory-enforce")
+    enforce = load_enforce(deployed / "estate-memory-enforce")
+    assert not (deployed / "claim-open").exists()
+    checkout = idp_checkout(scratch / "repo")
+    (checkout / "bin").mkdir()
+    shutil.copy(CLAIM_OPEN, checkout / "bin" / "claim-open")
+    rows = [{"live": True, "agent": "claude-ins00037-takeover", "paths": "docs/*"}]
+    ok, _ = enforce.focus_verdict(
+        str(checkout / "docs" / "note.md"), rows, "estate-agent"
+    )
+    return not ok
+
+
+def test_the_deployed_copy_without_claim_open_still_admits_the_holder(tmp_path):
+    assert not relocated_refuses_the_holder(BIN, tmp_path)
+
+
+def test_falsifier_a_resolver_that_reads_only_its_sibling_refuses_the_holder(tmp_path):
+    """The pre-#8660 resolver, reconstructed: it must reproduce the measured deadlock."""
+    text = BIN.read_text()
+    sibling_only = text.replace(
+        'candidates = [os.path.join(root, "bin", "claim-open")] if root else []',
+        "candidates = []",
+    )
+    assert sibling_only != text, (
+        "the root-first candidate line moved; update the falsifier"
+    )
+    old = tmp_path / "old" / "estate-memory-enforce"
+    old.parent.mkdir()
+    old.write_text(sibling_only)
+    assert relocated_refuses_the_holder(old, tmp_path / "case")
+
+
+if __name__ == "__main__" and "--optimus" in sys.argv:
+    with tempfile.TemporaryDirectory() as scratch:
+        bad = int(relocated_refuses_the_holder(BIN, Path(scratch)))
+    print(f"optimus.hooks.enforce_shared_name_unresolved_when_relocated={bad}")
