@@ -1,0 +1,88 @@
+{
+  "allowed_phases": [
+    "SHADOW",
+    "SOFT_ROTATE",
+    "ENFORCE"
+  ],
+  "gateway_base_url": "https://llm.meridianlabs.cloud/v1",
+  "global_invariants": {
+    "allowed_memory_authority_statuses": [
+      "CURRENT"
+    ],
+    "critical_section_max_headroom_ratio": 0.15,
+    "critical_section_max_turns": 2,
+    "critical_section_renewable": false,
+    "externalize_tool_result_bytes": 4096,
+    "forbidden_direct_provider_hosts": [
+      "api.deepseek.com",
+      "api.openai.com",
+      "api.anthropic.com",
+      "openrouter.ai",
+      "api.z.ai"
+    ],
+    "max_always_on_mcp_tools": 10,
+    "max_auto_injected_rules_tokens": 1500,
+    "min_kv_cache_hit_ratio_target": 0.75,
+    "quarantined_memory_namespaces": [
+      "self-test",
+      "probe",
+      "healthcheck",
+      "canary-probe"
+    ],
+    "retain_recent_images_count": 1,
+    "subagent_max_brief_tokens": 4000
+  },
+  "roles": {
+    "role:architecture-audit": {
+      "description": "Frontier architectural planning, formal specs, adversarial review",
+      "hard_context_cap": 64000,
+      "max_grace_turns_after_soft": 2,
+      "max_output_tokens_clamp": 8192,
+      "mission_aggregate_cap": 200000,
+      "reasoning_effort_clamp": "high",
+      "soft_context_cap": 48000,
+      "turn_1_prefix_cap": 12000
+    },
+    "role:ops-dispatch": {
+      "description": "Cline deploy dispatch, gh CLI, curl probes, incident triage",
+      "hard_context_cap": 24000,
+      "max_grace_turns_after_soft": 1,
+      "max_output_tokens_clamp": 2048,
+      "mission_aggregate_cap": 48000,
+      "reasoning_effort_clamp": "low",
+      "soft_context_cap": 16000,
+      "turn_1_prefix_cap": 6000
+    },
+    "role:sandbox-legion": {
+      "description": "Lane 3 agent-sandbox and Legion 8 sub-agent swarm",
+      "hard_context_cap": 48000,
+      "max_grace_turns_after_soft": 1,
+      "max_output_tokens_clamp": 4096,
+      "mission_aggregate_cap": 160000,
+      "reasoning_effort_clamp": "medium",
+      "soft_context_cap": 32000,
+      "turn_1_prefix_cap": 8000
+    },
+    "role:surgical-patch": {
+      "description": "Codex / OpenCode single-PR surgical code repair",
+      "hard_context_cap": 40000,
+      "max_grace_turns_after_soft": 1,
+      "max_output_tokens_clamp": 4096,
+      "mission_aggregate_cap": 120000,
+      "reasoning_effort_clamp": "medium",
+      "soft_context_cap": 28000,
+      "turn_1_prefix_cap": 8000
+    }
+  },
+  "rollout_phase": "SHADOW",
+  "schema": "urn:estate:context:policy:v1",
+  "tokenizer_safety_multipliers": {
+    "deepseek": 1.25,
+    "default": 1.15,
+    "gemini": 1.1,
+    "glm": 1.25,
+    "minimax": 1.25,
+    "nemotron": 1.2
+  },
+  "version": "1.0.0"
+}

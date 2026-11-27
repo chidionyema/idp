@@ -472,6 +472,19 @@
       "gap": "the fleet reports every session as 'stopped', so a session that died on an API error or mid-turn was indistinguishable from one that finished, and session start carried no ending",
       "compensating_action": "platform/estate/memory/session_end.py classifies each transcript tail (Claude Code and pi) as ENDED, API-ERROR or MID-TURN; bin/estate-brief, which every runtime's session start runs, names the unclean endings of the last 24 h grouped by cause with the transcript path",
       "falsifier": "tests/test_brief_names_unclean_endings.py runs the real bin/estate-brief on a temp HOME of Claude Code and pi transcripts: main 3 failed 1 passed, the fix 4 passed; --optimus reads unreported unclean endings (3 -> 0)"
+    },
+    {
+      "class": "turn1-rule-tax-unbudgeted",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "idp AGENTS.md 58,150 B and CLAUDE.md 2,204 B are loaded by every session before its first tool call: 14,439 cl100k_base tokens, with no cap and no gate on growth (measured 2026-11-27 on origin/main 8b1af4a60)",
+        "the context-governance kit's compiler would have met its own cap by replacing AGENTS.md wholesale: 58,150 B -> 800 B, 935 lines deleted, the substrate-authority and capability-advertising blocks among them (idp#8492 Hold #1)"
+      ],
+      "gap": "nothing measured or capped the auto-injected rule files, so every line added to AGENTS.md taxed every session on every turn with no gate to refuse the growth; and the one tool offered to enforce a cap did it by deleting the authority it was meant to guard",
+      "compensating_action": "bin/estate_context_fleet_sync.py --audit, run by bin/idp-ci at pre-push, the fast gate and CI: over the 1,500-token cap the rule files may hold or shrink against the base, never grow (exit 43), and an unreadable base is refused (exit 2); --compile composes one marked block and never deletes a byte outside it; --optimus reads context.turn1_rule_tokens",
+      "falsifier": "bin/estate_context_fleet_sync.py --self-test (14 known-bad/known-good cases, exit 0; a mutant admitting growth exits 1) and tests/test_estate_context_fleet_sync.py, which composes the real AGENTS.md and requires every original line to survive",
+      "owner": "context",
+      "status": "open"
     }
   ]
 }
