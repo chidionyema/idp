@@ -598,6 +598,18 @@
       "better": "higher",
       "owner": "governance",
       "description": "How many of 8 known-good and known-bad founder messages get the right verdict from bin/estate-founder-gate (proof line, one action, no secret, no filler, empty refused). 8 means every admission rule bites; less means a rule was weakened."
+    },
+    {
+      "name": "agents_md.stop_directives",
+      "measure": [
+        "python3",
+        "-c",
+        "import pathlib, re\nt = pathlib.Path('AGENTS.md').read_text()\npat = re.compile(r'(?i)\\bthen stop\\b|stop that action|may propose a change|contributes or waits|\\bthen wait\\b')\nprint('optimus.agents_md.stop_directives=%d' % len(pat.findall(t)))\n"
+      ],
+      "unit": "directives",
+      "better": "lower",
+      "owner": "estate",
+      "description": "instructions in the kernel AGENTS.md that tell an agent to stop, wait or only propose (founder, 2026-11-28: rules are enforced in code, not files; agents begin at full throttle and never stop). 1 before this change (\"stop that action and verify the current authority\"), 0 after."
     }
   ]
 }
