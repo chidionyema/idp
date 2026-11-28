@@ -687,6 +687,18 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "The number of executable proofs in the consultation plane that pass: 16 in tests/test_consult_plane.py (budget conservation, the local-browser transport ban, the Tier-0 digest cache, Class C injection quarantine, tier gating, blind challenger isolation, noise rejection, the asymmetric veto, founder-seal escalation and operational_yield enforcement) and 16 in tests/test_founder_firewall_and_poe.py (the AST discovery fallback, the three compulsory stuck triggers, zero-spend PoE rejection, the raw-dump cap, 3-strike reaping, cooldown demotion, spam, the four-class whitelist, the five-field card contract and the outage path). 0 before idp#8745; 32 with it."
+    },
+    {
+      "name": "thin_client.unguarded_worktree_spawn",
+      "measure": [
+        "python3",
+        "estate/gates/tests/zero-worktree-door.test.py",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when any of git worktree add, git -C worktree add or git clone reaches git through the tracked shell door estate/gates/shell-guard.sh, 0 when the door refuses all of them. 1 on main (the door judged kills only), 0 with the zero-worktree judge wired in (#8725)."
     }
   ]
 }

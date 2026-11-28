@@ -689,6 +689,18 @@
       "compensating_action": "the push path judges the same rules before it writes anything: ruff format pinned to 0.15.18, bin/language-gate's new-Python-file trailer rule, and claim path coverage; a push that would fail pre-CI is refused locally and names the file. Greenlane's autoformat repairs format-only reds in the queue",
       "falsifier": "a lane head for which `bin/language-gate origin/main <head>` exits 1 reaches Greenlane with no autoformat or local refusal ahead of it",
       "owner": "governance"
+    },
+    {
+      "class": "thin-client-door-not-wired",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "The founder's thin-client order (2026-11-11) is judged by bin/estate-zero-worktree, but nothing on an agent's shell path asked it: the wiring lived in mcp/plugins/estate_executor.py, whose diff runtime-sync discarded (~/.estate/runtime-sync-discarded-20261111T123851Z.diff), and estate/gates/shell-guard.sh judged kills only. Measured 2026-11-28: 18 local worktrees against a cap of 4, 128 MiB free, load ~550 (#8725)."
+      ],
+      "gap": "a guard that was built and tested but not wired to the door agents use, so it could not refuse anything; enforcement was one deleted file away from absent",
+      "compensating_action": "none: agents created worktrees and clones freely until the shell door asked the judge",
+      "falsifier": "estate/gates/tests/zero-worktree-door.test.py runs the real door and the real judge against a decoy git: spawns are refused, ordinary git runs, a missing or crashing judge fails open, and the pre-change door (fixtures/shell-guard-kills-only.sh) lets every spawn through",
+      "owner": "claude-ins00037-takeover",
+      "status": "fixed-pending-landing"
     }
   ]
 }
