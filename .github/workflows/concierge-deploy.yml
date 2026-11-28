@@ -297,11 +297,15 @@ jobs:
       # THE FOUNDER'S HALF, CARRIED, NOT RE-ASKED. TWILIO_AUTH_TOKEN, the three numbers and the card
       # key are born in Bitwarden (consoles.yaml `twilio` and `card-key` rows) and the vendor bridge
       # already lands each in the `concierge` namespace. GitHub holds none of them and must not
-      # become a second home (LAW 44), so this run reads them where they already are -- the same
-      # OIDC road estate-secret-prune.yml takes to the cluster -- and writes the two Modal secrets
-      # the code declares: `human-twilio` (webapp.py) and `card-key` (agent.py). --force, every
-      # run: these are copies, so the cluster's value is the truth and a rotation there lands here
-      # on the next deploy. Values are masked in the log and never echoed.
+      # become a second home (LAW 44), so this run reads them where they already are and writes the
+      # two Modal secrets the code declares: `human-twilio` (webapp.py) and `card-key` (agent.py).
+      #
+      # OKE IS RETIRED (ADR 0048): there is no OCI cluster to read, and the k3s replacement is not
+      # an OCI CE cluster, so `bin/idp-cloud cluster list` is empty by design. A deploy must not
+      # therefore fail, and must not mint a second card key (a new one makes every stored card
+      # unreadable). When no cluster answers, the copies the previous deploy already wrote are the
+      # truth: keep them and say so. A rotation needs a reachable secret store; that failure is
+      # loud here, not silent. Values are masked in the log and never echoed.
       - uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         if: ${{ inputs.dry_run != true }}
 
@@ -315,7 +319,20 @@ jobs:
           set -euo pipefail
           cl=$(bin/idp-cloud cluster list)
           cid=$(printf '%s\n' "$cl" | awk -v n="$OCI_CLUSTER_NAME" '$1==n{print $2; exit}')
-          [ -n "$cid" ] || { echo "FAIL    concierge-deploy  no ACTIVE cluster named $OCI_CLUSTER_NAME"; exit 1; }
+          if [ -z "$cid" ]; then
+            # ADR 0048: OKE is retired and the k3s node is not an OCI CE cluster. Do not mint a
+            # second card key and do not lose the deploy: keep the Modal copies already written.
+            existing="$(modal secret list 2>/dev/null || true)"
+            case "$existing" in *human-twilio*) have_twilio=1 ;; *) have_twilio=0 ;; esac
+            case "$existing" in *card-key*) have_card=1 ;; *) have_card=0 ;; esac
+            if [ "$have_twilio" = 1 ] && [ "$have_card" = 1 ]; then
+              echo "keep    modal   human-twilio and card-key (no ACTIVE cluster named $OCI_CLUSTER_NAME; ADR 0048)"
+              exit 0
+            fi
+            echo "FAIL    concierge-deploy  no ACTIVE cluster named $OCI_CLUSTER_NAME and no Modal copies"
+            echo "        restore the vendor rows into a reachable secret store, then re-run"
+            exit 1
+          fi
           KUBECONFIG=$(mktemp); export KUBECONFIG
           trap 'rm -f "$KUBECONFIG"' EXIT
           bin/idp-cloud cluster kubeconfig "$cid" --file "$KUBECONFIG"
