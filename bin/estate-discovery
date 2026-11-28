@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""estate-discovery: prove what the estate has before an agent says it is blocked.
+
+  estate-discovery                    run every probe in catalog/estate-resources.json, write a receipt
+  estate-discovery --require-fresh S  exit 1 unless the receipt is at most S seconds old and clean
+
+An agent that wants to report a block, stop, or ask for infrastructure holds a fresh clean
+receipt first. The receipt carries the ledger sha256, one line per resource (declared status,
+probe result, verdict) and a sha256 over those lines, so anyone can re-run it and compare.
+
+Verdicts (a verdict other than OK or UNPROBED-OK fails the run):
+  OK              probe agreed with the declared status
+  UNPROBED-OK     no probe exists and the status is not OPERATIONAL (nothing is being claimed)
+  CONTRADICTED    declared OPERATIONAL but the probe failed, or declared down/missing but it answered
+  CLAIM-NO-PROBE  declared OPERATIONAL with no probe: a claim with no proof is not made
+"""
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LEDGER = ROOT / "catalog" / "estate-resources.json"
+RECEIPT = Path(
+    os.environ.get(
+        "ESTATE_DISCOVERY_RECEIPT",
+        str(Path.home() / ".estate" / "discovery" / "latest.json"),
+    )
+)
+TIMEOUT_S = 8
+UP = {"OPERATIONAL"}
+DOWN = {"DECLARED-NOT-FOUND", "RETIRED", "UNREACHABLE", "DOWN"}
+
+
+def run_probe(probe):
+    """Return (answered, detail). Never raises: a probe that cannot run is a failed probe."""
+    try:
+        if "http" in probe:
+            if not str(probe["http"]).startswith(("https://", "http://")):
+                return False, "probe-error=unsupported-scheme"
+            req = urllib.request.Request(  # noqa: S310 -- scheme checked on the line above
+                probe["http"], headers={"User-Agent": "estate-discovery"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:  # noqa: S310 -- same checked URL
+                    code = r.status
+            except urllib.error.HTTPError as e:
+                code = e.code
+            return code == probe.get("expect", 200), f"http={code}"
+        if "argv" in probe:
+            r = subprocess.run(
+                probe["argv"], capture_output=True, text=True, timeout=TIMEOUT_S
+            )
+            out = (r.stdout + r.stderr).strip()
+            want = probe.get("expect_contains", "")
+            return (
+                r.returncode == 0 and want in out,
+                f"rc={r.returncode} out={out[:80]!r}",
+            )
+        if "path_exists" in probe:
+            ok = Path(os.path.expanduser(probe["path_exists"])).exists()
+            return ok, f"exists={ok}"
+    except Exception as e:  # a probe that cannot run is a failed probe, never a pass
+        return False, f"probe-error={type(e).__name__}"
+    return None, "no-probe"
+
+
+def judge(status, answered):
+    if answered is None:
+        return "CLAIM-NO-PROBE" if status in UP else "UNPROBED-OK"
+    if status in UP:
+        return "OK" if answered else "CONTRADICTED"
+    if status in DOWN:
+        return "CONTRADICTED" if answered else "OK"
+    return "OK"
+
+
+def discover(ledger):
+    lines = []
+    for res in ledger["resources"]:
+        answered, detail = run_probe(res.get("probe", {}))
+        verdict = judge(res["status"], answered)
+        lines.append(f"{res['id']}\tdeclared={res['status']}\t{detail}\t{verdict}")
+    return lines
+
+
+def main(argv):
+    if argv[:1] == ["--require-fresh"]:
+        limit = int(argv[1])
+        try:
+            rec = json.loads(RECEIPT.read_text())
+        except (OSError, ValueError):
+            print(
+                "estate-discovery: no receipt; run estate-discovery first",
+                file=sys.stderr,
+            )
+            return 1
+        age = time.time() - rec["at"]
+        if age > limit or not rec["clean"]:
+            print(
+                f"estate-discovery: receipt age={age:.0f}s clean={rec['clean']} (limit {limit}s)",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"estate-discovery: fresh receipt {rec['receipt_sha256'][:12]} age={age:.0f}s"
+        )
+        return 0
+    ledger_path = Path(os.environ.get("ESTATE_RESOURCES", str(LEDGER)))
+    raw = ledger_path.read_bytes()
+    lines = discover(json.loads(raw))
+    bad = [ln for ln in lines if ln.endswith(("CONTRADICTED", "CLAIM-NO-PROBE"))]
+    body = "\n".join(lines) + "\n"
+    rec = {
+        "at": time.time(),
+        "ledger_sha256": hashlib.sha256(raw).hexdigest(),
+        "receipt_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        "clean": not bad,
+        "lines": lines,
+    }
+    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+    RECEIPT.write_text(json.dumps(rec, indent=1))
+    sys.stdout.write(body)
+    print(
+        f"receipt {rec['receipt_sha256']} clean={rec['clean']} contradictions={len(bad)}"
+    )
+    return 0 if not bad else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

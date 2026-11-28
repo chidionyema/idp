@@ -6,7 +6,7 @@
     "intent": 121,
     "layer": 334,
     "service": 123,
-    "tool": 553,
+    "tool": 554,
     "workflow": 115
   },
   "records": [
@@ -34807,6 +34807,55 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-discovery",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-discovery: prove what the estate has before an agent says it is blocked.",
+      "contract": {
+        "inputs": [
+          "--require-fresh"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-discovery",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

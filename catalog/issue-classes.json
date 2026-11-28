@@ -701,6 +701,22 @@
       "falsifier": "estate/gates/tests/zero-worktree-door.test.py runs the real door and the real judge against a decoy git: spawns are refused, ordinary git runs, a missing or crashing judge fails open, and the pre-change door (fixtures/shell-guard-kills-only.sh) lets every spawn through",
       "owner": "claude-ins00037-takeover",
       "status": "fixed-pending-landing"
+    },
+    {
+      "class": "agent-reports-block-without-discovery",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "Measured 2026-11-28: agents reported blocked, stopped, or asked for infrastructure on a declared status nothing had probed -- the estate held 11 resources whose status was prose, and the receipt that would have settled each one did not exist (idp#8746)."
+      ],
+      "gap": "an agent could report a block without probing the estate first, so a reachable resource was reported missing and a dead one was reported up, and neither claim carried a receipt anyone could re-run",
+      "compensating_action": "none at the time: nothing on an agent's path asked for a discovery receipt before a block was reported; bin/estate-discovery --require-fresh S is the door that now does, and a report with no receipt is a claim without proof",
+      "falsifier": "tests/estate/test_estate_discovery.py runs the judge against OPERATIONAL with a failing probe, OPERATIONAL with no probe, DECLARED-NOT-FOUND that answers, and a probe that cannot run -> expect CONTRADICTED, CLAIM-NO-PROBE, CONTRADICTED and a failed probe respectively; tests/estate/discovery_contradictions.py is the standing reading over the real ledger",
+      "owner": "opencode-deepseek-direct",
+      "surfaces": [
+        "estate",
+        "discovery"
+      ],
+      "status": "fixed-pending-landing"
     }
   ]
 }
