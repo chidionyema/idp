@@ -643,6 +643,18 @@
       "falsifier": "tests/estate/test_dag_gen_order_independent.py renders the graph under all 6 directory orders: 6 renderings on the unsorted generator, 1 on the sorted one; optimus estate.dag_gen_order_variants",
       "owner": "claude-ins00037-takeover",
       "status": "fixed-pending-landing"
+    },
+    {
+      "class": "unbounded-verification-wait",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "MERIDIAN-CTRL-001 section 11.1: SessionWorkflow._retain_instruction awaited the independent verifier with workflow.wait_condition and no timeout, so a missing or crashed verifier parked a consequential session forever with no recovery path (idp#8415)"
+      ],
+      "gap": "custody waited for an external attestation with no deadline, no re-dispatch and no terminal state; nothing in the workflow could tell 'verifier is slow' from 'verifier is gone'",
+      "compensating_action": "bounded verification: each wait has an explicit deadline, verification_requested receipts re-dispatch for a fixed number of rounds, then the session fails closed as verification-deadline-exceeded; gated by workflow.patched so pre-patch histories replay unchanged; consequential runners without an instruction_id are refused by the client and by custody-required-v1 inside the workflow",
+      "falsifier": "python3 tests/engine_verification_deadline_bounded.py prints optimus.engine.verification_deadline_bounded=1 (0 on the pre-patch workflow); sovereign/engine/test_instruction_id.py runs the real Temporal Test Server positive and negative controls and a pre-patch replay",
+      "owner": "governance",
+      "status": "mitigated"
     }
   ]
 }

@@ -36,6 +36,14 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, CancelledError
 
+# MERIDIAN-CTRL-001 section 11.1: the independent verifier gets a deadline, not forever.
+# Each expired round re-dispatches the verification request; after the last round the
+# obligation fails closed. An uncertain external mutation is never replayed on timeout.
+VERIFICATION_DEADLINE_S_DEFAULT = 3600
+VERIFICATION_MAX_ROUNDS_DEFAULT = 3
+# The one runner that cannot change anything outside the workflow (section 11.2).
+NON_CONSEQUENTIAL_RUNNERS = frozenset({"echo"})
+
 STATUSES = (
     "running",
     "waiting",
@@ -110,6 +118,9 @@ class SessionWorkflow:
         self._yield_proposal: dict[str, Any] | None = None
         self._yield_waiting = False
         self._guarded_instruction = False
+        self._bounded_verification = False
+        self._verification_deadline_s = VERIFICATION_DEADLINE_S_DEFAULT
+        self._verification_max_rounds = VERIFICATION_MAX_ROUNDS_DEFAULT
 
     # ---- signals ----
 
@@ -261,6 +272,23 @@ class SessionWorkflow:
             rec = self._pending_receipts.pop(0)
             await self._receipt(rec["kind"], rec["by"], rec.get("text", ""))
 
+    async def _request_verification(
+        self, expected: dict[str, Any], round_no: int
+    ) -> None:
+        """Durable verifier work item: a receipt in the chain, with the deadline in it.
+
+        The independent verifier reads the chain and answers with a signed envelope. The
+        request carries only identifiers and hashes the verifier must match, never a
+        worker claim, and it costs no model inference to wait for the answer.
+        """
+        await self._receipt(
+            "verification_requested",
+            "engine",
+            f"round={round_no}/{self._verification_max_rounds} "
+            f"deadline_s={self._verification_deadline_s} "
+            f"run_id={expected['run_id']} epoch={expected['epoch']}",
+        )
+
     async def _retain_instruction(self, reason: str) -> str:
         """Hold the obligation in Temporal, not the worker's conversation.
 
@@ -281,11 +309,38 @@ class SessionWorkflow:
             "commit_sha": self.last_commit,
         }
         await self._receipt("recovery_required", "engine", reason)
+        rounds = 0
+        if self._bounded_verification:
+            await self._request_verification(expected, 1)
         try:
             while not self._stop_requested:
-                await workflow.wait_condition(
-                    lambda: self._yield_proposal is not None or self._stop_requested
-                )
+                if self._bounded_verification:
+                    try:
+                        await workflow.wait_condition(
+                            lambda: (
+                                self._yield_proposal is not None or self._stop_requested
+                            ),
+                            timeout=timedelta(seconds=self._verification_deadline_s),
+                        )
+                    except asyncio.TimeoutError:
+                        rounds += 1
+                        await self._receipt(
+                            "verification_timeout",
+                            "engine",
+                            f"round {rounds}/{self._verification_max_rounds}",
+                        )
+                        if rounds >= self._verification_max_rounds:
+                            self.status = "failed"
+                            self.reason = "verification-deadline-exceeded"
+                            self._fsm_terminate()
+                            await self._receipt("fail", "engine", self.reason)
+                            return "terminal"
+                        await self._request_verification(expected, rounds + 1)
+                        continue
+                else:
+                    await workflow.wait_condition(
+                        lambda: self._yield_proposal is not None or self._stop_requested
+                    )
                 if self._stop_requested:
                     break
                 proposal = self._yield_proposal
@@ -411,9 +466,33 @@ class SessionWorkflow:
         self._approval_timeout_min = int(params.get("approval_timeout_min", 0))
         self.started_at = workflow.now().isoformat()
         self.updated_at = self.started_at
+        self._bounded_verification = self._guarded_instruction and workflow.patched(
+            "bounded-verification-deadline-v1"
+        )
+        self._verification_deadline_s = int(
+            params.get("verification_deadline_s") or VERIFICATION_DEADLINE_S_DEFAULT
+        )
+        self._verification_max_rounds = int(
+            params.get("verification_max_rounds") or VERIFICATION_MAX_ROUNDS_DEFAULT
+        )
 
         await self._budget("allocate", self.budget)
         await self._receipt("start", self.by, self.task)
+
+        # Section 11.2: complete mediation inside the workflow, so a caller that starts it
+        # directly cannot skip the client's check. Consequential work needs an instruction_id.
+        if (
+            not self.instruction_id
+            and self.runner not in NON_CONSEQUENTIAL_RUNNERS
+            and workflow.patched("custody-required-v1")
+        ):
+            self.status = "failed"
+            self.reason = (
+                "custody-required: consequential runner without instruction_id"
+            )
+            self._fsm_terminate()
+            await self._receipt("fail", "engine", self.reason)
+            return self._state()
 
         while True:
             if self._stop_requested:
