@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""idp-asset-check -- parse one declarative asset; the pre-push gate's per-type judge.
+
+    bin/idp-asset-check <file>   exit 0 parsed, 1 known type but malformed, 2 type not handled
+
+.githooks/pre-push is founder-sealed, and each file type it lacked a case for was refused
+"readable as neither shell nor Python" until a seal added one (plist #7714, TOML 2026-11-10,
+PNG/HTML/CSS idp#8647). A file type is not policy. The hook runs this file from origin/main's
+bytes, so adding a type is an ordinary lane with a falsifier (tests/test_idp_asset_check.py).
+
+Every handled type gets a check that can fail; nothing is waved through on its extension.
+Exit 2 sends the file back to the hook's unknown bucket, which still refuses it.
+"""
+
+from __future__ import annotations
+
+import struct
+import sys
+import xml.etree.ElementTree as ET  # noqa: S405 -- parses the pusher's own repo files
+import zlib
+
+PARSED, MALFORMED, UNHANDLED = 0, 1, 2
+
+TEXT = (".html", ".htm", ".css", ".csv", ".svg")
+IMAGE = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico")
+
+
+def png(b: bytes) -> str | None:
+    if b[:8] != b"\x89PNG\r\n\x1a\n" or len(b) < 33 or b[12:16] != b"IHDR":
+        return "no PNG signature or IHDR chunk"
+    if zlib.crc32(b[12:29]) != struct.unpack(">I", b[29:33])[0]:
+        return "IHDR CRC mismatch"
+    return None
+
+
+def image(path: str, b: bytes) -> str | None:
+    if path.endswith(".png"):
+        return png(b)
+    if path.endswith((".jpg", ".jpeg")):
+        ok = b[:3] == b"\xff\xd8\xff" and b.rstrip(b"\x00")[-2:] == b"\xff\xd9"
+        return None if ok else "no JPEG start/end markers"
+    if path.endswith(".gif"):
+        return None if b[:6] in (b"GIF87a", b"GIF89a") else "no GIF signature"
+    if path.endswith(".webp"):
+        return (
+            None if b[:4] == b"RIFF" and b[8:12] == b"WEBP" else "no RIFF/WEBP header"
+        )
+    return None if b[:4] == b"\x00\x00\x01\x00" and len(b) >= 22 else "no ICO header"
+
+
+def text(path: str, b: bytes) -> str | None:
+    if b"\x00" in b:
+        return "NUL byte in a text asset"
+    try:
+        s = b.decode("utf-8")
+    except UnicodeDecodeError as e:
+        return f"not UTF-8: {e}"
+    if path.endswith(".svg"):
+        try:
+            ET.fromstring(s)  # noqa: S314 -- the pusher's own repo file, not remote input
+        except ET.ParseError as e:
+            return f"SVG is not well-formed XML: {e}"
+    return None
+
+
+def judge(path: str) -> tuple[int, str]:
+    low = path.lower()
+    if not low.endswith(TEXT + IMAGE):
+        return UNHANDLED, "not a type this judge handles"
+    try:
+        with open(path, "rb") as fh:
+            b = fh.read()
+    except OSError as e:
+        return MALFORMED, f"unreadable: {e}"
+    why = image(low, b) if low.endswith(IMAGE) else text(low, b)
+    return (MALFORMED, why) if why else (PARSED, "ok")
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        sys.stderr.write("usage: idp-asset-check <file>\n")
+        return MALFORMED
+    rc, why = judge(argv[1])
+    if rc == MALFORMED:
+        sys.stderr.write(f"idp-asset-check: {argv[1]}: {why}\n")
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

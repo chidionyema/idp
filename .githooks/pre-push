@@ -295,6 +295,19 @@ except Exception as e:
     echo "pre-push REFUSED: no TOML parser available to check $1 (install tomli, or python 3.11+)" >&2
     return 1
   }
+  # DECLARATIVE ASSETS ARE JUDGED OUTSIDE THIS FILE (2026-11-27, idp#8648). This hook is a
+  # founder-sealed path, and every file type it lacked a case for was refused "readable as
+  # neither shell nor Python" until a seal added one: plists (#7714), TOML (2026-11-10), then
+  # every PNG, HTML and CSS file (idp#8647, the membrane extension). A file type is not policy,
+  # so it should not cost a seal. bin/idp-asset-check holds the per-type parsers; it is read
+  # from origin/main's bytes (as claim-gate is, above), so a lane cannot loosen it in its own
+  # branch, and it is fail-closed: 0 parsed, 1 known type but malformed (refused here, naming
+  # the file), 2 a type it does not handle (falls through to the unknown bucket below).
+  _asset_check=""
+  _ac="$(mktemp "${TMPDIR:-/tmp}/idp-asset-check.main.XXXXXX")"
+  if git show refs/remotes/origin/main:bin/idp-asset-check >"$_ac" 2>/dev/null && [ -s "$_ac" ]; then
+    _asset_check="$_ac"
+  fi
   for f in $diff_files; do
     [ -f "$f" ] || continue
     kind="$(_file_kind "$f")"
@@ -446,6 +459,14 @@ if not isinstance(d, dict) or "Label" not in d:
       continue
     fi
     case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
+    if [ -n "$_asset_check" ] && [ "$kind" = "unknown" ]; then
+      _ac_rc=0; python3 -I "$_asset_check" "$f" >&2 || _ac_rc=$?
+      if [ "$_ac_rc" -eq 0 ]; then continue; fi
+      if [ "$_ac_rc" -eq 1 ]; then
+        echo "pre-push REFUSED: $f is not a parseable web asset (bin/idp-asset-check)" >&2
+        exit 1
+      fi
+    fi
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
     # same defect in the other direction.

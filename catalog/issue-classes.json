@@ -485,6 +485,20 @@
       "falsifier": "bin/estate_context_fleet_sync.py --self-test (14 known-bad/known-good cases, exit 0; a mutant admitting growth exits 1) and tests/test_estate_context_fleet_sync.py, which composes the real AGENTS.md and requires every original line to survive",
       "owner": "context",
       "status": "open"
+    },
+    {
+      "class": "gate-refuses-the-estates-own-file-types",
+      "first_seen": "2026-11-05",
+      "instances": [
+        "pre-push refused every launchd plist (#7714, 2026-11-05)",
+        "pre-push refused every TOML file (2026-11-10)",
+        "pre-push refused every PNG, HTML and CSS file, so the membrane Chrome extension could not be pushed (idp#8647, 2026-11-27)"
+      ],
+      "gap": "the pre-push classifier sends any file type it has no case for to an unknown bucket that only bash -n or py_compile can pass, so each new legitimate file type is discovered by a refused push, one type at a time",
+      "compensating_action": "each declarative type gets a real parser that can fail (plistlib, tomllib, PNG signature + IHDR CRC, strict UTF-8, XML); the unknown bucket stays fail-closed",
+      "falsifier": "tests/test_prepush_web_asset_classification.py: real assets accepted, look-alikes refused naming the file, unknown binary still refused",
+      "owner": "governance",
+      "status": "open"
     }
   ]
 }
