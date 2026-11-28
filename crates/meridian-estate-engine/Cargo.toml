@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/meridian-karma",
+    "crates/meridian-dof",
 ]
 resolver = "2"
 
