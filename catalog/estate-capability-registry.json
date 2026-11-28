@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 323,
     "service": 123,
-    "tool": 546,
+    "tool": 547,
     "workflow": 112
   },
   "records": [
@@ -34884,6 +34884,58 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/estate-freeze",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-friction-measure",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-friction-measure -- agent friction as optimus metrics, for the live-state spine.",
+      "contract": {
+        "inputs": [
+          "--metric",
+          "--now",
+          "--root",
+          "--selftest"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-friction-measure",
       "depends_on": [],
       "metrics": [],
       "blind": [
