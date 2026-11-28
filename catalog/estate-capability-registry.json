@@ -6,7 +6,7 @@
     "intent": 120,
     "layer": 317,
     "service": 122,
-    "tool": 531,
+    "tool": 546,
     "workflow": 110
   },
   "records": [
@@ -29915,6 +29915,56 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/agent-sandbox-age",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-agent-sandbox"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/agent-sandbox-age",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/agent-sleep-guard",
       "schema_version": 1,
       "kind": "tool",
@@ -30060,6 +30110,60 @@
       "writer": "repo",
       "path": "bin/ai-act-gate",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/architecture-diagram-check",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "architecture-diagram-check: the committed page must be what the model says.",
+      "contract": {
+        "inputs": [
+          "--show-toplevel"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/architecture-diagram-check",
+      "depends_on": [
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -32226,6 +32330,64 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/epistemic-loop",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/epistemic-loop",
+      "depends_on": [
+        {
+          "id": "cap:tool/epistemic_firewall.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/trajectory_lock.py",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        "platform/estate/intents/epistemic-loop.yaml"
+      ]
+    },
+    {
       "id": "cap:tool/epistemic_firewall.py",
       "schema_version": 1,
       "kind": "tool",
@@ -32262,6 +32424,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/epistemic-loop",
         "cap:tool/idp-ci",
         "cap:tool/idp-epistemic",
         "cap:tool/idp-reasoning-gateway-hook",
@@ -34489,6 +34652,53 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-git-isolated",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-git-isolated",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-incident-loop",
       "schema_version": 1,
       "kind": "tool",
@@ -34647,6 +34857,62 @@
       "writer": "repo",
       "path": "bin/estate-law-gate",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-local-maintenance",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/sh",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-local-maintenance",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-runtime-sync",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -35324,6 +35590,86 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-progress",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "One progress report for the whole estate: the delivery chain, measured, with the unknown",
+      "contract": {
+        "inputs": [
+          "--bucket",
+          "--file",
+          "--hours",
+          "--json",
+          "--max-age",
+          "--name",
+          "--no-ci",
+          "--no-claims",
+          "--no-decisions",
+          "--no-live",
+          "--no-previous",
+          "--out",
+          "--previous",
+          "--publish",
+          "--read",
+          "--repo",
+          "--repo-name",
+          "--repo-owner",
+          "--speak",
+          "--state",
+          "--strict"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-read",
+        "cap:tool/estate-runtime-sync",
+        "cap:workflow/gha-estate-progress"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-progress",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        ".github/workflows/estate-progress.yml"
+      ]
+    },
+    {
       "id": "cap:tool/estate-proof",
       "schema_version": 1,
       "kind": "tool",
@@ -35781,7 +36127,9 @@
       },
       "consumers": [
         "cap:tool/estate-incident-loop",
+        "cap:tool/estate-local-maintenance",
         "cap:tool/fleetview-frontend-launchd",
+        "cap:tool/idp-estate-truth",
         "cap:tool/idp-install-launchd",
         "cap:tool/load-gate-and-run",
         "cap:tool/voice-router-launchd"
@@ -36511,7 +36859,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/estate-stranded-watch"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -36520,6 +36870,58 @@
       "writer": "repo",
       "path": "bin/estate-stranded",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-stranded-watch",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/sh",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-stranded-watch",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-stranded",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -37111,6 +37513,58 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-yield",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-yield - record YIELD/1 evidence whose hash does not drift.",
+      "contract": {
+        "inputs": [
+          "--agent",
+          "--kind",
+          "--operating",
+          "--target"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-yield",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -41418,6 +41872,7 @@
       "consumers": [
         "cap:tool/estate-bws-check",
         "cap:tool/estate-bws-sync",
+        "cap:tool/estate-progress",
         "cap:tool/estate-twin-runtime",
         "cap:tool/idp-agent-key",
         "cap:tool/idp-bootstrap-cloudflare",
@@ -43172,6 +43627,71 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-estate-capacity",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-estate-capacity -- ask what the estate asks for versus what the free tier gives.",
+      "contract": {
+        "inputs": [
+          "--all",
+          "--cluster-id",
+          "--compartment-id",
+          "--config-file",
+          "--extract",
+          "--git-common-dir",
+          "--jq",
+          "--json",
+          "--output",
+          "--profile"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-estate-watch"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-capacity",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-oci-login",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-estate-clocks",
       "schema_version": 1,
       "kind": "tool",
@@ -43797,6 +44317,60 @@
         },
         {
           "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-estate-truth",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/claim-gate"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-truth",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-runtime-sync",
           "edge": "invokes"
         }
       ],
@@ -45202,6 +45776,55 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-greenlane-check-trigger",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-greenlane-reactor",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Single existing-GitHub-event reaction; never polls for a changed verdict.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-greenlane-common-failure-reaction"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-greenlane-reactor",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -47086,6 +47709,58 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-karma-observe",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "KARMA live, read-only Chronos observation. Never records invented obligations.",
+      "contract": {
+        "inputs": [
+          "--json",
+          "--now",
+          "--repo",
+          "--runs-json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-karma-observe",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -49121,6 +49796,7 @@
         "cap:tool/cloud-agnostic-gate",
         "cap:tool/idp-estate-audit",
         "cap:tool/idp-estate-backup",
+        "cap:tool/idp-estate-capacity",
         "cap:tool/idp-flux-bootstrap",
         "cap:tool/idp-headlamp-mac",
         "cap:tool/idp-identity-apply",
@@ -54469,6 +55145,61 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-unattended-assurance",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Read-only, bounded failure-intelligence census for an existing Chronos cloud run.",
+      "contract": {
+        "inputs": [
+          "--json",
+          "--now",
+          "--registry",
+          "--repo",
+          "--runs-json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-estate-homes-drill"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-unattended-assurance",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-up",
       "schema_version": 1,
       "kind": "tool",
@@ -57612,6 +58343,53 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/method-select",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "method-select: run the estate's deterministic method selector over one request.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/method-select",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/migration-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -60278,6 +61056,7 @@
         "cap:tool/aei-collector",
         "cap:tool/aei-observe",
         "cap:tool/agent-timebox",
+        "cap:tool/architecture-diagram-check",
         "cap:tool/arxiv-harvest",
         "cap:tool/budget_governor.py",
         "cap:tool/catalog-gen",
@@ -60291,6 +61070,7 @@
         "cap:tool/estate-digest-worker",
         "cap:tool/estate-dispatch-action",
         "cap:tool/estate-face-avatar",
+        "cap:tool/estate-local-maintenance",
         "cap:tool/estate-memory-enforce",
         "cap:tool/estate-memory-mcp",
         "cap:tool/estate-patch",
@@ -60892,6 +61672,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/epistemic-loop",
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
         "cap:tool/reasoning_gateway_hook.py"
@@ -61217,6 +61998,55 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/verify-dros",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/verify-i8096-cage",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [
+          "--update"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/verify-i8096-cage",
       "depends_on": [],
       "metrics": [],
       "blind": [

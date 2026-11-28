@@ -31,7 +31,8 @@ fi
 # 2. Enforce executable bits on bin/* (prevents #8387 mode-drop regressions)
 if [[ -d "$REPO_ROOT/bin" ]]; then
   while IFS= read -r -d '' script_path; do
-    if [[ ! -x "$script_path" ]]; then
+    # Only scripts (a #! first line) need +x; data files (.txt, .html, .baseline, lists) do not.
+    if [[ ! -x "$script_path" && "$(head -c 2 "$script_path")" == "#!" ]]; then
       echo "GATE_FAIL: executable bit missing on $script_path (expected 0755)" >&2
       exit 1
     fi
