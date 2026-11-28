@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 0. macOS is a thin client (decision 0048, #8725): the gate's pytest, node and venv builds run on the
+#    Greenlane, not on the laptop. Fail closed; ALLOW_LOCAL_TESTS=1 is the explicit, per-call override.
+if [[ "$(uname -s)" == "Darwin" && "${ALLOW_LOCAL_TESTS:-0}" != "1" ]]; then
+  echo "Blocked on macOS: estate-gate runs in the cloud. Push a lane (lane-submit); the Greenlane runs it. Override once with ALLOW_LOCAL_TESTS=1." >&2
+  exit 1
+fi
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 

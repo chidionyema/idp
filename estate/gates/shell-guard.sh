@@ -42,3 +42,33 @@ systemctl() {
     esac
     command -p systemctl "$@"
 }
+
+# estate zero-worktree -- the MacBook is a stateless thin client (founder executive order
+# 2026-11-11; platform/estate/governance/thin_client.py). `git worktree add` and `git clone`
+# build a full local checkout, so the door asks the existing judge (bin/estate-zero-worktree
+# check, exit 78 = refused). Same failure policy as the kill guard: only a verdict refuses;
+# a missing judge, a crash or BLIND runs the real command. Cheap path: every other git
+# subcommand never starts python.
+_estate_zw() {
+    local _z="${ESTATE_ZERO_WORKTREE:-$HOME/Documents/code/idp/bin/estate-zero-worktree}"
+    [ -r "$_z" ] || return 0
+    /usr/bin/python3 -I "$_z" check -- "$@" >&2
+    [ $? -ne 78 ]
+}
+
+git() {
+    local _sub="" _skip=0 _x
+    for _x in "$@"; do
+        if [ "$_skip" = 1 ]; then _skip=0; continue; fi
+        case "$_x" in
+            -C|-c|--git-dir|--work-tree|--namespace|--exec-path) _skip=1 ;;
+            -*) ;;
+            *) _sub="$_x"; break ;;
+        esac
+    done
+    case "$_sub" in
+        clone) _estate_zw git "$@" || return 1 ;;
+        worktree) case " $* " in *" add "*) _estate_zw git "$@" || return 1 ;; esac ;;
+    esac
+    command git "$@"
+}
