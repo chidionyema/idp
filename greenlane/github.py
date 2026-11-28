@@ -15,6 +15,7 @@ second fast-forward of main to the same sha is a no-op.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -1567,6 +1568,46 @@ class GitHubBackend:
         proven = re.fullmatch(r"[0-9a-f]{40}", r[0] or "") is not None
         return actual if proven and a == r else rebased
 
+    def _admission_block(self, rebased: str) -> str:
+        """The scope this proof covers, bound to the commit it sits on.
+
+        I-8107 made the grader demand an ADMISSION block: a proof must name the scope it
+        covers and the base it was built on. NOBODY produced that block -- the lander
+        wrote a proof, not a scope, so the grader refused every body the estate writes
+        ("ADMISSION_MISSING", measured 2026-11-27 on c8dc5b538, 3 failures in
+        tests/test_bdd_proof_producer.py) -- and the rule had a consumer and no
+        producer. The producer fills it now, from the only source that can answer it
+        truthfully: the HEAD COMMIT's diff.
+
+        The head commit, not the whole lane: the estate's own rule for a change is at
+        most five files in ONE subsystem, and a lane is split into one commit per
+        subsystem (bin/verify_three_proofs.py proof 2).
+
+        The block states the scope as it is; the GRADER decides whether it is a legal
+        admission (bin/idp-bdd-proof-gate). A second copy of that rule here would drift
+        (R7), so the producer states the truth and lets the judge judge.
+        """
+        try:
+            diff = self.git(
+                "diff", "--name-only", f"{rebased}^..{rebased}", check=False
+            )
+            base = (self.git("rev-parse", f"{rebased}^", check=False) or "").strip()
+        except Exception:  # noqa: BLE001 -- a producer that cannot answer writes no block
+            return ""
+        scope = [line.strip() for line in (diff or "").splitlines() if line.strip()]
+        if not scope or not re.fullmatch(r"[0-9a-f]{40}", base):
+            return ""
+        digest = hashlib.sha256(
+            json.dumps({"base": base, "scope": sorted(scope)}, sort_keys=True).encode()
+        ).hexdigest()
+        return (
+            "ADMISSION\n"
+            f"base: {base}\n"
+            f"scope: {json.dumps(sorted(scope))}\n"
+            f"digest: {digest}\n"
+            "END-ADMISSION\n"
+        )
+
     def _proof_body(self, lane: str, head: str, rebased: str, tip: str) -> str:
         proved = self._proof_head(lane, rebased)
         return (
@@ -1575,6 +1616,7 @@ class GitHubBackend:
             f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
             f"BDD-PROOF\nhead: {proved}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
+            + self._admission_block(rebased)
         )
 
     def _lane_pr(self, lane: str) -> Optional[dict]:
