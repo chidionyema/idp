@@ -500,6 +500,70 @@
       "better": "lower",
       "owner": "beast",
       "description": "Beast kernel files under beast/meridian-beast-v1 that differ from the committed sha256 manifest beast/measure/kernel.sha256; 0 means the landed tree is byte-identical to the tested archive 5bfbeee1ebc1 (idp#8710). Integrity only: it does not show the Beast is running."
+    },
+    {
+      "name": "friction.call_failure_rate_1h",
+      "measure": [
+        "python3",
+        "bin/estate-friction-measure",
+        "--metric",
+        "call_failure_rate_1h"
+      ],
+      "unit": "percent",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Percent of agent tool results in the last hour that were errors (Claude Code transcripts, deduped by tool_use id). Spine view of agent friction; BLIND under 20 results, never 0. Baseline before the 2026-11-11 regime: 7.3%."
+    },
+    {
+      "name": "friction.call_failure_rate_6h",
+      "measure": [
+        "python3",
+        "bin/estate-friction-measure",
+        "--metric",
+        "call_failure_rate_6h"
+      ],
+      "unit": "percent",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Percent of agent tool results in the last 6 hours that were errors. BLIND under 20 results, never 0."
+    },
+    {
+      "name": "friction.first_call_refused_rate_24h",
+      "measure": [
+        "python3",
+        "bin/estate-friction-measure",
+        "--metric",
+        "first_call_refused_rate_24h"
+      ],
+      "unit": "percent",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "Percent of agent sessions started in the last 24 hours whose first tool call was refused by a hook or a permission gate (measured 2026-11-28 over 1,924 sessions: 69.3% hit the plan gate). BLIND under 10 sessions, never 0."
+    },
+    {
+      "name": "friction.page_state",
+      "measure": [
+        "python3",
+        "bin/estate-friction-measure",
+        "--metric",
+        "page_state"
+      ],
+      "unit": "state",
+      "better": "lower",
+      "owner": "delivery",
+      "description": "0 OK, 1 TICKET, 2 PAGE for agent friction. SLO 10% failed calls: PAGE at 50% on both the 1h and 5m windows, TICKET at 20% on both the 6h and 30m windows. BLIND under 20 results in 6h, never 0."
+    },
+    {
+      "name": "friction.producer_falsifiers_passing",
+      "measure": [
+        "python3",
+        "bin/estate-friction-measure",
+        "--selftest"
+      ],
+      "unit": "cases",
+      "better": "higher",
+      "owner": "delivery",
+      "description": "How many of the friction producer's 6 built-in known-bad and known-good cases its alert rules get right, on synthetic results with no transcripts, so a CI runner can read it. 6 means every case behaved; the live friction.* metrics read BLIND wherever agent sessions are absent."
     }
   ]
 }

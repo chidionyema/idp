@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""estate-friction-measure -- agent friction as optimus metrics, for the live-state spine.
+
+WHY. 2026-11-28, measured from 1,924 recorded sessions: 58.8% of tool calls failed over the
+period, 75.0% between 11-11 and 11-26 against 7.3% before it, and 69.3% of sessions had their
+first call refused by the plan gate with the agent never told. Nobody saw it while it happened.
+The founder asked for a real-time view and a Telegram page. The estate already has one view:
+the live-state spine (platform/estate-live-state), which ingests catalogue metrics whose
+`measure` prints exactly `optimus.<name>=<number>` and shows BLIND for a measure that fails.
+This script is the friction producer for that spine. It is not a board, a bus or a sender.
+
+WHAT IT PRINTS. One line on stdout, `optimus.<metric>=<number>`, exit 0. When it cannot measure
+(directory unreadable, too few calls, deadline hit) it prints `BLIND: <reason>` on stderr and
+exits 2, so the sweep records BLIND and the number is never 0 for a thing that was not measured.
+
+METRICS (sources: Claude Code transcripts, read-only, counts only, no transcript text printed).
+  call_failure_rate_1h / _6h   percent of tool results in the window with is_error. BLIND under
+                               MIN_CALLS results.
+  first_call_refused_rate_24h  percent of main sessions that started in the window whose first
+                               tool call was refused (hook error, ungranted permission,
+                               approval required, blocked). BLIND under MIN_SESSIONS.
+  page_state                   0 OK, 1 TICKET, 2 PAGE. SLO: at most 10% failed calls.
+                               PAGE   >= 50% on the 1h window AND the 5m window (5x budget).
+                               TICKET >= 20% on the 6h window AND the 30m window (2x budget).
+                               Multi-window so a stale spike and a one-minute blip both stay quiet.
+                               BLIND when the long window has fewer than MIN_CALLS results.
+                               The 10% line is the pre-regime measurement (7.3%, 88 of 1,212).
+
+DEDUPE. A resumed session copies earlier messages, so a result is counted once per tool_use id.
+
+  producer_falsifiers_passing  (--selftest) how many of the 6 built-in known-bad/known-good cases
+                               the rules get right. No transcripts needed, so a CI runner can read it.
+
+Usage:
+    estate-friction-measure --selftest
+    estate-friction-measure --metric call_failure_rate_1h
+    estate-friction-measure --metric page_state --root DIR --now 2026-11-28T06:00:00Z
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import re
+import sys
+import time
+
+MIN_CALLS = 20          # results needed in the long window before a rate is believed
+MIN_SHORT_CALLS = 5     # results needed in the short window to confirm a long-window burn
+MIN_SESSIONS = 10
+PAGE_PCT = 50.0
+TICKET_PCT = 20.0
+DEADLINE_S = 30.0       # the sweep kills a measure at 40 s; finish with a verdict before that
+MAX_FILES = 600
+
+WINDOWS = {"5m": 300, "30m": 1800, "1h": 3600, "6h": 21600, "24h": 86400}
+
+REFUSED = re.compile(
+    r"hook error|requested permissions|haven't granted|requires approval|was blocked"
+    r"|can't be checked before it runs|requires? (?:your )?approval",
+    re.I,
+)
+
+
+class Blind(Exception):
+    pass
+
+
+def default_root() -> pathlib.Path:
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or str(pathlib.Path.home() / ".estate" / "harness" / "cc")
+    return pathlib.Path(cfg) / "projects"
+
+
+def parse_ts(s):
+    if not isinstance(s, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def text_of(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return ""
+
+
+CHUNK = 1 << 20
+TS_RE = re.compile(rb'"timestamp"\s*:\s*"([^"]+)"')
+
+
+def lines_backward(fh, size, floor_ts):
+    """Yield the file's lines newest first, stopping after a whole chunk with nothing inside the window.
+
+    Transcripts are append-only, so the window sits at the end. Reading the whole 40 MB file for a
+    one-hour answer made the measure miss the sweep's 40 s cap on a loaded laptop (measured
+    2026-11-28: 15 files, 163 MB, 32 s wall, 1.6 s CPU). A resumed session re-appends old lines, so
+    one old line never ends the read; only a full chunk without a recent line does.
+    """
+    pos = size
+    carry = b""
+    while pos > 0:
+        step = min(CHUNK, pos)
+        pos -= step
+        fh.seek(pos)
+        block = fh.read(step) + carry
+        parts = block.split(b"\n")
+        carry = parts[0] if pos > 0 else b""
+        lines = parts[1:] if pos > 0 else parts
+        fresh = False
+        for raw in reversed(lines):
+            yield raw
+            m_ = TS_RE.search(raw)
+            if m_ is not None:
+                t = parse_ts(m_.group(1).decode("ascii", "replace"))
+                if t is not None and t >= floor_ts:
+                    fresh = True
+        if not fresh and lines:
+            return
+
+
+def head_first_tool_use(fh):
+    """The first main-session tool_use id and its time, read from the head of the file only."""
+    fh.seek(0)
+    read = 0
+    for raw in fh:
+        read += len(raw)
+        if read > 4 * CHUNK:
+            return None, None
+        if b"tool_use" not in raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            continue
+        if d.get("isSidechain"):
+            continue
+        for b in (d.get("message") or {}).get("content") or []:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                return b.get("id"), parse_ts(d.get("timestamp"))
+    return None, None
+
+
+def scan(root: pathlib.Path, now: float, span_s: int, deadline: float, want_firsts: bool = False):
+    """Yield one dict per tool result, and a marker per file carrying its first tool call.
+
+    Only files modified inside the span are read, and only their tails. Raises Blind when the
+    directory cannot be read or the deadline passes: a partial scan is never turned into a number.
+    """
+    if not root.is_dir():
+        raise Blind(f"transcript root not readable: {root}")
+    floor_ts = now - span_s - 120
+    files = []
+    try:
+        for dp, _dn, fn in os.walk(root):
+            for f in fn:
+                if not f.endswith(".jsonl"):
+                    continue
+                p = pathlib.Path(dp) / f
+                try:
+                    if p.stat().st_mtime >= floor_ts:
+                        files.append(p)
+                except OSError:
+                    continue
+    except OSError as e:
+        raise Blind(f"transcript root walk failed: {type(e).__name__}")
+    if len(files) > MAX_FILES:
+        raise Blind(f"{len(files)} recent transcript files exceed the cap of {MAX_FILES}")
+    for p in files:
+        try:
+            fh = open(p, "rb")
+        except OSError:
+            raise Blind(f"transcript unreadable: {p.name}")
+        with fh:
+            size = os.fstat(fh.fileno()).st_size
+            for raw in lines_backward(fh, size, floor_ts):
+                if time.time() > deadline:
+                    raise Blind("deadline reached before the scan finished")
+                if b"tool_result" not in raw:
+                    continue
+                try:
+                    d = json.loads(raw)
+                except ValueError:
+                    continue  # a torn or malformed line costs that line, not the file
+                content = (d.get("message") or {}).get("content")
+                ts = parse_ts(d.get("timestamp"))
+                if not isinstance(content, list) or ts is None:
+                    continue
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        failed = bool(b.get("is_error"))
+                        yield {"ts": ts, "failed": failed, "id": b.get("tool_use_id"),
+                               "text": text_of(b.get("content")) if failed else ""}
+            if want_firsts:
+                uid, ts0 = head_first_tool_use(fh)
+                yield {"marker": True, "file": str(p), "first_id": uid, "first_ts": ts0}
+
+
+def collect(root, now, span_s, deadline, want_firsts=False):
+    results, firsts, seen = [], {}, set()
+    for r in scan(root, now, span_s, deadline, want_firsts):
+        if r.get("marker"):
+            if r["first_id"] is not None and r["first_ts"] is not None:
+                firsts[r["file"]] = (r["first_id"], r["first_ts"])
+            continue
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        results.append(r)
+    return results, firsts
+
+
+def window_rate(results, now, span_s):
+    inside = [r for r in results if now - span_s <= r["ts"] <= now]
+    n = len(inside)
+    f = sum(1 for r in inside if r["failed"])
+    return n, f
+
+
+def rate_pct(n, f):
+    return 100.0 * f / n
+
+
+def page_state(results, now):
+    n1, f1 = window_rate(results, now, WINDOWS["1h"])
+    n5, f5 = window_rate(results, now, WINDOWS["5m"])
+    n6, f6 = window_rate(results, now, WINDOWS["6h"])
+    n30, f30 = window_rate(results, now, WINDOWS["30m"])
+    if n6 < MIN_CALLS:
+        raise Blind(f"only {n6} tool results in 6h, need {MIN_CALLS}")
+    if n1 >= MIN_CALLS and n5 >= MIN_SHORT_CALLS and rate_pct(n1, f1) >= PAGE_PCT and rate_pct(n5, f5) >= PAGE_PCT:
+        return 2
+    if n6 >= MIN_CALLS and n30 >= MIN_SHORT_CALLS and rate_pct(n6, f6) >= TICKET_PCT and rate_pct(n30, f30) >= TICKET_PCT:
+        return 1
+    return 0
+
+
+def first_call_refused(results, firsts, now, span_s):
+    by_id = {r["id"]: r for r in results}
+    started = refused = 0
+    for _file, (uid, ts) in firsts.items():
+        if not (now - span_s <= ts <= now):
+            continue
+        res = by_id.get(uid)
+        if res is None:
+            continue  # no result recorded yet: the session is not judged
+        started += 1
+        if res["failed"] and REFUSED.search(res["text"]):
+            refused += 1
+    if started < MIN_SESSIONS:
+        raise Blind(f"only {started} sessions started in 24h with a first result, need {MIN_SESSIONS}")
+    return rate_pct(started, refused)
+
+
+METRICS = ("call_failure_rate_1h", "call_failure_rate_6h", "first_call_refused_rate_24h", "page_state")
+
+
+def measure(metric: str, root: pathlib.Path, now: float, deadline: float) -> float:
+    if metric == "call_failure_rate_1h":
+        span = WINDOWS["1h"]
+    elif metric == "call_failure_rate_6h":
+        span = WINDOWS["6h"]
+    elif metric == "first_call_refused_rate_24h":
+        span = WINDOWS["24h"]
+    elif metric == "page_state":
+        span = WINDOWS["6h"]
+    else:
+        raise Blind(f"unknown metric {metric}")
+    results, firsts = collect(root, now, span, deadline, metric == "first_call_refused_rate_24h")
+    if metric.startswith("call_failure_rate"):
+        n, f = window_rate(results, now, span)
+        if n < MIN_CALLS:
+            raise Blind(f"only {n} tool results in the window, need {MIN_CALLS}")
+        return round(rate_pct(n, f), 2)
+    if metric == "first_call_refused_rate_24h":
+        return round(first_call_refused(results, firsts, now, span), 2)
+    return page_state(results, now)
+
+
+def _res(now, calls):
+    return [{"ts": now - age, "failed": failed, "id": f"t{i}", "text": ""} for i, (age, failed) in enumerate(calls)]
+
+
+def selftest() -> int:
+    """How many of the producer's own known-bad / known-good cases it gets right, with no transcripts.
+
+    The Greenlane re-runs a ship contract's metric on a CI runner that holds no agent sessions, so
+    the live metrics there would read BLIND. This one is measurable anywhere: it feeds synthetic
+    results to the same functions the live metrics use. 6 means every case behaved.
+    """
+    now = 1_000_000.0
+
+    def blinds(fn):
+        try:
+            fn()
+        except Blind:
+            return True
+        return False
+
+    cases = [
+        # known-bad: 3 of 4 failed reads 75, not a rounded or defaulted figure
+        lambda: window_rate(_res(now, [(60 + i, i % 4 != 0) for i in range(40)]), now, 3600) == (40, 30),
+        # known-bad: a 1h and 5m burn at 75% pages
+        lambda: page_state(_res(now, [(60 + i * 40, i % 4 != 0) for i in range(40)]), now) == 2,
+        # known-good: 5% failures stays quiet
+        lambda: page_state(_res(now, [(60 + i * 20, i == 0) for i in range(20)]), now) == 0,
+        # known-bad: a spike that ended 40 minutes ago does not page and does not ticket
+        lambda: page_state(_res(now, [(2400 + i, True) for i in range(40)] + [(30 + i * 20, False) for i in range(8)]), now) == 0,
+        # known-bad: 30% over 6h and 30m files a ticket and no page
+        lambda: page_state(_res(now, [(60 + i * 30, i % 10 < 3) for i in range(50)]), now) == 1,
+        # known-bad: too few results is BLIND, never a reading of 0
+        lambda: blinds(lambda: page_state(_res(now, [(60 + i, True) for i in range(5)]), now)),
+    ]
+    ok = 0
+    for case in cases:
+        try:
+            ok += bool(case())
+        except Exception:
+            pass
+    print(f"optimus.friction.producer_falsifiers_passing={ok}")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--metric", choices=METRICS)
+    ap.add_argument("--selftest", action="store_true", help="falsifiers on synthetic results; needs no transcripts")
+    ap.add_argument("--root", default=None)
+    ap.add_argument("--now", default=None, help="ISO time, for tests; default is the clock")
+    a = ap.parse_args(argv)
+    if a.selftest:
+        return selftest()
+    if not a.metric:
+        ap.error("--metric or --selftest is required")
+    now = parse_ts(a.now) if a.now else time.time()
+    if now is None:
+        print("BLIND: --now is not an ISO timestamp", file=sys.stderr)
+        return 2
+    root = pathlib.Path(a.root) if a.root else default_root()
+    try:
+        value = measure(a.metric, root, now, time.time() + DEADLINE_S)
+    except Blind as e:
+        print(f"BLIND: {e}", file=sys.stderr)
+        return 2
+    print(f"optimus.friction.{a.metric}={value:g}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
