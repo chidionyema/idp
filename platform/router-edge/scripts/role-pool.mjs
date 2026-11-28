@@ -6,8 +6,9 @@
 //   MiniMax   llm/config.yaml: `openai/MiniMax-M3`, api_base https://api.minimax.io/v1,
 //             max_tokens 8192, input_cost_per_token 0.0000003, output_cost_per_token
 //             0.0000012, model_info.max_input_tokens 512000.
-//   DeepSeek  llm/config.yaml: `deepseek/deepseek-chat`, max_tokens 8192,
-//             "DeepSeek V3 pricing: $0.14/M input, $0.28/M output", max_input_tokens 65536.
+//   DeepSeek  api-docs.deepseek.com/quick_start/pricing (read 2026-11-28): `deepseek-flash` and
+//             `deepseek-v4-pro`, 1M context. llm/config.yaml still names the retired
+//             `deepseek-chat`; that file is not this pool's source for DeepSeek any more.
 //   Gemini    llm/config.yaml: `gemini/gemini-3.5-flash`, "measured answering HTTP 200 with
 //             a real completion", no cost fields ("the day Gemini is billed again"), and the
 //             recorded rule that "Gemini goes last everywhere and heads nothing".
@@ -51,19 +52,39 @@ const CANDIDATES = [
     costPer1kOutputUsd: 0.0012,
     enabled: true,
   },
+  // DeepSeek's current API models, read from https://api-docs.deepseek.com/quick_start/pricing
+  // on 2026-11-28: `deepseek-flash` (DeepSeek-V4.1-Flash-1017) and `deepseek-v4-pro`
+  // (DeepSeek-V4-Pro-0813), 1M context, peak-rate USD per 1M tokens: flash 0.30 in / 1.20 out,
+  // pro 1.32 in / 3.96 out. `deepseek-chat` (V3.x) is no longer in that table, so the lane that
+  // still named it was calling a retired id; it is replaced, not kept beside the new ones.
   {
-    id: "deepseek-chat",
+    id: "deepseek-flash",
     vendor: "deepseek",
     lane: "edge-direct",
     baseUrl: "https://api.deepseek.com/chat/completions",
     apiKeySecretName: "DEEPSEEK_API_KEY",
-    upstreamModel: "deepseek-chat",
-    maxContextTokens: 65536,
+    upstreamModel: "deepseek-flash",
+    maxContextTokens: 1000000,
     maxOutputTokens: 8192,
     supportsTools: false,
     priority: 2,
-    costPer1kInputUsd: 0.00014,
-    costPer1kOutputUsd: 0.00028,
+    costPer1kInputUsd: 0.0003,
+    costPer1kOutputUsd: 0.0012,
+    enabled: true,
+  },
+  {
+    id: "deepseek-v4-pro",
+    vendor: "deepseek",
+    lane: "edge-direct",
+    baseUrl: "https://api.deepseek.com/chat/completions",
+    apiKeySecretName: "DEEPSEEK_API_KEY",
+    upstreamModel: "deepseek-v4-pro",
+    maxContextTokens: 1000000,
+    maxOutputTokens: 8192,
+    supportsTools: false,
+    priority: 3,
+    costPer1kInputUsd: 0.00132,
+    costPer1kOutputUsd: 0.00396,
     enabled: true,
   },
   {
@@ -80,7 +101,7 @@ const CANDIDATES = [
     maxContextTokens: 65536,
     maxOutputTokens: 8192,
     supportsTools: false,
-    priority: 3,
+    priority: 4,
     // Free tier: llm/config.yaml carries no cost fields for this lane on purpose.
     costPer1kInputUsd: 0,
     costPer1kOutputUsd: 0,
