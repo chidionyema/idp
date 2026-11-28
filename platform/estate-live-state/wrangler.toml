@@ -1,0 +1,25 @@
+name = "estate-live-state"
+main = "src/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+# Its own worker, not a route on meridian-router-edge: the model router serves every agent's
+# calls, and a fault in the live-state endpoint must not be able to take it down.
+
+[vars]
+COMMIT_SHA = "dev-local"
+DEPLOYMENT_ZONE = "zone-b-cloudflare-edge"
+
+[[routes]]
+pattern = "live.meridianlabs.cloud/*"
+zone_name = "meridianlabs.cloud"
+
+[[durable_objects.bindings]]
+name = "LIVE_STATE"
+class_name = "EstateLiveStateDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["EstateLiveStateDO"]
+
+# Secrets, by name only, never in this file: LIVE_STATE_READ_TOKEN, LIVE_STATE_INGEST_TOKEN.
