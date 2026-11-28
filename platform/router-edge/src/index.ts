@@ -1,5 +1,6 @@
 import { BudgetLedgerDO } from "./ledger-do";
 import { RoutingStateDO } from "./routing-do";
+import { chatToResponse, modelsList, responseToSse, responsesToChat } from "./responses_adapter.mjs";
 import type {
   BackendCandidate,
   ChatCompletionRequest,
@@ -167,7 +168,7 @@ async function probeFirstStreamChunk(
   return { ok: true, stream: reassembled };
 }
 
-export default {
+const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const commitSha = env.COMMIT_SHA || "unknown";
@@ -230,6 +231,64 @@ export default {
       }
 
       return Response.json({ error: { type: "not_found" } }, { status: 404 });
+    }
+
+    // 2b. OpenAI-compatible discovery and Responses API (what Codex speaks). Both reuse the
+    // one chat path below, so admission, budget reservation and failover are never duplicated.
+    if (request.method === "GET" && url.pathname === "/v1/models") {
+      if (!(await timingSafeTokenEqual(extractBearer(request), env.MERIDIAN_CLIENT_KEY))) {
+        return Response.json({ error: { type: "unauthorized", detail: "invalid_api_key" } }, { status: 401 });
+      }
+      const rolesRes = await getRoutingStub(env).fetch("https://routing.internal/roles");
+      if (!rolesRes.ok) {
+        return Response.json({ error: { type: "roles_unavailable" } }, { status: 503 });
+      }
+      const { roles } = (await rolesRes.json()) as { roles: Record<string, unknown> };
+      return Response.json(modelsList(roles));
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/responses") {
+      if (!(await timingSafeTokenEqual(extractBearer(request), env.MERIDIAN_CLIENT_KEY))) {
+        return Response.json({ error: { type: "unauthorized", detail: "invalid_api_key" } }, { status: 401 });
+      }
+      let raw: unknown;
+      try {
+        raw = await request.json();
+      } catch {
+        return Response.json({ error: { type: "invalid_request", detail: "malformed_json" } }, { status: 400 });
+      }
+      const conv = responsesToChat(raw);
+      if (!conv.ok) {
+        return Response.json({ error: { type: "invalid_request", detail: conv.detail } }, { status: 400 });
+      }
+      const inner = await worker.fetch(
+        new Request(`${url.origin}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: request.headers.get("authorization") ?? "" },
+          body: JSON.stringify(conv.chat),
+        }),
+        env,
+        ctx
+      );
+      if (!inner.ok) return inner;
+      let chatJson: unknown;
+      try {
+        chatJson = await inner.json();
+      } catch {
+        return Response.json({ error: { type: "bad_upstream_body" } }, { status: 502 });
+      }
+      const resp = chatToResponse(chatJson, conv.chat.model ?? "default");
+      const headers: Record<string, string> = {
+        "x-meridian-backend": inner.headers.get("x-meridian-backend") ?? "",
+        "x-meridian-commit-sha": commitSha,
+        "x-meridian-tools": conv.toolsDropped ? "dropped" : "none",
+      };
+      if (conv.wantsStream) {
+        return new Response(responseToSse(resp), {
+          headers: { ...headers, "content-type": "text/event-stream", "cache-control": "no-cache" },
+        });
+      }
+      return Response.json(resp, { headers });
     }
 
     // 3. Authenticated Inference Data Plane (/v1/chat/completions)
@@ -497,3 +556,5 @@ export default {
   return Response.json({ error: { type: "not_found" } }, { status: 404 });
   },
 };
+
+export default worker;

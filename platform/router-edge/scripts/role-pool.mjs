@@ -13,13 +13,12 @@
 //             a real completion", no cost fields ("the day Gemini is billed again"), and the
 //             recorded rule that "Gemini goes last everywhere and heads nothing".
 //
-// Liveness was measured on 2026-11-25 with the keys the estate holds, and is recorded here
-// rather than assumed: MiniMax answers 402 `insufficient_balance_error` ("Token Plan usage
-// limit reached"), DeepSeek 401 `authentication_error`, OpenRouter 402, Moonshot 401;
-// Gemini's key lists 65 models (HTTP 200) and is the only live lane. The lanes are NOT
-// disabled for that: the router fails over on 401/402/403 and opens a circuit on the lane
-// it sees fail, so a top-up heals without a code change, and a dead lane costs one attempt
-// rather than a retry forever.
+// Liveness is not recorded in this file, because a recorded liveness is a claim that goes
+// stale (this paragraph said MiniMax was dead on 2026-11-25; the edge's own binding served it
+// on 2026-11-28). The release measures every lane through the Worker and writes the verdict to
+// the receipt (`lanes`, `dead_lanes`). Lanes are NOT disabled for being dead: the router fails
+// over on 401/402/403 and opens a circuit on the lane it sees fail, so a fixed key heals
+// without a code change, and a dead lane costs one attempt rather than a retry forever.
 //
 // The pool is repo truth, not release env: seeding from the same table on every release is
 // what lets a key set out-of-band (the Cloudflare dashboard) start serving with no code
@@ -136,36 +135,41 @@ export function rolePool() {
 }
 
 // A lane that nobody has called is a claim, not a lane. `role:coder` fails over, so it
-// answers 200 while two of its three lanes are dead (measured 2026-11-28: DeepSeek 401,
-// MiniMax 402, receipt OPERATIONAL). Each enabled lane therefore also gets a one-candidate
-// role of its own, and the release calls every one of them through the Worker, which holds
-// the vendor keys. A retired model id, a revoked key or an empty wallet is then a named
-// lane in the receipt on the release that introduced it, not a silent failover.
-export const PROBE_ROLE_PREFIX = "role:probe-";
+// answers 200 while lanes are dead (measured 2026-11-28: DeepSeek 401 behind a 200). Each
+// enabled lane therefore also gets a one-candidate role named by its own id, `role:<lane>`.
+// That pinned role has two jobs and one definition: a client names exactly this lane
+// (`model: "deepseek-flash"`, which is what Codex's model picker sends), and the release calls
+// every pinned role through the Worker, which holds the vendor keys. A retired model id, a
+// revoked key or an empty wallet is then a named lane in the receipt on the release that
+// introduced it, not a silent failover. Adding a lane to CANDIDATES is the whole change.
+export function laneRoleName(laneId) {
+  return "role:" + laneId;
+}
 
-export function probeRoleName(laneId) {
-  return PROBE_ROLE_PREFIX + laneId;
+export function isPinnedRole(name, role) {
+  return role?.candidates?.length === 1 && laneRoleName(role.candidates[0].id) === name;
 }
 
 export function releasePool() {
   const pool = rolePool();
   const roles = { ...pool.roles };
   for (const c of CANDIDATES.filter((x) => x.enabled)) {
-    const name = probeRoleName(c.id);
+    const name = laneRoleName(c.id);
+    if (roles[name]) throw new Error(`lane id ${c.id} collides with the pool role ${name}`);
     roles[name] = { role: name, minOutputFloor: MIN_OUTPUT_FLOOR, candidates: [{ ...c, priority: 1 }] };
   }
   return { roles };
 }
 
 /**
- * Call every enabled lane once through its own probe role. Only a 200 with assistant text
+ * Call every enabled lane once through its own pinned role. Only a 200 with assistant text
  * from the lane that was asked for counts as serving; anything else names the lane and the
  * status. Unknown is dead: a lane that cannot be judged is not reported live.
  */
 export async function probeLanes(baseUrl, clientKey, pool = releasePool(), fetchImpl = fetch) {
   const lanes = [];
-  for (const name of Object.keys(pool.roles).filter((n) => n.startsWith(PROBE_ROLE_PREFIX))) {
-    const id = name.slice(PROBE_ROLE_PREFIX.length);
+  for (const [name, role] of Object.entries(pool.roles).filter(([n, r]) => isPinnedRole(n, r))) {
+    const id = role.candidates[0].id;
     const row = { id, ok: false, status: 0, backend: null, error: null };
     try {
       const res = await fetchImpl(baseUrl + "/v1/chat/completions", {
@@ -218,4 +222,36 @@ export async function liveRoles(baseUrl, adminKey, fetchImpl = fetch) {
   if (!res.ok) throw new Error(`role read refused ${res.status}`);
   const data = await res.json();
   return Object.keys(data?.roles ?? {});
+}
+
+/**
+ * The Codex surface: `GET /v1/models` must list every enabled lane by id, and `POST
+ * /v1/responses` (what Codex 0.169 speaks; it refuses wire_api "chat") must answer with
+ * assistant text from the lane that was named, as a plain body and as SSE ending in
+ * response.completed. Unknown is not ok.
+ */
+export async function probeCodexSurface(baseUrl, clientKey, laneId, pool = releasePool(), fetchImpl = fetch) {
+  const out = { ok: false, models_missing: [], responses_status: 0, stream_completed: false, error: null };
+  const headers = { "content-type": "application/json", authorization: "Bearer " + clientKey };
+  try {
+    const m = await fetchImpl(baseUrl + "/v1/models", { headers });
+    const listed = new Set(((await m.json())?.data ?? []).map((x) => x.id));
+    out.models_missing = Object.keys(pool.roles).map((n) => n.slice(5)).filter((id) => !listed.has(id));
+    const ask = (stream) => fetchImpl(baseUrl + "/v1/responses", {
+      method: "POST", headers,
+      body: JSON.stringify({ model: laneId, input: "Reply with: OK", max_output_tokens: 16, stream }),
+    });
+    const r = await ask(false);
+    out.responses_status = r.status;
+    const rb = await r.text();
+    const text = JSON.parse(rb)?.output?.[0]?.content?.[0]?.text ?? "";
+    const s = await ask(true);
+    const sb = await s.text();
+    out.stream_completed = s.status === 200 && /event: response\.completed/.test(sb);
+    out.ok = m.status === 200 && !out.models_missing.length && r.status === 200 && String(text).length > 0 && out.stream_completed;
+    if (!out.ok) out.error = rb.replace(/\s+/g, " ").slice(0, 200);
+  } catch (e) {
+    out.error = String(e?.message ?? e).slice(0, 160);
+  }
+  return out;
 }

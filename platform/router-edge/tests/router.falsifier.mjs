@@ -237,4 +237,64 @@ assert.equal(res5.headers.get("x-meridian-failover-count"), "1");
 assert.equal(calls.length, 2, "groq was tried once, then the next lane served");
 assert.equal(calls[0].model, "openai/gpt-oss-120b");
 
-console.log("ALL 5 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)");
+// Test 6: the Codex surface. Codex 0.169 refuses wire_api "chat", so /v1/responses and
+// /v1/models must ride the same admission, budget and failover path as chat completions.
+groqMode = "413";
+const env6 = { ...env, ROUTING_STATE: makeNamespace(RoutingStateDO), BUDGET_LEDGER: makeNamespace(BudgetLedgerDO) };
+await worker.fetch(
+  new Request("https://llm.meridianlabs.cloud/admin/v1/roles", {
+    method: "PUT",
+    headers: { authorization: "Bearer admin-secret-test", "content-type": "application/json" },
+    body: JSON.stringify(rolePayload),
+  }),
+  env6,
+  ctx
+);
+const asClient = (path, init = {}) =>
+  worker.fetch(
+    new Request("https://llm.meridianlabs.cloud" + path, {
+      headers: { authorization: "Bearer client-secret-test", "content-type": "application/json" },
+      ...init,
+    }),
+    env6,
+    ctx
+  );
+calls.length = 0;
+const res6 = await asClient("/v1/responses", {
+  method: "POST",
+  body: JSON.stringify({ model: "coder", instructions: "x", input: "hello", tools: [{ type: "function", name: "shell" }] }),
+});
+await drain();
+assert.equal(res6.status, 200);
+const out6 = await res6.json();
+assert.equal(out6.object, "response");
+assert.equal(out6.output[0].content[0].text, "FAILOVER_OK");
+assert.equal(res6.headers.get("x-meridian-backend"), "deepseek-wide-context", "responses ride the same failover");
+assert.equal(res6.headers.get("x-meridian-tools"), "dropped");
+const res6s = await asClient("/v1/responses", { method: "POST", body: JSON.stringify({ model: "coder", input: "hello", stream: true }) });
+await drain();
+assert.equal(res6s.status, 200);
+assert.match(res6s.headers.get("content-type"), /text\/event-stream/);
+assert.match(await res6s.text(), /event: response\.completed/);
+calls.length = 0;
+const res6bad = await asClient("/v1/responses", {
+  method: "POST",
+  body: JSON.stringify({ model: "coder", input: [{ type: "function_call_output", call_id: "c", output: "o" }] }),
+});
+assert.equal(res6bad.status, 400);
+assert.equal(calls.length, 0, "a refused request never reaches a vendor or the budget");
+const res6auth = await worker.fetch(
+  new Request("https://llm.meridianlabs.cloud/v1/responses", { method: "POST", headers: { authorization: "Bearer wrong" }, body: "{}" }),
+  env6,
+  ctx
+);
+assert.equal(res6auth.status, 401);
+const models6 = await (await asClient("/v1/models")).json();
+assert.deepEqual(models6.data.map((m) => m.id), ["coder"]);
+assert.equal(
+  (await worker.fetch(new Request("https://llm.meridianlabs.cloud/v1/models"), env6, ctx)).status,
+  401,
+  "model discovery is authenticated"
+);
+
+console.log("ALL 6 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth, 402 failover, Codex responses surface)");
