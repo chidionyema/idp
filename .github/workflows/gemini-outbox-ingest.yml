@@ -1,0 +1,99 @@
+# Gemini outbox ingest (claim chidionyema/idp#8702): Drive -> verify -> submit/gemini-<id> -> receipt.
+#
+# Gemini Web writes PACKET_*.json + artifacts into My Drive / Meridian-Submit-Outbox. This job
+# pulls them over Drive REST v3, lets the compiled verifier (platform/meridian-core-engines,
+# crate meridian-outbox-ingest) accept or reject each packet, pushes `submit/gemini-<packet_id>`
+# (submit-gate -> Greenlane takes it from there) and writes receipts/RECEIPT_<id>.json back to
+# Drive for Gemini to read on its next prompt.
+#
+# Triggers: repository_dispatch `gemini-outbox-packet` (instant, sent by the Drive push webhook),
+# workflow_dispatch, and a 5-minute safety-net schedule. All three are idempotent: a packet with a
+# receipt is skipped, so an extra run costs seconds and creates nothing.
+#
+# Auth is keyless: google-github-actions/auth exchanges this run's OIDC token for a short-lived
+# access token through Workload Identity Federation. No Drive key is stored anywhere.
+#
+# Until the three repo variables below exist the job is SKIPPED and says so in `unconfigured`;
+# it never goes red every five minutes for a setup that has not happened yet.
+#   vars.GCP_WORKLOAD_IDENTITY_PROVIDER  projects/<n>/locations/global/workloadIdentityPools/<p>/providers/<id>
+#   vars.GCP_SERVICE_ACCOUNT_EMAIL       the service account the outbox folder is shared with (Editor)
+#   vars.GDRIVE_OUTBOX_FOLDER_ID         the id of Meridian-Submit-Outbox
+name: gemini-outbox-ingest
+on:
+  repository_dispatch:
+    types: [gemini-outbox-packet]
+  workflow_dispatch:
+    inputs:
+      packet_id:
+        description: "Optional packet_id (or PACKET_*.json name) to ingest now; empty = every unprocessed packet"
+        required: false
+        default: ""
+  schedule:
+    - cron: "*/5 * * * *"
+permissions:
+  contents: read
+concurrency:
+  group: gemini-outbox-ingest
+  cancel-in-progress: false
+jobs:
+  unconfigured:
+    if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' || vars.GCP_SERVICE_ACCOUNT_EMAIL == '' || vars.GDRIVE_OUTBOX_FOLDER_ID == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - run: |
+          echo "::notice title=gemini-outbox-ingest not configured::set repo variables GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL and GDRIVE_OUTBOX_FOLDER_ID (see docs/plans/2026-11-28-estate-provisioning-plane.md)"
+  ingest:
+    if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT_EMAIL != '' && vars.GDRIVE_OUTBOX_FOLDER_ID != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token Workload Identity Federation exchanges for a Drive access token
+    steps:
+      # The secret is base64 of the PEM (bin/idp-github-app writes it that way); the action wants
+      # the PEM itself. Masked line by line, as feature-request-enable.yml does. The App token is
+      # what makes the push to submit/** wake submit-gate: a GITHUB_TOKEN push triggers nothing.
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "::error::SEED_GITHUB_APP_PEM_B64 is not set"; exit 1; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          token: ${{ steps.app.outputs.token }}
+      - name: Google access token (Workload Identity Federation, no stored key)
+        id: gauth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/drive
+          create_credentials_file: false
+      - name: Build the verifier (the single copy of the accept/reject rules)
+        working-directory: platform/meridian-core-engines
+        run: cargo build --release --locked -p meridian-outbox-ingest
+      - name: Pull the outbox, verify, push submit branches, write receipts
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.gauth.outputs.access_token }}
+          GDRIVE_OUTBOX_FOLDER_ID: ${{ vars.GDRIVE_OUTBOX_FOLDER_ID }}
+          PACKET_FILTER: ${{ inputs.packet_id || '' }}
+        run: |
+          set -euo pipefail
+          python3 platform/meridian-core-engines/scripts/gemini-outbox-pull \
+            --mode drive-api \
+            --ingest-bin platform/meridian-core-engines/target/release/meridian-outbox-ingest \
+            --repo-root . \
+            --push-submit-branch
