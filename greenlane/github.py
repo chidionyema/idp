@@ -18,6 +18,7 @@ import asyncio
 import base64
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import re
@@ -25,6 +26,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import uuid
@@ -1291,7 +1293,106 @@ class GitHubBackend:
             for ln in p.stdout.splitlines()
             if ln.startswith("FAIL  claim-gate  ")
         ]
-        return f"no live claim: {'; '.join(fails)}" if p.returncode and fails else ""
+        if p.returncode and fails:
+            return f"no live claim: {'; '.join(fails)}"
+        return self.preflight(mb, head)
+
+    # -- admission preflight: the deterministic gates, before the lane joins a batch ---------
+    #
+    # Root cause, measured 2026-11-28 on lane/meridian-flow-door-v2 (idp#8686): a lane pushed
+    # through the GitHub API (the thin client) skips every local gate, so the full fast-gate
+    # first met it on a batch candidate (b6461), where its `door_s: 600` failed the budget rung
+    # for everyone in that batch. What a machine decides in milliseconds belongs at the earliest
+    # moment this path has (AGENTS.md section 9, principle 2): intake, run by main's own scripts,
+    # the same ones CI runs, so there is no second copy of the rule to drift.
+    #
+    # Only a FAIL held for a named rung is a reason to hold the lane. A gate that is missing,
+    # times out or cannot read the tree admits it: CI runs the same rungs and stays the guarantee.
+    LANGUAGE_GATE = Path(__file__).resolve().parent.parent / "bin" / "language-gate"
+    BUDGET_GATE = Path(__file__).resolve().parent.parent / "bin" / "timeout-budget"
+    BUDGET_TREE = (
+        "mcp/plugins/estate_executor.py",
+        "platform/estate/intents",
+        "bin",
+        "hooks",
+    )
+
+    def preflight(self, mb: str, head: str) -> str:
+        """`preflight: <rung>: <finding>; ...` for the rungs main's gates fail on head, or ""."""
+        fails: list[str] = []
+        if self.LANGUAGE_GATE.is_file():
+            try:
+                p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    [sys.executable, str(self.LANGUAGE_GATE), mb, head],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if p.returncode == 1:  # 2 is BLIND (cannot judge): admit
+                    lines = [
+                        ln.strip()
+                        for ln in (p.stdout + p.stderr).splitlines()
+                        if ln.strip()
+                    ]
+                    fails.append("language: " + " ".join(lines[:4]))
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+        fails += self._budget_fails(head)
+        return f"preflight: {'; '.join(fails)}" if fails else ""
+
+    @staticmethod
+    def _extract(data: bytes, into: str) -> None:
+        """Unpack a `git archive` stream: regular files and directories only, nothing that
+        leaves `into` (a lane's tree is data, never a path to write outside the sandbox)."""
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            for m in tf.getmembers():
+                parts = Path(m.name).parts
+                if (m.isfile() or m.isdir()) and ".." not in parts and not m.name.startswith("/"):
+                    tf.extract(m, into)
+
+    def _budget_fails(self, head: str) -> list[str]:
+        if not self.BUDGET_GATE.is_file():
+            return []
+        try:
+            tar = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", "archive", "--format=tar", head, "--", *self.BUDGET_TREE[:3]],
+                capture_output=True,
+                timeout=30,
+            )
+            if tar.returncode:
+                return []
+            with tempfile.TemporaryDirectory(prefix="lane-preflight-") as tmp:
+                self._extract(tar.stdout, tmp)
+                hooks = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    ["git", "archive", "--format=tar", head, "--", "hooks"],
+                    capture_output=True,
+                    timeout=30,
+                )
+                if hooks.returncode == 0:
+                    self._extract(hooks.stdout, tmp)
+                p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    [
+                        sys.executable,
+                        str(self.BUDGET_GATE),
+                        "--root",
+                        tmp,
+                        "--no-installed",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+        except (subprocess.TimeoutExpired, OSError, tarfile.TarError):
+            return []
+        found = [
+            re.sub(r"\s+", " ", ln.removeprefix("FAIL").strip())
+            for ln in p.stdout.splitlines()
+            if ln.startswith("FAIL ")
+        ]
+        if p.returncode != 1 or not found:  # only a named FAIL holds a lane
+            return []
+        more = f" (+{len(found) - 3} more)" if len(found) > 3 else ""
+        return ["budget: " + " | ".join(found[:3]) + more]
 
     def work_age(self, sha: str) -> Optional[float]:
         """Minutes since `sha` was authored (git author date), or None if unreadable."""
