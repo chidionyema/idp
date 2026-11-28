@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -28,6 +29,43 @@ OUT = ROOT / "docs" / "scheduling" / "CLOCKS.md"
 # platform manifests, so the loader WAS the view: bin/estate-clocks took 65.8s, and a
 # view nobody waits for is a view nobody reads.
 _LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+# The page is ASCII, and it is ASCII because the pre-push gate says so.
+#
+# Measured 2026-11-28, run 46177326054: `.githooks/pre-push` Layer 1c refused
+# "non-ASCII bytes added in docs/scheduling/CLOCKS.md". The generator itself wrote
+# U+00B7 MIDDLE DOT and U+2026 HORIZONTAL ELLIPSIS, and the source manifests it reads
+# hold curly quotes, section signs and em dashes. Every regeneration was refused, so
+# the page could not be refreshed at all.
+#
+# So the generator emits ASCII: the strings it builds say " - " and "...", and whatever
+# text comes out of a manifest is folded to ASCII as the last step of render().
+_ASCII_MAP = {
+    "\u00b7": "-",  # MIDDLE DOT
+    "\u2026": "...",  # HORIZONTAL ELLIPSIS
+    "\u00a7": "S",  # SECTION SIGN
+    "\u2014": "-",  # EM DASH
+    "\u2013": "-",  # EN DASH
+    "\u2018": "'",  # LEFT SINGLE QUOTATION MARK
+    "\u2019": "'",  # RIGHT SINGLE QUOTATION MARK
+    "\u201c": '"',  # LEFT DOUBLE QUOTATION MARK
+    "\u201d": '"',  # RIGHT DOUBLE QUOTATION MARK
+    "\u00a0": " ",  # NO-BREAK SPACE
+    "\u2192": "->",  # RIGHTWARDS ARROW
+}
+
+
+def _ascii(text: str) -> str:
+    """Fold text to ASCII: an explicit map, then NFKD, then a byte-level replace.
+
+    A manifest description is prose written by a human, and it carries characters the
+    push gate refuses. None of them carries meaning the clock view needs, so they are
+    folded rather than dropped: the reader still sees a dash, a quote, an ellipsis.
+    """
+    for source, target in _ASCII_MAP.items():
+        text = text.replace(source, target)
+    text = unicodedata.normalize("NFKD", text)
+    return text.encode("ascii", "replace").decode("ascii")
 
 
 def _read_schedule_yml(root: Path) -> list[dict]:
@@ -62,14 +100,14 @@ def _read_schedule_yml(root: Path) -> list[dict]:
                 description = cmd_str[:80]
         # Truncate to 110 characters
         if len(description) > 110:
-            description = description[:107] + "…"
+            description = description[:107] + "..."
         # Format where based on runs_on
         if runs_on == "retire":
-            where = "Mac scheduler (Dagster) · retiring"
+            where = "Mac scheduler (Dagster) - retiring"
         elif runs_on == "mac":
-            where = "Mac scheduler (Dagster) · moves to the cluster"
+            where = "Mac scheduler (Dagster) - moves to the cluster"
         else:
-            where = f"Mac scheduler (Dagster) · runs_on={runs_on}"
+            where = f"Mac scheduler (Dagster) - runs_on={runs_on}"
         clocks.append(
             {
                 "clock": name,
@@ -209,7 +247,7 @@ def _read_cronjobs(root: Path) -> list[dict]:
             clocks.append(
                 {
                     "clock": name,
-                    "where": f"cluster · {namespace}",
+                    "where": f"cluster - {namespace}",
                     "cron": schedule,
                     "source": str(yaml_path.relative_to(root)),
                     "what": first_comment,
@@ -290,7 +328,7 @@ def _read_github_workflows(root: Path) -> list[dict]:
             what = first_comment if first_comment else workflow_name
             # Truncate to 110 characters
             if len(what) > 110:
-                what = what[:107] + "…"
+                what = what[:107] + "..."
 
             clocks.append(
                 {
@@ -344,7 +382,9 @@ def render(repo_root: Path) -> str:
         lines.append(f"| `{clock}` | {where} | {cron} | `{source}` | {what} |")
 
     lines.append("")
-    return "\n".join(lines) + "\n"
+    # The last step: everything the manifests said is folded to ASCII, so the page
+    # the gate reads holds no byte above 127.
+    return _ascii("\n".join(lines) + "\n")
 
 
 def main():
