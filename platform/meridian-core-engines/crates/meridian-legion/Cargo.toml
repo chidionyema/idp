@@ -1,0 +1,12 @@
+[package]
+name = "meridian-legion"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+meridian-ledger = { path = "../meridian-ledger" }
+serde.workspace = true
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true

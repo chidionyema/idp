@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/meridian-ledger",
+    "crates/meridian-battalion",
+    "crates/meridian-legion",
+    "crates/meridian-greenlane",
+    "crates/meridian-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "1.0.0"
+license = "PROPRIETARY"
+authors = ["Meridian Intelligence"]
+
+[workspace.dependencies]
+ed25519-dalek = "2.1"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"

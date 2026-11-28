@@ -1,0 +1,52 @@
+# Meridian core engines (ledger, battalion, legion, greenlane, cli): the compiled workspace under
+# platform/meridian-core-engines/ is proved by its own tests on every change to it. Path-scoped, so
+# a lane that does not touch the workspace pays nothing.
+#
+# What this proves (and what it does not): `cargo test --workspace --locked` runs the Rust tests
+# (the ledger invariants, the lease signatures, the failover, the proxy-green and 3/3 gates), and
+# the built binary prints `optimus.estate.four_engines_interconnected=1`. The canary drives the
+# engines with in-process probes; it is a wiring proof, not a production probe of any router.
+name: meridian-core-engines
+on:
+  pull_request:
+    paths:
+      - "platform/meridian-core-engines/**"
+      - ".github/workflows/meridian-core-engines.yml"
+  push:
+    branches: [main]
+    paths:
+      - "platform/meridian-core-engines/**"
+      - ".github/workflows/meridian-core-engines.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: meridian-core-engines-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cargo-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: platform/meridian-core-engines
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: cargo test --workspace (every engine, locked)
+        run: cargo test --workspace --locked
+      - name: build the CLI
+        run: cargo build --release --locked -p meridian-cli
+      - name: optimus canary prints exactly 1
+        run: |
+          set -euo pipefail
+          out=$(./target/release/meridian --optimus)
+          echo "$out"
+          test "$out" = "optimus.estate.four_engines_interconnected=1"
+      - name: presubmit refuses a proxy-green contract (falsifier) and accepts a real one
+        run: |
+          set -euo pipefail
+          bad=$'SHIP-CONTRACT\naccept: GET https://api.github.com/repos/chidionyema/idp/commits/main expect 200 within 30m\noptimus: m baseline=0 target=1\nfailure-classes: a\ndebug-pack: DBG-001\n'
+          good=$'SHIP-CONTRACT\naccept: GET https://llm.example.org/health expect 200 within 30m\noptimus: m baseline=0 target=1\nfailure-classes: a\ndebug-pack: DBG-001\n'
+          set +e; printf '%s' "$bad" | ./target/release/meridian presubmit >/dev/null 2>&1; rc_bad=$?; set -e
+          test "$rc_bad" = 2
+          printf '%s' "$good" | ./target/release/meridian presubmit >/dev/null
