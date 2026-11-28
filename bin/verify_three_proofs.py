@@ -219,7 +219,10 @@ def verify_proof_1_physical_reality(
 
 
 def verify_proof_2_boundary_and_gate(
-    commit_sha: str, changed_files: List[str], founder_seal_verified: bool = False
+    commit_sha: str,
+    changed_files: List[str],
+    founder_seal_verified: bool = False,
+    defer_guarded_to_push: bool = False,
 ) -> Tuple[bool, Dict]:
     for bad in BLACKLISTED_SHAS:
         if commit_sha.startswith(bad):
@@ -229,6 +232,15 @@ def verify_proof_2_boundary_and_gate(
 
     if not changed_files:
         return False, {"error": "PROOF_2_FAILED: Empty file set"}
+
+    # Pre-commit timing law (#8541, 2026-11-25). In .githooks/pre-commit the commit does not
+    # exist yet, so a seal on it can never be verified: refusing a guarded path there is a
+    # chicken-and-egg lock. With defer_guarded_to_push ONLY the guarded-path check moves, to the
+    # required `guarded-paths` CI check (bin/idp-ci-guarded-paths, .github/workflows/guarded-paths.yml),
+    # which runs on the real PR head and refuses an unsigned guarded path server-side. The file-count
+    # and cross-subsystem limits stay fatal here: nothing else is confirmed to enforce them, so
+    # deferring them would open a gate. The blacklist above is never deferred.
+    deferred: List[str] = []
 
     if len(changed_files) > MAX_FILES_PER_CHANGE and not founder_seal_verified:
         return False, {
@@ -240,6 +252,12 @@ def verify_proof_2_boundary_and_gate(
             if (
                 path == guarded or path.startswith(guarded)
             ) and not founder_seal_verified:
+                if defer_guarded_to_push:
+                    deferred.append(
+                        f"Guarded path '{path}' requires a seal "
+                        "(enforced by the required guarded-paths CI check)"
+                    )
+                    continue
                 return False, {
                     "error": f"PROOF_2_FAILED: Guarded path '{path}' modified without Founder seal"
                 }
@@ -250,11 +268,17 @@ def verify_proof_2_boundary_and_gate(
             "error": f"PROOF_2_FAILED: Cross-subsystem mutation {sorted(subsystems)} blocked"
         }
 
-    return True, {
+    report = {
         "proof_2_status": "PASS",
         "subsystem": sorted(subsystems)[0],
         "file_count": len(changed_files),
     }
+    if deferred:
+        report["deferred_to_push"] = deferred
+        report["note"] = (
+            "guarded-path seal decision enforced by the guarded-paths CI check"
+        )
+    return True, report
 
 
 def verify_proof_3_temporal_clock(
@@ -285,12 +309,13 @@ def evaluate_three_independent_proofs(
     founder_seal_verified: bool = False,
     real_system_ts: int = None,
     staged: bool = False,
+    defer_guarded_to_push: bool = False,
 ) -> Tuple[bool, Dict]:
     ok1, p1 = verify_proof_1_physical_reality(
         repo_root, changed_files, expected_hashes, staged
     )
     ok2, p2 = verify_proof_2_boundary_and_gate(
-        commit_sha, changed_files, founder_seal_verified
+        commit_sha, changed_files, founder_seal_verified, defer_guarded_to_push
     )
     ok3, p3 = verify_proof_3_temporal_clock(claimed_unix_ts, real_system_ts)
 
@@ -333,6 +358,12 @@ if __name__ == "__main__":
     parser.add_argument("--timestamp", type=int, default=int(time.time()))
     parser.add_argument("--contract", action="store_true")
     parser.add_argument(
+        "--defer-guarded",
+        action="store_true",
+        help="pre-commit mode: defer only the guarded-path seal decision to the guarded-paths CI check, where the "
+        "real commit SHA exists and its X-Idp-Auth trailer can be verified (#8541)",
+    )
+    parser.add_argument(
         "--staged",
         action="store_true",
         help="certify the index bytes a commit will contain, not the working tree",
@@ -352,6 +383,7 @@ if __name__ == "__main__":
         claimed_unix_ts=args.timestamp,
         founder_seal_verified=seal_verified(args.repo_root, args.commit_sha),
         staged=args.staged,
+        defer_guarded_to_push=args.defer_guarded,
     )
     print(json.dumps(report, indent=2))
     sys.exit(0 if passed else 1)
