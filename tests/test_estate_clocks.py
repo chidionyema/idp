@@ -69,10 +69,50 @@ def test_the_clock_view_survives_a_manifest_that_is_not_yaml(tmp_path, capsys):
 
     clocks = module._read_cronjobs(tmp_path)
     assert [c["clock"] for c in clocks] == ["estate-example"], clocks
-    assert clocks[0]["where"] == "cluster · estate"
+    assert clocks[0]["where"] == "cluster - estate"
     err = capsys.readouterr().err
     assert "externalsecrets.yaml" in err, err
     assert "not readable YAML" in err, err
+
+
+def test_the_clock_view_renders_only_ascii(tmp_path):
+    """The rendered page must hold no byte above 127, or the push gate refuses it.
+
+    Measured 2026-11-28, run 46177326054: `.githooks/pre-push` Layer 1c refused the
+    regenerated page with "non-ASCII bytes added in docs/scheduling/CLOCKS.md". The
+    generator wrote U+00B7 and U+2026 itself, and a manifest description carries
+    whatever prose a human wrote in it: a section sign, an em dash, a curly quote.
+
+    So the generator emits ASCII: the strings it builds say " - " and "...", and
+    everything a manifest contributes is folded to ASCII as the last step of render().
+    This is the falsifier for that.
+    """
+    module = load_clocks()
+    platform = tmp_path / "platform" / "estate"
+    platform.mkdir(parents=True)
+    # The description of this clock holds a middle dot, an ellipsis, a section sign,
+    # an em dash and curly quotes. The escapes keep this file ASCII too.
+    (platform / "cronjob.yaml").write_text(
+        "# Runs the \u00b7 thing \u2026 with \u00a7 and \u2014 and \u2018quotes\u2019\n"
+        "apiVersion: batch/v1\n"
+        "kind: CronJob\n"
+        "metadata:\n"
+        "  name: estate-example\n"
+        "  namespace: estate\n"
+        "spec:\n"
+        "  schedule: '*/5 * * * *'\n"
+    )
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+
+    out = module.render(tmp_path)
+
+    assert "estate-example" in out, out
+    raw = out.encode("utf-8")
+    bad = [i for i, byte in enumerate(raw) if byte > 127]
+    assert not bad, "the rendered page holds non-ASCII bytes at offsets {}".format(
+        bad[:5]
+    )
+    assert all(byte < 128 for byte in raw), "the rendered page holds a byte above 127"
 
 
 def test_the_clock_view_lists_every_clock_in_the_estate():
