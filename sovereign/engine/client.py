@@ -16,6 +16,7 @@ from typing import Any, Literal
 from sovereign import config
 from sovereign.engine import fsm
 from sovereign.engine import receipts as receipts_mod
+from sovereign.engine.workflow import NON_CONSEQUENTIAL_RUNNERS
 
 _client: Any = None
 _LOG = logging.getLogger(__name__)
@@ -99,6 +100,14 @@ async def start(
     # Validation precedes any network call, and a replay retains the same
     # Temporal workflow ID instead of minting an independent execution.
     instruction_id = _checked_instruction_id(instruction_id, by=by)
+    if instruction_id is None and runner not in NON_CONSEQUENTIAL_RUNNERS:
+        # MERIDIAN-CTRL-001 11.2: `by` is a caller-chosen string, so it cannot be what decides
+        # whether custody applies. Work that can change something outside the workflow needs
+        # an instruction_id whoever asks; the workflow enforces the same rule on its own.
+        raise ValueError(
+            "consequential runners require an instruction_id: custody and independent "
+            "settlement do not apply to an unnamed session"
+        )
     if instruction_id is not None and (not isinstance(task, str) or not task.strip()):
         raise ValueError("a durable instruction cannot have an empty task")
     session_id = instruction_id or _new_session_id()

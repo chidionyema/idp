@@ -456,6 +456,17 @@
       "better": "lower",
       "owner": "governance",
       "description": "Distinct estate-dag.dot renderings bin/estate-dag-gen produces across every directory listing order of the same .tf files, minus one. 5 on the unsorted generator (main f98fe263c); 0 when files, nodes and edges are sorted (idp#8679)."
+    },
+    {
+      "name": "engine.verification_deadline_bounded",
+      "measure": [
+        "python3",
+        "tests/engine_verification_deadline_bounded.py"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "governance",
+      "description": "1 when SessionWorkflow._retain_instruction, with no independent verifier answer, re-dispatches a fixed number of rounds each bounded by an explicit deadline and then fails closed (verification-deadline-exceeded) without ever reaching an unbounded wait_condition (MERIDIAN-CTRL-001 11.1). 0 on main f98fe26 (the wait has no deadline); 1 with this lane. The Temporal Test Server proof is sovereign/engine/test_instruction_id.py."
     }
   ]
 }
