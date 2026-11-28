@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 120,
-    "layer": 323,
+    "layer": 330,
     "service": 123,
     "tool": 546,
     "workflow": 112
@@ -6244,6 +6244,400 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/config/control_loop_registry.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-budget_ledger",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Micro-USD budget governance for the consultation plane.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-dialectical_consult",
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/budget_ledger.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-dialectical_consult",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The dialectical consultation engine: Brief -> Lead -> Blind Challenge -> Veto.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-consult_plane-budget_ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-search_twin",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/dialectical_consult.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-discovery_poe",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Tier-0 discovery providers, the Proof-of-Effort gate, and the anti-abuse ratchet.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-consult_plane-search_twin",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-pennyd-crates-penny-core-src-error",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/discovery_poe.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-founder_firewall",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Decision-Mode Founder Protection Firewall.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/founder_firewall.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-search_twin",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Signed research receipts in front of an external search backend.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-dialectical_consult",
+        "cap:layer/platform-consult_plane-discovery_poe",
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/search_twin.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-service",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The critical-service facade: one entrypoint for the whole consultation path.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-consult_plane-budget_ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-dialectical_consult",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-discovery_poe",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-founder_firewall",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-search_twin",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-consult_plane-stuck_router",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/service.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-consult_plane-stuck_router",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Compulsory stuck-state routing, owned by the System Reconciler (IoC).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-consult_plane-service"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/consult_plane/stuck_router.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -17151,6 +17545,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-consult_plane-discovery_poe",
         "cap:layer/platform-estate-context-broker",
         "cap:layer/platform-estate-context-broker_client",
         "cap:layer/platform-estate-context-server",
