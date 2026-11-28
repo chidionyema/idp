@@ -1,0 +1,139 @@
+# lane-tests -- the AUTHOR's test verdict, on a lane push, on GitHub's runners.
+#
+# Founder order 2026-11-28: no repo test suite runs on the 8 GB Mac, at any load.
+# Tests run on ubuntu-latest here, or on the OCI ARM host. The Mac pushes a lane
+# ref and reads the verdict; it never runs pytest.
+#
+# WHY THIS WORKFLOW EXISTS (measured 2026-11-28): ci.yml grades `main` and
+# `queue/**` only, deliberately -- a lane head is not the merge state, so a green
+# lane is not a merge verdict. Nothing else ran the suite on `lane/**`: the only
+# lane-triggered workflows were the preflights, `no-harness-folders`, and this one.
+# So an agent that edited a test could not see it run without a token to open a
+# pull request or dispatch agent-sandbox, and it fell back to pytest on the Mac --
+# which is the defect this closes. The estate's answer to "which tests does this
+# change touch" already exists (`bin/idp-tests-for`); this workflow calls it, it
+# does not re-implement it.
+#
+# NOT A MERGE GATE, and it must never become a required check: the merge verdict
+# stays the queue candidate's ci.yml run (AGENTS.md section 2). A green here means
+# "the tests this diff selects pass", never "this may land".
+#
+# Reaches nothing: contents: read, no secret, credentials not persisted, so a lane
+# cannot use this run to write to the repository. This is the same trust boundary
+# agent-sandbox.yml states for tests of untrusted code ("runners that hold nothing").
+#
+# Reading the verdict without a token: job and step conclusions are public, and
+# every failing test id is emitted as a `::error` annotation, which is readable
+# anonymously at /repos/{owner}/{repo}/check-runs/{id}/annotations. Log *text*
+# still needs auth; the failing node ids do not.
+name: lane-tests
+on:
+  push:
+    branches: ['lane/**']
+permissions:
+  contents: read
+concurrency:
+  # A newer push to the same lane supersedes the older run: the author wants the
+  # verdict for its current head, not a queue of verdicts for heads it replaced.
+  group: lane-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lane-tests:
+    name: lane-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # bin/idp-tests-for diffs origin/main...HEAD, so the base must be present.
+          fetch-depth: 0
+          # A lane's code is untrusted; this run must not be able to push.
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sovereign/requirements*.txt
+      - name: install the suite's dependencies
+        # The SAME set ci.yml installs for `pytest tests` (ci.yml line ~125), because a lane
+        # verdict that grades a different environment than the merge verdict is a second
+        # contract, and two contracts drift. Measured 2026-11-28 on the first run of this
+        # workflow: installing sovereign/requirements.txt alone left `pytest_bdd` absent, and
+        # five of the selected files import it at module level, so they died in collection --
+        # 52 collection errors in 1.75s, every one of them an environment gap, not a defect
+        # in the lane. requirements-dev.txt carries the repo's pytest pin (>=8.0,<9.2) too.
+        run: >-
+          pip install -q -r sovereign/requirements-dev.txt "pytest-xdist==3.6.1"
+      - name: the tests this lane's diff selects
+        id: selected
+        env:
+          # The pin ci.yml uses (ci.yml: "Selection only, never the blanket"). GitHub sets CI=1,
+          # and bin/idp-tests-for then defaults TESTS_FOR_ALL=1, which adds every file not in
+          # tests/slow-files.txt -- the whole cheap suite. Measured 2026-11-28: that blanket is
+          # red on main's own tree (52 collection errors, 67 failing nodes) and touches none of
+          # this lane, so a lane verdict should not inherit it. The merge verdict stays the
+          # queue candidate's ci.yml run, and this reproduces its selection exactly.
+          TESTS_FOR_ALL: "0"
+        # `continue-on-error` so the annotation step below always runs: a red job
+        # whose only public surface is "Process completed with exit code 1" is how
+        # the author ended up running the suite on the Mac to find out which test.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bin/idp-tests-for --base origin/main 2>&1 | tee "$RUNNER_TEMP/tests.log"
+      - name: name every failing test, and why, where a thin client can read it
+        if: always()
+        run: |
+          python3 - "$RUNNER_TEMP/tests.log" <<'PY'
+          import re, sys
+          from pathlib import Path
+
+          log = Path(sys.argv[1])
+          text = log.read_text(errors="replace") if log.exists() else ""
+          lines = text.splitlines()
+
+          # pytest's short summary carries "FAILED node - reason" when it can; the
+          # traceback carries the assertion otherwise. Both are read here, because an
+          # annotation that names the test but not the cause sends the author back to
+          # the laptop to find out -- the defect this workflow exists to close.
+          failures = {}
+          order = []
+          for ln in lines:
+              m = re.match(r"^(?:FAILED|ERROR)\s+(\S+)(?:\s+-\s+(.*))?$", ln.strip())
+              if not m:
+                  continue
+              node, reason = m.group(1), (m.group(2) or "").strip()
+              if node not in failures:
+                  order.append(node)
+              failures[node] = failures.get(node) or reason
+          # Fall back to the first "E   ..." line pytest printed for that node.
+          for i, ln in enumerate(lines):
+              st = ln.strip()
+              if not st.startswith("E ") and not re.match(r"^E\s{2,}", ln):
+                  continue
+              # The nearest FAILED/ERROR header above this E line names its node.
+              for back in range(i, max(-1, i - 400), -1):
+                  m = re.match(r"^_+ (\S+) _+$", lines[back].strip())
+                  if m:
+                      node = m.group(1)
+                      if node in failures and not failures[node]:
+                          failures[node] = st[1:].strip()
+                      break
+
+          def one_line(s: str) -> str:
+              return re.sub(r"\s+", " ", s.replace("%", "%25").replace("\r", " "))[:180]
+
+          for node in order:
+              print(f"::error title=pytest {one_line(node)}::{one_line(node)}"
+                    f" -- {one_line(failures[node]) if failures[node] else 'no reason in the log'}")
+          summary = [ln.strip() for ln in lines if re.search(r"\b\d+ (passed|failed|error)", ln)]
+          print(f"::notice title=lane-tests::{one_line(summary[-1]) if summary else 'no pytest summary line'}"
+                f" | {len(order)} failing test(s) | selected by bin/idp-tests-for against origin/main")
+          if not order:
+              print("::notice title=lane-tests::no failing test in the log")
+          PY
+      - name: the lane's verdict
+        if: steps.selected.outcome != 'success'
+        run: |
+          echo "::error title=lane-tests::the selected tests failed (see the annotations above)"
+          exit 1
