@@ -18,13 +18,18 @@
 # selection rules above only decide which of the 108 expensive files to add. See that list's header
 # and bin/idp-slow-tests. Exit 0 when nothing changed (the message says so); CI on a fresh checkout
 # still runs everything.
+#
+# A base the checkout cannot name is BLIND, never "nothing changed" (idp#8788, 2026-11-28). In CI
+# the base comes from bin/idp-ci-base, the ONE resolver every other job already asks; when none of
+# its candidates is a commit this checkout can diff, every cheap file runs. Exit 3 is that BLIND
+# verdict with no cheap set to fall back on -- a loud refusal, never a green.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-base=origin/main; list=0; forced=''
+base=origin/main; base_given=0; list=0; forced=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) list=1 ;;
-    --base) base="$2"; shift ;;
+    --base) base="$2"; base_given=1; shift ;;
     # --for PATH answers "which tests would a change to PATH select", with no git diff involved.
     # It is how the selector's own guard proves the rule end to end instead of grading this file's
     # text, and it is repeatable: bin/idp-tests-for --for bin/foo --for platform/bar/baz.yaml --list
@@ -32,18 +37,53 @@ while [ $# -gt 0 ]; do
     *) echo "usage: bin/idp-tests-for [--list] [--base REF] [--for PATH]..." >&2; exit 64 ;;
   esac; shift
 done
+blind=0; changed=''
 if [ -n "$forced" ]; then
   changed=$(printf '%s' "$forced" | sort -u)
   SKIP_TESTS_ON_TRIVIAL=0   # a hypothetical path has no diff to call trivial
 else
-  changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+  # idp#8788, measured 2026-11-28. This was
+  #   changed=$( { git diff "$base"...HEAD; git diff HEAD; git ls-files --others; } | sort -u )
+  # and `set -e` never reaches inside it: the assignment's status is sort's, so an unresolvable
+  # --base contributed nothing and the job graded the files earlier STEPS had written into the
+  # tree instead of the candidate's diff. Every candidate then "selected" the same 3 files and
+  # "passed" the same 30 tests (run 46150172966 job 140995357196 printed `fatal: bad revision
+  # 'origin/main...HEAD'` and then `30 passed`, on a commit whose own test file holds 54 node
+  # ids). A gate that grades a constant is not a gate.
+  #
+  # So: in CI the base is named by the ONE resolver (bin/idp-ci-base), never by a fifth copy of
+  # the rule, and it is verified to be a commit this checkout can actually diff against. When no
+  # base resolves -- a shallow clone has neither origin/main nor the base sha, which is exactly
+  # what actions/checkout hands a job -- the answer is BLIND and every cheap file runs.
+  if [ "$base_given" = 0 ] && [ -n "${CI:-}" ]; then
+    if ! base=$("$IDP/bin/idp-ci-base" 2>/dev/null); then base=''; fi
+  fi
+  if [ -z "$base" ] || ! git -C "$IDP" rev-parse --verify --quiet "${base}^{commit}" >/dev/null 2>&1; then
+    blind=1
+  elif ! range=$(git -C "$IDP" diff --name-only "$base"...HEAD 2>/dev/null); then
+    blind=1   # a base that resolves but shares no history with HEAD is still unmeasurable
+  else
+    changed=$range
+    # The laptop author's view: their uncommitted edits and untracked files are their own work.
+    # In CI those same files are the JOB's artefacts, so they never enter the change set.
+    if [ -z "${CI:-}" ]; then
+      changed=$(printf '%s\n%s\n%s\n' "$range" \
+        "$(git -C "$IDP" diff --name-only HEAD 2>/dev/null || true)" \
+        "$(git -C "$IDP" ls-files --others --exclude-standard 2>/dev/null || true)" | sed '/^$/d' | sort -u)
+    fi
+  fi
+  if [ "$blind" = 1 ]; then
+    echo "tests-for: BLIND no diff base resolves in this checkout (asked: ${base:-none}); running every cheap file rather than a partial selection" >&2
+    TESTS_FOR_ALL=1
+  fi
 fi
-if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
+if [ "$blind" = 0 ] && [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
 # SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
 # files, the hook skips tests entirely"). A file is trivial when it is prose (.md/.txt/.rst, docs/,
 # reports/, LICENSE) or when every changed line in it is blank or a comment (#, //, --). Trivial files
 # are dropped from the selection; a diff that is only trivial files runs nothing. Set
-# SKIP_TESTS_ON_TRIVIAL=0 to keep them.
+# SKIP_TESTS_ON_TRIVIAL=0 to keep them. A BLIND base skips this filter entirely: with no diff to
+# read, "comments only" is unknowable, and guessing it is the class idp#8788 closed.
 trivial() {
   case "$1" in *.md|*.txt|*.rst|docs/*|reports/*|LICENSE*|CODEOWNERS|.gitignore) return 0 ;; esac
   [ -f "$IDP/$1" ] || return 1
@@ -51,7 +91,7 @@ trivial() {
   ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
       | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(#|//|--|$)' >/dev/null
 }
-if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
+if [ "$blind" = 0 ] && [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
   kept=""; dropped=0
   for f in $changed; do
     if trivial "$f"; then dropped=$((dropped + 1)); else kept="$kept$f"$'\n'; fi
@@ -135,7 +175,13 @@ if [ "${TESTS_FOR_ALL:-${CI:+1}}" = 1 ] && [ -f "$slow" ]; then
 else
   echo "tests-for: selection only (every cheap file runs in CI, where a clean runner can answer its own subprocesses); TESTS_FOR_ALL=1 forces the full set here"
 fi
-if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
+if [ -z "$sel" ]; then
+  # A BLIND base with nothing to fall back on is a refusal, not a pass: tests/slow-files.txt is
+  # what makes the cheap set nameable, and without it "run every cheap file" would silently mean
+  # "run nothing" -- the same false green one layer down.
+  if [ "$blind" = 1 ]; then echo "tests-for: BLIND an unresolvable diff base AND no cheap set ($IDP/tests/slow-files.txt missing?); refusing to report a green" >&2; exit 3; fi
+  echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0
+fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
 echo "tests-for: $n test file(s) read the changed files"
 if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
