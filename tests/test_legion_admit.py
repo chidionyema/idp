@@ -447,7 +447,9 @@ def _auto_module():
     return mod
 
 
-def _registry(path, provider, cls="free", price=0, models=("capable", "backup")):
+def _registry(
+    path, provider, cls="free", price=0, models=("capable", "backup"), billing=None
+):
     path.mkdir(exist_ok=True)
     header = (
         f'id="{provider}"\ndialect="openai"\n'
@@ -455,6 +457,8 @@ def _registry(path, provider, cls="free", price=0, models=("capable", "backup"))
         'request_path="/v1/chat/completions"\n[auth]\nkind="bearer"\n'
         f'key_env="{provider.upper()}_API_KEY"\n'
     )
+    if billing:
+        header += f'\n[billing]\nkind="{billing}"\nperiod="monthly"\n'
     rows = "".join(
         f'\n[[models]]\nid="{m}"\nclass="{cls}"\n'
         f"price_in_per_mtok={price}\nprice_out_per_mtok={price}\n"
@@ -897,3 +901,99 @@ def test_the_measure_needs_no_pytest_and_reads_1():
     assert (
         r.stdout.strip().splitlines()[-1] == "optimus.legion.fitness_gate_enforced=1"
     ), r.stderr
+
+
+def test_8283_a_declared_subscription_is_admitted_without_zero_catalogue_cost(tmp_path):
+    """#8283: the founder's MiniMax lane is paid by subscription, not per token.
+
+    Class "paid" and a real catalogue price are the facts on the vendor route; the
+    registry's [billing] block is the declaration that a probe costs nothing extra.
+    Before this test the zero-price boundary refused the lane with
+    "cost-unverified" and no capacity was ever admitted.
+    """
+    mod = _auto_module()
+    _registry(
+        tmp_path, "mini", "paid", 2, models=("MiniMax-M3",), billing="subscription"
+    )
+    env = {"MINI_API_KEY": "present"}
+
+    routes = mod.auto_candidates(tmp_path, env)
+    assert [r["provider"] for r in routes] == ["mini"]
+    assert routes[0]["billing"] == "subscription"
+    assert mod.admissible_cost(routes[0]) is True
+
+    seen = []
+
+    def probe(route, _env):
+        seen.append(route["provider"])
+        return {"verdict": "capacity"}
+
+    selected, _ = mod.auto_select(routes, env, probe)
+    assert selected is not None and seen == ["mini"]
+
+
+def test_8283_undeclared_unknown_or_forged_billing_is_still_refused(tmp_path):
+    """The falsifier for the boundary: only a registry file that declares
+    subscription, at the exact bytes the route was built from, is admissible.
+
+    - no [billing] block: metered (the historical default);
+    - an unknown kind: metered, never upgraded;
+    - a route that merely *claims* subscription with no matching registry: refused.
+    """
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "south", "paid", 2)
+    _registry(tmp_path, "east", "paid", 2, billing="prepaid-credits")
+    env = {"SOUTH_API_KEY": "s", "EAST_API_KEY": "e"}
+    assert mod.auto_candidates(tmp_path, env) == []
+
+    for provider in ("south", "east"):
+        forged = {
+            "provider": provider,
+            "model": "capable",
+            "class": "paid",
+            "price_in": 2,
+            "price_out": 2,
+            "billing": "subscription",
+        }
+        assert mod.admissible_cost(forged) is False
+        selected, observations = mod.auto_select(
+            [forged], env, lambda r, e: {"verdict": "capacity"}
+        )
+        assert selected is None and observations[0]["verdict"] == "cost-unverified"
+        with mock.patch("urllib.request.build_opener") as opener:
+            assert mod.auto_probe(forged, env)["verdict"] == "cost-unverified"
+            opener.assert_not_called()
+        with pytest.raises(ValueError, match="COST_UNVERIFIED"):
+            mod.auto_launch(
+                tmp_path, {"decision": "ADMITTED", "route": forged}, "t", tmp_path, env
+            )
+
+
+def test_8283_the_lane_probe_follows_the_registry_not_a_flag(tmp_path, monkeypatch):
+    """probe() used to refuse every non-loopback lane outright. It now reaches the
+    network only for a lane whose registry declares subscription, and a stale
+    LEGION_PAID_PROVIDERS cannot widen that."""
+    from unittest import mock
+
+    mod = _auto_module()
+    _registry(tmp_path, "minimax", "paid", 2, billing="subscription")
+    monkeypatch.setattr(mod, "REGISTRY", tmp_path)
+    env = {
+        "MINIMAX_API_KEY": "present",
+        "LEGION_MINIMAX_BASE": "https://api.minimax.io/v1",
+        "LEGION_PAID_PROVIDERS": "google,minimax",
+    }
+    with (
+        mock.patch.dict(os.environ, env),
+        mock.patch("urllib.request.urlopen") as remote,
+    ):
+        remote.side_effect = OSError("no network in this falsifier")
+        assert mod.probe("minimax", "MiniMax-M3")["verdict"] == "transport"
+        assert remote.call_count == 1
+        # The same lane with the declaration removed is refused again, before the
+        # network, and the stale allowlist changes nothing.
+        _registry(tmp_path, "minimax", "paid", 2)
+        assert mod.probe("minimax", "MiniMax-M3")["verdict"] == "cost-unverified"
+        assert remote.call_count == 1
