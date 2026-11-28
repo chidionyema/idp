@@ -1,0 +1,10 @@
+{
+  "name": "estate-live-state",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The estate's live state: one Durable Object, one snapshot, BLIND is a value",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
