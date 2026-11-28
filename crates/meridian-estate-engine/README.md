@@ -14,6 +14,9 @@ Compiled FLOW -> DOF -> LEGION (Muster) -> KARMA workspace. Five crates, one bin
 cd crates/meridian-estate-engine
 cargo test --workspace --locked
 cargo run -q --locked -p meridian-army   # optimus.estate.karma_dof_legion_flow_unified=1
+
+# live: decide against the estate's own capability registry (one JSON log line, exit 0; exit 2 = untrusted input)
+cargo run -q --locked -p meridian-army -- --registry ../../catalog/estate-capability-registry.json --intent "agent invoke"
 ```
 
 ## Status: built, not operating
@@ -21,8 +24,9 @@ cargo run -q --locked -p meridian-army   # optimus.estate.karma_dof_legion_flow_
 Verified by `cargo test --workspace --locked`, run from the root suite by `tests/test_meridian_estate_engine.py`
 (which also requires the army sentinel). Not yet true:
 
-- FLOW reads a hard-coded registry, not the capability registry.
-- Nothing calls this from Greenlane, `agent-sandbox.yml` or any scheduler, so no production log line exists.
+- Live mode reads the real registry and decides (`REUSE_VERIFIED`, `DECLARED_NOT_VERIFIED`, `IMPLEMENT_NEW`) on every PR through `tests/test_meridian_estate_engine.py`. Today every record is `declared`, none is `verified`, so the live decision never executes a capability: a declared route is reported with its path and is not run. It starts executing when the registry verifies one.
+- The sentinel run still uses an in-process registry; only live mode reads the catalog.
+- Nothing in Greenlane, `agent-sandbox.yml` or any scheduler calls it, so no production log line exists; the CI test run is the only caller.
 - Token usage is not measured: FLOW records 0 tokens, never an invented count.
 - DOF refuses a second failing component by going to L3 with a red card; it does not model more than one concurrent repair.
 - DOF path rules are lexical. They do not resolve symlinks or check what is on disk.

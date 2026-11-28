@@ -9,6 +9,7 @@ present and red fails here.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -62,3 +63,86 @@ def test_army_prints_unified_sentinel(tmp_path: Path) -> None:
     done = _run(["run", "-q", "--locked", "-p", "meridian-army"], tmp_path)
     assert done.returncode == 0, done.stderr[-3000:]
     assert done.stdout.strip() == SENTINEL
+
+
+# --- live mode: the engine deciding against the estate's own capability registry ---------------
+
+REGISTRY = ROOT / "catalog" / "estate-capability-registry.json"
+ARMY_PRESENT = (ENGINE / "crates" / "meridian-army" / "src" / "main.rs").exists()
+
+
+def _live(args: list[str], target: Path) -> subprocess.CompletedProcess:
+    # _run puts the target dir under its first argument's "target"; reuse one build for all tests.
+    return _run(
+        ["run", "-q", "--locked", "-p", "meridian-army", "--", *args], target.parent
+    )
+
+
+@pytest.fixture(scope="module")
+def live_target(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    base = tmp_path_factory.mktemp("engine-live")
+    (base / "target").mkdir()
+    return base / "target"
+
+
+def _decide(intent: str, registry: Path, live_target: Path) -> dict:
+    done = _live(["--registry", str(registry), "--intent", intent], live_target)
+    assert done.returncode == 0, done.stdout + done.stderr[-2000:]
+    lines = done.stdout.strip().splitlines()
+    assert len(lines) == 1, f"exactly one log line expected, got {lines}"
+    return json.loads(lines[0])
+
+
+@pytest.mark.skipif(not ARMY_PRESENT, reason="army binary not landed")
+def test_army_decides_against_the_real_registry(live_target: Path) -> None:
+    records = json.loads(REGISTRY.read_text())["records"]
+    # An independent oracle: this test counts the file itself, never the engine's own arithmetic.
+    verified = sum(
+        1 for r in records if (r.get("health") or {}).get("state") == "verified"
+    )
+    out = _decide("agent invoke the failed critical function", REGISTRY, live_target)
+    assert out["event"] == "meridian.flow.decision"
+    assert out["registry_capabilities"] + out["registry_skipped"] == len(records)
+    assert out["registry_verified"] == verified
+    # Every capability in this registry is declared today. A declared route is reported with its
+    # path and is never presented as running; when the registry verifies one, this flips to REUSE.
+    allowed = (
+        {"DECLARED_NOT_VERIFIED"}
+        if verified == 0
+        else {"DECLARED_NOT_VERIFIED", "REUSE_VERIFIED"}
+    )
+    assert out["decision"] in allowed
+    assert out["capability"] == "cap:intent/agent-invoke" or verified > 0
+    assert out["target_paths"] or out["decision"] != "DECLARED_NOT_VERIFIED"
+
+
+@pytest.mark.skipif(not ARMY_PRESENT, reason="army binary not landed")
+def test_army_says_implement_new_when_nothing_matches(live_target: Path) -> None:
+    out = _decide("zzqx unmatchable gibberish plorp", REGISTRY, live_target)
+    assert out["decision"] == "IMPLEMENT_NEW" and out["capability"] is None
+
+
+@pytest.mark.skipif(not ARMY_PRESENT, reason="army binary not landed")
+@pytest.mark.parametrize(
+    "case",
+    ["missing", "garbage", "empty-records", "empty-intent", "no-args-to-flag"],
+)
+def test_army_fails_closed_on_untrusted_input(
+    case: str, tmp_path: Path, live_target: Path
+) -> None:
+    bad = tmp_path / "r.json"
+    args = ["--registry", str(bad), "--intent", "agent invoke"]
+    if case == "garbage":
+        bad.write_text("not json")
+    elif case == "empty-records":
+        bad.write_text('{"records": []}')
+    elif case == "empty-intent":
+        args = ["--registry", str(REGISTRY), "--intent", "   "]
+    elif case == "no-args-to-flag":
+        args = ["--registry"]
+    done = _live(args, live_target)
+    assert done.returncode == 2, done.stdout + done.stderr[-1500:]
+    assert (
+        json.loads(done.stdout.strip().splitlines()[-1])["event"]
+        == "meridian.flow.refused"
+    )
