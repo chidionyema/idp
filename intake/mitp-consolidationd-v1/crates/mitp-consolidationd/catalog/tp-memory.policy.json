@@ -1,0 +1,41 @@
+{
+  "schema": "mitp.policy.v1",
+  "policy_version": "tp-memory.policy.v1",
+  "issued_utc": "2026-11-28T00:00:00Z",
+  "promotion_gate": {
+    "theta_rho": 0.75,
+    "theta_tau": 0.85,
+    "theta_harm": 0.10,
+    "min_evidence_rows": 1,
+    "note": "Evidence-required promotion (G2 fix): default scores are inadmissible. Quarantine tripwires harm>0.40, taint>0.70 run on raw metrics before the gate."
+  },
+  "surveillance": {
+    "brier_allowed_error": 0.05,
+    "cusum_alarm_h": 4.0,
+    "demote_brier": 0.25,
+    "oracle_classes": ["external", "oracle_none"],
+    "note": "External oracle: drift auto-demotes to quarantine. ORACLE_NONE (E9): drift routes to human review queue, never auto-demotes."
+  },
+  "dream_pass": {
+    "shadow_mode_default": true,
+    "distill_budget_micro_default": 0,
+    "cluster_similarity": 0.25,
+    "dedupe_similarity": 0.80,
+    "min_cluster": 2,
+    "note": "E8: zero budget means zero model calls. E6: OWASP scan before the model and on model output. E4: distillation never supersedes."
+  },
+  "host_gate": {
+    "disk_floor_mb": 1500,
+    "swap_ceil_mb": 1500,
+    "load_ceil": 8.0,
+    "cycle_horizon_min": 15,
+    "note": "E7: velocity-aware CBF projection over the cycle horizon; crisis skips the cycle with a receipt, zero side effects."
+  },
+  "invariants": [
+    "E2: no UPDATE/DELETE on memories or memory_versions for bookkeeping; side tables only (static-tested)",
+    "E3: per-tenant transactions with app.tenant_id; writes assert RETURNING rowcount (idp#6507)",
+    "E4: no statement references superseded_by (static-tested)",
+    "E11: advisory lock 883921 shared with the legacy curation worker",
+    "E14: every cycle receipts, including zero-work heartbeats"
+  ]
+}
