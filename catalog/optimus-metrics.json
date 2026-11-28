@@ -709,6 +709,17 @@
       "better": "lower",
       "owner": "greenlane",
       "description": "Receipts in one simulated Greenlane tick whose post lands on an address GitHub's REST router answers with 404, measured by driving the shipped report_operational with a stand-in for `gh api`: 10 at bdab1b43a (run 46137784537 logged ten 404s at repos//issues//comments and repos/chidionyema/issues/idp/<n>), 0 with idp#8773."
+    },
+    {
+      "name": "estate.discovery_contradictions",
+      "measure": [
+        "python3",
+        "tests/estate/discovery_contradictions.py"
+      ],
+      "unit": "contradictions",
+      "better": "lower",
+      "owner": "estate",
+      "description": "Resources in catalog/estate-resources.json whose probe answered the opposite of the declared status, read by driving the shipped bin/estate-discovery over the whole ledger (11 resources, 0 contradictions measured 2026-11-28). A probe that cannot run on the host is counted apart and printed on stderr, so a laptop and a runner give the same reading (idp#8746)."
     }
   ]
 }
