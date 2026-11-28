@@ -506,7 +506,7 @@ mod registry {
         let both = format!(
             "{},{}",
             rec("cap:tool/deploy-app", "declared", "a"),
-            rec("cap:intent/deploy-app", "verified", "b")
+            rec("cap:intent/deploy-app", "operating", "b")
         );
         let l = registry_from_json(&doc(&both)).unwrap();
         assert!(matches!(
@@ -517,7 +517,7 @@ mod registry {
 
     #[test]
     fn a_name_inside_another_word_does_not_match() {
-        let l = registry_from_json(&doc(&rec("cap:tool/lint", "verified", "x"))).unwrap();
+        let l = registry_from_json(&doc(&rec("cap:tool/lint", "operating", "x"))).unwrap();
         assert_eq!(
             discover(&l.capabilities, "make a splinter"),
             FlowDecision::ImplementNew
@@ -532,7 +532,7 @@ mod registry {
     fn a_short_name_is_skipped_by_name_and_does_not_poison_the_rest() {
         let both = format!(
             "{},{}",
-            rec("cap:tool/ci", "verified", "x"),
+            rec("cap:tool/ci", "operating", "x"),
             rec("cap:tool/gh-pr", "declared", "y")
         );
         let l = registry_from_json(&doc(&both)).unwrap();
@@ -554,13 +554,29 @@ mod registry {
 
     #[test]
     fn an_unproven_state_is_not_ready() {
-        for s in ["declared", "observed", "VERIFIED", ""] {
+        for s in ["declared", "verified", "observed", "OPERATING", ""] {
             let l = registry_from_json(&doc(&rec("cap:tool/gh-pr", s, "y"))).unwrap();
             assert!(
                 !l.capabilities[0].readiness_verified,
                 "state {s:?} must not be ready"
             );
         }
+    }
+
+    #[test]
+    fn a_stale_or_blind_operating_record_is_not_ready() {
+        for flag in ["stale", "blind"] {
+            let r = format!(
+                r#"{{"id":"cap:tool/gh-pr","path":"y","health":{{"state":"operating","{flag}":true}}}}"#
+            );
+            let l = registry_from_json(&doc(&r)).unwrap();
+            assert!(
+                !l.capabilities[0].readiness_verified,
+                "{flag} must not be ready"
+            );
+        }
+        let ok = r#"{"id":"cap:tool/gh-pr","path":"y","health":{"state":"operating","stale":false,"blind":false}}"#;
+        assert!(registry_from_json(&doc(ok)).unwrap().capabilities[0].readiness_verified);
     }
 
     #[test]

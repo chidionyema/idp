@@ -53,14 +53,14 @@ fn live(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let verified = loaded
+    let operating = loaded
         .capabilities
         .iter()
         .filter(|c| c.readiness_verified)
         .count();
     let (decision, capability, paths) = match discover(&loaded.capabilities, &intent) {
         FlowDecision::ReuseExisting { capability_id, .. } => {
-            ("REUSE_VERIFIED", Some(capability_id), vec![])
+            ("REUSE_OPERATING", Some(capability_id), vec![])
         }
         FlowDecision::DeclaredNotVerified {
             capability_id,
@@ -76,7 +76,7 @@ fn live(args: &[String]) -> ExitCode {
             "capability": capability,
             "target_paths": paths,
             "registry_capabilities": loaded.capabilities.len(),
-            "registry_verified": verified,
+            "registry_operating": operating,
             "registry_skipped": loaded.skipped.len(),
         })
     );

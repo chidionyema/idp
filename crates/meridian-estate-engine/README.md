@@ -24,7 +24,7 @@ cargo run -q --locked -p meridian-army -- --registry ../../catalog/estate-capabi
 Verified by `cargo test --workspace --locked`, run from the root suite by `tests/test_meridian_estate_engine.py`
 (which also requires the army sentinel). Not yet true:
 
-- Live mode reads the real registry and decides (`REUSE_VERIFIED`, `DECLARED_NOT_VERIFIED`, `IMPLEMENT_NEW`) on every PR through `tests/test_meridian_estate_engine.py`. Today every record is `declared`, none is `verified`, so the live decision never executes a capability: a declared route is reported with its path and is not run. It starts executing when the registry verifies one.
+- Live mode reads the real registry and decides (`REUSE_OPERATING`, `DECLARED_NOT_VERIFIED`, `IMPLEMENT_NEW`) on every PR through `tests/test_meridian_estate_engine.py`. Today every record is `declared`, none is `operating`, so the live decision never executes a capability: a declared route is reported with its path and is not run. It starts executing when the registry proves one operating.
 - The sentinel run still uses an in-process registry; only live mode reads the catalog.
 - Nothing in Greenlane, `agent-sandbox.yml` or any scheduler calls it, so no production log line exists; the CI test run is the only caller.
 - Token usage is not measured: FLOW records 0 tokens, never an invented count.
