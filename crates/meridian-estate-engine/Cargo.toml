@@ -2,6 +2,7 @@
 members = [
     "crates/meridian-karma",
     "crates/meridian-dof",
+    "crates/meridian-muster",
 ]
 resolver = "2"
 
