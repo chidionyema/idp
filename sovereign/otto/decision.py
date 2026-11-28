@@ -76,6 +76,16 @@ STATE_EXPIRED = "expired"
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 
+# A request is either a DECISION (the founder chooses) or an ACTION: something no agent can
+# do (a consent screen, a bank approval, a signature off this host). An action is the same
+# door, the same one message, with one-tap buttons; it defaults to done / cannot, never a yes.
+KIND_DECISION = "decision"
+KIND_ACTION = "action"
+KINDS = (KIND_DECISION, KIND_ACTION)
+ACTION_DEFAULT_OPTIONS = "done: I did it, cannot: I cannot do this"
+# Telegram refuses callback_data over 64 bytes: refuse at build time, never at the founder.
+MAX_CALLBACK_BYTES = 64
+
 
 class DecisionError(ValueError):
     """A decision request that must not be sent. Raised before anything is delivered."""
@@ -101,8 +111,24 @@ class DecisionRequest:
     context: tuple = ()
     deadline_min: int = DEFAULT_DEADLINE_MIN
     requester: str = ""
+    kind: str = KIND_DECISION
+    proof: str = ""
 
     def validate(self) -> None:
+        if self.kind not in KINDS:
+            raise DecisionError(f"kind must be one of {KINDS}, got {self.kind!r}")
+        if self.kind == KIND_ACTION and not self.proof.strip():
+            raise DecisionError(
+                "an action must say what proves it done (proof), or the estate cannot verify it"
+            )
+        for opt in self.options:
+            if (
+                len(callback_data(self.decision_id, opt.key).encode())
+                > MAX_CALLBACK_BYTES
+            ):
+                raise DecisionError(
+                    f"option key {opt.key!r} makes a button payload over {MAX_CALLBACK_BYTES} bytes"
+                )
         if not self.decision_id or not re.match(
             r"^dec-[0-9a-f]{6,32}$", self.decision_id
         ):
@@ -136,6 +162,8 @@ class DecisionRequest:
             "context": list(self.context),
             "deadline_min": self.deadline_min,
             "requester": self.requester,
+            "kind": self.kind,
+            "proof": self.proof,
         }
 
     @classmethod
@@ -151,7 +179,29 @@ class DecisionRequest:
             context=tuple(str(c) for c in data.get("context", [])),
             deadline_min=int(data.get("deadline_min", DEFAULT_DEADLINE_MIN)),
             requester=str(data.get("requester", "")),
+            kind=str(data.get("kind", KIND_DECISION)),
+            proof=str(data.get("proof", "")),
         )
+
+
+def callback_data(decision_id: str, key: str) -> str:
+    """What a button carries back: `<decision id>:<option key>`."""
+    return f"{decision_id}:{key}"
+
+
+def inline_keyboard(request: "DecisionRequest") -> dict:
+    """One row per option: the founder answers with ONE tap, not a typed comment."""
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": opt.label or opt.key,
+                    "callback_data": callback_data(request.decision_id, opt.key),
+                }
+            ]
+            for opt in request.options
+        ]
+    }
 
 
 def new_decision_id() -> str:
@@ -195,7 +245,11 @@ def build_request(
     deadline_min: int = DEFAULT_DEADLINE_MIN,
     requester: str = "",
     decision_id: str = "",
+    kind: str = KIND_DECISION,
+    proof: str = "",
 ) -> DecisionRequest:
+    if kind == KIND_ACTION and not (options or "").strip():
+        options = ACTION_DEFAULT_OPTIONS
     request = DecisionRequest(
         decision_id=decision_id or new_decision_id(),
         question=question.strip(),
@@ -203,6 +257,8 @@ def build_request(
         context=parse_context(context),
         deadline_min=int(deadline_min),
         requester=requester.strip(),
+        kind=kind,
+        proof=proof.strip(),
     )
     request.validate()
     return request
@@ -218,6 +274,10 @@ def render(request: DecisionRequest) -> str:
     fail to deliver because the question contains a `<` or an `&`.
     """
     lines = [request.decision_id, request.question]
+    if request.kind == KIND_ACTION:
+        lines.insert(1, "ACTION ONLY YOU CAN DO (no agent can):")
+        lines.append("")
+        lines.append(f"proof it is done: {request.proof}")
     if request.options:
         lines.append("")
         lines.append("options:")
@@ -229,7 +289,11 @@ def render(request: DecisionRequest) -> str:
         for link in request.context:
             lines.append(f"- {link}")
     lines.append("")
-    lines.append(f"answer by commenting: {request.decision_id} <option key>")
+    lines.append(
+        f"tap a button, or comment: {request.decision_id} <option key>"
+        if request.options
+        else f"answer by commenting: {request.decision_id} <option key>"
+    )
     lines.append(
         f"deadline: {request.deadline_min} min   requester: {request.requester or 'unknown'}"
     )
@@ -434,12 +498,13 @@ def telegram_call(
         return {"ok": False, "description": f"{type(exc).__name__}"}
 
 
-def send_message(token: str, chat_id: str, text: str) -> Optional[int]:
-    result = telegram_call(
-        token,
-        "sendMessage",
-        {"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
-    )
+def send_message(
+    token: str, chat_id: str, text: str, reply_markup: Optional[dict] = None
+) -> Optional[int]:
+    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    result = telegram_call(token, "sendMessage", payload)
     if not result.get("ok"):
         return None
     try:
@@ -480,6 +545,28 @@ def update_text(update: dict) -> Optional[str]:
         return None
     text = message.get("text")
     return str(text) if isinstance(text, str) else None
+
+
+def update_callback(update: dict) -> Optional[dict]:
+    """A button tap: {id, data, chat_id}, or None when the update is not a well-formed tap."""
+    query = update.get("callback_query") if isinstance(update, dict) else None
+    if not isinstance(query, dict):
+        return None
+    data = query.get("data")
+    message = query.get("message")
+    chat = message.get("chat") if isinstance(message, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not isinstance(data, str) or chat_id is None or query.get("id") is None:
+        return None
+    return {"id": str(query["id"]), "data": data, "chat_id": str(chat_id)}
+
+
+def answer_callback(token: str, callback_id: str, text: str) -> bool:
+    """Stop the button's spinner and tell the founder what was recorded. Best effort."""
+    result = telegram_call(
+        token, "answerCallbackQuery", {"callback_query_id": callback_id, "text": text}
+    )
+    return bool(result.get("ok"))
 
 
 def update_chat_id(update: dict) -> Optional[str]:
@@ -593,7 +680,10 @@ class Door:
                     "error": "no telegram credentials on this host",
                     "decision_id": request.decision_id,
                 }
-            sender = lambda text: send_message(token, chat, text)  # noqa: E731
+            markup = inline_keyboard(request) if request.options else None
+            sender = lambda text: send_message(  # noqa: E731
+                token, chat, text, reply_markup=markup
+            )
         message_id = sender(render(request))
         if message_id is None:
             return {
@@ -756,6 +846,29 @@ class Door:
         updates = get_updates(token)
         answered = []
         for update in updates:
+            tap = update_callback(update)
+            if tap is not None:
+                # A tap counts only from the founder's own chat; anything else is ignored.
+                if not chat or tap["chat_id"] != chat:
+                    continue
+                decision_id, _, key = tap["data"].partition(":")
+                before = get_decision(decision_id, self.state_file)
+                known = {o.get("key") for o in (before or {}).get("options", [])}
+                if before is None or key not in known:
+                    answer_callback(token, tap["id"], "unknown decision")
+                    continue
+                record = self.answer(decision_id, f"{decision_id} {key}")
+                recorded = bool(
+                    record
+                    and record.get("state") == STATE_ANSWERED
+                    and before.get("state") != STATE_ANSWERED
+                )
+                if recorded:
+                    answered.append(decision_id)
+                answer_callback(
+                    token, tap["id"], "recorded" if recorded else "already answered"
+                )
+                continue
             text = update_text(update)
             if not text:
                 continue
