@@ -30,6 +30,15 @@
       "test_cmd": "npm test",
       "has_durable_objects": false,
       "min_wrangler_version": "4.131.0"
+    },
+    {
+      "name": "estate-live-state",
+      "dir": "platform/estate-live-state",
+      "url": "https://live.meridianlabs.cloud",
+      "probe_cmd": "npm run probe",
+      "test_cmd": "npm test",
+      "has_durable_objects": true,
+      "min_wrangler_version": "4.131.0"
     }
   ]
 }
