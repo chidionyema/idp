@@ -47,3 +47,16 @@ test('operational prose is excluded from task hydration and patch admission', as
   for (const path of ['src/example.ts', 'src/engine.rs', 'Cargo.toml', 'requirements.txt'])
     assert.equal(policy.validPath(path), true, path);
 });
+
+// Previously issued packets must not grandfather a prose path into the new gate.
+test('legacy packet cannot grant an operational prose mutation', async () => {
+  const p = await ready();
+  const {payload_sha256: oldDigest, ...payload} = p;
+  assert.equal(typeof oldDigest, 'string');
+  payload.source_files = [{...p.source_files[0], path: 'docs/old-policy.md'}];
+  const legacy = {...payload, payload_sha256: await policy.digest(JSON.stringify(payload))};
+  await fails('UNAUTHORISED_PATCH_PATH', () => validateProposal(legacy, {
+    schema: 'MERIDIAN-PATCH-V1', task_id: legacy.task_id, base_sha: legacy.source_sha,
+    files: [{path: 'docs/old-policy.md', mode: '100755', content: p.source_files[0].content, sha256: p.source_files[0].content_sha256}],
+  }));
+});
