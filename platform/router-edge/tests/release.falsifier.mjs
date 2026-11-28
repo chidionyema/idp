@@ -87,6 +87,10 @@ test("a failed child carries its own cause, never a credential", () => {
   assert.equal(failureCause("Bearer abcdefghijklmnopqrstuvwxyz0123456789"), "Bearer <redacted>");
   assert.ok(!failureCause("token sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF").includes("abcdefghijklmnopqrstuvwxyz0123456789"));
   assert.equal(failureCause(""), "");
+  // A strict-upload conflict must carry the drift lines, not only the closing three.
+  const strict = "Your remote config differs:\n- bindings: GEMINI_API_KEY\n+ vars: NONE\nsome\nfiller\nUploading the Worker will override the remote configuration with your local one.\n✘ [ERROR] Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n";
+  assert.ok(failureCause(strict, 4000).includes("- bindings: GEMINI_API_KEY"), "the conflict names what drifted");
+  assert.ok(!failureCause("a\nb\nc\nd\ne\n").includes("a /"), "other failures stay at three lines");
   const wrangler = "\u001b[31m✘ [ERROR] A request to the Cloudflare API failed.\u001b[0m\n"
     + "  Authentication error [code: 10000]\n"
     + "🪵  Logs were written to \"/home/runner/.config/.wrangler/logs/x.log\"\n";

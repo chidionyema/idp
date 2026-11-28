@@ -28,7 +28,7 @@ pub enum FlowDecision {
         formation: LegionFormation,
     },
     /// A capability matches the intent but the registry only declares it. A declared route is
-    /// a claim, not a verified service, so FLOW reports it and does not run it.
+    /// a claim, not an operating service, so FLOW reports it and does not run it.
     DeclaredNotVerified {
         capability_id: String,
         target_paths: Vec<String>,
@@ -65,7 +65,7 @@ fn keyword_matches(lowered_intent: &str, keyword: &str) -> bool {
 }
 
 /// Phases 1-3 only: DISCOVER -> CONTRACT_MATCH -> RANK_AND_DECIDE. Reads, never mutates.
-/// A verified match wins over a declared one; a declared match is reported, never run.
+/// An operating match wins over a declared one; a declared match is reported, never run.
 pub fn discover(registry: &[EstateCapability], intent_text: &str) -> FlowDecision {
     let low = intent_text.to_ascii_lowercase();
     let hits = |c: &&EstateCapability| c.keywords.iter().any(|k| keyword_matches(&low, k));
@@ -99,7 +99,8 @@ pub struct LoadedRegistry {
 }
 
 /// Reads the estate capability registry (`catalog/estate-capability-registry.json`).
-/// Readiness is the registry's own `health.state == "verified"`; `declared` is not ready.
+/// Readiness is the registry's own proof law: `health.state == "operating"`, not stale, not blind.
+/// `declared` is not ready.
 pub fn registry_from_json(text: &str) -> Result<LoadedRegistry, RegistryError> {
     let doc: serde_json::Value =
         serde_json::from_str(text).map_err(|e| RegistryError::Unparseable(e.to_string()))?;
@@ -137,16 +138,21 @@ pub fn registry_from_json(text: &str) -> Result<LoadedRegistry, RegistryError> {
             .and_then(|v| v.as_str())
             .map(|p| vec![p.to_string()])
             .unwrap_or_default();
-        let verified = rec
+        // The registry's own law (capability-index state_from_proof): `operating` means a
+        // correctly signed receipt inside its window. A stale or blind record is not ready
+        // whatever its state says, and `declared` is a claim, not a service.
+        let ready = rec
             .pointer("/health/state")
             .and_then(|v| v.as_str())
-            .is_some_and(|s| s == "verified");
+            .is_some_and(|s| s == "operating")
+            && rec.pointer("/health/stale").and_then(|v| v.as_bool()) != Some(true)
+            && rec.pointer("/health/blind").and_then(|v| v.as_bool()) != Some(true);
         capabilities.push(EstateCapability {
             id: id.to_string(),
             keywords,
             target_paths,
             default_formation: LegionFormation::Phalanx,
-            readiness_verified: verified,
+            readiness_verified: ready,
         });
     }
     Ok(LoadedRegistry {

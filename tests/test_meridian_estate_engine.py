@@ -97,22 +97,22 @@ def _decide(intent: str, registry: Path, live_target: Path) -> dict:
 def test_army_decides_against_the_real_registry(live_target: Path) -> None:
     records = json.loads(REGISTRY.read_text())["records"]
     # An independent oracle: this test counts the file itself, never the engine's own arithmetic.
-    verified = sum(
-        1 for r in records if (r.get("health") or {}).get("state") == "verified"
+    operating = sum(
+        1 for r in records if (r.get("health") or {}).get("state") == "operating"
     )
     out = _decide("agent invoke the failed critical function", REGISTRY, live_target)
     assert out["event"] == "meridian.flow.decision"
     assert out["registry_capabilities"] + out["registry_skipped"] == len(records)
-    assert out["registry_verified"] == verified
+    assert out["registry_operating"] == operating
     # Every capability in this registry is declared today. A declared route is reported with its
-    # path and is never presented as running; when the registry verifies one, this flips to REUSE.
+    # path and is never presented as running; when the registry proves one operating, this flips to REUSE.
     allowed = (
         {"DECLARED_NOT_VERIFIED"}
-        if verified == 0
-        else {"DECLARED_NOT_VERIFIED", "REUSE_VERIFIED"}
+        if operating == 0
+        else {"DECLARED_NOT_VERIFIED", "REUSE_OPERATING"}
     )
     assert out["decision"] in allowed
-    assert out["capability"] == "cap:intent/agent-invoke" or verified > 0
+    assert out["capability"] == "cap:intent/agent-invoke" or operating > 0
     assert out["target_paths"] or out["decision"] != "DECLARED_NOT_VERIFIED"
 
 
