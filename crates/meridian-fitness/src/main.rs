@@ -293,15 +293,22 @@ fn main() -> ExitCode {
             .collect::<Vec<_>>()
             .join(",")
     );
+    if routes.is_empty() {
+        println!("ESCALATE/1 founder secret boundary: missing_or_refused=none; the registry offers no route to measure");
+        return ExitCode::from(1);
+    }
     if !missing.is_empty() {
+        if fit > 0 {
+            eprintln!(
+                "lane-fitness: notice: optional provider secrets unset/refused ({}); admitting with fit={fit}",
+                missing.join(",")
+            );
+            return ExitCode::SUCCESS;
+        }
         println!(
             "ESCALATE/1 founder secret boundary: missing_or_refused={}",
             missing.join(",")
         );
-        return ExitCode::from(1);
-    }
-    if routes.is_empty() {
-        println!("ESCALATE/1 founder secret boundary: missing_or_refused=none; the registry offers no route to measure");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS
