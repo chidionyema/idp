@@ -444,6 +444,18 @@
       "better": "lower",
       "owner": "recovery",
       "description": "1 when require_idle_command_queue calls the OCI CLI's empty stdout (an idle queue) BLIND, refusing every recovery run (idp#7387); 0 when an idle queue is idle."
+    },
+    {
+      "name": "estate.dag_gen_order_variants",
+      "measure": [
+        "python3",
+        "tests/estate/test_dag_gen_order_independent.py",
+        "--optimus"
+      ],
+      "unit": "variants",
+      "better": "lower",
+      "owner": "governance",
+      "description": "Distinct estate-dag.dot renderings bin/estate-dag-gen produces across every directory listing order of the same .tf files, minus one. 5 on the unsorted generator (main f98fe263c); 0 when files, nodes and edges are sorted (idp#8679)."
     }
   ]
 }
