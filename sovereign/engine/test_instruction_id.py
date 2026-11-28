@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import sys
+import time
 import types
 import uuid
 from pathlib import Path
@@ -346,6 +348,7 @@ class Rec:
     def __init__(self) -> None:
         self.receipts: list[dict] = []
         self.verdicts: list[str] = []
+        self.gates: list[str] = []
         self.steps = 0
 
     def kinds(self) -> list[str]:
@@ -379,7 +382,13 @@ def _activities(rec: Rec, step_result):
         rec.verdicts.append(verdict)
         return verdict
 
-    return [budget_op, append_receipt, notify_change, run_step, verify]
+    @activity.defn(name="rust_gate_verify_settlement")
+    async def rust_gate(inp):
+        verdict = await engine_activities.rust_gate_verify_settlement(inp)
+        rec.gates.append(verdict)
+        return verdict
+
+    return [budget_op, append_receipt, notify_change, run_step, verify, rust_gate]
 
 
 def _params(**over):
@@ -412,7 +421,45 @@ def _params(**over):
     return params
 
 
-def _envelope(key, run_id, **over):
+GATE: dict = {}
+
+
+def _settlement(run_id, *, epoch=1, url="https://llm.meridianlabs.cloud/health", signer=None, **over):
+    """What the independent certifier signs for the compiled Rust gate (MERIDIAN-SETTLEMENT-V1)."""
+    signer = signer or GATE["certifier"]
+    now = int(time.time())
+    fields = {
+        "instruction_id": IID,
+        "attempt_id": run_id,
+        "execution_epoch": epoch,
+        "objective_hash": hashlib.sha256(TASK.encode()).hexdigest(),
+        "acceptance_predicate_hash": "ab" * 32,
+        "target_identity": "llm.meridianlabs.cloud",
+        "artifact_digest": "cd" * 32,
+        "observed_at_utc": now,
+        "evidence_expires_utc": now + 3600,
+        "observation_url": url,
+        "verifier_pubkey_hex": signer.public_key().public_bytes_raw().hex(),
+        "policy_hash": "ef" * 32,
+    }
+    fields.update(over)
+    order = ("instruction_id", "attempt_id", "execution_epoch", "objective_hash",
+             "acceptance_predicate_hash", "target_identity", "artifact_digest",
+             "observed_at_utc", "evidence_expires_utc", "observation_url", "policy_hash")
+    digest = hashlib.sha256(
+        ("MERIDIAN-SETTLEMENT-V1|" + "|".join(str(fields[k]) for k in order)).encode()
+    ).digest()
+    fields["signature_hex"] = signer.sign(digest).hex()
+    return {
+        "obligation": {
+            "acceptance_predicate_hash": fields["acceptance_predicate_hash"],
+            "policy_hash": fields["policy_hash"],
+        },
+        "receipt": fields,
+    }
+
+
+def _envelope(key, run_id, settlement=True, **over):
     receipt = {
         "instruction_id": IID,
         "run_id": run_id,
@@ -428,10 +475,15 @@ def _envelope(key, run_id, **over):
     subject = b"meridian/instruction-yield-v1:" + json.dumps(
         receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode()
-    return {"receipt": receipt, "signature": key.sign(subject).hex()}
+    envelope = {"receipt": receipt, "signature": key.sign(subject).hex()}
+    if settlement is True:
+        envelope["settlement"] = _settlement(run_id)
+    elif settlement:
+        envelope["settlement"] = settlement
+    return envelope
 
 
-async def _until(predicate, what, seconds=20.0):
+async def _until(predicate, what, seconds=120.0):
     deadline = asyncio.get_running_loop().time() + seconds
     while asyncio.get_running_loop().time() < deadline:
         if await predicate():
@@ -448,11 +500,31 @@ async def _halted(handle) -> bool:
     return state["status"] == "halted"
 
 
+def _gate_binary() -> str:
+    root = Path(__file__).resolve().parents[2]
+    for cand in (os.environ.get("MERIDIAN_GATE_BIN"), str(root / "target/release/meridian-gate")):
+        if cand and Path(cand).is_file() and os.access(cand, os.X_OK):
+            return cand
+    raise AssertionError(
+        "compiled meridian-gate not found: run `cargo build --release -p meridian-gate` "
+        "or set MERIDIAN_GATE_BIN (these tests prove the real binary, they never skip it)"
+    )
+
+
 @pytest.fixture()
 def signing(monkeypatch):
     key = Ed25519PrivateKey.generate()
     pub = key.public_key().public_bytes_raw().hex()
     monkeypatch.setenv("ESTATE_YIELD_VERIFIER_PUBKEY_HEX", pub)
+    certifier = Ed25519PrivateKey.generate()
+    worker = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("MERIDIAN_GATE_BIN", _gate_binary())
+    monkeypatch.setenv(
+        "ESTATE_SETTLEMENT_CERTIFIERS_HEX", certifier.public_key().public_bytes_raw().hex()
+    )
+    monkeypatch.setenv("ESTATE_WORKER_PUBKEY_HEX", worker.public_key().public_bytes_raw().hex())
+    GATE.clear()
+    GATE.update(certifier=certifier, worker=worker)
     return key
 
 
@@ -481,11 +553,13 @@ def test_a_valid_independent_receipt_settles(lab, signing):
             await handle.signal(
                 "submit_independent_yield", _envelope(signing, handle.result_run_id)
             )
+            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), f"rust gate verdict (python={rec.verdicts} kinds={rec.kinds()})")
             return await asyncio.wait_for(handle.result(), 60)
 
     state = lab.run(scenario())
     assert state["status"] == "done"
     assert rec.verdicts == ["settle"]
+    assert rec.gates == ["allow"]
     assert rec.kinds().count("done") == 1
     assert "verification_requested" in rec.kinds()
     assert "verification_timeout" not in rec.kinds()
@@ -535,6 +609,7 @@ def test_b_delayed_verifier_after_one_timeout_still_settles(lab, signing):
             await handle.signal(
                 "submit_independent_yield", _envelope(signing, handle.result_run_id)
             )
+            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
             return await asyncio.wait_for(handle.result(), 60)
 
     state = lab.run(scenario())
@@ -569,6 +644,7 @@ def test_c_stale_forged_and_duplicate_receipts_are_rejected(lab, signing):
                 assert await _halted(handle)
             good = _envelope(signing, run_id)
             await handle.signal("submit_independent_yield", good)
+            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
             state = await asyncio.wait_for(handle.result(), 60)
             duplicate_refused = False
             try:
@@ -579,6 +655,7 @@ def test_c_stale_forged_and_duplicate_receipts_are_rejected(lab, signing):
 
     state, duplicate_refused = lab.run(scenario())
     assert rec.verdicts == ["reject", "reject", "reject", "settle"]
+    assert rec.gates == ["allow"]
     assert state["status"] == "done"
     assert rec.kinds().count("done") == 1
     assert duplicate_refused
@@ -670,8 +747,10 @@ def test_d_prepatch_histories_replay_on_patched_workflow(lab, signing):
                 "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
+            # The pre-patch workflow predates the Rust gate: it takes the 2-key envelope.
             await handle.signal(
-                "submit_independent_yield", _envelope(signing, handle.result_run_id)
+                "submit_independent_yield",
+                _envelope(signing, handle.result_run_id, settlement=False),
             )
             await asyncio.wait_for(handle.result(), 60)
             histories.append(("guarded-settled", await handle.fetch_history()))
@@ -697,3 +776,192 @@ def test_d_prepatch_histories_replay_on_patched_workflow(lab, signing):
             for e in history.events
         ), name
         lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(history))
+
+
+# ---- MERIDIAN-CTRL-001 B08/B10: the compiled Rust gate must also allow settlement ----
+
+
+def _gated_run(lab, rec, envelope_for, *, then_wait_s=None):
+    """Park a guarded session, submit one envelope, return (state, rec)."""
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal("submit_independent_yield", envelope_for(handle.result_run_id))
+            await _until(lambda: asyncio.sleep(0, len(rec.verdicts) >= 1), "python verdict")
+            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            return await asyncio.wait_for(handle.result(), 120)
+
+    return lab.run(scenario())
+
+
+def _refused(lab, signing, envelope_for):
+    """The python verifier signs a valid settle; the compiled gate must still refuse, and the
+    wait must then run out its deadline and fail closed, never settle."""
+    rec = Rec()
+    state = _gated_run(lab, rec, envelope_for)
+    assert rec.verdicts == ["settle"], "the python-side signature was valid; the gate decides"
+    assert rec.gates == ["reject"]
+    assert state["status"] == "failed"
+    assert state["reason"] == "verification-deadline-exceeded"
+    assert "done" not in rec.kinds()
+    assert "settlement_refused" in rec.kinds()
+
+
+def test_e_python_settle_without_a_certifier_receipt_is_refused_by_the_rust_gate(lab, signing):
+    _refused(lab, signing, lambda run_id: _envelope(signing, run_id, settlement=None))
+
+
+def test_e_proxy_green_observation_url_is_refused_by_the_rust_gate(lab, signing):
+    for url in (
+        "https://raw.githubusercontent.com/chidionyema/idp/main/README.md",
+        "http://llm.meridianlabs.cloud/health",
+        "https://localhost/health",
+    ):
+        _refused(
+            lab,
+            signing,
+            lambda run_id, url=url: _envelope(
+                signing, run_id, settlement=_settlement(run_id, url=url)
+            ),
+        )
+
+
+def test_e_worker_cannot_certify_itself(lab, signing):
+    _refused(
+        lab,
+        signing,
+        lambda run_id: _envelope(
+            signing, run_id, settlement=_settlement(run_id, signer=GATE["worker"])
+        ),
+    )
+
+
+def test_e_untrusted_certifier_and_stale_epoch_are_refused(lab, signing):
+    outsider = Ed25519PrivateKey.generate()
+    _refused(
+        lab,
+        signing,
+        lambda run_id: _envelope(
+            signing, run_id, settlement=_settlement(run_id, signer=outsider)
+        ),
+    )
+    _refused(
+        lab,
+        signing,
+        lambda run_id: _envelope(
+            signing, run_id, settlement=_settlement(run_id, epoch=0)
+        ),
+    )
+
+
+def test_e_expired_evidence_is_refused(lab, signing):
+    _refused(
+        lab,
+        signing,
+        lambda run_id: _envelope(
+            signing,
+            run_id,
+            settlement=_settlement(run_id, evidence_expires_utc=int(time.time()) - 5),
+        ),
+    )
+
+
+def test_e_missing_gate_binary_fails_closed(lab, signing, monkeypatch, tmp_path):
+    monkeypatch.setenv("MERIDIAN_GATE_BIN", str(tmp_path / "no-such-binary"))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    _refused(lab, signing, lambda run_id: _envelope(signing, run_id))
+
+
+def test_e_unconfigured_host_trust_fails_closed(lab, signing, monkeypatch):
+    monkeypatch.delenv("ESTATE_SETTLEMENT_CERTIFIERS_HEX")
+    _refused(lab, signing, lambda run_id: _envelope(signing, run_id))
+
+
+def test_e_falsifier_s11_workflow_settles_without_the_rust_gate(lab, signing):
+    """The same refused envelope settles on the s11 workflow, which has no gate. This is what
+    shows the e-tests can fail."""
+    from sovereign.engine.s11_workflow_snapshot import SessionWorkflow as S11
+
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, S11, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal(
+                "submit_independent_yield",
+                _envelope(signing, handle.result_run_id, settlement=None),
+            )
+            return await asyncio.wait_for(handle.result(), 60)
+
+    state = lab.run(scenario())
+    assert state["status"] == "done" and rec.gates == []
+
+
+def test_f_s11_histories_replay_on_rust_gated_workflow(lab, signing):
+    """Replay safety: a history recorded by the s11 workflow carries no rust-gate-v1 marker
+    and replays on the current workflow with no non-determinism, for both a settled
+    and a deadline-failed guarded session."""
+    from sovereign.engine.s11_workflow_snapshot import SessionWorkflow as S11
+
+    histories = []
+    rec = Rec()
+
+    async def record():
+        worker, queue = await _start(lab, S11, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal(
+                "submit_independent_yield",
+                _envelope(signing, handle.result_run_id, settlement=None),
+            )
+            await asyncio.wait_for(handle.result(), 60)
+            histories.append(("s11-settled", await handle.fetch_history()))
+        rec2 = Rec()
+        worker, queue = await _start(lab, S11, rec2, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await asyncio.wait_for(handle.result(), 120)
+            histories.append(("s11-deadline-failed", await handle.fetch_history()))
+
+    lab.run(record())
+    assert len(histories) == 2
+    for name, history in histories:
+        assert any("bounded-verification-deadline-v1" in str(e) for e in history.events), name
+        assert not any("rust-gate-v1" in str(e) for e in history.events), name
+        lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(history))
+
+
+def test_f_new_histories_carry_the_rust_gate_marker(lab, signing):
+    rec = Rec()
+    histories = []
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal("submit_independent_yield", _envelope(signing, handle.result_run_id))
+            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            await asyncio.wait_for(handle.result(), 60)
+            histories.append(await handle.fetch_history())
+
+    lab.run(scenario())
+    assert any("rust-gate-v1" in str(e) for e in histories[0].events)
+    lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(histories[0]))

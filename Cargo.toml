@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "crates/mitp-core",
+    "crates/meridian-gate",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "PROPRIETARY"
+authors = ["Meridian Intelligence"]
+
+[workspace.dependencies]
+ed25519-dalek = "2.1"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"

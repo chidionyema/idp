@@ -1,0 +1,15 @@
+[package]
+name = "meridian-gate"
+version = "1.0.0"
+edition.workspace = true
+
+[[bin]]
+name = "meridian-gate"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+mitp-core = { path = "../mitp-core" }
+serde.workspace = true
+serde_json.workspace = true

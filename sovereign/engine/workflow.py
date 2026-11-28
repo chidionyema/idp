@@ -119,6 +119,7 @@ class SessionWorkflow:
         self._yield_waiting = False
         self._guarded_instruction = False
         self._bounded_verification = False
+        self._rust_gate = False
         self._verification_deadline_s = VERIFICATION_DEADLINE_S_DEFAULT
         self._verification_max_rounds = VERIFICATION_MAX_ROUNDS_DEFAULT
 
@@ -169,7 +170,9 @@ class SessionWorkflow:
             self._yield_waiting
             and self._yield_proposal is None
             and isinstance(envelope, dict)
-            and set(envelope) == {"receipt", "signature"}
+            and set(envelope) - ({"settlement"} if self._rust_gate else set())
+            == {"receipt", "signature"}
+            and isinstance(envelope.get("settlement", {}), dict)
             and isinstance(envelope["receipt"], dict)
             and isinstance(envelope["signature"], str)
             and len(envelope["signature"]) == 128
@@ -356,6 +359,26 @@ class SessionWorkflow:
                     continue
                 if self._stop_requested:
                     break
+                if verdict == "settle" and self._rust_gate:
+                    # Fail closed: only an explicit "allow" from the compiled gate settles.
+                    # A reject, a missing binary or an activity failure keeps the obligation
+                    # open, so the bounded wait above still ends it as a failure.
+                    try:
+                        gate = await workflow.execute_activity(
+                            "rust_gate_verify_settlement",
+                            {"expected": expected, "envelope": proposal},
+                            start_to_close_timeout=timedelta(
+                                seconds=self._receipt_activity_timeout_s
+                            ),
+                            retry_policy=RetryPolicy(maximum_attempts=1),
+                        )
+                    except ActivityError:
+                        continue
+                    if gate != "allow":
+                        await self._receipt(
+                            "settlement_refused", "rust-gate", "compiled gate did not allow"
+                        )
+                        continue
                 if verdict == "settle":
                     self.status = "done"
                     self.reason = ""
@@ -467,6 +490,9 @@ class SessionWorkflow:
         self._bounded_verification = self._guarded_instruction and workflow.patched(
             "bounded-verification-deadline-v1"
         )
+        # MERIDIAN-CTRL-001 B08/B10: settlement also needs the compiled Rust gate's ALLOW.
+        # Histories recorded before this marker replay on the old path, which never ran it.
+        self._rust_gate = self._guarded_instruction and workflow.patched("rust-gate-v1")
         self._verification_deadline_s = int(
             params.get("verification_deadline_s") or VERIFICATION_DEADLINE_S_DEFAULT
         )

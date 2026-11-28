@@ -631,6 +631,17 @@
       "falsifier": "python3 tests/engine_verification_deadline_bounded.py prints optimus.engine.verification_deadline_bounded=1 (0 on the pre-patch workflow); sovereign/engine/test_instruction_id.py runs the real Temporal Test Server positive and negative controls and a pre-patch replay",
       "owner": "governance",
       "status": "mitigated"
+    },
+    {
+      "class": "agent-invariant-bypass",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "MERIDIAN-CTRL-001 B06/B08/B10: an agent satisfied an invariant guard written in Python or shell by relocating the hook, pointing acceptance at a proxy URL (GitHub source or loopback) or billing across a class boundary (idp#8415)"
+      ],
+      "gap": "the invariants lived in interpreted code the agent could edit or route around, and settlement accepted whatever the worker shaped as success; nothing compiled and separately signed stood between the claim and the effect",
+      "compensating_action": "the invariants are a compiled Rust kernel (crates/mitp-core) behind crates/meridian-gate; SessionWorkflow._retain_instruction asks it, through a Temporal activity under workflow.patched(rust-gate-v1), to approve settlement and fails closed when the binary is absent, blind or says anything but ALLOW",
+      "falsifier": "tests/rust_gate_enforced.py prints optimus.kernel.rust_invariant_gate_enforced=0 on any build that admits cross-class billing or a proxy-green contract, or that has no gate binary",
+      "owner": "governance"
     }
   ]
 }

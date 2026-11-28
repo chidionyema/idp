@@ -443,6 +443,17 @@
       "better": "higher",
       "owner": "governance",
       "description": "1 when SessionWorkflow._retain_instruction, with no independent verifier answer, re-dispatches a fixed number of rounds each bounded by an explicit deadline and then fails closed (verification-deadline-exceeded) without ever reaching an unbounded wait_condition (MERIDIAN-CTRL-001 11.1). 0 on main f98fe26 (the wait has no deadline); 1 with this lane. The Temporal Test Server proof is sovereign/engine/test_instruction_id.py."
+    },
+    {
+      "name": "kernel.rust_invariant_gate_enforced",
+      "measure": [
+        "python3",
+        "tests/rust_gate_enforced.py"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "governance",
+      "description": "1 when the compiled Rust meridian-gate (crates/meridian-gate, kernel crates/mitp-core) passes its own both-ways check: admission and settlement with a valid independent Ed25519 receipt are allowed, while cross-class billing, a proxy-green (non-HTTPS or loopback or GitHub-source) observation URL, an expired verification deadline, a stale epoch and a self-certified receipt are refused (MERIDIAN-CTRL-001 B06/B08/B10, section 11). 0 when no gate binary can be produced."
     }
   ]
 }

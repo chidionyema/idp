@@ -1,0 +1,11 @@
+[package]
+name = "mitp-core"
+version = "1.0.0"
+edition.workspace = true
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
