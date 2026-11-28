@@ -161,6 +161,63 @@ def test_runtimes_run_a_copy_that_works_and_drifts_when_stale(home):
     assert run(home, "--check", "--runtime", "cursor").returncode == 0
 
 
+def _cc_settings(home):
+    return json.loads(
+        (home / ".estate" / "harness" / "cc" / "settings.json").read_text()
+    )
+
+
+def test_the_plan_door_is_installed_with_its_key(home):
+    """The door that refuses until a plan exists ships with the permission to declare one.
+
+    Measured 2026-11-28 over 523 Claude sessions of 3 days: 55 ended handing the turn back to the
+    founder, all 55 after the plan door refused Bash and both doors to a plan (the MCP tool and
+    the estate-plan shell fallback) waited on a permission prompt nobody answers. The installer
+    wrote the lock and never the key.
+    """
+    cc = {"CLAUDE_CONFIG_DIR": str(home / ".estate" / "harness" / "cc")}
+    assert run(home, env=cc).returncode == 0
+    allow = _cc_settings(home)["permissions"]["allow"]
+    assert "mcp__estate-memory" in allow
+    # The rule names the exact path the refusal sends the agent to: bind it to plan.py's own
+    # constant, read from the installed copy, so the two cannot drift apart.
+    root = (home / ".estate" / "memory").resolve()
+    loader = importlib.machinery.SourceFileLoader(
+        "installed_plan", str(root / "platform" / "estate" / "memory" / "plan.py")
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    plan = importlib.util.module_from_spec(spec)
+    loader.exec_module(plan)
+    assert f"Bash({plan.ESTATE_PLAN} *)" in allow
+
+
+def test_the_key_keeps_every_other_rule_and_is_written_once(home):
+    settings = home / ".estate" / "harness" / "cc" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["permissions"] = {"allow": ["Bash(ls *)"], "deny": ["Bash(rm *)"]}
+    settings.write_text(json.dumps(data))
+    cc = {"CLAUDE_CONFIG_DIR": str(home / ".estate" / "harness" / "cc")}
+    assert run(home, env=cc).returncode == 0
+    assert run(home, env=cc).returncode == 0
+    perms = _cc_settings(home)["permissions"]
+    assert perms["deny"] == ["Bash(rm *)"]
+    assert perms["allow"][0] == "Bash(ls *)"
+    assert len(perms["allow"]) == len(set(perms["allow"]))
+    assert run(home, "--check", env=cc).returncode == 0
+
+
+def test_a_lock_without_its_key_is_drift(home):
+    """The falsifier: a settings file carrying the plan hook but not the key fails --check."""
+    cc = {"CLAUDE_CONFIG_DIR": str(home / ".estate" / "harness" / "cc")}
+    assert run(home, env=cc).returncode == 0
+    settings = home / ".estate" / "harness" / "cc" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["permissions"]["allow"] = []
+    settings.write_text(json.dumps(data))
+    out = run(home, "--check", "--runtime", "claude-code", env=cc)
+    assert out.returncode == 1 and "DRIFT" in out.stdout and "allow" in out.stdout
+
+
 def test_a_checkout_is_never_the_home(home):
     out = run(home, "--home", ROOT)
     assert out.returncode != 0 and "runtimes run a copy" in out.stdout + out.stderr

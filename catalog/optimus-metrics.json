@@ -111,6 +111,18 @@
       "description": "ordinary tool calls the plan gate refuses after a plan is declared: 1 before idp#8558, 0 after (a declared plan is LIVE; the scenario is required before the goal is claimed done)"
     },
     {
+      "name": "plan_lock.installed_without_key",
+      "measure": [
+        "python3",
+        "-c",
+        "import importlib.machinery as M, importlib.util as U, pathlib\nl = M.SourceFileLoader('inst', 'bin/estate-memory-install')\nm = U.module_from_spec(U.spec_from_loader('inst', l)); l.exec_module(m)\nroot = pathlib.Path('/estate-home')\nhave = getattr(m, 'allow_rules', lambda r: [])(root)\nwant = ['mcp__' + m.MANIFEST['server'], 'Bash(%s/bin/estate-plan *)' % root]\nprint('optimus.plan_lock.installed_without_key=%d' % sum(w not in have for w in want))\n"
+      ],
+      "unit": "rules",
+      "better": "lower",
+      "owner": "estate",
+      "description": "of the two doors the plan lock's refusal sends an agent to (the estate-memory MCP plan tools, and the estate-plan shell fallback), how many the installer does NOT write into permissions.allow beside the lock: 2 before idp#8762, 0 after. Measured 2026-11-28: 55 of 523 Claude sessions in 3 days ended handing the turn to the founder on this deadlock."
+    },
+    {
       "name": "bootstrap.r2_scoped_gate",
       "measure": [
         "python3",
