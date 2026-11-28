@@ -489,6 +489,17 @@
       "better": "higher",
       "owner": "delivery",
       "description": "Number of #[test] falsifiers declared in the Gemini outbox verifier crate (platform/meridian-core-engines/crates/meridian-outbox-ingest): known-bad packets it must refuse (tampered or short bytes, proxy accept URL, target outside intake/, unsafe names, bad ids, wrong repo, duplicates) and known-good it must accept. Counts declared tests, it does not run them; that they pass is proved by cargo test in meridian-core-engines.yml. 0 on main while the crate is absent."
+    },
+    {
+      "name": "beast.kernel_manifest_drift_files",
+      "measure": [
+        "python3",
+        "beast/measure/kernel_drift.py"
+      ],
+      "unit": "files",
+      "better": "lower",
+      "owner": "beast",
+      "description": "Beast kernel files under beast/meridian-beast-v1 that differ from the committed sha256 manifest beast/measure/kernel.sha256; 0 means the landed tree is byte-identical to the tested archive 5bfbeee1ebc1 (idp#8710). Integrity only: it does not show the Beast is running."
     }
   ]
 }
