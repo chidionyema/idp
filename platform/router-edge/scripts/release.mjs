@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { liveRoles, rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
+import { liveRoles, probeLanes, releasePool, rolePool, seedRolePool, vendorSecrets } from "./role-pool.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -310,7 +310,7 @@ export async function release() {
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
     role_seed: null, live_commit_sha: null, secrets_applied: false, error_detail: null, strict_override: null,
-    rollback_skipped: null,
+    rollback_skipped: null, lanes: [], dead_lanes: [],
     started_at: new Date().toISOString(),
   };
   const out = process.env.RELEASE_RECEIPT_PATH || path.join(process.cwd(), "router-release-receipt.json");
@@ -418,7 +418,7 @@ export async function release() {
     if (Object.keys(pool.roles).length) {
       for (let n = 1; n <= 3; n++) {
         try {
-          r.role_seed = await seedRolePool(process.env.MERIDIAN_ROUTER_URL, process.env.MERIDIAN_ADMIN_KEY, pool);
+          r.role_seed = await seedRolePool(process.env.MERIDIAN_ROUTER_URL, process.env.MERIDIAN_ADMIN_KEY, releasePool());
           break;
         } catch (e) {
           r.role_seed = { configured: 0, status: 0, error: String(e?.message ?? e).slice(0, 200) };
@@ -452,7 +452,13 @@ export async function release() {
     } else {
       r.domain_cutover = {status: "NOT_REQUESTED"};
     }
-    r.status = "OPERATIONAL";
+    // The router answering is not the same fact as every lane answering. The release is
+    // OPERATIONAL only when each enabled lane served its own probe; otherwise it is
+    // DEGRADED and names the dead lanes. Not a rollback: the deployment is healthy, a key,
+    // a wallet or a model id is not, and the previous version has the same lanes.
+    r.lanes = await probeLanes(process.env.MERIDIAN_ROUTER_URL, process.env.MERIDIAN_CLIENT_KEY);
+    r.dead_lanes = r.lanes.filter((l) => !l.ok).map((l) => l.id);
+    r.status = r.lanes.length && !r.dead_lanes.length ? "OPERATIONAL" : "DEGRADED";
   } catch (e) {
     r.status = "NOT_OPERATIONAL";
     Object.assign(r, receiptError(e));
@@ -480,7 +486,7 @@ export async function release() {
     fs.writeFileSync(out, JSON.stringify(r, null, 2) + "\n", { mode: 0o600 });
     console.log(JSON.stringify({
       status: r.status, sha: r.sha, passed_rounds: r.probes.length,
-      role_seed: r.role_seed?.configured ?? 0,
+      role_seed: r.role_seed?.configured ?? 0, dead_lanes: r.dead_lanes,
       rollback_attempted: r.rollback_attempted, rollback_verified: r.rollback_verified,
     }));
   }

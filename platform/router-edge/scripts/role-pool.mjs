@@ -135,6 +135,59 @@ export function rolePool() {
   };
 }
 
+// A lane that nobody has called is a claim, not a lane. `role:coder` fails over, so it
+// answers 200 while two of its three lanes are dead (measured 2026-11-28: DeepSeek 401,
+// MiniMax 402, receipt OPERATIONAL). Each enabled lane therefore also gets a one-candidate
+// role of its own, and the release calls every one of them through the Worker, which holds
+// the vendor keys. A retired model id, a revoked key or an empty wallet is then a named
+// lane in the receipt on the release that introduced it, not a silent failover.
+export const PROBE_ROLE_PREFIX = "role:probe-";
+
+export function probeRoleName(laneId) {
+  return PROBE_ROLE_PREFIX + laneId;
+}
+
+export function releasePool() {
+  const pool = rolePool();
+  const roles = { ...pool.roles };
+  for (const c of CANDIDATES.filter((x) => x.enabled)) {
+    const name = probeRoleName(c.id);
+    roles[name] = { role: name, minOutputFloor: MIN_OUTPUT_FLOOR, candidates: [{ ...c, priority: 1 }] };
+  }
+  return { roles };
+}
+
+/**
+ * Call every enabled lane once through its own probe role. Only a 200 with assistant text
+ * from the lane that was asked for counts as serving; anything else names the lane and the
+ * status. Unknown is dead: a lane that cannot be judged is not reported live.
+ */
+export async function probeLanes(baseUrl, clientKey, pool = releasePool(), fetchImpl = fetch) {
+  const lanes = [];
+  for (const name of Object.keys(pool.roles).filter((n) => n.startsWith(PROBE_ROLE_PREFIX))) {
+    const id = name.slice(PROBE_ROLE_PREFIX.length);
+    const row = { id, ok: false, status: 0, backend: null, error: null };
+    try {
+      const res = await fetchImpl(baseUrl + "/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + clientKey },
+        body: JSON.stringify({ model: name, max_tokens: 16, messages: [{ role: "user", content: "Reply with: OK" }] }),
+      });
+      const body = await res.text();
+      row.status = res.status;
+      row.backend = res.headers.get("x-meridian-backend");
+      let text = "";
+      try { text = JSON.parse(body)?.choices?.[0]?.message?.content ?? ""; } catch { /* not JSON */ }
+      row.ok = res.status === 200 && row.backend === id && String(text).length > 0;
+      if (!row.ok) row.error = body.replace(/\s+/g, " ").slice(0, 200);
+    } catch (e) {
+      row.error = String(e?.message ?? e).slice(0, 160);
+    }
+    lanes.push(row);
+  }
+  return lanes;
+}
+
 /**
  * PUT /admin/v1/roles. Idempotent by contract (`roles_v1` is replaced wholesale), which is
  * why the caller may retry it while a freshly deployed version propagates. A refusal is
