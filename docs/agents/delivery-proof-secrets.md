@@ -22,6 +22,17 @@ founder through manual re-runs. `git` over SSH and `curl` to the GitHub API keep
 or add a governed capability, but never convert a pipeline the estate already runs into a
 founder-manned procedure.
 
+**Pushing without the git hook (any agent, any model).** A push made through the GitHub API (blobs,
+trees, commits, refs) runs no `.githooks/pre-push`, so none of the pre-CI rules would run on it
+(2026-11-28: 29 of 32 Greenlane verdicts were red, most on rules the pusher could have run in
+seconds). Use `bin/lane-push-api --lane lane/<name> --claim <owner/repo#N> --agent <name>
+--message-file MSG PATH...` instead of calling those endpoints by hand: it runs the pinned
+`ruff format`, `bin/language-gate` and the merge trial first, stamps your claim heartbeat just
+before it authors the commit, and pushes without force. A refusal names the file and the exact
+`Language-Exception: <path> -- <reason>` line to add; `BLIND` means a rule could not be judged and
+nothing was written. `git push` of a lane runs the same rules through `bin/lane-preflight`, before
+the disk floor.
+
 ### 2a. Yield before ceremony
 
 Founder, 2026-11-10: once work is pushed, anything that can be operationalised immediately without

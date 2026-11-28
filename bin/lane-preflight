@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# bin/lane-preflight [HEAD]: judge a lane, before it is pushed, by the pre-CI rules Greenlane
+# would apply to it. Exit 0 = every rule passes; 1 = a rule refuses (the reason names the file);
+# 2 = a rule could not be judged (BLIND). A hook treats 1 and 2 alike: refuse.
+#
+# Why this exists (2026-11-28, measured): 32 Greenlane verdicts, 29 red, and a share of them were
+# rules the pusher could have run in seconds -- bin/language-gate (5), ruff format (4), "does not
+# merge onto origin/main" (~8). .githooks/pre-push exited at its disk floor (<3000MB free) BEFORE
+# Layer 1c ruff, the syntax checks and bin/idp-ci (where the language-gate lives), so on a
+# constrained machine none of them ever ran. These three checks need no disk: they read git
+# objects, one pinned formatter and one merge. The disk floor buys skipping the EXPENSIVE
+# verification, never these.
+#
+# Judged with origin/main's bytes (bin/language-gate, the pinned ruff version, pyproject.toml),
+# because Greenlane judges with main's -- a stale checkout copy is shift-somewhere-else.
+#
+# Rules, each the same code Greenlane runs where it can be:
+#   1. language-gate   bin/language-gate origin/main HEAD  (new Python needs Language-Exception)
+#   2. ruff format     the exact ruff Greenlane pins (greenlane/ferrari.py TRUSTED_RUFF_VERSION)
+#   2b. python-strict  ruff check --select E9,F,B,S on changed Python (estate standard, crew#620)
+#   3. merge trial     `git merge-tree --write-tree origin/main HEAD` must be clean (keyed catalogs
+#                      merged by key with main's bin/catalog-merge, as bin/claim-gate does)
+#   4. claim lines     the commits must carry `Claim: owner/repo#N` and `Agent: <name>` alone on
+#                      their lines, as bin/claim-gate reads them (MEASURED 2026-11-28 07:49Z: lane
+#                      6fff504e was red at Greenlane for "no `Claim:` line", a rule the pusher
+#                      could have judged here, with no disk, from the commit messages)
+# There is no skip flag. A rule that cannot be judged is a refusal that says how to make it
+# judgeable, never a silent pass.
+set -u
+
+head_ref="${1:-HEAD}"
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "BLIND lane-preflight: not in a git checkout" >&2; exit 2; }
+cd "$root" || exit 2
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/lane-preflight.XXXXXX")" || exit 2
+trap 'rm -rf "$tmp"' EXIT
+
+head_sha="$(git rev-parse --verify -q "$head_ref^{commit}")" || { echo "BLIND lane-preflight: $head_ref is not a commit" >&2; exit 2; }
+
+if ! git fetch -q origin main 2>/dev/null; then
+  git rev-parse --verify -q origin/main >/dev/null || { echo "BLIND lane-preflight: cannot fetch origin/main and none is cached" >&2; exit 2; }
+  echo "note  lane-preflight: fetch failed; judging against the cached origin/main" >&2
+fi
+base_sha="$(git merge-base origin/main "$head_sha" 2>/dev/null)" || { echo "BLIND lane-preflight: $head_ref shares no history with origin/main" >&2; exit 2; }
+
+rc_all=0
+fail() { echo "FAIL  lane-preflight $1" >&2; shift; [ $# -gt 0 ] && printf '%s\n' "$@" | sed 's/^/      /' >&2; [ "$rc_all" -eq 1 ] || rc_all=1; }
+blind() { echo "BLIND lane-preflight $1" >&2; [ "$rc_all" -ne 0 ] || rc_all=2; }
+
+main_file() { git show "origin/main:$1" 2>/dev/null; }
+
+# 1. language-gate, with main's bytes. The gate reads `origin/main...HEAD` itself.
+if main_file bin/language-gate >"$tmp/language-gate" && [ -s "$tmp/language-gate" ]; then
+  gate_src="main"
+elif git show "$head_sha:bin/language-gate" >"$tmp/language-gate" 2>/dev/null && [ -s "$tmp/language-gate" ]; then
+  gate_src="lane"
+else
+  gate_src=""
+fi
+if [ -z "$gate_src" ]; then
+  blind "language-gate: bin/language-gate is on neither origin/main nor the lane"
+else
+  # The gate takes refs and reads git objects only: it never touches the pusher's worktree.
+  lg="$(cd "$root" && python3 "$tmp/language-gate" origin/main "$head_sha" 2>&1)"; lg_rc=$?
+  case "$lg_rc" in
+    0) echo "ok    lane-preflight language-gate (judged with $gate_src bytes): $(printf '%s' "$lg" | tail -1)" ;;
+    2) blind "language-gate could not read the commit range: $(printf '%s' "$lg" | tail -1)" ;;
+    *) fail "language-gate: a new Python file has no Language-Exception trailer (add \`Language-Exception: <path> -- <reason>\` to a commit message)" "$(printf '%s\n' "$lg" | tail -8)" ;;
+  esac
+fi
+
+# 2. ruff format with the exact pinned version, on the Python the lane CHANGED, read from the
+#    commit (not the worktree: the push carries the commit).
+pin="$(main_file greenlane/ferrari.py | sed -n 's/^TRUSTED_RUFF_VERSION = "\([0-9][0-9.]*\)".*/\1/p' | head -1)"
+changed_py="$(git diff --name-only --diff-filter=ACMR "$base_sha" "$head_sha" -- '*.py' 2>/dev/null)"
+if [ -n "$changed_py" ]; then
+  ruff_bin=""
+  for cand in "${LANE_PREFLIGHT_RUFF:-}" "$(command -v ruff 2>/dev/null)" "$HOME/.local/bin/ruff" "$HOME"/.cache/estate-tools/*/bin/ruff; do
+    [ -n "$cand" ] && [ -x "$cand" ] || continue
+    v="$("$cand" --version 2>/dev/null)"
+    if [ -z "$pin" ] || [ "$v" = "ruff $pin" ]; then ruff_bin="$cand"; break; fi
+  done
+  if [ -z "$pin" ]; then
+    blind "ruff: greenlane/ferrari.py on origin/main names no TRUSTED_RUFF_VERSION"
+  elif [ -z "$ruff_bin" ]; then
+    blind "ruff: Greenlane pins ruff $pin and none is installed here; install it: python3 -m pip install ruff==$pin"
+  else
+    main_file pyproject.toml >"$tmp/pyproject.toml" || git show "$head_sha:pyproject.toml" >"$tmp/pyproject.toml" 2>/dev/null
+    unformatted=""
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if ! git show "$head_sha:$f" | "$ruff_bin" format --check --config "$tmp/pyproject.toml" --stdin-filename "$f" - >/dev/null 2>&1; then
+        unformatted="$unformatted$f"$'\n'
+      fi
+    done <<<"$changed_py"
+    if [ -n "$unformatted" ]; then
+      fail "ruff format (pinned ruff $pin): these pushed files are not formatted" "$(printf '%s' "$unformatted")" "fix: ruff format <files>  (ruff $pin), commit, push again"
+    else
+      echo "ok    lane-preflight ruff format ($(printf '%s\n' "$changed_py" | wc -l | tr -d ' ') Python file(s), ruff $pin)"
+    fi
+  fi
+else
+  echo "ok    lane-preflight ruff format (no Python changed)"
+fi
+
+# 2b. python-strict: the estate Python standard (crew#620), which fast-gate runs as its last rung:
+#     `ruff check --select E9,F,B,S` (S603/S607 ignored; S101 ignored in tests) on every changed
+#     Python file. MEASURED 2026-11-28: lane 76dd398e went red here (S310 x4, S104, F401) after
+#     passing ruff format, because this preflight ran only the formatter. Same ratchet as the
+#     estate hook: a file already off-standard at the merge-base is a note, not a refusal.
+strict_ignore="S603,S607"
+strict_per_file="tests/*:S101,test_*.py:S101,*_test.py:S101"
+if [ -n "$changed_py" ] && [ -n "${ruff_bin:-}" ] && [ -s "${tmp}/pyproject.toml" ]; then
+  strict_bad=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    git show "$head_sha:$f" | "$ruff_bin" check --quiet --config "$tmp/pyproject.toml" --select E9,F,B,S --ignore "$strict_ignore" --per-file-ignores "$strict_per_file" --stdin-filename "$f" --no-cache - >"$tmp/strict.out" 2>&1 && continue
+    if git cat-file -e "$base_sha:$f" 2>/dev/null \
+       && ! git show "$base_sha:$f" | "$ruff_bin" check --quiet --config "$tmp/pyproject.toml" --select E9,F,B,S --ignore "$strict_ignore" --per-file-ignores "$strict_per_file" --stdin-filename "$f" --no-cache - >/dev/null 2>&1; then
+      echo "note  lane-preflight python-strict: $f was already off-standard at the merge-base (ratchet: not refused)" >&2
+      continue
+    fi
+    strict_bad="$strict_bad$f"$'\n'"$(grep -E '^(\S+ )?[A-Z]+[0-9]+ |^ *--> ' "$tmp/strict.out" | head -6 | sed 's/^/    /')"$'\n'
+  done <<<"$changed_py"
+  if [ -n "$strict_bad" ]; then
+    fail "python-strict (ruff check --select E9,F,B,S): these pushed files break the estate Python standard" "$(printf '%s' "$strict_bad")" "fix: ruff check --select E9,F,B,S --ignore $strict_ignore <files>, correct each finding (or add a justified # noqa), commit, push again"
+  else
+    echo "ok    lane-preflight python-strict (ruff check E9,F,B,S)"
+  fi
+fi
+
+# 3. the merge trial: Greenlane lands a lane on top of the CURRENT main, so a lane that does not
+#    merge cleanly is conflict-red however green its own tests are. Pure object-database work,
+#    no checkout and no disk.
+#    The two keyed catalogs (issue-classes, optimus-metrics) merge BY KEY with main's rule and
+#    driver, exactly as bin/claim-gate does (idp#8615): without them a lane that only appends a
+#    catalog entry would be refused here though Greenlane accepts it. Both pieces come from
+#    origin/main, never from the checkout, so a lane's own driver never judges the lane.
+mt_args=()
+if main_file .gitattributes >"$tmp/attributes" && main_file bin/catalog-merge >"$tmp/catalog-merge" \
+   && [ -s "$tmp/catalog-merge" ] && grep -q 'merge=estate-catalog' "$tmp/attributes"; then
+  mt_args=(-c "core.attributesFile=$tmp/attributes" -c "merge.estate-catalog.driver=python3 $tmp/catalog-merge %O %A %B %P")
+fi
+mt="$(git ${mt_args[@]+"${mt_args[@]}"} merge-tree --write-tree --name-only origin/main "$head_sha" 2>&1)"; mt_rc=$?
+case "$mt_rc" in
+  0) echo "ok    lane-preflight merges cleanly onto origin/main ($(git rev-parse --short origin/main))" ;;
+  1) fail "does not merge onto origin/main: rebase or merge origin/main into the lane. Conflicts:" "$(printf '%s\n' "$mt" | sed -n '2,/^$/p' | head -20)" ;;
+  *) blind "merge trial could not run (git $(git --version | awk '{print $3}'); needs >= 2.38): $(printf '%s' "$mt" | tail -1)" ;;
+esac
+
+# 4. the claim lines, in the same shape claim-gate reads: each alone on its line.
+range_msgs="$(git log --format=%B "$base_sha..$head_sha" 2>/dev/null)"
+if ! printf '%s\n' "$range_msgs" | grep -Eq '^Claim:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+[[:space:]]*$'; then
+  fail "claim: no commit in the range has a \`Claim: owner/repo#N\` line alone on its line (claim-gate refuses it)" "fix: bin/claim-open <issue>, or add \`Claim: chidionyema/idp#<N>\` and \`Agent: <name>\` lines to the commit message"
+elif ! printf '%s\n' "$range_msgs" | grep -Eq '^Agent:[[:space:]]*[^[:space:]]+[[:space:]]*$'; then
+  fail "claim: no commit in the range has an \`Agent: <name>\` line alone on its line (claim-gate refuses it)" "fix: add \`Agent: <name>\` to the commit message"
+else
+  echo "ok    lane-preflight claim lines (Claim: and Agent: present)"
+fi
+
+[ "$rc_all" -eq 0 ] && echo "ok    lane-preflight: $(git rev-parse --short "$head_sha") passes language-gate, ruff format, the merge trial and the claim lines"
+exit "$rc_all"
