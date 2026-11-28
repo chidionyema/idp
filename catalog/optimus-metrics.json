@@ -586,6 +586,18 @@
       "better": "higher",
       "owner": "delivery",
       "description": "Number of falsifier tests declared for the founder-action door (tests/test_founder_action_buttons.py): one message with buttons for an action no agent can do; a tap counts only from the founder's chat; unknown decision, unknown key, other chat and repeat taps record nothing; an action without proof or a button payload over 64 bytes is refused. Counts declared tests, it does not run them; that they pass is proved by the Greenlane running tests/. 0 on main while the suite is absent."
+    },
+    {
+      "name": "founder_gate.falsifiers_passing",
+      "measure": [
+        "python3",
+        "bin/estate-founder-gate",
+        "--selftest"
+      ],
+      "unit": "count",
+      "better": "higher",
+      "owner": "governance",
+      "description": "How many of 8 known-good and known-bad founder messages get the right verdict from bin/estate-founder-gate (proof line, one action, no secret, no filler, empty refused). 8 means every admission rule bites; less means a rule was weakened."
     }
   ]
 }
