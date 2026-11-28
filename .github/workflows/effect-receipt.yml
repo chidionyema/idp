@@ -1,0 +1,78 @@
+name: effect-receipt
+# Producer of ONE signed production-effect receipt (issue #8759).
+# It is a separate workflow with its own OIDC subject on purpose: greenlane.yml must never
+# certify its own deployment (greenlane/github.py, _epistemic_operational_proof). This
+# workflow is ONE issuer. The verifier requires three independent receipts, so this file
+# publishes a PART comment; it never writes the three-receipt EPISTEMIC-EFFECT-V1 comment.
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "claim issue, owner/repo#N"
+        required: true
+      lane:
+        description: "lane ref, lane/..."
+        required: true
+      head:
+        description: "lane head sha"
+        required: true
+      tip:
+        description: "landed main sha (40 hex)"
+        required: true
+      target:
+        description: "SHIP-CONTRACT accept URL (https, production host)"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: effect-receipt-${{ inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      ISSUE: ${{ inputs.issue }}
+      LANE: ${{ inputs.lane }}
+      HEAD_SHA: ${{ inputs.head }}
+      TIP_SHA: ${{ inputs.tip }}
+      TARGET: ${{ inputs.target }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - name: Observe the production target and sign what was seen
+        run: |
+          set -euo pipefail
+          case "$TIP_SHA" in *[!0-9a-f]*|"") echo "ERR tip not hex"; exit 1;; esac
+          [ "${#TIP_SHA}" -eq 40 ] || { echo "ERR tip not 40 hex"; exit 1; }
+          case "$TARGET" in https://*) ;; *) echo "ERR target not https"; exit 1;; esac
+          host=${TARGET#https://}; host=${host%%/*}
+          case "$host" in
+            api.github.com|github.com|raw.githubusercontent.com|gist.githubusercontent.com)
+              echo "ERR_PROXY_GREEN_SUBSTITUTION: $host is a source plane, not production"; exit 1;;
+          esac
+          status=$(curl -sS --max-time 15 -o body.out -w '%{http_code}' "$TARGET")
+          sha=$(sha256sum body.out | cut -d' ' -f1)
+          jq -n --arg issue "$ISSUE" --arg lane "$LANE" --arg head "$HEAD_SHA" \
+            --arg tip "$TIP_SHA" --arg target "$TARGET" --arg sha "$sha" --argjson status "$status" \
+            '{issue:$issue,lane:$lane,head:$head,tip:$tip,target:$target,status:$status,body_sha256:$sha}' \
+            > predicate.json
+          cosign attest-blob --yes --predicate predicate.json \
+            --type https://meridianlabs.cloud/effect/v1 \
+            --bundle effect.bundle.json body.out
+          echo "status=$status body_sha256=$sha"
+      - name: Post the PART comment on the claim issue
+        run: |
+          set -euo pipefail
+          repo=${ISSUE%%#*}; num=${ISSUE##*#}
+          jq -n --slurpfile p predicate.json --slurpfile b effect.bundle.json \
+            '{issue:$p[0].issue,lane:$p[0].lane,head:$p[0].head,tip:$p[0].tip,target:$p[0].target,
+              issuer:"github-actions:effect-receipt.yml",receipts:[$b[0]]}' > part.json
+          { printf 'EPISTEMIC-EFFECT-PART-V1\n'; cat part.json; } > comment.txt
+          [ "$(wc -c < comment.txt)" -le 131072 ] || { echo "ERR comment over 128 KiB"; exit 1; }
+          gh api "repos/$repo/issues/$num/comments" -F body=@comment.txt --jq .html_url
