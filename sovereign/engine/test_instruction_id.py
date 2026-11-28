@@ -325,7 +325,9 @@ ROUNDS = 3
 class Lab:
     def __init__(self) -> None:
         self.loop = asyncio.new_event_loop()
-        self.env = self.loop.run_until_complete(WorkflowEnvironment.start_time_skipping())
+        self.env = self.loop.run_until_complete(
+            WorkflowEnvironment.start_time_skipping()
+        )
 
     def run(self, coro):
         return self.loop.run_until_complete(coro)
@@ -424,7 +426,9 @@ def _params(**over):
 GATE: dict = {}
 
 
-def _settlement(run_id, *, epoch=1, url="https://llm.meridianlabs.cloud/health", signer=None, **over):
+def _settlement(
+    run_id, *, epoch=1, url="https://llm.meridianlabs.cloud/health", signer=None, **over
+):
     """What the independent certifier signs for the compiled Rust gate (MERIDIAN-SETTLEMENT-V1)."""
     signer = signer or GATE["certifier"]
     now = int(time.time())
@@ -443,9 +447,19 @@ def _settlement(run_id, *, epoch=1, url="https://llm.meridianlabs.cloud/health",
         "policy_hash": "ef" * 32,
     }
     fields.update(over)
-    order = ("instruction_id", "attempt_id", "execution_epoch", "objective_hash",
-             "acceptance_predicate_hash", "target_identity", "artifact_digest",
-             "observed_at_utc", "evidence_expires_utc", "observation_url", "policy_hash")
+    order = (
+        "instruction_id",
+        "attempt_id",
+        "execution_epoch",
+        "objective_hash",
+        "acceptance_predicate_hash",
+        "target_identity",
+        "artifact_digest",
+        "observed_at_utc",
+        "evidence_expires_utc",
+        "observation_url",
+        "policy_hash",
+    )
     digest = hashlib.sha256(
         ("MERIDIAN-SETTLEMENT-V1|" + "|".join(str(fields[k]) for k in order)).encode()
     ).digest()
@@ -472,9 +486,12 @@ def _envelope(key, run_id, settlement=True, **over):
         "reconciled": True,
     }
     receipt.update(over)
-    subject = b"meridian/instruction-yield-v1:" + json.dumps(
-        receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
-    ).encode()
+    subject = (
+        b"meridian/instruction-yield-v1:"
+        + json.dumps(
+            receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+    )
     envelope = {"receipt": receipt, "signature": key.sign(subject).hex()}
     if settlement is True:
         envelope["settlement"] = _settlement(run_id)
@@ -502,7 +519,10 @@ async def _halted(handle) -> bool:
 
 def _gate_binary() -> str:
     root = Path(__file__).resolve().parents[2]
-    for cand in (os.environ.get("MERIDIAN_GATE_BIN"), str(root / "target/release/meridian-gate")):
+    for cand in (
+        os.environ.get("MERIDIAN_GATE_BIN"),
+        str(root / "target/release/meridian-gate"),
+    ):
         if cand and Path(cand).is_file() and os.access(cand, os.X_OK):
             return cand
     raise AssertionError(
@@ -520,9 +540,12 @@ def signing(monkeypatch):
     worker = Ed25519PrivateKey.generate()
     monkeypatch.setenv("MERIDIAN_GATE_BIN", _gate_binary())
     monkeypatch.setenv(
-        "ESTATE_SETTLEMENT_CERTIFIERS_HEX", certifier.public_key().public_bytes_raw().hex()
+        "ESTATE_SETTLEMENT_CERTIFIERS_HEX",
+        certifier.public_key().public_bytes_raw().hex(),
     )
-    monkeypatch.setenv("ESTATE_WORKER_PUBKEY_HEX", worker.public_key().public_bytes_raw().hex())
+    monkeypatch.setenv(
+        "ESTATE_WORKER_PUBKEY_HEX", worker.public_key().public_bytes_raw().hex()
+    )
     GATE.clear()
     GATE.update(certifier=certifier, worker=worker)
     return key
@@ -547,13 +570,19 @@ def test_a_valid_independent_receipt_settles(lab, signing):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             await handle.signal(
                 "submit_independent_yield", _envelope(signing, handle.result_run_id)
             )
-            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), f"rust gate verdict (python={rec.verdicts} kinds={rec.kinds()})")
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.gates) >= 1),
+                f"rust gate verdict (python={rec.verdicts} kinds={rec.kinds()})",
+            )
             return await asyncio.wait_for(handle.result(), 60)
 
     state = lab.run(scenario())
@@ -565,6 +594,66 @@ def test_a_valid_independent_receipt_settles(lab, signing):
     assert "verification_timeout" not in rec.kinds()
 
 
+def test_g_certifier_settles_a_live_workflow_and_refuses_a_failed_observation(
+    lab, signing, monkeypatch
+):
+    """The real certifier module, end to end: it reads the live workflow's own state, observes
+    the effect, signs for the compiled gate and the yield verifier, and signals the workflow."""
+    from sovereign.engine import certifier
+
+    key = Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes_raw().hex()
+    monkeypatch.setenv("ESTATE_YIELD_VERIFIER_PUBKEY_HEX", pub)
+    monkeypatch.setenv("ESTATE_SETTLEMENT_CERTIFIERS_HEX", pub)
+    monkeypatch.setenv("CERT_SEED_G", key.private_bytes_raw().hex())
+    accept = certifier.parse_accept(
+        'GET https://llm.meridianlabs.cloud/health expect 200 contains "ok" within 30m'
+    )
+
+    def run(getter):
+        rec = Rec()
+
+        async def scenario():
+            worker, queue = await _start(lab, SessionWorkflow, rec, None)
+            async with worker:
+                handle = await lab.env.client.start_workflow(
+                    "SessionWorkflow",
+                    _params(),
+                    id=IID + uuid.uuid4().hex,
+                    task_queue=queue,
+                )
+                await _until(lambda: _halted(handle), "halted awaiting verifier")
+                try:
+                    await certifier.certify_instruction(
+                        lab.env.client,
+                        IID,
+                        accept,
+                        seed_env="CERT_SEED_G",
+                        policy_hash="ef" * 32,
+                        getter=getter,
+                        workflow_id=handle.id,
+                    )
+                    refused = None
+                except certifier.CertifierRefusal as exc:
+                    refused = str(exc)
+                return refused, await asyncio.wait_for(handle.result(), 90)
+
+        refused, state = lab.run(scenario())
+        return rec, refused, state
+
+    rec, refused, state = run(lambda u: (200, b'{"status":"ok"}'))
+    assert refused is None and state["status"] == "done"
+    assert rec.verdicts == ["settle"] and rec.gates == ["allow"]
+
+    rec, refused, state = run(lambda u: (503, b"down"))
+    assert refused and "503" in refused
+    assert (
+        state["status"] == "failed"
+        and state["reason"] == "verification-deadline-exceeded"
+    )
+    assert rec.verdicts == [] and rec.gates == [] and "done" not in rec.kinds()
+
+
 def test_b_missing_verifier_hits_deadline_and_fails_closed(lab, signing):
     """Negative control: no verifier ever answers. The wait is bounded, re-dispatches
     for the configured rounds, then fails closed. It must not hang."""
@@ -574,7 +663,10 @@ def test_b_missing_verifier_hits_deadline_and_fails_closed(lab, signing):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             return await asyncio.wait_for(handle.result(), 90)
 
@@ -598,7 +690,10 @@ def test_b_delayed_verifier_after_one_timeout_still_settles(lab, signing):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             await lab.env.sleep(DEADLINE_S + 5)
@@ -609,7 +704,9 @@ def test_b_delayed_verifier_after_one_timeout_still_settles(lab, signing):
             await handle.signal(
                 "submit_independent_yield", _envelope(signing, handle.result_run_id)
             )
-            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict"
+            )
             return await asyncio.wait_for(handle.result(), 60)
 
     state = lab.run(scenario())
@@ -627,7 +724,10 @@ def test_c_stale_forged_and_duplicate_receipts_are_rejected(lab, signing):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             run_id = handle.result_run_id
@@ -644,7 +744,9 @@ def test_c_stale_forged_and_duplicate_receipts_are_rejected(lab, signing):
                 assert await _halted(handle)
             good = _envelope(signing, run_id)
             await handle.signal("submit_independent_yield", good)
-            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict"
+            )
             state = await asyncio.wait_for(handle.result(), 60)
             duplicate_refused = False
             try:
@@ -667,11 +769,17 @@ def test_c_missing_instruction_id_is_refused_by_client_and_by_workflow(lab):
     rec = Rec()
 
     async def scenario():
-        worker, queue = await _start(lab, SessionWorkflow, rec, {"output": "x", "tokens": 1})
+        worker, queue = await _start(
+            lab, SessionWorkflow, rec, {"output": "x", "tokens": 1}
+        )
         async with worker:
             handle = await lab.env.client.start_workflow(
                 "SessionWorkflow",
-                _params(instruction_id=None, session_id="sb-" + uuid.uuid4().hex[:8], by="cli"),
+                _params(
+                    instruction_id=None,
+                    session_id="sb-" + uuid.uuid4().hex[:8],
+                    by="cli",
+                ),
                 id="sb-" + uuid.uuid4().hex[:8],
                 task_queue=queue,
             )
@@ -710,7 +818,9 @@ def _prepatch():
     return Old
 
 
-def test_b_falsifier_prepatch_workflow_hangs_where_patched_one_fails_closed(lab, signing):
+def test_b_falsifier_prepatch_workflow_hangs_where_patched_one_fails_closed(
+    lab, signing
+):
     """Same scenario as the bounded test, run on the pre-patch code: it never terminates.
     This is what proves the bounded test can fail."""
     rec = Rec()
@@ -719,7 +829,10 @@ def test_b_falsifier_prepatch_workflow_hangs_where_patched_one_fails_closed(lab,
         worker, queue = await _start(lab, _prepatch(), rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             # Real time, not result(): awaiting result() lets the time-skipping server jump
@@ -744,7 +857,10 @@ def test_d_prepatch_histories_replay_on_patched_workflow(lab, signing):
         worker, queue = await _start(lab, _prepatch(), rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             # The pre-patch workflow predates the Rust gate: it takes the 2-key envelope.
@@ -772,7 +888,8 @@ def test_d_prepatch_histories_replay_on_patched_workflow(lab, signing):
     assert len(histories) == 2
     for name, history in histories:
         assert not any(
-            "bounded-verification-deadline-v1" in str(e) or "custody-required-v1" in str(e)
+            "bounded-verification-deadline-v1" in str(e)
+            or "custody-required-v1" in str(e)
             for e in history.events
         ), name
         lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(history))
@@ -788,12 +905,21 @@ def _gated_run(lab, rec, envelope_for, *, then_wait_s=None):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
-            await handle.signal("submit_independent_yield", envelope_for(handle.result_run_id))
-            await _until(lambda: asyncio.sleep(0, len(rec.verdicts) >= 1), "python verdict")
-            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            await handle.signal(
+                "submit_independent_yield", envelope_for(handle.result_run_id)
+            )
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.verdicts) >= 1), "python verdict"
+            )
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict"
+            )
             return await asyncio.wait_for(handle.result(), 120)
 
     return lab.run(scenario())
@@ -804,7 +930,9 @@ def _refused(lab, signing, envelope_for):
     wait must then run out its deadline and fail closed, never settle."""
     rec = Rec()
     state = _gated_run(lab, rec, envelope_for)
-    assert rec.verdicts == ["settle"], "the python-side signature was valid; the gate decides"
+    assert rec.verdicts == ["settle"], (
+        "the python-side signature was valid; the gate decides"
+    )
     assert rec.gates == ["reject"]
     assert state["status"] == "failed"
     assert state["reason"] == "verification-deadline-exceeded"
@@ -812,7 +940,9 @@ def _refused(lab, signing, envelope_for):
     assert "settlement_refused" in rec.kinds()
 
 
-def test_e_python_settle_without_a_certifier_receipt_is_refused_by_the_rust_gate(lab, signing):
+def test_e_python_settle_without_a_certifier_receipt_is_refused_by_the_rust_gate(
+    lab, signing
+):
     _refused(lab, signing, lambda run_id: _envelope(signing, run_id, settlement=None))
 
 
@@ -894,7 +1024,10 @@ def test_e_falsifier_s11_workflow_settles_without_the_rust_gate(lab, signing):
         worker, queue = await _start(lab, S11, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             await handle.signal(
@@ -920,7 +1053,10 @@ def test_f_s11_histories_replay_on_rust_gated_workflow(lab, signing):
         worker, queue = await _start(lab, S11, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
             await handle.signal(
@@ -933,7 +1069,10 @@ def test_f_s11_histories_replay_on_rust_gated_workflow(lab, signing):
         worker, queue = await _start(lab, S11, rec2, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await asyncio.wait_for(handle.result(), 120)
             histories.append(("s11-deadline-failed", await handle.fetch_history()))
@@ -941,7 +1080,9 @@ def test_f_s11_histories_replay_on_rust_gated_workflow(lab, signing):
     lab.run(record())
     assert len(histories) == 2
     for name, history in histories:
-        assert any("bounded-verification-deadline-v1" in str(e) for e in history.events), name
+        assert any(
+            "bounded-verification-deadline-v1" in str(e) for e in history.events
+        ), name
         assert not any("rust-gate-v1" in str(e) for e in history.events), name
         lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(history))
 
@@ -954,11 +1095,18 @@ def test_f_new_histories_carry_the_rust_gate_marker(lab, signing):
         worker, queue = await _start(lab, SessionWorkflow, rec, None)
         async with worker:
             handle = await lab.env.client.start_workflow(
-                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+                "SessionWorkflow",
+                _params(),
+                id=IID + uuid.uuid4().hex,
+                task_queue=queue,
             )
             await _until(lambda: _halted(handle), "halted awaiting verifier")
-            await handle.signal("submit_independent_yield", _envelope(signing, handle.result_run_id))
-            await _until(lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict")
+            await handle.signal(
+                "submit_independent_yield", _envelope(signing, handle.result_run_id)
+            )
+            await _until(
+                lambda: asyncio.sleep(0, len(rec.gates) >= 1), "rust gate verdict"
+            )
             await asyncio.wait_for(handle.result(), 60)
             histories.append(await handle.fetch_history())
 

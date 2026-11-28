@@ -25,7 +25,10 @@ LINE = re.compile(rf"^optimus\.{re.escape(NAME)}=(\d+)\s*$", re.MULTILINE)
 
 
 def _binary() -> pathlib.Path | None:
-    for cand in (os.environ.get("MERIDIAN_GATE_BIN"), str(ROOT / "target/release/meridian-gate")):
+    for cand in (
+        os.environ.get("MERIDIAN_GATE_BIN"),
+        str(ROOT / "target/release/meridian-gate"),
+    ):
         if cand and pathlib.Path(cand).is_file() and os.access(cand, os.X_OK):
             return pathlib.Path(cand)
     cargo = shutil.which("cargo")
@@ -34,7 +37,11 @@ def _binary() -> pathlib.Path | None:
     try:
         built = subprocess.run(  # noqa: S603 - fixed argv
             [cargo, "build", "--release", "--locked", "-q", "-p", "meridian-gate"],
-            cwd=ROOT, capture_output=True, text=True, timeout=52, check=False,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=52,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -48,8 +55,12 @@ def measure() -> int:
         return 0
     try:
         run = subprocess.run(  # noqa: S603 - fixed argv
-            [str(binary), "--optimus"], cwd=ROOT, capture_output=True, text=True,
-            timeout=10, check=False,
+            [str(binary), "--optimus"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return 0

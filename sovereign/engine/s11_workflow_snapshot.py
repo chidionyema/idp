@@ -276,7 +276,9 @@ class SessionWorkflow:
             rec = self._pending_receipts.pop(0)
             await self._receipt(rec["kind"], rec["by"], rec.get("text", ""))
 
-    async def _request_verification(self, expected: dict[str, Any], round_no: int) -> None:
+    async def _request_verification(
+        self, expected: dict[str, Any], round_no: int
+    ) -> None:
         """Durable verifier work item: a receipt in the chain, with the deadline in it.
 
         The independent verifier reads the chain and answers with a signed envelope. The
@@ -319,8 +321,9 @@ class SessionWorkflow:
                 if self._bounded_verification:
                     try:
                         await workflow.wait_condition(
-                            lambda: self._yield_proposal is not None
-                            or self._stop_requested,
+                            lambda: (
+                                self._yield_proposal is not None or self._stop_requested
+                            ),
                             timeout=timedelta(seconds=self._verification_deadline_s),
                         )
                     except asyncio.TimeoutError:
@@ -340,8 +343,7 @@ class SessionWorkflow:
                         continue
                 else:
                     await workflow.wait_condition(
-                        lambda: self._yield_proposal is not None
-                        or self._stop_requested
+                        lambda: self._yield_proposal is not None or self._stop_requested
                     )
                 if self._stop_requested:
                     break
@@ -489,7 +491,9 @@ class SessionWorkflow:
             and workflow.patched("custody-required-v1")
         ):
             self.status = "failed"
-            self.reason = "custody-required: consequential runner without instruction_id"
+            self.reason = (
+                "custody-required: consequential runner without instruction_id"
+            )
             self._fsm_terminate()
             await self._receipt("fail", "engine", self.reason)
             return self._state()

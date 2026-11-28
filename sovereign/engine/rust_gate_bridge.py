@@ -18,7 +18,9 @@ class RustGateError(RuntimeError):
     def __init__(self, verdict: Dict[str, Any], returncode: int) -> None:
         self.verdict = verdict
         self.returncode = returncode
-        super().__init__(f"MERIDIAN_GATE_REJECTED rc={returncode} verdict={json.dumps(verdict, sort_keys=True)}")
+        super().__init__(
+            f"MERIDIAN_GATE_REJECTED rc={returncode} verdict={json.dumps(verdict, sort_keys=True)}"
+        )
 
 
 class RustGateBlindError(RustGateError):
@@ -41,14 +43,19 @@ def resolve_binary(explicit: Optional[str] = None) -> Path:
     raise RustGateBlindError(
         {
             "verdict": "BLIND",
-            "error": {"code": "BLIND_OBSERVATION", "detail": "compiled rust meridian-gate binary missing"},
+            "error": {
+                "code": "BLIND_OBSERVATION",
+                "detail": "compiled rust meridian-gate binary missing",
+            },
             "violated_predicate": "B10_COMPILED_ENFORCEMENT_REQUIRED",
         },
         returncode=127,
     )
 
 
-def call_rust_gate(subcommand: str, payload: Any, binary: Optional[str] = None, timeout_s: int = 10) -> Dict[str, Any]:
+def call_rust_gate(
+    subcommand: str, payload: Any, binary: Optional[str] = None, timeout_s: int = 10
+) -> Dict[str, Any]:
     bin_path = resolve_binary(binary)
     stdin_text = payload if isinstance(payload, str) else json.dumps(payload)
     proc = subprocess.run(
@@ -66,7 +73,10 @@ def call_rust_gate(subcommand: str, payload: Any, binary: Optional[str] = None, 
         raise RustGateBlindError(
             {
                 "verdict": "BLIND",
-                "error": {"code": "BLIND_OBSERVATION", "detail": f"non-json output: {exc}"},
+                "error": {
+                    "code": "BLIND_OBSERVATION",
+                    "detail": f"non-json output: {exc}",
+                },
             },
             returncode=proc.returncode or 2,
         ) from exc
