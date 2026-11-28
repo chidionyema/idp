@@ -698,6 +698,17 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when every launch refusal the executor can hand bin/legion-admit prints one fixed token naming its own class, 0 when a cause folds into one sentence or ends on a traceback instead of a refusal, and BLIND when the launcher cannot run here. Read on main with the shipped launcher: 0 at 8a003f777 (runs 46137092198 and 46137271107 both ended `REFUSED: provider admission invalid`), 1 with idp#8772."
+    },
+    {
+      "name": "greenlane.receipt_404_per_tick",
+      "measure": [
+        "python3",
+        "tests/greenlane_receipt_address.py"
+      ],
+      "unit": "404s per tick",
+      "better": "lower",
+      "owner": "greenlane",
+      "description": "Receipts in one simulated Greenlane tick whose post lands on an address GitHub's REST router answers with 404, measured by driving the shipped report_operational with a stand-in for `gh api`: 10 at bdab1b43a (run 46137784537 logged ten 404s at repos//issues//comments and repos/chidionyema/issues/idp/<n>), 0 with idp#8773."
     }
   ]
 }
