@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Send final agent work to the founder's Telegram once, without blocking the turn.
+
+    estate-notify-done --text "<machine-backed completion>" --key "<session-or-task-id>"
+    estate-notify-done --hook          (Codex notify hook: the event JSON on stdin)
+    estate-notify-done --flush         (deliver what an outage left in the outbox)
+
+A completion is never lost (idp#8619). Until 2026-11-27 this file lived only in ~/.estate/bin,
+untracked, with one attempt: a Telegram or network blip raised, the caller's turn ended, and the
+founder never heard that the work was done (AGENTS.md "Silence is not completion"). Now:
+
+- bounded retry inside the turn: ATTEMPTS tries, honouring Telegram's 429 retry_after, all under
+  the 20-second foreground ceiling;
+- an OUTBOX when every try fails: the redacted message is written to OUTBOX_DIR and the call
+  exits 0 with a QUEUED line, because a notifier must never fail the work it reports on;
+- every later call drains the outbox first, and `--flush` drains it on demand;
+- once per key and text, as before: the sent marker is created exclusively and a failed send
+  removes it, so a retry or a flush is never a duplicate.
+
+A message the API refuses outright (4xx other than 429: wrong token, wrong chat) is moved to
+OUTBOX_DIR/dead after MAX_FLUSHES drains, named on stderr, never retried forever and never dropped
+in silence. Secrets are redacted before anything is sent or written; the token is never printed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ENV_FILE = Path.home() / ".config/estate/estate.env"
+NOTIFY_DIR = Path.home() / ".estate/notifications"
+STATE_DIR = NOTIFY_DIR / "telegram-done"
+OUTBOX_DIR = NOTIFY_DIR / "telegram-outbox"
+API = os.environ.get("ESTATE_TELEGRAM_API", "https://api.telegram.org").rstrip("/")
+MAX_CHARS = 3800
+ATTEMPTS = (
+    3  # per call; 3 x 4 s timeout + 1 s + 2 s backoff stays under the 20 s ceiling
+)
+TIMEOUT_S = 4
+BACKOFF_S = (1, 2)
+MAX_RETRY_AFTER_S = (
+    5  # a longer 429 wait goes to the outbox instead of holding the turn
+)
+MAX_FLUSHES = 20
+BUDGET_S = float(os.environ.get("ESTATE_NOTIFY_BUDGET_S", "15"))  # one call, all sends
+_DEADLINE = time.monotonic() + BUDGET_S
+SECRETS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"),
+)
+
+
+class Refused(RuntimeError):
+    """Telegram answered and said no (4xx other than 429): retrying now will not help."""
+
+
+def env_values() -> tuple[str, str]:
+    values: dict[str, str] = {}
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    token = values.get("TELEGRAM_BOT_TOKEN", "")
+    chat = values.get("TELEGRAM_HOME_CHANNEL", "")
+    if not token or not chat:
+        raise RuntimeError("Telegram credentials are missing")
+    return token, chat
+
+
+def redact(text: str) -> str:
+    clean = text
+    for pattern in SECRETS:
+        clean = pattern.sub("[REDACTED]", clean)
+    return clean
+
+
+def chunks(text: str) -> list[str]:
+    clean = redact(text).strip()
+    if not clean:
+        return []
+    return [
+        clean[index : index + MAX_CHARS] for index in range(0, len(clean), MAX_CHARS)
+    ]
+
+
+def _post(token: str, chat: str, chunk: str) -> None:
+    body = urllib.parse.urlencode(
+        {"chat_id": chat, "text": chunk, "disable_web_page_preview": "true"}
+    ).encode()
+    request = urllib.request.Request(  # noqa: S310 -- fixed https scheme, test override only
+        f"{API}/bot{token}/sendMessage", data=body, method="POST"
+    )
+    timeout = max(1.0, min(TIMEOUT_S, _DEADLINE - time.monotonic()))
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        payload = json.load(response)
+    if not payload.get("ok"):
+        raise Refused(
+            f"Telegram refused the completion: {payload.get('description', '')}"
+        )
+
+
+def _retry_after(exc: urllib.error.HTTPError) -> float:
+    try:
+        return float(json.load(exc).get("parameters", {}).get("retry_after", 1))
+    except (ValueError, OSError, AttributeError):
+        return 1.0
+
+
+def send(text: str) -> None:
+    """Deliver every chunk, retrying transient failures; raise the last error when all fail."""
+    token, chat = env_values()
+    for chunk in chunks(text):
+        for attempt in range(ATTEMPTS):
+            if _DEADLINE - time.monotonic() < 1:
+                raise RuntimeError("notify budget spent before Telegram answered")
+            try:
+                _post(token, chat, chunk)
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code != 429 and 400 <= exc.code < 500:
+                    raise Refused(f"Telegram answered HTTP {exc.code}") from None
+                wait = (
+                    _retry_after(exc) if exc.code == 429 else BACKOFF_S[min(attempt, 1)]
+                )
+                if attempt == ATTEMPTS - 1 or wait > MAX_RETRY_AFTER_S:
+                    raise RuntimeError(f"Telegram answered HTTP {exc.code}") from None
+                time.sleep(wait)
+            except (urllib.error.URLError, OSError, TimeoutError) as exc:
+                if attempt == ATTEMPTS - 1:
+                    raise RuntimeError(
+                        f"Telegram unreachable: {type(exc).__name__}"
+                    ) from None
+                time.sleep(BACKOFF_S[min(attempt, 1)])
+
+
+def _digest(key: str, text: str) -> str:
+    return hashlib.sha256(f"{key}\n{text}".encode()).hexdigest()
+
+
+def send_once(key: str, text: str) -> bool:
+    """True when this call delivered it; False when it was already sent. Raises on failure."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    marker = STATE_DIR / f"{_digest(key, text)}.json"
+    try:
+        descriptor = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        send(text)
+        record = {
+            "key": key,
+            "sent_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        os.write(descriptor, json.dumps(record, sort_keys=True).encode())
+        return True
+    except Exception:
+        marker.unlink(missing_ok=True)
+        raise
+    finally:
+        os.close(descriptor)
+
+
+def _write_private(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".tmp.{os.getpid()}")
+    descriptor = os.open(tmp, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def queue(key: str, text: str, error: Exception) -> Path:
+    """Keep an undelivered completion, redacted, where the next call or --flush will send it."""
+    path = OUTBOX_DIR / f"{_digest(key, text)}.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {
+            "key": key,
+            "text": redact(text),
+            "queued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "flushes": 0,
+        }
+    record["last_error"] = redact(str(error))[:200]
+    _write_private(path, record)
+    return path
+
+
+def flush() -> tuple[int, int]:
+    """(delivered, still queued). A refused message is retired to dead/ after MAX_FLUSHES."""
+    if not OUTBOX_DIR.is_dir():
+        return 0, 0
+    delivered = left = 0
+    for path in sorted(OUTBOX_DIR.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            key, text = str(record["key"]), str(record["text"])
+        except (OSError, ValueError, KeyError):
+            print(
+                f"WARN    notify-done  unreadable outbox entry kept: {path.name}",
+                file=sys.stderr,
+            )
+            left += 1
+            continue
+        try:
+            send_once(key, text)
+            path.unlink(missing_ok=True)
+            delivered += 1
+        except Exception as exc:  # noqa: BLE001 -- every failure is recorded on the entry
+            unreachable = not isinstance(exc, Refused)
+            record["flushes"] = int(record.get("flushes", 0)) + 1
+            record["last_error"] = redact(str(exc))[:200]
+            if isinstance(exc, Refused) and record["flushes"] >= MAX_FLUSHES:
+                _write_private(OUTBOX_DIR / "dead" / path.name, record)
+                path.unlink(missing_ok=True)
+                print(
+                    f"FAIL    notify-done  retired {path.name} to dead/: {record['last_error']}",
+                    file=sys.stderr,
+                )
+                continue
+            _write_private(path, record)
+            left += 1
+            if unreachable:
+                # Telegram is down for all of them: one probe per call, not one per entry, so a
+                # long outbox cannot hold a turn past the ceiling.
+                left += sum(1 for p in OUTBOX_DIR.glob("*.json") if p.name > path.name)
+                break
+    return delivered, left
+
+
+def deliver(key: str, text: str) -> int:
+    """Drain the outbox, then send this one; an undeliverable one is queued, never lost."""
+    delivered, left = flush()
+    if delivered:
+        print(
+            f"ok      notify-done  delivered {delivered} queued completion(s)",
+            file=sys.stderr,
+        )
+    try:
+        sent = send_once(key, text)
+        print(
+            f"ok      notify-done  {'sent' if sent else 'already sent'} key={key}",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 -- the outbox is the answer to every failure
+        path = queue(key, text, exc)
+        print(
+            f"QUEUED  notify-done  {redact(str(exc))[:120]}; kept at {path} "
+            f"({left + 1} waiting); the next call or `estate-notify-done --flush` sends it",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def from_hook() -> int:
+    event = json.load(sys.stdin)
+    text = str(event.get("last_assistant_message") or "").strip()
+    if not text:
+        return 0
+    key = f"codex|{event.get('session_id', '')}|{event.get('turn_id', '')}"
+    return deliver(key, "DONE - Codex\n\n" + text)
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--hook", action="store_true")
+    parser.add_argument("--flush", action="store_true")
+    parser.add_argument("--text", default="")
+    parser.add_argument("--key", default="")
+    args = parser.parse_args(argv)
+    if args.hook:
+        return from_hook()
+    if args.flush:
+        delivered, left = flush()
+        print(f"ok      notify-done  flushed delivered={delivered} queued={left}")
+        return 0
+    if not args.text.strip():
+        parser.error("--text is required outside hook mode")
+    return deliver(args.key or f"manual|{time.time_ns()}", args.text)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

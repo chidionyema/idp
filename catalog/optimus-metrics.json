@@ -744,6 +744,18 @@
       "better": "higher",
       "owner": "governance",
       "description": "1 when bin/estate-state-page renders an unreadable claim ledger as UNKNOWN instead of a measured zero (idp#8781), 0 when it renders '0 of 0' or crashes"
+    },
+    {
+      "name": "notify.completions_lost",
+      "measure": [
+        "python3",
+        "tests/test_notify_done_never_loses_a_completion.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "lower",
+      "owner": "estate",
+      "description": "of two completions, the first sent while Telegram is unreachable and the second once it is back, how many the founder never receives, measured by running the real notifier against a local fake Telegram (idp#8619). The one-attempt notifier still installed in ~/.estate/bin lost 2 of 2 when measured 2026-11-28; the recovered bin/estate-notify-done loses 0."
     }
   ]
 }
