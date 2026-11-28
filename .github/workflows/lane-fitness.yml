@@ -1,0 +1,87 @@
+# Lane fitness census, off the Mac (idp#3525, ONE_SHOT Stage 3).
+#
+# Every 12 h GitHub Actions proves two things with no laptop in the path:
+#   1. the admission gate still refuses an unfit lane before any provider is contacted
+#      (tests/legion_fitness_gate.py, the Optimus measure legion.fitness_gate_enforced);
+#   2. each lane the registry offers still authenticates (a read-only GET of its models list).
+# It prints status codes only, never a key. A missing key or a 401/403 prints one ESCALATE/1
+# line and fails the run: that is the founder's secret boundary, not a retry.
+#
+# It writes NO estate.lane-fitness.v1 record. A FIT record needs a golden mission run through
+# the real harness; that writer (bin/lane-fitness) does not exist yet, so an auto route is still
+# refused at admission until it does. This census is not that writer and does not claim to be.
+name: lane-fitness
+
+on:
+  schedule:
+    - cron: "17 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lane-fitness
+  cancel-in-progress: false
+
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: admission gate still refuses an unfit lane
+        run: |
+          out=$(python3 tests/legion_fitness_gate.py)
+          echo "$out"
+          test "$out" = "optimus.legion.fitness_gate_enforced=1"
+      - name: lane auth census (status codes only)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import sys
+          import tomllib
+          import urllib.error
+          import urllib.request
+
+          bad = []
+          report = {
+              "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "lanes": {},
+          }
+          for name in ("deepseek", "minimax", "openrouter"):
+              spec = tomllib.loads(pathlib.Path(f"platform/llm/pennyd/providers/{name}.toml").read_text())
+              key = os.environ.get(spec["auth"]["key_env"], "").strip()
+              if not key:
+                  report["lanes"][name] = "UNCONFIGURED"
+                  bad.append(name)
+                  continue
+              req = urllib.request.Request(
+                  spec["base_url"].rstrip("/") + "/models",
+                  headers={"Authorization": "Bearer " + key},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      code = resp.status
+              except urllib.error.HTTPError as exc:
+                  code = exc.code
+              except OSError as exc:
+                  code = type(exc).__name__
+              report["lanes"][name] = code
+              if code in (401, 403):
+                  bad.append(name)
+          print(json.dumps(report, sort_keys=True))
+          if bad:
+              print("ESCALATE/1 founder secret boundary: " + ",".join(bad) + " unconfigured or refused")
+              sys.exit(1)
+          PY
