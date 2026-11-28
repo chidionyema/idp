@@ -1,0 +1,15 @@
+[package]
+name = "meridian-army"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "meridian-army"
+path = "src/main.rs"
+
+[dependencies]
+meridian-dof = { path = "../meridian-dof" }
+meridian-flow = { path = "../meridian-flow" }
+meridian-karma = { path = "../meridian-karma" }
+meridian-muster = { path = "../meridian-muster" }

@@ -258,3 +258,138 @@ fn reaccepting_an_instruction_cannot_erase_its_debt() {
     assert_eq!(o.initial_agent, "urn:A");
     assert_eq!(o.tokens_in, 9, "cost was wiped by a re-accept");
 }
+
+// ---- failure-mode hardening: each test below failed on the code that preceded it ----
+
+fn handback(id: &str, ins: &str, agent: &str, parent: &str, to: &str) -> KarmaEvent {
+    ev(
+        id,
+        ins,
+        agent,
+        &[parent],
+        KarmaEventKind::OwnershipHandback {
+            successor_agent_urn: to.into(),
+        },
+    )
+}
+
+fn settled_world() -> KarmaProjection {
+    let mut k = KarmaProjection::default();
+    k.apply(&accept("a", "I1", "urn:A"));
+    k.apply(&submit("s", "I1", "urn:A", "a", "D"));
+    k.apply(&verify("v", "I1", "urn:V", "s", "D"));
+    assert!(k.obligations["I1"].verified_yield);
+    k
+}
+
+#[test]
+fn resubmitting_after_settlement_is_refused() {
+    let mut k = settled_world();
+    let before = k.gaps.len();
+    k.apply(&submit("s2", "I1", "urn:A", "v", "OTHER"));
+    let o = &k.obligations["I1"];
+    assert_eq!(o.state, ObligationState::Settled, "a settled debt must not reopen by resubmission");
+    assert_eq!(o.submitted_digest.as_deref(), Some("D"));
+    assert!(k.gaps.len() > before, "the refusal must be recorded, not silent");
+}
+
+#[test]
+fn ancestral_failure_after_settlement_reopens_the_debt() {
+    let mut k = settled_world();
+    k.apply(&ev(
+        "f",
+        "I1",
+        "urn:X",
+        &["v"],
+        KarmaEventKind::AncestralFailure {
+            ancestor_event_id: "A1".into(),
+            failure_class: "x".into(),
+        },
+    ));
+    let o = &k.obligations["I1"];
+    assert!(!o.verified_yield, "a settled debt with an open ancestral failure is not settled");
+    assert_ne!(o.state, ObligationState::Settled);
+}
+
+#[test]
+fn events_for_an_unknown_obligation_leave_a_gap() {
+    let kinds = [
+        KarmaEventKind::YieldSubmitted { evidence_digest: "D".into() },
+        KarmaEventKind::YieldIndependentlyVerified { evidence_digest: "D".into() },
+        KarmaEventKind::AncestralFailure { ancestor_event_id: "A".into(), failure_class: "c".into() },
+        KarmaEventKind::OwnershipHandback { successor_agent_urn: "urn:B".into() },
+        KarmaEventKind::CorrectionVerified { ancestor_event_id: "A".into(), falsifier_digest: "d".into() },
+    ];
+    for (i, kind) in kinds.into_iter().enumerate() {
+        let mut k = KarmaProjection::default();
+        k.apply(&ev(&format!("e{i}"), "NOPE", "urn:A", &[], kind.clone()));
+        assert!(!k.gaps.is_empty(), "silent drop of {kind:?}");
+    }
+}
+
+#[test]
+fn a_former_custodian_cannot_certify_a_correction() {
+    let mut k = KarmaProjection::default();
+    k.apply(&accept("a", "I1", "urn:A"));
+    k.apply(&ev(
+        "f",
+        "I1",
+        "urn:A",
+        &["a"],
+        KarmaEventKind::AncestralFailure { ancestor_event_id: "F".into(), failure_class: "c".into() },
+    ));
+    k.apply(&handback("h1", "I1", "urn:A", "f", "urn:B"));
+    k.apply(&handback("h2", "I1", "urn:B", "h1", "urn:C"));
+    k.apply(&ev(
+        "c",
+        "I1",
+        "urn:B",
+        &["h2"],
+        KarmaEventKind::CorrectionVerified { ancestor_event_id: "F".into(), falsifier_digest: "d".into() },
+    ));
+    assert!(
+        k.obligations["I1"].open_ancestor_failures.contains("F"),
+        "B held the debt and cannot certify its own correction"
+    );
+}
+
+#[test]
+fn the_initial_debtor_cannot_verify_the_yield_after_handing_it_back() {
+    let mut k = KarmaProjection::default();
+    k.apply(&accept("a", "I1", "urn:A"));
+    k.apply(&handback("h", "I1", "urn:A", "a", "urn:B"));
+    k.apply(&submit("s", "I1", "urn:B", "h", "D"));
+    k.apply(&verify("v", "I1", "urn:A", "s", "D"));
+    assert!(!k.obligations["I1"].verified_yield, "A is the debtor; A grading it is self-graded");
+}
+
+#[test]
+fn blank_identities_are_refused() {
+    let mut k = KarmaProjection::default();
+    k.apply(&accept("a1", "", "urn:A"));
+    k.apply(&accept("a2", "I1", ""));
+    k.apply(&accept("", "I2", "urn:A"));
+    assert!(k.obligations.is_empty(), "blank identity issued a debt: {:?}", k.obligations.keys());
+    assert_eq!(k.gaps.len(), 3);
+}
+
+#[test]
+fn negative_money_cannot_reduce_recorded_cost() {
+    let mut k = KarmaProjection::default();
+    k.apply(&accept("a", "I1", "urn:A"));
+    k.apply(&ev(
+        "c1",
+        "I1",
+        "urn:A",
+        &["a"],
+        KarmaEventKind::CostObserved { tokens_in: 0, tokens_out: 0, money_minor_units: Some(100) },
+    ));
+    k.apply(&ev(
+        "c2",
+        "I1",
+        "urn:A",
+        &["c1"],
+        KarmaEventKind::CostObserved { tokens_in: 0, tokens_out: 0, money_minor_units: Some(-100) },
+    ));
+    assert_eq!(k.obligations["I1"].money_minor_units, Some(100));
+}
