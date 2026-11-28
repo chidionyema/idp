@@ -668,6 +668,18 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when bin/lane-preflight, run on real git in a tmp repo, refuses a new Python file with no Language-Exception trailer (naming it), refuses a lane that does not merge onto origin/main, passes a clean lane, and .githooks/pre-push calls it BEFORE its disk-floor exit, so a machine short of disk is judged like any other. 0 on code where the preflight is missing, wired after the floor, or cannot run. The ruff-format rule needs the pinned formatter the judge may not carry and is proved by tests/test_lane_preflight.py."
+    },
+    {
+      "name": "thin_client.unguarded_worktree_spawn",
+      "measure": [
+        "python3",
+        "estate/gates/tests/zero-worktree-door.test.py",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when any of git worktree add, git -C worktree add or git clone reaches git through the tracked shell door estate/gates/shell-guard.sh, 0 when the door refuses all of them. 1 on main (the door judged kills only), 0 with the zero-worktree judge wired in (#8725)."
     }
   ]
 }
