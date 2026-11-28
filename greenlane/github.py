@@ -1277,7 +1277,12 @@ class GitHubBackend:
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env={**os.environ, "GITHUB_REPOSITORY": self.repo},
+                env={
+                    **os.environ,
+                    "GITHUB_REPOSITORY": self.repo,
+                    # the lane's push is the holder's liveness; renew it here, where it is judged
+                    "CLAIM_GATE_RENEW_LANE": "1",
+                },
             )
         except subprocess.TimeoutExpired:
             return ""
