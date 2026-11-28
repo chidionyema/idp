@@ -30,6 +30,12 @@ description: >
        killed. It is started in the background with its own budget and its own log. Its rules
        are its own: a claimed worktree is never removed, uncommitted work is archived first.
 
+    6. (added 2026-11-28) the WORKTREES whose work already landed on main. Measured: 14 worktrees
+       against a cap of 4, about 3.9 GB, 833 MB free. platform/estate/libexec/landed-worktrees.py
+       removes one only when it is landed, clean (untracked files included), unlocked, idle for
+       two hours with no process working inside it, and covered by no live claim. It never
+       forces, and it only REPORTS unless worktrees=1 is passed.
+
     No agent's work is touched by any of this: no worktree a live claim covers, no ledger, no
     database, no toolchain the estate's runtime names. The run prints free space before and
     after, measured, and the lsof refusal for anything it left alone.
@@ -39,6 +45,7 @@ args:
   age_min: {type: int, default: 180, description: "minutes old before a pytest scratch dir may go"}
   budget_s: {type: int, default: 60, description: "seconds of work this run may start"}
   rm_age_min: {type: int, default: 120, description: "minutes old before a FINISHED job's run record may go"}
+  worktrees: {type: int, default: 0, description: "1 = remove the worktrees whose work already landed (landed, clean, unlocked, idle); 0 = report them only"}
   dry: {type: int, default: 0, description: "1 = report what would go and remove nothing"}
 door_s: 95
 halt_on_failure: false
@@ -287,6 +294,17 @@ steps:
       docker system df 2>/dev/null | head -6
       docker builder prune -af 2>&1 | tail -2
       docker image prune -f 2>&1 | tail -2
+      exit 0
+  - name: reclaim-the-worktrees-whose-work-landed
+    cmd: |
+      # Landed AND clean AND unlocked AND idle AND unclaimed, or it stays (see the script).
+      # Report-only unless worktrees=1; dry=1 always reports. Never forces a removal.
+      repo="${ESTATE_IDP_REPO:-$HOME/Documents/code/idp}"
+      tool="$repo/platform/estate/libexec/landed-worktrees.py"
+      if [ ! -f "$tool" ]; then echo "ok       $tool is not in this checkout yet"; exit 0; fi
+      flag=""
+      if [ "{{worktrees}}" = "1" ] && [ "{{dry}}" != "1" ]; then flag="--remove"; fi
+      python3 "$tool" $flag "$repo"
       exit 0
   - name: after
     cmd: |
