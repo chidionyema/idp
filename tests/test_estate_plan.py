@@ -90,7 +90,15 @@ def test_a_link_that_is_present_and_wrong_is_refused():
         assert r["reason"], bad
 
 
-def test_the_cli_fails_open_on_garbage():
+def test_the_cli_refuses_corrupt_input_because_corrupt_input_is_not_permission():
+    """The gate's own law, read from its own source (platform/estate/memory/plan.py).
+
+    "Corrupt input is not permission. Empty input above is the normal bootstrap state."
+    A history the door cannot replay is not evidence FOR the call, so the door refuses
+    it and says why. This falsifier expected the opposite (an allow) and had been red
+    on main; the door's law is the newer, deliberate one, and the falsifier had not
+    caught up with it (measured 2026-11-27 on c8dc5b538).
+    """
     r = subprocess.run(
         [
             sys.executable,
@@ -102,7 +110,9 @@ def test_the_cli_fails_open_on_garbage():
         capture_output=True,
         text=True,
     )
-    assert json.loads(r.stdout)["ok"] is True
+    verdict = json.loads(r.stdout)
+    assert verdict["ok"] is False
+    assert "plan check failed" in verdict["reason"]
 
 
 # --- the bridge: plan tools for every MCP runtime, with no door and no key -----------------------
@@ -265,7 +275,11 @@ def test_the_hook_lets_a_plan_be_declared_through_the_shell_and_then_honours_it(
     assert "estate-plan" in _hook(tmp_path, "Bash", [])
     assert _hook(tmp_path, "Bash", [], tool_input={"command": cmd}) is None
     declared = [("Bash", {"command": cmd})]
-    assert "add_bdd" in _hook(tmp_path, "Edit", declared)
+    # A declared plan starts the session, whichever door declared it (founder,
+    # 2026-11-25: "starting session should be one shot live"). This falsifier still
+    # expected the pre-ruling add_bdd reminder and had been red on main (measured
+    # 2026-11-27 on c8dc5b538).
+    assert _hook(tmp_path, "Edit", declared) is None
     with_bdd = declared + [("Bash", {"command": _sh("add_bdd", BDD)})]
     assert _hook(tmp_path, "Edit", with_bdd) is None
 
