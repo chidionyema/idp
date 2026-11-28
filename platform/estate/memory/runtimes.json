@@ -19,8 +19,10 @@
       {"event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit", "arg": "pre"},
       {"event": "PreToolUse", "arg": "plan"},
       {"event": "Stop", "arg": "stop"}
-    ]
+    ],
+    "allow": ["mcp__{server}", "Bash({root}/bin/estate-plan *)"]
   },
+  "allow": "The permission rules a settings runtime needs so an agent can walk through the doors the enforce hooks send it to: the plan tools over MCP, and the estate-plan shell fallback the plan refusal names by path. A lock installed without its key is a deadlock: measured 2026-11-28, 55 of 523 Claude sessions in 3 days ended handing the turn to the founder after the plan door refused Bash and both doors to a plan waited on a permission prompt. Rendered with {server} and {root} (the installed home); written into permissions.allow beside the hooks, every other rule kept. Enforcement stays in the hooks: these rules only open the doors the hooks already allow.",
   "plan_lock": "How each runtime refuses work until a plan allows it (#6675): hook (the enforce plan hook above), plugin (the opencode hook file), extension (bin/pi-plan-lock-install). null means nothing enforces it there yet; such a runtime names its command, and the installer fails while that command is on PATH.",
   "owner": "The issue that owns a runtime's plan lock. A runtime without a plan_lock names the issue that has to fix it, so the installer's UNLOCKED report names the truth and not one blanket number.",
   "estate_door": "Whether work this runtime sends to the estate (its MCP bridge, or the executor daemon) is gated by the shared plan door (#7518). True means estate-routed work from this runtime is refused without a declared plan; it does NOT mean the runtime's own native tools are gated -- a runtime whose native tools are ungated still has plan_lock null and is still reported UNLOCKED.",
