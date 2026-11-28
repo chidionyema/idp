@@ -61,6 +61,18 @@ if _free_to_skip; then
 fi
 
 
+# idp#8725 thin-client offload. The estate is a thin client (decision 0048, bin/estate-zero-worktree):
+# no agent may create a checkout of the lane it pushes, so "check out the exact lane revision" below
+# made every lane push from a thin client impossible. On a machine with no room, or one declared thin
+# (IDP_THIN_CLIENT=1), a lane/* push hands production-readiness to the Greenlane, which runs the same
+# smoke checks on the exact pushed sha on a machine that has disk. A release/* push is never offloaded.
+# If the free-disk reading is unavailable the offload is NOT taken: the strict local check applies.
+_thin_offload() {
+  [ "${IDP_THIN_CLIENT:-}" = "1" ] && return 0
+  local _f
+  _f=$(/bin/df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
+  [ -n "${_f:-}" ] && [ "$_f" -lt "${IDP_MIN_FREE_MB:-3000}" ]
+}
 _readiness_sha=""
 _release_push=0
 while IFS=' ' read -r _local_ref local_sha remote_ref remote_sha; do
@@ -69,6 +81,14 @@ while IFS=' ' read -r _local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/heads/lane/*|refs/heads/release/*)
       [ "$local_sha" != "0000000000000000000000000000000000000000" ] || continue
+      case "$remote_ref" in
+        refs/heads/lane/*)
+          if _thin_offload; then
+            echo "ok    production-readiness: thin client / low disk -- offloaded to Greenlane on $local_sha" >&2
+            continue
+          fi
+          ;;
+      esac
       if [ "$(git rev-parse HEAD)" != "$local_sha" ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
         echo "FAIL production-readiness: check out the exact lane revision with a clean worktree" >&2
         exit 1
