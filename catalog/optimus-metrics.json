@@ -502,6 +502,7 @@
       "description": "Beast kernel files under beast/meridian-beast-v1 that differ from the committed sha256 manifest beast/measure/kernel.sha256; 0 means the landed tree is byte-identical to the tested archive 5bfbeee1ebc1 (idp#8710). Integrity only: it does not show the Beast is running."
     },
     {
+<<<<<<< HEAD
       "name": "kernel.rust_invariant_gate_enforced",
       "measure": [
         "python3",
@@ -577,6 +578,8 @@
       "description": "How many of the friction producer's 6 built-in known-bad and known-good cases its alert rules get right, on synthetic results with no transcripts, so a CI runner can read it. 6 means every case behaved; the live friction.* metrics read BLIND wherever agent sessions are absent."
     },
     {
+=======
+>>>>>>> 8c011fae2 (feat(optimus): register founder_action.falsifiers_declared)
       "name": "founder_action.falsifiers_declared",
       "measure": [
         "python3",
