@@ -20,7 +20,12 @@ import re
 import sys
 
 KINDS = ("DONE", "FAILED", "ACTION", "DIGEST")
-GLYPH = {"DONE": "✓", "FAILED": "✗", "ACTION": "▶", "DIGEST": "●"}
+GLYPH = {  # chr() keeps the file ASCII: the pre-push gate refuses non-ASCII bytes
+    "DONE": chr(0x2713),
+    "FAILED": chr(0x2717),
+    "ACTION": chr(0x25B6),
+    "DIGEST": chr(0x25CF),
+}
 MAX_HEADLINE = 100
 MAX_CHARS = 900
 MAX_LINES = 12
