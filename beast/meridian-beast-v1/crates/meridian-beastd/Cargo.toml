@@ -1,0 +1,14 @@
+[package]
+name = "meridian-beastd"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "meridian-beastd"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+meridian-beast-core = { path = "../meridian-beast-core" }
+serde_json.workspace = true
