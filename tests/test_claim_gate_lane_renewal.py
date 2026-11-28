@@ -123,7 +123,16 @@ def test_the_renewer_is_read_only_in_ci_and_writes_only_on_the_lane_flag():
     laptop = g.renewer({})
     assert laptop is not None and laptop.needs_activity is False
     assert g.renewer({"CLAIM_GATE_NO_RENEW": "1"}) is None
-    assert g.renewer({"GITHUB_ACTIONS": "true", "CLAIM_GATE_RENEW_LANE": "1", "CLAIM_GATE_NO_RENEW": "1"}) is None
+    assert (
+        g.renewer(
+            {
+                "GITHUB_ACTIONS": "true",
+                "CLAIM_GATE_RENEW_LANE": "1",
+                "CLAIM_GATE_NO_RENEW": "1",
+            }
+        )
+        is None
+    )
 
 
 def test_the_greenlane_sets_the_lane_flag():
