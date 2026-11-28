@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "policy": "effect-signers.v1",
+  "description": "Allowlist of the certificate identities and OIDC issuers whose sigstore bundles count as an effect receipt (founder ruling #8759, 2026-11-28). The verifier holds no key: it verifies each bundle with gh attestation verify or cosign verify-blob-attestation against these pairs. A pair is enforced only in state 'verified'; a 'declared' pair is a declared intention and is ignored by the verifier.",
+  "note": "Greenlane must never certify its own deployment, so greenlane.yml is NOT an allowed signer. The producer workflow (.github/workflows/effect-receipt.yml) signs one bundle; the other two issuers are declared, not verified, until their identities are measured.",
+  "signers": [
+    {
+      "name": "github-actions-effect-receipt",
+      "certificate_identity": "https://github.com/chidionyema/idp/.github/workflows/effect-receipt.yml@refs/heads/main",
+      "oidc_issuer": "https://token.actions.githubusercontent.com",
+      "state": "verified",
+      "note": "The producer workflow on main. GitHub's OIDC issuer mints every workflow identity, so bundles signed here count as ONE issuer, never three."
+    },
+    {
+      "name": "k3s-spiffe-effect-receipt",
+      "certificate_identity": "spiffe://idp.local/greenlane/effect-receipt/k3s",
+      "oidc_issuer": "spiffe://idp.local",
+      "state": "declared",
+      "note": "Declared, not verified: the SPIFFE identity the k3s control plane would issue is not measured yet, so the verifier ignores this entry."
+    },
+    {
+      "name": "cloudflare-edge-effect-receipt",
+      "certificate_identity": "https://greenlane.meridianlabs.cloud/effect-receipt",
+      "oidc_issuer": "https://meridianlabs.cloud",
+      "state": "declared",
+      "note": "Declared, not verified: the edge identity is not measured yet, so the verifier ignores this entry."
+    }
+  ]
+}

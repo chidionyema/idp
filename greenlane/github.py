@@ -252,6 +252,290 @@ def _run(
     return p.stdout.strip()
 
 
+# -- the effect receipt: a sigstore bundle, never a secret the verifier holds ----------------
+#
+# Founder ruling (#8759, 2026-11-28): the HMAC custody model is deleted. A receipt verifies
+# only as a sigstore bundle signed by a short-lived identity the control plane issued, and the
+# verifier holds no secret: no key is read here, ever. The four EPISTEMIC_* variables are gone
+# from greenlane.yml and from the repo secrets; there is no verifier key to lose.
+#
+# The producer writes ONE comment on the claim issue:
+#
+#     EPISTEMIC-EFFECT-V1
+#     {"issue": "chidionyema/idp#8759", "lane": "lane/x", "head": "<sha>", "tip": "<sha>",
+#      "target": "https://production.example/health",
+#      "receipts": [<sigstore bundle>, <sigstore bundle>, <sigstore bundle>]}
+#
+# Each receipt is a sigstore bundle carrying a DSSE envelope around an in-toto statement:
+#
+#     predicateType https://meridianlabs.cloud/effect/v1
+#     predicate {issue, lane, head, tip, target, status, body_sha256}
+#
+# Three bundles are a proof only when each one verifies against an allowlisted
+# (certificate identity, OIDC issuer) pair, the three come from three DISTINCT issuers, and
+# all three bind the same tip and the same target. Anything unknown or unverifiable is BLIND
+# and refuses (AGENTS.md section 9, principle 1). A receipt that merely quotes a GitHub URL
+# is not an effect at all: ERR_PROXY_GREEN_SUBSTITUTION.
+EFFECT_RECEIPT_PREFIX = "EPISTEMIC-EFFECT-V1\n"
+EFFECT_PREDICATE_TYPE = "https://meridianlabs.cloud/effect/v1"
+EFFECT_PREDICATE_KEYS = (
+    "issue",
+    "lane",
+    "head",
+    "tip",
+    "target",
+    "status",
+    "body_sha256",
+)
+EFFECT_SIGNER_POLICY_FILE = "effect-signers.v1.json"
+# Only these states are enforced. A "declared" entry is a declared intention: the verifier
+# ignores it, because an unverified issuer is not an issuer.
+EFFECT_SIGNER_ENFORCED_STATES = ("verified",)
+# GitHub's OIDC issuer mints every workflow's identity, so however many workflows signed, it
+# is ONE issuer. It counts once (AGENTS.md section 9: three issuers, not three signatures).
+GITHUB_ACTIONS_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
+
+
+def effect_signer_policy_path() -> Path:
+    """The committed allowlist of (certificate identity, OIDC issuer) pairs."""
+    return Path(__file__).resolve().parent / EFFECT_SIGNER_POLICY_FILE
+
+
+def load_effect_signer_policy(path: Optional[Path] = None) -> dict:
+    """Read the committed signer allowlist. A policy file, never a key.
+
+    Raises ValueError when the file is missing or malformed: an unreadable allowlist is
+    BLIND, never an empty allowlist that lets anything through.
+    """
+    target = Path(path) if path is not None else effect_signer_policy_path()
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"effect signer policy unreadable: {exc}") from exc
+    try:
+        policy = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(f"effect signer policy malformed: {exc}") from exc
+    if not isinstance(policy, dict):
+        raise ValueError("effect signer policy is not an object")
+    return policy
+
+
+def effect_allowed_signers(policy: dict) -> list[tuple[str, str]]:
+    """The (certificate identity, OIDC issuer) pairs the verifier enforces.
+
+    A pair is enforced only when its state is enforced and both halves are present.
+    """
+    if not isinstance(policy, dict):
+        return []
+    entries = policy.get("signers")
+    if not isinstance(entries, list):
+        return []
+    allowed: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("state") not in EFFECT_SIGNER_ENFORCED_STATES:
+            continue
+        identity = entry.get("certificate_identity")
+        issuer = entry.get("oidc_issuer")
+        if not (isinstance(identity, str) and isinstance(issuer, str)):
+            continue
+        if not identity.strip() or not issuer.strip():
+            continue
+        allowed.append((identity, issuer))
+    return allowed
+
+
+def effect_issuer_group(identity: str, issuer: str) -> str:
+    """The issuer group a signer counts as. GitHub Actions OIDC counts once."""
+    if issuer == GITHUB_ACTIONS_OIDC_ISSUER:
+        return f"github-actions:{GITHUB_ACTIONS_OIDC_ISSUER}"
+    return issuer
+
+
+def effect_signers_are_distinct(signers: list[tuple[str, str]]) -> bool:
+    """True only for exactly three signers from three distinct issuer groups.
+
+    Three bundles signed by three workflows on one GitHub Actions issuer are ONE issuer,
+    so they are not three independent proofs.
+    """
+    if len(signers) != 3:
+        return False
+    groups = [effect_issuer_group(identity, issuer) for identity, issuer in signers]
+    return len(set(groups)) == 3
+
+
+def effect_bundle_statement(bundle: object) -> dict:
+    """The in-toto statement inside a sigstore bundle's DSSE envelope."""
+    if not isinstance(bundle, dict):
+        raise ValueError("bundle is not an object")
+    envelope = bundle.get("dsseEnvelope")
+    if not isinstance(envelope, dict):
+        raise ValueError("bundle carries no DSSE envelope")
+    payload = envelope.get("payload")
+    if not isinstance(payload, str):
+        raise ValueError("DSSE envelope carries no payload")
+    try:
+        statement = json.loads(base64.b64decode(payload, validate=True))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"DSSE payload is not base64 JSON: {exc}") from exc
+    if not isinstance(statement, dict):
+        raise ValueError("DSSE payload is not an object")
+    return statement
+
+
+def effect_bundle_predicate(bundle: object) -> dict:
+    """The effect predicate of a bundle: what the signer says it observed."""
+    statement = effect_bundle_statement(bundle)
+    if statement.get("predicateType") != EFFECT_PREDICATE_TYPE:
+        raise ValueError("unexpected predicateType")
+    predicate = statement.get("predicate")
+    if not isinstance(predicate, dict):
+        raise ValueError("statement carries no predicate")
+    missing = [key for key in EFFECT_PREDICATE_KEYS if key not in predicate]
+    if missing:
+        raise ValueError("predicate is missing " + ",".join(missing))
+    return predicate
+
+
+def effect_bundle_subject_digests(bundle: object) -> list[str]:
+    """The sha256 digests of the artifacts the bundle attests."""
+    statement = effect_bundle_statement(bundle)
+    subjects = statement.get("subject")
+    digests: list[str] = []
+    if isinstance(subjects, list):
+        for subject in subjects:
+            if not isinstance(subject, dict):
+                continue
+            digest = subject.get("digest")
+            if isinstance(digest, dict):
+                sha = digest.get("sha256")
+                if isinstance(sha, str) and sha:
+                    digests.append(sha.lower())
+    return digests
+
+
+def effect_canonical_bytes(obj: object) -> bytes:
+    """The canonical bytes of an effect object: sorted keys, no spaces."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def effect_verify_argv(
+    bundle_path: str, artifact_path: str, identity: str, issuer: str
+) -> list[str]:
+    """`gh attestation verify` against one allowlisted identity and issuer."""
+    return [
+        "gh",
+        "attestation",
+        "verify",
+        artifact_path,
+        "--bundle",
+        bundle_path,
+        "--cert-identity",
+        identity,
+        "--cert-oidc-issuer",
+        issuer,
+    ]
+
+
+def effect_verify_cosign_argv(
+    bundle_path: str, artifact_path: str, identity: str, issuer: str
+) -> list[str]:
+    """`cosign verify-blob-attestation` against one allowlisted identity and issuer."""
+    return [
+        "cosign",
+        "verify-blob-attestation",
+        "--bundle",
+        bundle_path,
+        "--certificate-identity",
+        identity,
+        "--certificate-oidc-issuer",
+        issuer,
+        artifact_path,
+    ]
+
+
+def effect_artifact_candidates(predicate: dict, body: Optional[str]) -> list[bytes]:
+    """The artifact bytes this verifier can hold for a bundle.
+
+    A bundle attests an artifact by digest. The verifier can only check a digest it can
+    reproduce, so the candidates are the observed body and the canonical effect predicate.
+    """
+    candidates: list[bytes] = []
+    if isinstance(body, str):
+        candidates.append(body.encode("utf-8"))
+    candidates.append(effect_canonical_bytes(predicate))
+    return candidates
+
+
+def _effect_receipt_quotes_github(receipt: object) -> bool:
+    """True when a receipt is only a GitHub URL, not a signed effect.
+
+    A link to a workflow run, a comment or a raw file on GitHub is not proof that the
+    production effect happened: it is a quotation of the source plane.
+    """
+    from urllib.parse import urlsplit
+
+    from lib.epistemic_kernel.kernel import PROXY_SOURCE_HOSTS
+
+    urls: list[str] = []
+    if isinstance(receipt, str):
+        urls.append(receipt)
+    elif isinstance(receipt, dict):
+        for key in ("url", "html_url", "target_url", "attestation_url", "bundle_url"):
+            value = receipt.get(key)
+            if isinstance(value, str):
+                urls.append(value)
+    for candidate in urls:
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            continue
+        if parsed.scheme in ("http", "https") and parsed.hostname in PROXY_SOURCE_HOSTS:
+            return True
+    return False
+
+
+def _verify_sigstore_bundle(
+    bundle: dict, identity: str, issuer: str, artifact: bytes
+) -> tuple[bool, str]:
+    """Verify one sigstore bundle with the estate's sigstore tools. No key is read.
+
+    `gh attestation verify` and `cosign verify-blob-attestation` both check the Fulcio
+    certificate inside the bundle against the allowlisted certificate identity and OIDC
+    issuer, and check the transparency log proof the bundle carries. The tools hold the
+    trust root; the bundle holds the proof; the verifier holds nothing.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle_path = os.path.join(tmp, "bundle.json")
+        artifact_path = os.path.join(tmp, "artifact")
+        try:
+            with open(bundle_path, "w", encoding="utf-8") as handle:
+                json.dump(bundle, handle)
+            with open(artifact_path, "wb") as handle:
+                handle.write(artifact)
+        except OSError as exc:
+            return False, f"bundle not writable: {exc}"
+        commands = (
+            effect_verify_argv(bundle_path, artifact_path, identity, issuer),
+            effect_verify_cosign_argv(bundle_path, artifact_path, identity, issuer),
+        )
+        for argv in commands:
+            try:
+                proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    argv,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if proc.returncode == 0:
+                return True, "sigstore bundle verified"
+    return False, "sigstore bundle did not verify"
+
+
 class GitHubBackend:
     # land(): how long the required re-runs a lane-head push starts may take before the merge.
     # The tick job's timeout-minutes is 15 (.github/workflows/greenlane.yml); these fit inside it.
@@ -2131,12 +2415,13 @@ class GitHubBackend:
     def _epistemic_receipts_from_claim(
         self, claim_repo: str, number: str, lane: str, rec: dict, url: str
     ) -> tuple[list[dict], str]:
-        """Read E1-E4 signed T0 receipts from the ORIGINAL issue, not lane state.
+        """Read the three sigstore effect bundles from the ORIGINAL issue, not lane state.
 
-        This is a read-only join over existing GitHub evidence. Every comment
-        is UNTRUSTED input: the kernel verifies each independent signature;
-        the QUAD verifier verifies the separate signer-custody attestation.
-        No raw receipt is persisted back into the Greenlane state ref.
+        This is a read-only join over existing GitHub evidence. Every comment is
+        UNTRUSTED input: the bundles are parsed and bound here, and their signatures
+        are verified in _epistemic_operational_proof, which is the only place that may
+        say "verified". A receipt that merely quotes a GitHub URL is not an effect.
+        No bundle is persisted back into the Greenlane state ref.
         """
         from urllib.parse import urlsplit
 
@@ -2150,7 +2435,7 @@ class GitHubBackend:
                 )
         except ValueError:
             return [], "ERR_INVALID_RUNTIME_TARGET"
-        prefix = "EPISTEMIC-EFFECT-V1\n"
+        prefix = EFFECT_RECEIPT_PREFIX
         expected = {
             "issue": f"{claim_repo}#{number}",
             "lane": lane,
@@ -2203,7 +2488,15 @@ class GitHubBackend:
             receipts = envelope.get("receipts")
             if not isinstance(receipts, list) or len(receipts) != 3:
                 return [], "ERR_EFFECT_RECEIPT_CARDINALITY"
-            if not all(isinstance(item, dict) for item in receipts):
+            for item in receipts:
+                if isinstance(item, dict) and "dsseEnvelope" in item:
+                    continue
+                if _effect_receipt_quotes_github(item):
+                    return (
+                        [],
+                        "ERR_PROXY_GREEN_SUBSTITUTION: a receipt quotes a GitHub URL, "
+                        "not a signed effect",
+                    )
                 return [], "ERR_MALFORMED_EFFECT_RECEIPT"
             return receipts, ""
         return [], "ERR_NO_SIGNED_EFFECT_RECEIPT_FOR_EXACT_LANE"
@@ -2212,21 +2505,19 @@ class GitHubBackend:
     def _epistemic_operational_proof(
         rec: dict, url: str, status: int, needle: str | None
     ) -> str:
-        """Return the falsification reason, or empty only after isolated T0 proofs.
+        """Return the falsification reason, or empty only after three verified bundles.
 
-        The Greenlane's own GET and Optimus metric are observations, not three
-        independently signed production effects. Its main-source CI can
-        never certify its own deployment. No verifier keys in this job: BLIND.
+        E1-E4, unchanged in strength and changed in mechanism: the Greenlane's own GET
+        and Optimus metric are observations, not three independently signed production
+        effects; its main-source CI can never certify its own deployment. Three sigstore
+        bundles, each verified against the allowlist of (certificate identity, OIDC
+        issuer) pairs, each from a DISTINCT issuer, all bound to this lane, this tip,
+        this target and the observed status, are the proof. The verifier holds no key:
+        it either verifies a bundle against sigstore, or it is BLIND.
         """
         import hashlib
-        import hmac
         from urllib.parse import urlsplit
 
-        from lib.epistemic_kernel import (
-            EpistemicKernel,
-            SignedReceipt,
-            canonical_json,
-        )
         from lib.epistemic_kernel.kernel import PROXY_SOURCE_HOSTS
 
         parsed = urlsplit(url)
@@ -2237,76 +2528,70 @@ class GitHubBackend:
         revision = rec.get("tip")
         if not isinstance(revision, str) or not re.fullmatch("[0-9a-f]{40}", revision):
             return "ERR_INVALID_EXPECTED_REVISION: exact landed SHA missing"
-        raw_receipts = rec.get("epistemic_receipts")
-        if not isinstance(raw_receipts, list):
-            return "ERR_INSUFFICIENT_RUNTIME_PROOFS: no signed producer receipts"
+        bundles = rec.get("epistemic_receipts")
+        if not isinstance(bundles, list) or len(bundles) != 3:
+            return "ERR_INSUFFICIENT_RUNTIME_PROOFS: no three signed producer bundles"
+        expected = {
+            "issue": rec.get("claim"),
+            "lane": rec.get("lane"),
+            "head": rec.get("head"),
+            "tip": revision,
+            "target": url,
+        }
+        if not all(isinstance(value, str) and value for value in expected.values()):
+            return "BLIND: effect claim binding unavailable"
         try:
-            key_hex = json.loads(os.environ["EPISTEMIC_AUTHORITY_KEYS_JSON"])
-            quad_key = bytes.fromhex(os.environ["EPISTEMIC_QUAD_KEY_HEX"])
-            signed_custody = json.loads(os.environ["EPISTEMIC_QUAD_CUSTODY_JSON"])
-            min_fence = int(os.environ["EPISTEMIC_MIN_FENCE"])
-            keys = {name: bytes.fromhex(value) for name, value in key_hex.items()}
-        except (KeyError, TypeError, ValueError, AttributeError):
-            return (
-                "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN: verifier custody unavailable"
-            )
-        if (
-            min_fence < 1
-            or len(keys) < 3
-            or len(set(keys.values())) != len(keys)
-            or not quad_key
-            or quad_key in keys.values()
-        ):
-            return "ERR_INDEPENDENT_KEY_CUSTODY_NOT_PROVEN"
-        try:
-            custody = signed_custody["payload"]
-            signature = signed_custody["signature"]
-            expected = hmac.new(
-                quad_key, canonical_json(custody).encode(), hashlib.sha256
-            ).hexdigest()
-            if not hmac.compare_digest(expected, signature):
-                return "ERR_QUAD_CUSTODY_SIGNATURE"
-            if custody["revision"] != revision or custody["target"] != url:
-                return "ERR_QUAD_CUSTODY_BINDING"
-            expires = datetime.fromisoformat(
-                custody["expires_at"].replace("Z", "+00:00")
-            )
-            if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
-                return "ERR_QUAD_CUSTODY_EXPIRED"
-            owners = custody["authorities"]
-            principals = [owners[name]["principal"] for name in keys]
-            planes = [owners[name]["control_plane"] for name in keys]
-            if (
-                len(set(principals)) != len(keys)
-                or len(set(planes)) != len(keys)
-                or any(not p for p in principals + planes)
+            policy = load_effect_signer_policy()
+        except ValueError as exc:
+            return f"BLIND: {exc}"
+        allowed = effect_allowed_signers(policy)
+        if not allowed:
+            return "BLIND: no effect signer is allowlisted"
+        body = rec.get("observed_body")
+        verified: list[tuple[str, str]] = []
+        for bundle in bundles:
+            try:
+                predicate = effect_bundle_predicate(bundle)
+            except ValueError as exc:
+                return f"BLIND: effect bundle unreadable: {exc}"
+            if any(predicate.get(key) != value for key, value in expected.items()):
+                return "BLIND: effect bundle binds another lane, tip or target"
+            if predicate.get("status") != status:
+                return "BLIND: effect bundle binds another observed status"
+            body_sha = predicate.get("body_sha256")
+            if not isinstance(body_sha, str) or not re.fullmatch(
+                "[0-9a-f]{64}", body_sha
             ):
-                return "ERR_QUAD_CUSTODY_NOT_ISOLATED"
-            receipts = [SignedReceipt(**item) for item in raw_receipts]
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return "ERR_INVALID_EPISTEMIC_RECEIPT_OR_CUSTODY"
-        kernel = EpistemicKernel(
-            secret_key=b"unused-with-isolated-authority-keys",
-            trusted_authorities=keys,
-            authority_keys=keys,
-        )
-        decision = kernel.evaluate_operational_transition(
-            {
-                "expected_host": parsed.hostname,
-                "expected_path": parsed.path,
-                "expected_http_status": status,
-                "expected_body_contains": needle,
-                "expected_revision": revision,
-                "min_independent_proofs": 3,
-            },
-            receipts,
-            min_fencing_token=min_fence,
-        )
-        if not decision.allowed:
-            return "E1/E3/E4: " + ", ".join(decision.error_codes[:5])
-        rec["epistemic_verified_receipts"] = decision.verified_receipt_ids
-        rec["epistemic_custody_sha256"] = hashlib.sha256(
-            canonical_json(custody).encode()
+                return "BLIND: effect bundle binds no observed body"
+            digests = set(effect_bundle_subject_digests(bundle))
+            artifact = None
+            for candidate in effect_artifact_candidates(predicate, body):
+                if hashlib.sha256(candidate).hexdigest() in digests:
+                    artifact = candidate
+                    break
+            if artifact is None:
+                return "BLIND: effect bundle attests an artifact this verifier does not hold"
+            if (
+                isinstance(body, str)
+                and artifact == body.encode("utf-8")
+                and hashlib.sha256(artifact).hexdigest() != body_sha
+            ):
+                # The bundle attests the body, and its own claim about that body is wrong.
+                return "BLIND: effect bundle misstates the body it signed"
+            signer = None
+            for identity, issuer in allowed:
+                ok, _why = _verify_sigstore_bundle(bundle, identity, issuer, artifact)
+                if ok:
+                    signer = (identity, issuer)
+                    break
+            if signer is None:
+                return "BLIND: effect bundle is not signed by an allowlisted issuer"
+            verified.append(signer)
+        if not effect_signers_are_distinct(verified):
+            return "ERR_EFFECT_SIGNERS_NOT_DISTINCT: three bundles from three issuers, required"
+        rec["epistemic_verified_signers"] = [f"{i}@{o}" for i, o in verified]
+        rec["epistemic_bundles_sha256"] = hashlib.sha256(
+            effect_canonical_bytes(bundles)
         ).hexdigest()
         return ""
 
@@ -2368,20 +2653,24 @@ class GitHubBackend:
             return "pending", missing
         ephemeral = dict(rec)
         ephemeral["epistemic_receipts"] = receipts
+        ephemeral["lane"] = lane
+        ephemeral["observed_body"] = body
+        ephemeral.setdefault("claim", f"{claim_repo}#{number}")
         epistemic_defect = self._epistemic_operational_proof(
             ephemeral, m.group("url"), code, needle
         )
         if epistemic_defect:
             return "pending", epistemic_defect
-        # Conserve only proof IDs and custody digest; never persist public raw bodies.
-        rec["epistemic_verified_receipts"] = ephemeral["epistemic_verified_receipts"]
-        rec["epistemic_custody_sha256"] = ephemeral["epistemic_custody_sha256"]
-        ids = ",".join(rec["epistemic_verified_receipts"])
-        custody_sha = rec["epistemic_custody_sha256"]
+        # Conserve only the signer identities and the bundles' digest; never persist the
+        # bundles themselves or the public body they attest.
+        rec["epistemic_verified_signers"] = ephemeral["epistemic_verified_signers"]
+        rec["epistemic_bundles_sha256"] = ephemeral["epistemic_bundles_sha256"]
+        signers = ",".join(rec["epistemic_verified_signers"])
+        bundles_sha = rec["epistemic_bundles_sha256"]
         return (
             "pass",
             f"GET {m.group('url')} -> {code}; Optimus {read}; "
-            f"independent T0 receipts={ids}; QUAD custody sha256={custody_sha}",
+            f"sigstore bundles=3 issuers={signers}; bundles sha256={bundles_sha}",
         )
 
     def _optimus_readings(self, names: list[str]) -> dict[str, float]:
