@@ -1,0 +1,6 @@
+{"advisory": false, "detail": "0 undeclared advisory gates; 3 declared: .github/workflows/ci.yml:726, .github/workflows/estate-homes-drill.yml:109, .github/workflows/shadow-verify.yml:213", "duration_ms": 365, "exit_code": 0, "gate_id": "zero-advisory-ci", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}
+{"advisory": false, "detail": "0 Zone A / launchd regressions", "duration_ms": 156, "exit_code": 0, "gate_id": "darwin-thin-client", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}
+{"advisory": false, "detail": "MISSING_INTENT_MANIFEST: .ci/intent-manifest.json required", "duration_ms": 0, "exit_code": 1, "gate_id": "strict-intent-schema", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}
+{"advisory": false, "detail": "FAIL [MISSING_PROOF_RECEIPT]: /Users/roseonyema/Documents/code/idp/.ci/proof-receipt.json", "duration_ms": 143, "exit_code": 1, "gate_id": "differential-falsifier", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}
+{"advisory": false, "detail": "shadow scope has a merge-base fallback", "duration_ms": 1, "exit_code": 0, "gate_id": "shadow-scope-integrity", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}
+{"advisory": false, "detail": "moratorium clear", "duration_ms": 0, "exit_code": 0, "gate_id": "yield-first-moratorium", "stage": "pre-push", "ts_utc": "2026-11-25T17:54:01Z"}

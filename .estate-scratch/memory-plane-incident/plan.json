@@ -1,0 +1,21 @@
+{
+  "goal": "The estate's single memory plane (platform/estate/memory/door.py) serves brief, recall and remember on its real path, with the incident failure measured and named, no pending fact stranded, and no edit to #7518-owned paths (bin/estate-memory-mcp and its local tier).",
+  "subgoals": [
+    {
+      "id": "goal_1",
+      "text": "Measure the door actual failure: read the memory-plane heartbeat record, determine whether critical-probe.py ran (rc 1 vs 127), and read platform/estate/memory/door.py to establish whether it is unreachable or answers without the three tools."
+    },
+    {
+      "id": "goal_2",
+      "text": "Repair the ONE door at platform/estate/memory/door.py so it serves brief, recall, remember; keep the local tier as a cache behind the same door; do not edit bin/estate-memory-mcp or its local tier (owned by focus #7518)."
+    },
+    {
+      "id": "goal_3",
+      "text": "Measure the repair on the real path: probe the door for the three tools, confirm the heartbeat healthy field returns to 1.0, and prove pending facts replay when the door returns."
+    },
+    {
+      "id": "goal_4",
+      "text": "Record the outcome per the correction chain: issue-class ledger entry, broadcast of the failure class to the fleet, and a journal entry naming the measurement."
+    }
+  ]
+}

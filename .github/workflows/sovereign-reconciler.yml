@@ -1,0 +1,64 @@
+name: sovereign-reconciler
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: sovereign-reconciler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Blackbox Reconciliation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_MESSAGE_ID: ${{ secrets.TELEGRAM_MESSAGE_ID }}
+        run: |
+          python3 ops/test_sovereign_reconciler.py
+          python3 ops/sovereign_reconciler.py \
+            --reconcile \
+            --emit-agent-brief \
+            --notify-telegram
+
+      - name: Publish Status Artifact to HUD (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "sovereign-reconciler[bot]"
+          git config user.email "sovereign-reconciler@users.noreply.github.com"
+          git add ops/status.json ops/hud/status.json ops/agent_brief.md
+          if ! git diff --cached --quiet; then
+            git commit -m "ops(reconciler): update materialized truth [skip ci]"
+            git push
+          fi
+
+      - name: Enforce Error-Budget Gate on Feature PRs
+        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'p0/') && !startsWith(github.head_ref, 'ops/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 ops/sovereign_reconciler.py --reconcile --gate
