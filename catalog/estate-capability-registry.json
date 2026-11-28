@@ -41640,6 +41640,7 @@
         "cap:tool/idp-auth",
         "cap:tool/idp-guarded-paths",
         "cap:tool/pr-parity",
+        "cap:tool/verify_three_proofs.py",
         "cap:tool/web_agent_bridge.py",
         "cap:workflow/gha-guarded-paths"
       ],
@@ -62309,6 +62310,7 @@
           "--cached",
           "--commit-sha",
           "--contract",
+          "--defer-guarded",
           "--files",
           "--no-color",
           "--repo-root",
@@ -62356,6 +62358,10 @@
         },
         {
           "id": "cap:tool/idp-bdd-proof-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-guarded-paths",
           "edge": "invokes"
         },
         {

@@ -125,6 +125,154 @@ TRUSTED_LANGUAGE_GATE = TRUSTED_ROOT / "bin" / "language-gate"
 TRUSTED_RUFF_VERSION = "0.15.18"
 
 
+def _safe_env() -> dict[str, str]:
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if not any(x in k.upper() for x in ("TOKEN", "SECRET", "PASSWORD", "KEY"))
+    }
+
+
+def _pinned_ruff(execute, ruff_binary, safe_env) -> tuple[str | None, str]:
+    """The one resolver of the exact Ruff Greenlane trusts: (binary, "") or (None, hold reason)."""
+    binary = ruff_binary if ruff_binary is not None else shutil.which("ruff")
+    if not binary and ruff_binary is None:
+        installer = execute(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--disable-pip-version-check",
+                "--no-input",
+                "--only-binary=:all:",
+                f"ruff=={TRUSTED_RUFF_VERSION}",
+            ],
+            cwd=tempfile.gettempdir(),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=safe_env,
+        )
+        if installer.returncode:
+            return None, "pre-CI hold: trusted pinned Ruff unavailable"
+        binary = shutil.which("ruff")
+    if not binary:
+        return None, "pre-CI hold: trusted pinned Ruff unavailable"
+    version = execute(
+        [str(binary), "--version"],
+        cwd=tempfile.gettempdir(),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=safe_env,
+    )
+    if version.returncode or version.stdout.strip() != f"ruff {TRUSTED_RUFF_VERSION}":
+        return None, "pre-CI hold: Ruff version mismatch"
+    return str(binary), ""
+
+
+FORMAT_REFUSAL = "pre-CI Ruff format failure"
+
+
+def format_fixes(
+    base: str,
+    head: str,
+    runner=None,
+    checkout: Path | None = None,
+    ruff_binary: str | bool | None = None,
+) -> dict[str, str]:
+    """{path: formatted text} for the lane's changed Python files the pinned Ruff would change.
+
+    The shift-left half of `source_assess`: a lane that only needs formatting is fixed, not
+    refused. Same trusted binary, same trusted config, formatter only: no candidate code runs.
+    Empty when nothing needs formatting or when the pinned Ruff is unavailable.
+    """
+    execute = runner or subprocess.run
+    cwd = checkout or TRUSTED_ROOT
+    changed = execute(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACMR",
+            f"{base}...{head}",
+            "--",
+            "*.py",
+        ],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    if changed.returncode:
+        return {}
+    paths = [p for p in changed.stdout.split("\0") if p]
+    for name in paths:
+        parts = Path(name).parts
+        if Path(name).is_absolute() or ".." in parts or name.startswith(".git/"):
+            return {}
+    if not paths:
+        return {}
+    safe_env = _safe_env()
+    binary, hold = _pinned_ruff(execute, ruff_binary, safe_env)
+    if hold or not binary:
+        return {}
+    config = str(TRUSTED_ROOT / "pyproject.toml")
+    with tempfile.TemporaryDirectory(prefix="greenlane-autoformat-") as folder:
+        before: dict[str, str] = {}
+        files = []
+        for name in paths:
+            blob = execute(
+                ["git", "show", f"{head}:{name}"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if blob.returncode:
+                return {}
+            target = Path(folder) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(blob.stdout, encoding="utf-8")
+            before[name] = blob.stdout
+            files.append(str(target))
+        ruff = [binary, "format", "--config", config]
+        run = execute(
+            [*ruff, *files],
+            cwd=folder,
+            capture_output=True,
+            text=True,
+            timeout=35,
+            check=False,
+            env=safe_env,
+        )
+        if run.returncode:
+            return {}
+        after = {n: (Path(folder) / n).read_text(encoding="utf-8") for n in paths}
+        out = {n: t for n, t in after.items() if t != before[n]}
+        # Never push what the checker would still refuse: prove the fixed text is stable.
+        if out:
+            stable = execute(
+                [binary, "format", "--check", "--config", config, *files],
+                cwd=folder,
+                capture_output=True,
+                text=True,
+                timeout=35,
+                check=False,
+                env=safe_env,
+            )
+            if stable.returncode:
+                return {}
+        return out
+
+
 def source_assess(
     base: str,
     candidate: str,
@@ -181,53 +329,12 @@ def source_assess(
                 return Verdict("REFUSE", "unsafe candidate Python path")
         # The exact Ruff version installed by fast-gate and the agent worker.
         # Never pass estate effect credentials into PyPI or the formatter.
-        safe_env = {
-            k: v
-            for k, v in os.environ.items()
-            if not any(x in k.upper() for x in ("TOKEN", "SECRET", "PASSWORD", "KEY"))
-        }
+        safe_env = _safe_env()
         # Missing format authority holds the Python lane rather than launching
         # expensive CI that can only discover the same unformatted files.
-        binary = ruff_binary if ruff_binary is not None else shutil.which("ruff")
-        if not binary and ruff_binary is None:
-            installer = execute(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--quiet",
-                    "--disable-pip-version-check",
-                    "--no-input",
-                    "--only-binary=:all:",
-                    f"ruff=={TRUSTED_RUFF_VERSION}",
-                ],
-                cwd=tempfile.gettempdir(),
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-                env=safe_env,
-            )
-            if installer.returncode:
-                return Verdict("REFUSE", "pre-CI hold: trusted pinned Ruff unavailable")
-            binary = shutil.which("ruff")
-        if not binary:
-            return Verdict("REFUSE", "pre-CI hold: trusted pinned Ruff unavailable")
-        version = execute(
-            [str(binary), "--version"],
-            cwd=tempfile.gettempdir(),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            env=safe_env,
-        )
-        if (
-            version.returncode
-            or version.stdout.strip() != f"ruff {TRUSTED_RUFF_VERSION}"
-        ):
-            return Verdict("REFUSE", "pre-CI hold: Ruff version mismatch")
+        binary, hold = _pinned_ruff(execute, ruff_binary, safe_env)
+        if hold:
+            return Verdict("REFUSE", hold)
         with tempfile.TemporaryDirectory(prefix="greenlane-pre-ci-") as folder:
             names = []
             for name in python_paths:

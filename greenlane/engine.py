@@ -21,6 +21,7 @@ import json
 import math
 import os
 
+from .ferrari import FORMAT_REFUSAL
 from .cross_main_breaker import LIMIT, normalize_epochs, prune_epochs, record_failure
 from .learning import choose_batch_size, fingerprint, repeated_exact_failure
 from dataclasses import asdict, dataclass, field
@@ -1022,6 +1023,13 @@ class Engine:
             preflight = getattr(self.b, "preflight", None)
             if preflight is not None:
                 admitted, why = preflight(base, on_main)
+                if not admitted and why.startswith(FORMAT_REFUSAL):
+                    # Shift left: format-only is repaired here, not handed back to the author.
+                    # The pushed head re-arms the lane on the next tick.
+                    fixer = getattr(self.b, "format_fix", None)
+                    fixed = fixer(n, lane.head, base) if fixer is not None else ""
+                    if fixed:
+                        why = f"{why} -- Greenlane formatted it and pushed {fixed[:12]}"
                 if not admitted:
                     lane.status, lane.reason = RED, why
                     lane.judged_on = base

@@ -469,6 +469,17 @@
       "description": "1 when SessionWorkflow._retain_instruction, with no independent verifier answer, re-dispatches a fixed number of rounds each bounded by an explicit deadline and then fails closed (verification-deadline-exceeded) without ever reaching an unbounded wait_condition (MERIDIAN-CTRL-001 11.1). 0 on main f98fe26 (the wait has no deadline); 1 with this lane. The Temporal Test Server proof is sovereign/engine/test_instruction_id.py."
     },
     {
+      "name": "greenlane.format_refusal_repaired",
+      "measure": [
+        "python3",
+        "tests/greenlane_autoformat_repair.py"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "1 when the real Greenlane Engine asks its backend to repair a lane whose only pre-CI refusal is the pinned-ruff format refusal (no CI spent on the unformatted head), refuses unchanged without a fixer, and never invokes the fixer for any other refusal"
+    },
+    {
       "name": "kernel.rust_invariant_gate_enforced",
       "measure": [
         "python3",
