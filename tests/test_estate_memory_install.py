@@ -404,11 +404,42 @@ def test_the_brief_never_blocks_a_session(monkeypatch, capsys):
     assert out.out == "" and "no brief" in out.err
 
 
-def test_a_check_from_a_stale_checkout_says_so(home, tmp_path):
+def test_a_check_from_a_stale_checkout_says_so(home, tmp_path, monkeypatch):
     """[drift] a checkout behind origin/main flags newer installed files; the check names the cause."""
     assert run(home).returncode == 0
     mod = _script("estate-memory-install")
-    mod.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 0, "40\n", "")
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, "40\n", ""),
+    )
     assert mod.commits_behind_main() == 40
-    mod.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 128, "", "no")
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 128, "", "no"),
+    )
     assert mod.commits_behind_main() == 0
+
+
+def test_antigravity_runtime_installs_mcp_config_and_reports_unlocked(
+    home, tmp_path_factory
+):
+    """Antigravity (agy) gets estate-memory in ~/.gemini/config/mcp_config.json (#6156, #6675)."""
+    bin_dir = tmp_path_factory.mktemp("agy_bin")
+    fake = bin_dir / "agy"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    (home / ".gemini" / "config").mkdir(parents=True)
+    path = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    out = run(home, "--runtime", "antigravity", env=path)
+    assert out.returncode == 1 and "UNLOCKED antigravity" in out.stdout, out.stdout
+    cfg = json.loads((home / ".gemini" / "config" / "mcp_config.json").read_text())
+    assert cfg["mcpServers"]["estate-memory"] == {
+        "command": "python3",
+        "args": [installed(home, "bin/estate-memory-mcp")],
+    }
+    assert (
+        run(home, "--runtime", "antigravity", env={"PATH": "/usr/bin:/bin"}).returncode
+        == 0
+    )
