@@ -18,8 +18,8 @@ What is asserted here is a round trip, not a sentence:
 
 from __future__ import annotations
 
-import importlib.machinery
-import importlib.util
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +35,24 @@ GATE = IDP / "bin" / "idp-bdd-proof-gate"
 REBASED = "a" * 40
 LANE_HEAD = "b" * 40
 CANDIDATE = "c" * 40
+
+
+BASE = "e" * 40
+LANE_SCOPE = "platform/estate/memory/leases.py\ntests/test_leases.py\n"
+
+
+def fake_lane_git(*args: str, **kwargs: object) -> str:
+    """The lane's own git, answered truthfully where the producer asks.
+
+    The producer asks two new questions (the paths the head commit changes, and the
+    commit it sits on) to fill the ADMISSION block the grader demands. Everything else
+    keeps the answer it had.
+    """
+    if args[:1] == ("diff",):
+        return LANE_SCOPE
+    if args[:1] == ("rev-parse",) and len(args) > 1 and args[1].endswith("^"):
+        return BASE
+    return "feat(lane): the lane's own subject"
 
 
 def produced_body() -> str:
@@ -53,7 +71,7 @@ def produced_body() -> str:
         return []
 
     backend.gh = fake_gh  # type: ignore[method-assign]
-    backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
+    backend.git = fake_lane_git  # type: ignore[method-assign]
 
     number = backend._ensure_pr("lane/demo", LANE_HEAD, REBASED, CANDIDATE)
     assert number == 4242, "the producer did not create the pull request"
@@ -62,29 +80,19 @@ def produced_body() -> str:
 
 
 def grade(body: str, head: str) -> tuple[int, str]:
-    """Grade a pull request with the real gate, through the ONE predicate.
-
-    The grader is `bin/idp-bdd-proof-gate`, and the estate grades pull requests in its
-    LIVE mode (bin/idp-ci's `bddproof` rung). Both modes run the same predicate, and
-    this file proves the round trip that matters: the producer's block is ACCEPTED by
-    the real grader on the head it names, and REFUSED on another head.
-
-    The JSON mode adds ONE thing in front of that predicate: the ADMISSION scope
-    declaration (I-8107), which no producer in this estate writes -- the lander writes a
-    proof, not a scope. That rule is graded where it lives, in
-    tests/test_admission_rules_known_good.py (a known-good scope admitted, a
-    cross-subsystem scope refused, a missing block refused).
-    """
-    return _gate().grade(body, head, "pull request under test")
-
-
-def _gate():
-    loader = importlib.machinery.SourceFileLoader("bdd_proof_gate", str(GATE))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """Grade a pull request with the real gate, in its real JSON mode."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("GITHUB_", "GH_"))}
+    done = subprocess.run(  # noqa: S603 -- constant argv
+        [sys.executable, str(GATE)],
+        env=env,
+        input=json.dumps(
+            {"title": "the lander's own pull request", "body": body, "headRefOid": head}
+        ),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return done.returncode, (done.stdout + done.stderr).strip()
 
 
 def test_the_producer_writes_a_proof_block() -> None:
@@ -141,7 +149,7 @@ def test_a_retry_rewrites_the_stale_proof_of_an_open_pull_request() -> None:
         raise AssertionError(f"unexpected call {method} {path}")
 
     backend.gh = fake_gh  # type: ignore[method-assign]
-    backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
+    backend.git = fake_lane_git  # type: ignore[method-assign]
 
     assert grade(stale, retried)[0] != 0, (
         "precondition: the stale proof must be refused"
@@ -168,7 +176,7 @@ def test_an_unchanged_proof_is_not_rewritten() -> None:
         return [{"number": 4242, "body": current}] if method == "GET" else {}
 
     backend.gh = fake_gh  # type: ignore[method-assign]
-    backend.git = lambda *a, **k: "feat(lane): the lane's own subject"  # type: ignore[method-assign]
+    backend.git = fake_lane_git  # type: ignore[method-assign]
     assert backend._ensure_pr("lane/demo", LANE_HEAD, REBASED, CANDIDATE) == 4242
     assert "PATCH" not in calls
 

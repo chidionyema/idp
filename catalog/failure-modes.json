@@ -1,0 +1,105 @@
+{
+  "$comment": "Named failure modes for the estate. Founder law (2026-11-27): nothing enters a PR with an unnamed or unresolved failure point. Each id is tagged FM:<id> on the line (or the line above) in the code that can stop, and every entry names what triggers it, what the system does about it automatically, and the falsifier that proves the cure. Enforced at pre-push by ~/.estate/gates/failure-mode-gate.",
+  "version": 1,
+  "modes": [
+    {
+      "id": "greenlane.subprocess-exit-nonzero-where-checked",
+      "trigger": "a git or gh subprocess the caller asked to check exits non-zero",
+      "resolution": {
+        "kind": "escalated",
+        "action": "raise RuntimeError naming the first three argv words, the exit code and the captured stderr, so the failing command is named directly instead of surfacing later as a wrong answer"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.remote-state-ref-unreadable",
+      "trigger": "git ls-remote for the batch state ref exits non-zero, so the shared state cannot be read",
+      "resolution": {
+        "kind": "escalated",
+        "action": "raise RuntimeError with the exit code and stderr, so a lander that cannot read the batch state refuses rather than planning a batch from a state it never saw"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.state-ref-absent-locally-or-empty",
+      "trigger": "the batch state ref exists on origin but not in the local object store, or resolves to an empty state.json",
+      "resolution": {
+        "kind": "requeued",
+        "action": "raise RuntimeError before any save, so the lease on the state sha is never taken against content this lander never saw and the next tick re-reads the ref; a state that exists with no readable body is named rather than treated as empty"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.lane-or-oid-invalid",
+      "trigger": "the head a batch carries is not a full 40-hex sha, or the lane name is neither lane/* nor the bot lane, while recovery is in progress",
+      "resolution": {
+        "kind": "requeued",
+        "action": "raise UnavailableLaneObject('invalid lane/OID; reobserve') so the batch drops the entry and re-forms it from what the remote actually holds, instead of fetching an object that cannot exist"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.lane-ref-moved-before-fetch",
+      "trigger": "during exact-object recovery the remote lane ref no longer equals the head the batch was formed on, before any fetch is attempted",
+      "resolution": {
+        "kind": "requeued",
+        "action": "raise UnavailableLaneObject naming expected and observed sha, so the batch drops the stale head and the next tick re-forms the lane from what origin now holds instead of fetching an object that has been deleted or rewritten"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.lane-object-moved-mid-recovery",
+      "trigger": "while recovering an exact lane object after a fetch failed, an ls-remote shows the lane ref no longer points at the head the batch was formed on",
+      "resolution": {
+        "kind": "requeued",
+        "action": "raise UnavailableLaneObject so the batch drops this lane and it is re-formed from the current remote head on the next tick, instead of rebasing onto a head that has moved"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.lane-object-unavailable-after-two-fetches",
+      "trigger": "an exact lane commit is still absent from the local object store after two bounded fetch attempts",
+      "resolution": {
+        "kind": "requeued",
+        "action": "raise UnavailableLaneObject; the lane is left on its own head (invariant I4) and re-observed on the next tick rather than rebased onto a guessed base"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.required-check-red-after-push",
+      "trigger": "a required check on the pushed sha answers red while the lander awaits green",
+      "resolution": {
+        "kind": "escalated",
+        "action": "raise RuntimeError carrying the sha and the failing checks, so the lane keeps its branch and the failure is named on the head commit's greenlane status instead of being merged over"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.required-check-slow-past-deadline",
+      "trigger": "checks on the pushed sha are still pending after LAND_WAIT_S (600s) from the push",
+      "resolution": {
+        "kind": "escalated",
+        "action": "raise RuntimeError naming the sha and the elapsed budget, so a slow lane is reported as slow rather than waited on without a bound"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.no-pull-request-for-landed-lane",
+      "trigger": "a lane resolved as green has no pull request and _pr_for finds none to adopt",
+      "resolution": {
+        "kind": "escalated",
+        "action": "raise RuntimeError before any merge is attempted, so main is never moved by a land whose pull request cannot be named"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    },
+    {
+      "id": "greenlane.merge-refused-not-405-or-budget-spent",
+      "trigger": "the merge API answers with an error that is not HTTP 405 (not-yet-mergeable), or every one of LAND_MERGE_TRIES attempts is spent",
+      "resolution": {
+        "kind": "retried",
+        "action": "HTTP 405 is retried LAND_MERGE_TRIES (4) times with LAND_RETRY_S (20s) backoff, re-reading the PR head and re-proving green for a new head between attempts; any other error, or the last attempt, raises RuntimeError and the lane goes back on its own head"
+      },
+      "falsifier": "tests/test_named_failure_modes.py"
+    }
+  ]
+}
