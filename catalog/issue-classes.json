@@ -621,6 +621,30 @@
       "status": "open"
     },
     {
+      "class": "empty-cli-stdout-misread-as-blind",
+      "first_seen": "2026-11-27",
+      "instances": [
+        "chidionyema/idp#7387: require_idle_command_queue json.loads('') on an idle OCI Run Command queue; runs 45465084919, 45670865333, 45870698471, 46042527394 refused BLIND before submitting"
+      ],
+      "gap": "The OCI CLI prints nothing on stdout when a --query result is empty (cli_util.py sends the notice to stderr); a parser that requires JSON turns the safe idle case into BLIND and refuses every recovery run.",
+      "compensating_action": "Exit-0 empty stdout is an empty list; any other non-JSON stays BLIND and carries the first 200 raw bytes.",
+      "falsifier": "tests/estate/test_run_command_empty_queue.py (the unguarded parse reverts to blind on '')",
+      "owner": "recovery",
+      "status": "open"
+    },
+    {
+      "class": "dag-gen-order-moves-queue-tip",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "Greenlane batch b6418 refused 'still waiting on fast-gate, bdd, guarded-paths, test, executes-gate, feature-request-plan, ci-success, portal-app 600s after the push' and b6417 was requeued, leaving idp#7387 pending ~80 min: the estate-dag-gen workflow pushed a reordered-DAG commit (0a65079f437e, +38/-38) onto queue/b6419 21 s after the engine's candidate 9e48276293f8, so the tip left the sha the required checks were posted on (idp#8679)"
+      ],
+      "gap": "bin/estate-dag-gen took the directory's own glob order, so the engine's regeneration of docs/diagrams/estate-dag.dot and the workflow's regeneration disagreed on node order; any lane touching platform/oci/** got a second bot commit after its candidate was pushed",
+      "compensating_action": "none: every such batch went red and was requeued until a batch happened to be order-identical",
+      "falsifier": "tests/estate/test_dag_gen_order_independent.py renders the graph under all 6 directory orders: 6 renderings on the unsorted generator, 1 on the sorted one; optimus estate.dag_gen_order_variants",
+      "owner": "claude-ins00037-takeover",
+      "status": "fixed-pending-landing"
+    },
+    {
       "class": "unbounded-verification-wait",
       "first_seen": "2026-11-27",
       "instances": [

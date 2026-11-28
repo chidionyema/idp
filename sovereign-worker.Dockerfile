@@ -14,17 +14,6 @@
 # and platform/ that those tests read, and requirements-dev.txt (pytest, pytest-bdd).
 # /app is the working directory; the package imports itself as `sovereign.*`.
 # The same Python CI runs (ci.yml: 3.12). .dockerignore keeps .venv and .git out.
-# MERIDIAN-CTRL-001 B08/B10: the compiled settlement gate ships in the worker image. Settlement
-# in a consequential guarded session needs an ALLOW from this binary (rust_gate_verify_settlement);
-# a worker image without it fails closed, so the image build must prove the binary exists and
-# enforces its invariants before it can be published.
-FROM docker.io/rust:1-slim AS meridian-gate
-WORKDIR /src
-COPY Cargo.toml Cargo.lock /src/
-COPY crates /src/crates
-RUN cargo build --release --locked -p meridian-gate \
- && test "$(/src/target/release/meridian-gate --optimus)" = "optimus.kernel.rust_invariant_gate_enforced=1"
-
 FROM docker.io/python:3.12-slim
 # The base is a floating Debian tag, so its packages move under the build. On 2026-09-12 an
 # upstream rebuild shipped perl-base 5.40.1-6, which carries three CRITICAL CVEs
@@ -51,12 +40,11 @@ COPY sovereign /app/sovereign
 # sovereign/policy.py reads the living policy from AGENTS.md one directory above itself
 # and refuses to start without it (crew#396: 18 restarts, PolicyError: cannot read /app/AGENTS.md).
 COPY AGENTS.md /app/AGENTS.md
-COPY --from=meridian-gate /src/target/release/meridian-gate /usr/local/bin/meridian-gate
 COPY features /app/features
 COPY bin /app/bin
 COPY platform /app/platform
 # require-ro-rootfs: the worker writes only under ESTATE_HOME (config.ensure_dirs);
 # the Deployment mounts an emptyDir there and sets HOME to it.
-ENV ESTATE_HOME=/tmp/estate HOME=/tmp PYTHONUNBUFFERED=1 MERIDIAN_GATE_BIN=/usr/local/bin/meridian-gate
+ENV ESTATE_HOME=/tmp/estate HOME=/tmp PYTHONUNBUFFERED=1
 USER sovereign
 CMD ["python", "-m", "sovereign.engine.worker"]

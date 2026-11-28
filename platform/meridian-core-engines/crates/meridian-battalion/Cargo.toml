@@ -1,0 +1,13 @@
+[package]
+name = "meridian-battalion"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ed25519-dalek.workspace = true
+meridian-ledger = { path = "../meridian-ledger" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+hex.workspace = true

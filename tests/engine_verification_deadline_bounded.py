@@ -40,7 +40,9 @@ def _install_stubs(trace: dict) -> None:
     wf.run = passthrough
     wf.patched = lambda marker: True
     wf.info = lambda: types.SimpleNamespace(run_id="run-measure")
-    wf.now = lambda: __import__("datetime").datetime(2026, 1, 1, tzinfo=__import__("datetime").timezone.utc)
+    wf.now = lambda: __import__("datetime").datetime(
+        2026, 1, 1, tzinfo=__import__("datetime").timezone.utc
+    )
 
     async def wait_condition(fn, timeout=None):
         if timeout is None:
@@ -87,7 +89,9 @@ async def _drive(cls) -> tuple[str, object]:
     session._receipt_retry_max_attempts = 1
     session._notify_activity_timeout_s = 30
     session._notify_retry_max_attempts = 1
-    out = await asyncio.wait_for(session._retain_instruction("worker-exit-unverified"), 10)
+    out = await asyncio.wait_for(
+        session._retain_instruction("worker-exit-unverified"), 10
+    )
     return out, session
 
 
