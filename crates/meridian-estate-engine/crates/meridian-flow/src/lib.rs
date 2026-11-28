@@ -27,6 +27,12 @@ pub enum FlowDecision {
         capability_id: String,
         formation: LegionFormation,
     },
+    /// A capability matches the intent but the registry only declares it. A declared route is
+    /// a claim, not a verified service, so FLOW reports it and does not run it.
+    DeclaredNotVerified {
+        capability_id: String,
+        target_paths: Vec<String>,
+    },
     ImplementNew,
 }
 
@@ -34,7 +40,9 @@ pub enum FlowDecision {
 pub enum FlowError {
     DofRefused(RefusalEnvelope),
     MusterFailed(MusterError),
-    KarmaNotSettled { reason: String },
+    KarmaNotSettled {
+        reason: String,
+    },
     /// Nothing was executed (no units), so there is no receipt to settle.
     NoWorkPerformed,
 }
@@ -42,7 +50,109 @@ pub enum FlowError {
 fn keyword_matches(lowered_intent: &str, keyword: &str) -> bool {
     let k = keyword.trim().to_ascii_lowercase();
     // An empty keyword is a substring of everything and would match every intent.
-    !k.is_empty() && lowered_intent.contains(&k)
+    if k.is_empty() {
+        return false;
+    }
+    // Whole-word match: "ci" must not match inside "specific".
+    let bytes = lowered_intent.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric();
+    lowered_intent.match_indices(&k).any(|(i, _)| {
+        let before = i == 0 || !word(bytes[i - 1]);
+        let end = i + k.len();
+        let after = end >= bytes.len() || !word(bytes[end]);
+        before && after
+    })
+}
+
+/// Phases 1-3 only: DISCOVER -> CONTRACT_MATCH -> RANK_AND_DECIDE. Reads, never mutates.
+/// A verified match wins over a declared one; a declared match is reported, never run.
+pub fn discover(registry: &[EstateCapability], intent_text: &str) -> FlowDecision {
+    let low = intent_text.to_ascii_lowercase();
+    let hits = |c: &&EstateCapability| c.keywords.iter().any(|k| keyword_matches(&low, k));
+    if let Some(c) = registry.iter().filter(hits).find(|c| c.readiness_verified) {
+        return FlowDecision::ReuseExisting {
+            capability_id: c.id.clone(),
+            formation: c.default_formation,
+        };
+    }
+    match registry.iter().find(hits) {
+        Some(c) => FlowDecision::DeclaredNotVerified {
+            capability_id: c.id.clone(),
+            target_paths: c.target_paths.clone(),
+        },
+        None => FlowDecision::ImplementNew,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum RegistryError {
+    Unparseable(String),
+    NoRecords,
+}
+
+#[derive(Debug)]
+pub struct LoadedRegistry {
+    pub capabilities: Vec<EstateCapability>,
+    /// Records that could not be turned into a capability, each named. A malformed record
+    /// costs that record, never the corpus, and never disappears silently.
+    pub skipped: Vec<String>,
+}
+
+/// Reads the estate capability registry (`catalog/estate-capability-registry.json`).
+/// Readiness is the registry's own `health.state == "verified"`; `declared` is not ready.
+pub fn registry_from_json(text: &str) -> Result<LoadedRegistry, RegistryError> {
+    let doc: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| RegistryError::Unparseable(e.to_string()))?;
+    let records = doc
+        .get("records")
+        .and_then(|r| r.as_array())
+        .filter(|r| !r.is_empty())
+        .ok_or(RegistryError::NoRecords)?;
+    let mut capabilities = Vec::new();
+    let mut skipped = Vec::new();
+    for (i, rec) in records.iter().enumerate() {
+        let Some(id) = rec
+            .get("id")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+        else {
+            skipped.push(format!("record[{i}]: no id"));
+            continue;
+        };
+        let name = id.rsplit('/').next().unwrap_or(id).to_ascii_lowercase();
+        // Short names are too ambiguous to route on.
+        if name.len() < 4 {
+            skipped.push(format!("{id}: name too short to route on"));
+            continue;
+        }
+        let mut keywords = vec![name.clone()];
+        for sep in ['-', '_'] {
+            let spaced = name.replace(sep, " ");
+            if !keywords.contains(&spaced) {
+                keywords.push(spaced);
+            }
+        }
+        let target_paths = rec
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|p| vec![p.to_string()])
+            .unwrap_or_default();
+        let verified = rec
+            .pointer("/health/state")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s == "verified");
+        capabilities.push(EstateCapability {
+            id: id.to_string(),
+            keywords,
+            target_paths,
+            default_formation: LegionFormation::Phalanx,
+            readiness_verified: verified,
+        });
+    }
+    Ok(LoadedRegistry {
+        capabilities,
+        skipped,
+    })
 }
 
 /// Leaves the reason a debt is unpaid on the ledger instead of only returning an error.
@@ -76,20 +186,24 @@ pub fn execute_flow_end_to_end(
     budget_minor_units: i64,
 ) -> Result<FlowDecision, FlowError> {
     // Phase 1-3: DISCOVER -> CONTRACT_MATCH -> RANK_AND_DECIDE (Reuse before invent)
-    let low = intent_text.to_ascii_lowercase();
-    let matched = registry
-        .iter()
-        .find(|c| c.readiness_verified && c.keywords.iter().any(|k| keyword_matches(&low, k)));
-
-    let (cap, decision) = match matched {
-        Some(c) => (
-            c,
-            FlowDecision::ReuseExisting {
-                capability_id: c.id.clone(),
-                formation: c.default_formation,
-            },
-        ),
-        None => return Ok(FlowDecision::ImplementNew),
+    let (cap, decision) = match discover(registry, intent_text) {
+        FlowDecision::ReuseExisting {
+            capability_id,
+            formation,
+        } => {
+            let c = registry
+                .iter()
+                .find(|c| c.id == capability_id)
+                .ok_or(FlowError::NoWorkPerformed)?;
+            (
+                c,
+                FlowDecision::ReuseExisting {
+                    capability_id,
+                    formation,
+                },
+            )
+        }
+        other => return Ok(other),
     };
 
     // No units means no receipts: refuse before a debt is issued for work that never ran.
@@ -139,21 +253,16 @@ pub fn execute_flow_end_to_end(
         .into_iter()
         .find(|s| s.formation == cap.default_formation)
         .unwrap_or_else(|| canonical_eight_formations()[0].clone());
-    let receipts = match execute_formation_fractal(
-        instruction_id,
-        &spec,
-        nodes,
-        budget_minor_units,
-        1,
-    )
-    .and_then(|r| verify_receipt_chain(&r).map(|()| r))
-    {
-        Ok(r) => r,
-        Err(e) => {
-            record_failure(karma, instruction_id, caller_urn, &format!("MUSTER:{e:?}"));
-            return Err(FlowError::MusterFailed(e));
-        }
-    };
+    let receipts =
+        match execute_formation_fractal(instruction_id, &spec, nodes, budget_minor_units, 1)
+            .and_then(|r| verify_receipt_chain(&r).map(|()| r))
+        {
+            Ok(r) => r,
+            Err(e) => {
+                record_failure(karma, instruction_id, caller_urn, &format!("MUSTER:{e:?}"));
+                return Err(FlowError::MusterFailed(e));
+            }
+        };
     // Hash integrity is not success: any red receipt means the work did not pass, whatever the formation.
     if let Some(bad) = receipts.iter().find(|r| !r.ok) {
         let e = MusterError::StepReceiptFailed {
@@ -164,7 +273,12 @@ pub fn execute_flow_end_to_end(
     }
     // An empty chain proves nothing (e.g. a sub-formation with no units).
     if receipts.is_empty() {
-        record_failure(karma, instruction_id, caller_urn, "MUSTER:EMPTY_RECEIPT_CHAIN");
+        record_failure(
+            karma,
+            instruction_id,
+            caller_urn,
+            "MUSTER:EMPTY_RECEIPT_CHAIN",
+        );
         return Err(FlowError::NoWorkPerformed);
     }
 

@@ -9,3 +9,4 @@ meridian-dof = { path = "../meridian-dof" }
 meridian-karma = { path = "../meridian-karma" }
 meridian-muster = { path = "../meridian-muster" }
 serde.workspace = true
+serde_json.workspace = true
