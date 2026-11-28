@@ -1,0 +1,698 @@
+#!/usr/bin/env python3
+"""Autonomous consumer for `My Drive / Meridian-Submit-Outbox` (Gemini -> Drive -> idp -> Greenlane).
+
+    platform/meridian-core-engines/scripts/gemini-outbox-pull --mode drive-api   --ingest-bin BIN --repo-root . --push-submit-branch
+    platform/meridian-core-engines/scripts/gemini-outbox-pull --mode local-mount --ingest-bin BIN --repo-root . --push-submit-branch
+
+One pipeline, two sources (a Drive folder over REST v3, or the Mac's Drive mount):
+  list PACKET_*.json -> skip packets that already have receipts/RECEIPT_<id>.json
+  -> download the packet and its bound artifacts into a temp dir
+  -> the compiled verifier `meridian-outbox-ingest` decides accept/reject (landed-byte sha256,
+     path rules, proxy-URL rule; the single copy of those rules)
+  -> zip members are checked (zip-slip, symlinks, size) BEFORE anything is staged
+  -> commit on a clean checkout of origin/main with `Claim:` / `Agent:` trailers
+  -> push `submit/gemini-<packet_id>` (submit-gate -> Greenlane takes it from there)
+  -> write receipts/RECEIPT_<packet_id>.json back to the source for Gemini to read.
+
+Credentials: `GOOGLE_OAUTH_ACCESS_TOKEN` (short-lived, from google-github-actions/auth via Workload
+Identity Federation) and `GDRIVE_OUTBOX_FOLDER_ID`. Names only; a value is never printed or stored.
+Standard library only.
+
+Exit: 0 = every packet ingested or already ingested; 1 = at least one REJECTED; 3 = transport,
+auth or configuration failure (nothing is receipted, so the next run retries).
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
+from typing import Any, Dict, List, Optional
+
+DRIVE_API = "https://www.googleapis.com/drive/v3"
+DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3"
+FOLDER_MIME = "application/vnd.google-apps.folder"
+EXPECTED_REPO = "chidionyema/idp"
+AGENT = "gemini-outbox"
+BOT_EMAIL = "gemini-outbox@users.noreply.github.com"
+MAX_ZIP_MEMBERS = 2000
+MAX_ZIP_UNCOMPRESSED = 256 * 1024 * 1024
+MAX_PACKET_BYTES = 256 * 1024
+PACKET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+DEFAULT_MAC_OUTBOX = (
+    pathlib.Path.home()
+    / "Library/CloudStorage/GoogleDrive-chidionyema@gmail.com/My Drive/Meridian-Submit-Outbox"
+)
+
+
+class TransportError(Exception):
+    """Drive, git or verifier failure that says nothing about the packet: retry next run."""
+
+
+# --------------------------------------------------------------------------- sources
+
+
+class Source:
+    """What the pipeline needs from a place packets live."""
+
+    def list_packets(self) -> List[str]:
+        raise NotImplementedError
+
+    def fetch_packet(self, name: str) -> bytes:
+        raise NotImplementedError
+
+    def fetch_artifact(self, filename: str, dest: pathlib.Path) -> None:
+        raise NotImplementedError
+
+    def receipt_ids(self) -> set:
+        raise NotImplementedError
+
+    def put_receipt(self, packet_id: str, receipt: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+
+class LocalMountSource(Source):
+    def __init__(self, outbox: pathlib.Path):
+        self.outbox = outbox
+        self.receipts = outbox / "receipts"
+
+    def list_packets(self) -> List[str]:
+        return sorted(p.name for p in self.outbox.glob("PACKET_*.json") if p.is_file())
+
+    def fetch_packet(self, name: str) -> bytes:
+        return (self.outbox / name).read_bytes()
+
+    def fetch_artifact(self, filename: str, dest: pathlib.Path) -> None:
+        src = self.outbox / filename
+        if not src.is_file():
+            raise FileNotFoundError(filename)
+        shutil.copyfile(src, dest)
+
+    def receipt_ids(self) -> set:
+        if not self.receipts.is_dir():
+            return set()
+        return {
+            p.name[len("RECEIPT_") : -len(".json")]
+            for p in self.receipts.glob("RECEIPT_*.json")
+        }
+
+    def put_receipt(self, packet_id: str, receipt: Dict[str, Any]) -> None:
+        self.receipts.mkdir(parents=True, exist_ok=True)
+        (self.receipts / f"RECEIPT_{packet_id}.json").write_text(
+            json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+        )
+
+
+def _q(value: str) -> str:
+    """Escape a value for a Drive `q` string literal."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+class DriveClient:
+    """Google Drive REST v3 over urllib. The token is held in memory and sent only in the
+    Authorization header; it is never logged."""
+
+    def __init__(
+        self,
+        token: str,
+        api: str = DRIVE_API,
+        upload: str = DRIVE_UPLOAD,
+        retries: int = 4,
+    ):
+        self._token = token
+        self.api = api.rstrip("/")
+        self.upload = upload.rstrip("/")
+        self.retries = retries
+
+    def _open(
+        self,
+        method: str,
+        url: str,
+        body: Optional[bytes] = None,
+        ctype: Optional[str] = None,
+    ) -> bytes:
+        last = "no attempt"
+        for attempt in range(self.retries):
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "Accept": "application/json",
+            }
+            if ctype:
+                headers["Content-Type"] = ctype
+            req = urllib.request.Request(url, data=body, method=method, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as exc:
+                last = f"HTTP {exc.code}"
+                if exc.code not in (429, 500, 502, 503, 504):
+                    raise TransportError(f"drive {method} failed: {last}") from None
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last = type(exc).__name__
+            time.sleep(
+                min(2**attempt, 8)
+                * (0 if os.environ.get("GEMINI_PULL_NO_SLEEP") else 1)
+            )
+        raise TransportError(
+            f"drive {method} failed after {self.retries} attempts: {last}"
+        )
+
+    def list_files(self, q: str) -> List[Dict[str, Any]]:
+        files: List[Dict[str, Any]] = []
+        token = ""
+        while True:
+            params = {
+                "q": q,
+                "fields": "nextPageToken,files(id,name,mimeType,size)",
+                "pageSize": "100",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            }
+            if token:
+                params["pageToken"] = token
+            url = f"{self.api}/files?{urllib.parse.urlencode(params)}"
+            page = json.loads(self._open("GET", url))
+            files.extend(page.get("files", []))
+            token = page.get("nextPageToken", "")
+            if not token:
+                return files
+
+    def download(self, file_id: str) -> bytes:
+        url = f"{self.api}/files/{urllib.parse.quote(file_id, safe='')}?alt=media&supportsAllDrives=true"
+        return self._open("GET", url)
+
+    def create_folder(self, parent: str, name: str) -> str:
+        body = json.dumps(
+            {"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}
+        ).encode()
+        out = json.loads(
+            self._open(
+                "POST",
+                f"{self.api}/files?supportsAllDrives=true",
+                body,
+                "application/json",
+            )
+        )
+        return str(out["id"])
+
+    def upload_json(self, parent: str, name: str, obj: Dict[str, Any]) -> None:
+        boundary = "meridian-receipt-boundary-7d1f"
+        meta = json.dumps(
+            {"name": name, "parents": [parent], "mimeType": "application/json"}
+        )
+        payload = json.dumps(obj, indent=2) + "\n"
+        body = (
+            f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n"
+            f"--{boundary}\r\nContent-Type: application/json\r\n\r\n{payload}\r\n--{boundary}--"
+        ).encode()
+        url = f"{self.upload}/files?uploadType=multipart&supportsAllDrives=true"
+        self._open("POST", url, body, f"multipart/related; boundary={boundary}")
+
+
+class DriveSource(Source):
+    def __init__(self, client: DriveClient, folder_id: str):
+        self.c = client
+        self.folder = folder_id
+        self._ids: Dict[str, str] = {}
+        self._receipts_folder: Optional[str] = None
+
+    def _receipts_folder_id(self, create: bool) -> Optional[str]:
+        if self._receipts_folder:
+            return self._receipts_folder
+        found = self.c.list_files(
+            f"'{_q(self.folder)}' in parents and trashed = false "
+            f"and mimeType = '{FOLDER_MIME}' and name = 'receipts'"
+        )
+        if len(found) > 1:
+            raise TransportError(
+                "ambiguous: more than one 'receipts' folder in the outbox"
+            )
+        if found:
+            self._receipts_folder = str(found[0]["id"])
+        elif create:
+            self._receipts_folder = self.c.create_folder(self.folder, "receipts")
+        return self._receipts_folder
+
+    def _one(self, name: str) -> str:
+        found = self.c.list_files(
+            f"'{_q(self.folder)}' in parents and trashed = false and name = '{_q(name)}'"
+        )
+        if len(found) != 1:
+            raise FileNotFoundError(
+                f"{name}: {len(found)} matches in outbox (need exactly 1)"
+            )
+        return str(found[0]["id"])
+
+    def list_packets(self) -> List[str]:
+        found = self.c.list_files(
+            f"'{_q(self.folder)}' in parents and trashed = false "
+            f"and mimeType != '{FOLDER_MIME}' and name contains 'PACKET_'"
+        )
+        names = sorted(
+            f["name"]
+            for f in found
+            if f["name"].startswith("PACKET_") and f["name"].endswith(".json")
+        )
+        dup = {n for n in names if names.count(n) > 1}
+        if dup:
+            raise TransportError(
+                f"ambiguous: duplicate packet names in outbox: {sorted(dup)}"
+            )
+        return names
+
+    def fetch_packet(self, name: str) -> bytes:
+        data = self.c.download(self._one(name))
+        return data
+
+    def fetch_artifact(self, filename: str, dest: pathlib.Path) -> None:
+        dest.write_bytes(self.c.download(self._one(filename)))
+
+    def receipt_ids(self) -> set:
+        rid = self._receipts_folder_id(create=False)
+        if not rid:
+            return set()
+        found = self.c.list_files(
+            f"'{_q(rid)}' in parents and trashed = false and name contains 'RECEIPT_'"
+        )
+        return {
+            f["name"][len("RECEIPT_") : -len(".json")]
+            for f in found
+            if f["name"].startswith("RECEIPT_") and f["name"].endswith(".json")
+        }
+
+    def put_receipt(self, packet_id: str, receipt: Dict[str, Any]) -> None:
+        rid = self._receipts_folder_id(create=True)
+        if not rid:
+            raise TransportError("could not resolve or create the receipts folder")
+        self.c.upload_json(rid, f"RECEIPT_{packet_id}.json", receipt)
+
+
+# --------------------------------------------------------------------------- pipeline
+
+
+def _now() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def is_safe_member(info: zipfile.ZipInfo) -> bool:
+    name = info.filename
+    p = pathlib.PurePosixPath(name)
+    if not name or p.is_absolute() or ".." in p.parts or "\\" in name or "\0" in name:
+        return False
+    if any(part == ".git" for part in p.parts):
+        return False
+    mode = (info.external_attr >> 16) & 0o170000
+    return mode not in (
+        0o120000,
+        0o060000,
+        0o020000,
+        0o010000,
+        0o140000,
+    )  # symlink/dev/fifo/sock
+
+
+def check_zip(path: pathlib.Path) -> Optional[str]:
+    """Return a rejection reason, or None. Nothing is extracted here."""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            infos = zf.infolist()
+            if len(infos) > MAX_ZIP_MEMBERS:
+                return f"ZIP_TOO_MANY_MEMBERS:{path.name}:{len(infos)}"
+            if sum(i.file_size for i in infos) > MAX_ZIP_UNCOMPRESSED:
+                return f"ZIP_TOO_LARGE_UNCOMPRESSED:{path.name}"
+            for info in infos:
+                if not is_safe_member(info):
+                    return f"ZIP_SLIP_OR_SPECIAL_MEMBER:{path.name}:{info.filename}"
+    except zipfile.BadZipFile:
+        return f"BAD_ZIP:{path.name}"
+    return None
+
+
+def run_verifier(
+    ingest_bin: pathlib.Path,
+    outbox: pathlib.Path,
+    packet: pathlib.Path,
+    stage: pathlib.Path,
+    receipts: pathlib.Path,
+) -> Dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            [
+                str(ingest_bin),
+                str(outbox),
+                str(packet),
+                str(stage),
+                str(receipts),
+                EXPECTED_REPO,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise TransportError(f"verifier did not run: {type(exc).__name__}") from None
+    try:
+        out = json.loads(proc.stdout)
+        verdict = out["verdict"]
+    except (ValueError, KeyError):
+        raise TransportError(
+            f"verifier output unreadable (exit {proc.returncode})"
+        ) from None
+    if proc.returncode == 0 and verdict == "REJECTED":
+        raise TransportError("verifier exit status and verdict disagree")
+    if proc.returncode == 1 and verdict != "REJECTED":
+        raise TransportError("verifier exit status and verdict disagree")
+    if proc.returncode not in (0, 1):
+        raise TransportError(f"verifier exit {proc.returncode}")
+    return dict(out)
+
+
+def git(
+    repo: pathlib.Path, *args: str, check: bool = True
+) -> subprocess.CompletedProcess:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=120
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise TransportError(
+            f"git {args[0]} did not run: {type(exc).__name__}"
+        ) from None
+    if check and proc.returncode != 0:
+        raise TransportError(f"git {args[0]} failed: {proc.stderr.strip()[-300:]}")
+    return proc
+
+
+def remote_branch_sha(repo: pathlib.Path, branch: str) -> Optional[str]:
+    out = git(
+        repo, "ls-remote", "--heads", "origin", f"refs/heads/{branch}"
+    ).stdout.strip()
+    return out.split()[0] if out else None
+
+
+def commit_and_push(
+    repo: pathlib.Path, receipt: Dict[str, Any], stage: pathlib.Path, push: bool
+) -> Optional[str]:
+    """Create the submit commit on a throwaway worktree off origin/main. Returns the commit sha
+    (pushed when `push`). Never touches the caller's checkout or index."""
+    branch = receipt["submit_branch"]
+    pid = receipt["packet_id"]
+    existing = remote_branch_sha(repo, branch) or remote_branch_sha(
+        repo, "lane/" + branch[len("submit/") :]
+    )
+    if existing:
+        return existing  # a previous run pushed it and failed before the receipt: do not push twice
+    git(repo, "fetch", "--quiet", "origin", "main")
+    wt = pathlib.Path(tempfile.mkdtemp(prefix="gemini-submit-"))
+    try:
+        git(repo, "worktree", "add", "--quiet", "--detach", str(wt), "origin/main")
+        for art in receipt["verified_artifacts"]:
+            sub = art["target_subdir"]
+            shutil.copytree(stage / sub, wt / sub, dirs_exist_ok=True)
+        git(wt, "add", "--all", "--", "intake")
+        if git(wt, "diff", "--cached", "--quiet", check=False).returncode == 0:
+            raise TransportError("packet staged no changes against origin/main")
+        msg = (
+            f"feat(intake): Gemini packet {pid}\n\n"
+            f"Landed-byte sha256 verified by meridian-outbox-ingest "
+            f"({len(receipt['verified_artifacts'])} artifact(s)).\n\n"
+            f"Claim: {receipt['claim_issue']}\nAgent: {AGENT}\n"
+        )
+        git(
+            wt,
+            "-c",
+            f"user.name={AGENT}",
+            "-c",
+            f"user.email={BOT_EMAIL}",
+            "commit",
+            "--quiet",
+            "-m",
+            msg,
+        )
+        sha = git(wt, "rev-parse", "HEAD").stdout.strip()
+        if push:
+            git(wt, "push", "--quiet", "origin", f"HEAD:refs/heads/{branch}")
+        return sha
+    finally:
+        git(repo, "worktree", "remove", "--force", str(wt), check=False)
+        shutil.rmtree(wt, ignore_errors=True)
+
+
+PENDING_WINDOW_SECONDS = 30 * 60
+
+
+def packet_is_fresh(pkt: Dict[str, Any], now: Optional[dt.datetime] = None) -> bool:
+    """True when `created_utc` parses and is within the last 30 minutes (not future-dated beyond
+    5 minutes of skew), so a missing artifact is plausibly still uploading."""
+    try:
+        created = dt.datetime.strptime(
+            str(pkt["created_utc"]), "%Y-%m-%dT%H:%M:%SZ"
+        ).replace(tzinfo=dt.timezone.utc)
+    except (KeyError, ValueError):
+        return False
+    age = ((now or dt.datetime.now(dt.timezone.utc)) - created).total_seconds()
+    return -300 <= age <= PENDING_WINDOW_SECONDS
+
+
+def process_packet(
+    source: Source,
+    name: str,
+    done: set,
+    ingest_bin: pathlib.Path,
+    repo: pathlib.Path,
+    push: bool,
+) -> Dict[str, Any]:
+    raw = source.fetch_packet(name)
+    if len(raw) > MAX_PACKET_BYTES:
+        return {"packet": name, "verdict": "REJECTED", "reason": "PACKET_TOO_LARGE"}
+    try:
+        pkt = json.loads(raw)
+        pid = str(pkt["packet_id"])
+        artifacts = pkt["artifacts"]
+        if not isinstance(artifacts, list):
+            raise ValueError("artifacts")
+    except (ValueError, KeyError, TypeError):
+        return {"packet": name, "verdict": "REJECTED", "reason": "INVALID_PACKET_JSON"}
+    if not PACKET_ID_RE.match(pid):
+        return {"packet": name, "verdict": "REJECTED", "reason": "INVALID_PACKET_ID"}
+    if pid in done:
+        return {
+            "packet": name,
+            "packet_id": pid,
+            "verdict": "ALREADY_INGESTED",
+            "reason": "RECEIPT_EXISTS",
+        }
+
+    with tempfile.TemporaryDirectory(prefix="gemini-pull-") as tmp:
+        t = pathlib.Path(tmp)
+        box, stage, rcpt = t / "outbox", t / "stage", t / "receipts"
+        box.mkdir()
+        (box / name).write_bytes(raw)
+        for art in artifacts:
+            fn = art.get("filename") if isinstance(art, dict) else None
+            if (
+                not isinstance(fn, str)
+                or not fn
+                or "/" in fn
+                or "\\" in fn
+                or fn in (".", "..")
+            ):
+                break  # the verifier rejects the packet with the precise reason
+            if (box / fn).exists():
+                break  # duplicate filename: the verifier rejects it
+            try:
+                source.fetch_artifact(fn, box / fn)
+            except FileNotFoundError as exc:
+                if packet_is_fresh(pkt):
+                    # Drive uploads are not atomic across files: the packet can land before its
+                    # artifact. Retry next run; only a packet that stays incomplete is rejected.
+                    return {
+                        "packet_id": pid,
+                        "verdict": "PENDING_ARTIFACTS",
+                        "reason": f"MISSING_ARTIFACT:{exc}",
+                    }
+                receipt = {
+                    "schema": "meridian.gemini-receipt.v1",
+                    "packet_id": pid,
+                    "verdict": "REJECTED",
+                    "reason": f"MISSING_ARTIFACT:{exc}",
+                    "submit_branch": f"submit/gemini-{pid}",
+                    "processed_utc": _now(),
+                    "verified_artifacts": [],
+                }
+                return finish(source, receipt, push, wrote=True)
+        receipt = run_verifier(ingest_bin, box, box / name, stage, rcpt)
+        receipt["processed_utc"] = _now()
+        if receipt["verdict"] == "REJECTED":
+            return finish(source, receipt, push, wrote=True)
+
+        for art in receipt["verified_artifacts"]:
+            if art["filename"].lower().endswith(".zip"):
+                zpath = stage / art["target_subdir"] / art["filename"]
+                reason = check_zip(zpath)
+                if reason:
+                    receipt.update(
+                        verdict="REJECTED", reason=reason, verified_artifacts=[]
+                    )
+                    return finish(source, receipt, push, wrote=True)
+        for art in receipt["verified_artifacts"]:
+            if art["filename"].lower().endswith(".zip"):
+                zpath = stage / art["target_subdir"] / art["filename"]
+                with zipfile.ZipFile(zpath) as zf:
+                    zf.extractall(zpath.parent)
+        receipt["unpacked_file_count"] = sum(1 for p in stage.rglob("*") if p.is_file())
+
+        if not push:
+            receipt.update(
+                verdict="VERIFIED_NOT_SUBMITTED",
+                reason="--push-submit-branch not given",
+            )
+            return finish(source, receipt, push, wrote=False)
+        receipt["commit_sha"] = commit_and_push(repo, receipt, stage, push=True)
+        return finish(source, receipt, push, wrote=True)
+
+
+def finish(
+    source: Source, receipt: Dict[str, Any], push: bool, wrote: bool
+) -> Dict[str, Any]:
+    receipt.setdefault("schema", "meridian.gemini-receipt.v1")
+    if wrote:
+        source.put_receipt(receipt["packet_id"], receipt)
+    return {
+        "packet_id": receipt["packet_id"],
+        "verdict": receipt["verdict"],
+        "reason": receipt.get("reason", ""),
+        "submit_branch": receipt.get("submit_branch", ""),
+        "commit_sha": receipt.get("commit_sha", ""),
+    }
+
+
+def run(
+    source: Source,
+    ingest_bin: pathlib.Path,
+    repo: pathlib.Path,
+    push: bool,
+    only: str = "",
+) -> int:
+    try:
+        done = source.receipt_ids()
+        names = source.list_packets()
+    except (TransportError, OSError) as exc:
+        # Listing the outbox failed (bad token, Drive down): nothing was read, so nothing is
+        # receipted or rejected. Exit 3 so the workflow goes red and the cron retries.
+        print(
+            json.dumps(
+                {
+                    "processed": 0,
+                    "results": [
+                        {
+                            "verdict": "TRANSPORT_ERROR",
+                            "reason": f"{type(exc).__name__}: {exc}",
+                        }
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 3
+    results: List[Dict[str, Any]] = []
+    status = 0
+    for name in names:
+        if only and only not in (name, name[len("PACKET_") : -len(".json")]):
+            continue
+        try:
+            res = process_packet(source, name, done, ingest_bin, repo, push)
+        except TransportError as exc:
+            res = {"packet": name, "verdict": "TRANSPORT_ERROR", "reason": str(exc)}
+            status = max(status, 3)
+        except OSError as exc:
+            res = {
+                "packet": name,
+                "verdict": "TRANSPORT_ERROR",
+                "reason": f"{type(exc).__name__}",
+            }
+            status = max(status, 3)
+        results.append(res)
+        if res["verdict"] == "REJECTED" and status == 0:
+            status = 1
+    print(json.dumps({"processed": len(results), "results": results}, indent=2))
+    return status
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = argparse.ArgumentParser(description="Autonomous Gemini outbox puller")
+    ap.add_argument("--mode", choices=("local-mount", "drive-api"), default="drive-api")
+    ap.add_argument(
+        "--outbox-dir", default=str(DEFAULT_MAC_OUTBOX), help="local-mount only"
+    )
+    ap.add_argument(
+        "--ingest-bin", default=os.environ.get("MERIDIAN_OUTBOX_INGEST", "")
+    )
+    ap.add_argument("--repo-root", default=".")
+    ap.add_argument(
+        "--packet",
+        default=os.environ.get("PACKET_FILTER", ""),
+        help="packet_id or file name",
+    )
+    ap.add_argument("--push-submit-branch", action="store_true")
+    args = ap.parse_args(argv)
+
+    ingest_bin = pathlib.Path(args.ingest_bin)
+    if not args.ingest_bin or not ingest_bin.is_file():
+        print(
+            "CONFIG: --ingest-bin (or MERIDIAN_OUTBOX_INGEST) must name the built meridian-outbox-ingest binary"
+        )
+        return 3
+
+    if args.mode == "drive-api":
+        token = os.environ.get("GOOGLE_OAUTH_ACCESS_TOKEN", "")
+        folder = os.environ.get("GDRIVE_OUTBOX_FOLDER_ID", "")
+        if not token or not folder:
+            print(
+                "CONFIG: need env GOOGLE_OAUTH_ACCESS_TOKEN and GDRIVE_OUTBOX_FOLDER_ID (names only)"
+            )
+            return 3
+        source: Source = DriveSource(DriveClient(token), folder)
+    else:
+        outbox = pathlib.Path(args.outbox_dir)
+        if not outbox.is_dir():
+            print(f"CONFIG: outbox not mounted: {outbox}")
+            return 3
+        source = LocalMountSource(outbox)
+
+    try:
+        return run(
+            source,
+            ingest_bin,
+            pathlib.Path(args.repo_root).resolve(),
+            args.push_submit_branch,
+            args.packet,
+        )
+    except TransportError as exc:
+        print(
+            json.dumps(
+                {
+                    "processed": 0,
+                    "results": [{"verdict": "TRANSPORT_ERROR", "reason": str(exc)}],
+                },
+                indent=2,
+            )
+        )
+        return 3
+
+
+if __name__ == "__main__":
+    sys.exit(main())
