@@ -4,6 +4,7 @@ members = [
     "crates/meridian-dof",
     "crates/meridian-muster",
     "crates/meridian-flow",
+    "crates/meridian-army",
 ]
 resolver = "2"
 
