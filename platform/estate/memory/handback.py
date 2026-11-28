@@ -38,31 +38,10 @@ DIRECTIVE = (
     "exit status, and the line it printed."
 )
 
-
 # Phrases that return work to the reader. Narrow on purpose: each is hand-back phrasing, not a word
 # an honest report would contain.
-class _UnreferencedStillOpen:
-    """`still open` on a line that names no tracked object (idp#8622).
-
-    AGENTS.md section 2 orders "open the PR, then STOP", so "PR #8618 is still open" is the report
-    the law requires: the work is held by an issue, a PR or a Greenlane lane, not handed to the
-    reader. Only the line is judged, so a reference elsewhere in the turn excuses nothing, and the
-    "Still open:" list heading below stays a hand-back whatever it names.
-    """
-
-    _rx = re.compile(r"\bstill[ -]open\b", re.I)
-    _ref = re.compile(r"#\d{3,}\b|/(?:pull|issues)/\d+\b|\blane/[\w./-]+")
-
-    def search(self, prose: str):
-        for line in prose.splitlines():
-            m = self._rx.search(line)
-            if m and not self._ref.search(line):
-                return m
-        return None
-
-
 HANDBACK = (
-    ("still open", _UnreferencedStillOpen()),
+    ("still open", re.compile(r"\bstill[ -]open\b", re.I)),
     (
         "deferred-work heading",
         re.compile(
@@ -136,11 +115,33 @@ def found(text: str) -> list[str]:
     return out
 
 
+_FENCE = re.compile(r"^\s*(```|~~~).*?^\s*\1.*?$", re.S | re.M)
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+
+
+def prose_only(text: str) -> str:
+    """Remove the shapes where a phrase is a LABEL, not a hand-back.
+
+    Friction #5, measured 2026-11-27: the stop hook flagged the literal table cell
+    "Still open" in a status report -- a row heading, not an offer to continue. The
+    founder's rule is about what the turn DOES, so a phrase inside a table row, a
+    code fence or an inline code span is not evidence of handing work back.
+
+    Deliberately narrow: headings and prose are untouched, so a real
+    "Still open: ..." or "want me to ...?" still blocks.
+    """
+    out = _FENCE.sub("", text)
+    out = _TABLE_ROW.sub("", out)
+    out = _INLINE_CODE.sub("", out)
+    return out
+
+
 def judge(text: str, stop_hook_active: bool = False) -> dict:
     """{"block": bool, "reason": str, "found": [...]}. Allows on anything it cannot judge."""
     if stop_hook_active or not isinstance(text, str) or not text.strip():
         return {"block": False, "reason": "", "found": []}
-    hits = found(text)
+    hits = found(prose_only(text))
     if not hits or evidenced_blocker(text):
         return {"block": False, "reason": "", "found": hits}
     return {
