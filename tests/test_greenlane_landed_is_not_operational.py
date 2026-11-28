@@ -293,3 +293,40 @@ def test_paginated_contract_api_error_fails_closed_without_crashing(monkeypatch)
 
     monkeypatch.setattr(G._claim_gate_module(), "gh_json", refused)
     assert backend._contract("o/r", "7") is None
+
+
+def _receipt_backend(monkeypatch, claim_of):
+    backend = G.GitHubBackend.__new__(G.GitHubBackend)
+    backend.repo = "o/r"
+    posted = []
+    monkeypatch.setattr(backend, "_claim_of", lambda head: claim_of, raising=False)
+    monkeypatch.setattr(
+        backend,
+        "gh_issue_comment",
+        lambda repo, number, body: posted.append((repo, number)),
+        raising=False,
+    )
+    return backend, posted
+
+
+def test_the_operational_receipt_goes_to_the_claim_issue_of_the_landed_head(
+    monkeypatch,
+):
+    backend, posted = _receipt_backend(monkeypatch, ("o/r", "7"))
+    rec = {"head": "abc", "batch": "b1", "tip": "def"}
+    assert backend.report_operational("lane/x", rec, "pass", "GET 200") is True
+    assert posted == [("o/r", "7")]
+
+
+def test_a_recorded_claim_is_used_as_it_is(monkeypatch):
+    backend, posted = _receipt_backend(monkeypatch, ("", ""))
+    rec = {"claim": "o/r#9", "head": "abc", "batch": "b1", "tip": "def"}
+    assert backend.report_operational("lane/x", rec, "pass", "GET 200") is True
+    assert posted == [("o/r", "9")]
+
+
+def test_a_head_with_no_claim_spends_no_api_call_on_a_malformed_address(monkeypatch):
+    backend, posted = _receipt_backend(monkeypatch, ("", ""))
+    rec = {"head": "abc", "batch": "b1", "tip": "def"}
+    assert backend.report_operational("lane/x", rec, "pass", "GET 200") is False
+    assert posted == []
