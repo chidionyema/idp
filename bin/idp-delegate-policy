@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""bin/idp-delegate-policy -- may this actor's change to these paths carry delegate authority?
+
+A pure judge for the keyless delegate signer (idp#8032 step 2, founder rulings on #8725). It reads
+a policy and a list of changed paths and prints ALLOW, DENY or BLIND. It signs nothing and holds no
+key. The signer workflow (.github/workflows/delegate-signer.yml) runs it; a successful run of that
+workflow on the exact head sha is the receipt.
+
+Rules, in the order they are judged. Every one fails closed:
+  policy unreadable or malformed ........ DENY
+  paths unresolvable (no path list) ..... DENY
+  paths list empty ...................... BLIND  (a diff we cannot see is not a diff we may sign)
+  a path that is absolute, has `..`, a backslash or a NUL ... DENY
+  no delegate lists this actor .......... DENY
+  delegate revoked ...................... DENY
+  expiry missing, unparsable or past .... DENY
+  more commits than max_commits ......... DENY
+  a path under the founder-only floor ... DENY  (floor is hard-coded here AND in the policy; the
+                                                 union applies, so editing the policy cannot widen it)
+  a path under the delegate's deny ...... DENY  (denylist beats allowlist)
+  a path matching no allow glob ......... DENY
+  otherwise ............................. ALLOW
+
+Exit 0 ALLOW, 1 DENY, 2 BLIND. Usage:
+  idp-delegate-policy --policy P --actor LOGIN --commits N --paths-file F [--now ISO] [--receipt OUT]
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import pathlib
+import posixpath
+import re
+import sys
+
+# The founder-only floor (founder ruling on #8725, 2026-11-28). A prefix match, so `bin/idp-auth`
+# also covers bin/idp-auth-verify. Kept in code so a policy edit cannot remove it.
+FLOOR = (
+    ".githooks/",
+    "bin/idp-ci-guarded-paths",
+    "bin/idp-guarded-paths",
+    "bin/idp-auth",
+    "docs/keys/",
+    ".github/workflows/",
+)
+
+
+def normalise(path: str):
+    """The path in one canonical shape, or None when it is not a safe repository-relative path."""
+    if (
+        not isinstance(path, str)
+        or not path
+        or "\x00" in path
+        or "\\" in path
+        or path.startswith("/")
+    ):
+        return None
+    clean = posixpath.normpath(path)
+    if (
+        clean in (".", "")
+        or clean == ".."
+        or clean.startswith("../")
+        or "/../" in f"/{clean}/"
+    ):
+        return None
+    return clean.casefold()
+
+
+def glob_match(pattern: str, path: str) -> bool:
+    """`*` stays inside a path segment, `**` crosses them, a trailing `/` means the whole directory."""
+    pat = pattern.casefold()
+    if pat.endswith("/"):
+        pat += "**"
+    out = []
+    i = 0
+    while i < len(pat):
+        if pat.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pat[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pat[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pat[i]))
+            i += 1
+    return re.fullmatch("".join(out), path) is not None
+
+
+def under_floor(path: str, floor) -> str:
+    for entry in floor:
+        if path.startswith(entry.casefold()):
+            return entry
+    return ""
+
+
+def parse_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+            dt.timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def evaluate(policy, actor, commits, paths, now, floor=FLOOR):
+    """Return (verdict, reasons). `paths` is None when the diff could not be resolved."""
+    if (
+        not isinstance(policy, dict)
+        or policy.get("version") != 1
+        or not isinstance(policy.get("delegates"), list)
+    ):
+        return "DENY", ["policy is missing, unparsable or not version 1"]
+    if paths is None:
+        return "DENY", ["the changed paths could not be resolved"]
+    if not paths:
+        return "BLIND", ["the diff lists no paths, so there is nothing to judge"]
+    norm = []
+    for p in paths:
+        n = normalise(p)
+        if n is None:
+            return "DENY", [f"unsafe path {p!r}"]
+        norm.append(n)
+    delegate = next(
+        (
+            d
+            for d in policy["delegates"]
+            if isinstance(d, dict) and actor in (d.get("actors") or [])
+        ),
+        None,
+    )
+    if delegate is None:
+        return "DENY", [f"no delegate lists actor {actor!r}"]
+    if delegate.get("revoked") is not False:
+        return "DENY", [
+            f"delegate {delegate.get('id')!r} is revoked or has no revoked=false"
+        ]
+    expires = parse_time(delegate.get("expires"))
+    if expires is None or expires <= now:
+        return "DENY", [f"delegate {delegate.get('id')!r} has no valid future expiry"]
+    cap = delegate.get("max_commits")
+    if (
+        not isinstance(cap, int)
+        or isinstance(cap, bool)
+        or cap < 1
+        or not isinstance(commits, int)
+        or commits < 1
+        or commits > cap
+    ):
+        return "DENY", [f"{commits!r} commits is outside 1..{cap!r}"]
+    full_floor = tuple(floor) + tuple(
+        e for e in (policy.get("floor_deny") or []) if isinstance(e, str)
+    )
+    denies = [e for e in (delegate.get("deny") or []) if isinstance(e, str)]
+    allows = [e for e in (delegate.get("allow") or []) if isinstance(e, str)]
+    reasons = []
+    for orig, n in [(paths[i], norm[i]) for i in range(len(norm))]:
+        hit = under_floor(n, full_floor)
+        if hit:
+            reasons.append(f"{orig}: founder-only floor {hit}")
+        elif any(glob_match(d, n) for d in denies):
+            reasons.append(f"{orig}: delegate deny")
+        elif not any(glob_match(a, n) for a in allows):
+            reasons.append(f"{orig}: matches no allow")
+    return (
+        ("DENY", reasons)
+        if reasons
+        else ("ALLOW", [f"{len(paths)} path(s) inside {delegate['id']!r}"])
+    )
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--policy", required=True)
+    ap.add_argument("--actor", required=True)
+    ap.add_argument("--commits", type=int, required=True)
+    ap.add_argument("--paths-file", required=True)
+    ap.add_argument("--now", default="")
+    ap.add_argument("--receipt", default="")
+    a = ap.parse_args(argv)
+    now = parse_time(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
+    if now is None:
+        print("DENY: --now is not an ISO time", file=sys.stderr)
+        return 1
+    try:
+        raw = pathlib.Path(a.policy).read_bytes()
+        policy = json.loads(raw)
+    except (OSError, ValueError):
+        raw, policy = b"", None
+    try:
+        paths = [
+            p for p in pathlib.Path(a.paths_file).read_text().split("\n") if p != ""
+        ]
+    except OSError:
+        paths = None
+    verdict, reasons = evaluate(policy, a.actor, a.commits, paths, now)
+    print(f"{verdict}: " + "; ".join(reasons[:20]))
+    if a.receipt:
+        receipt = {
+            "verdict": verdict,
+            "actor": a.actor,
+            "commits": a.commits,
+            "paths": len(paths or []),
+            "policy_sha256": hashlib.sha256(raw).hexdigest(),
+            "reasons": reasons[:20],
+        }
+        pathlib.Path(a.receipt).write_text(json.dumps(receipt, indent=2) + "\n")
+    return {"ALLOW": 0, "DENY": 1, "BLIND": 2}[verdict]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
