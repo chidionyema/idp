@@ -20,6 +20,19 @@ still conflict, because that is a real disagreement a person or agent must settl
 Anything it cannot judge is a conflict, never a guess: an unknown path, unparseable JSON, a
 collection that is not a list of keyed objects, or a duplicate key. Exit 1 leaves %A as ours,
 which is exactly git's own conflict outcome.
+
+THE DUPLICATE THAT WAS INHERITED. Measured 2026-11-28: main's catalog/optimus-metrics.json
+carried `admission.code_plus_test_refusals` TWICE -- two byte-identical copies -- and the base of
+every merge was therefore ambiguous, so EVERY lane that registers a metric was refused at
+claim-gate's merge-check with "does not merge onto origin/main: catalog/optimus-metrics.json". The
+fleet was blocked by a red line in a file nobody was editing any more, and no lane could repair it
+because the repair is itself a lane that touches the same file.
+
+So a duplication is judged by CONTENT, not by count: copies that are byte-identical carry no
+disagreement, so they collapse to one value and the merge decides it, and the merged catalog comes
+out REPAIRED (one copy). Copies that DIFFER are a real disagreement and stay a conflict, and a
+duplication that a side INTRODUCED (the base did not carry it) is still that side's defect and is
+still refused.
 """
 
 from __future__ import annotations
@@ -40,17 +53,26 @@ class Conflict(Exception):
     """A difference this driver will not decide."""
 
 
-def _index(doc: object, coll: str, key: str, side: str) -> dict:
+def _index(doc: object, coll: str, key: str, side: str) -> tuple[dict, dict]:
+    """The entries by identity, and the keys that carry more than one copy.
+
+    Two copies that are byte-identical collapse to one value (the duplication is redundancy, not
+    disagreement). Two copies that differ are a conflict on that side.
+    """
     if not isinstance(doc, dict) or not isinstance(doc.get(coll), list):
         raise Conflict(f"{side}: no `{coll}` list")
     out: dict = {}
+    copies: dict = {}
     for entry in doc[coll]:
         if not isinstance(entry, dict) or not isinstance(entry.get(key), str):
             raise Conflict(f"{side}: a `{coll}` entry has no string `{key}`")
         if entry[key] in out:
-            raise Conflict(f"{side}: `{entry[key]}` appears twice")
+            if entry != out[entry[key]]:
+                raise Conflict(f"{side}: `{entry[key]}` appears twice with different content")
+            copies[entry[key]] = copies.get(entry[key], 0) + 1
+            continue
         out[entry[key]] = entry
-    return out
+    return out, copies
 
 
 def _pick(name: str, base: object, ours: object, theirs: object) -> object:
@@ -65,9 +87,17 @@ def _pick(name: str, base: object, ours: object, theirs: object) -> object:
 
 def merge(base: object, ours: object, theirs: object, coll: str, key: str) -> dict:
     """The merged document, or Conflict. Order: ours, then theirs' new entries in their order."""
-    o = _index(base, coll, key, "base")
-    a = _index(ours, coll, key, "ours")
-    b = _index(theirs, coll, key, "theirs")
+    o, o_copies = _index(base, coll, key, "base")
+    a, a_copies = _index(ours, coll, key, "ours")
+    b, b_copies = _index(theirs, coll, key, "theirs")
+    # A duplication the BASE already carried is inherited history and must not block the fleet;
+    # a duplication a side INTRODUCED is that side's defect and is still refused.
+    for side, dup in (("ours", a_copies), ("theirs", b_copies)):
+        for ident in dup:
+            if not o_copies.get(ident):
+                raise Conflict(
+                    f"{side}: `{ident}` appears twice and the base did not carry it twice"
+                )
     merged: dict = {}
     for field in list(ours) + [f for f in theirs if f not in ours]:
         if field == coll:

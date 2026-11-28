@@ -139,6 +139,64 @@ def test_what_it_cannot_judge_is_a_conflict(tmp_path):
     )
 
 
+# -- the duplication that was inherited (measured 2026-11-28) -------------------------------
+
+
+def test_an_inherited_duplicate_merges_and_the_merge_repairs_it(tmp_path):
+    """A duplication the BASE carried must not block every lane that registers a metric.
+
+    Measured 2026-11-28: main's catalog/optimus-metrics.json carried
+    `admission.code_plus_test_refusals` twice -- two byte-identical copies -- so the base of
+    every merge was ambiguous and claim-gate's merge-check refused EVERY lane that touches the
+    catalog with "does not merge onto origin/main: catalog/optimus-metrics.json". Identical
+    copies carry no disagreement, so they collapse to one value and the merged catalog comes out
+    repaired.
+    """
+    base = _doc("a", "a")
+    ours = _doc("a", "a", "mine")
+    theirs = _doc("a", "a")
+    rc, out = _drive(tmp_path, base, ours, theirs)
+    assert rc == 0, "an inherited duplicate blocked the merge"
+    assert [e["class"] for e in out["classes"]] == ["a", "mine"], out["classes"]
+
+
+def test_a_duplicate_whose_copies_differ_is_still_a_conflict(tmp_path):
+    base = _doc("a")
+    ours = _doc("a", "a")
+    ours["classes"][1]["note"] = "different"
+    theirs = _doc("a", "a")
+    theirs["classes"][1]["note"] = "different too"
+    assert _drive(tmp_path, base, ours, theirs)[0] == 1
+
+
+def test_a_side_that_introduces_the_duplication_is_still_refused(tmp_path):
+    """Only an INHERITED duplication is tolerated; a lane that adds one owns the defect."""
+    base = _doc("a")
+    ours = _doc("a", "a")
+    theirs = _doc("a")
+    assert _drive(tmp_path, base, ours, theirs)[0] == 1
+
+
+def test_editing_an_inherited_duplicated_key_merges(tmp_path):
+    """Editing one copy of an identical pair makes the two copies DIFFER, which is a real
+    disagreement and stays a conflict; editing both copies keeps them identical and merges."""
+    base = _doc("a", "a")
+    ours = _doc("a", "a")
+    ours["classes"][0]["note"] = "mine"
+    theirs = _doc("a", "a")
+    assert _drive(tmp_path, base, ours, theirs)[0] == 1, (
+        "editing one copy of an identical pair is a disagreement and must stay a conflict"
+    )
+
+    ours = _doc("a", "a")
+    for entry in ours["classes"]:
+        entry["note"] = "mine"
+    rc, out = _drive(tmp_path, base, ours, _doc("a", "a"))
+    assert rc == 0
+    assert [e["class"] for e in out["classes"]] == ["a"], out["classes"]
+    assert out["classes"][0]["note"] == "mine", out["classes"]
+
+
 def test_it_writes_the_catalogs_byte_for_byte():
     """The driver's output format is the catalogs' own, so a merge never churns the diff."""
     for rel in (CLASSES, METRICS):
