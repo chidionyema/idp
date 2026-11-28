@@ -1,0 +1,120 @@
+# Existing Greenlane owns source admission. This deploys an exact landed main commit of
+# platform/estate-live-state, proves it answers, and runs the sweep that feeds it.
+# "Operating" here means `npm run probe` read a fresh seq and hash from the DEPLOYED worker with the
+# read token (scripts/probe.mjs), not that wrangler exited 0.
+# Tokens: the read and ingest tokens are HMAC-SHA256 of a fixed label under the one Cloudflare root
+# (R52: one root, code derives the rest), so no new secret has to be seeded and no value is ever
+# printed or stored. Every holder of the root derives the same tokens.
+name: estate-live-state-release
+on:
+  push:
+    branches: [main]
+    paths:
+      - "platform/estate-live-state/**"
+      - "catalog/optimus-metrics.json"
+      - ".github/workflows/estate-live-state-release.yml"
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: estate-live-state-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Tests before anything touches Cloudflare
+        working-directory: platform/estate-live-state
+        run: npm test
+      - name: Derive the two tokens from the one root
+        id: tokens
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] || { echo "BLIND   cloudflare  no SEED_CLOUDFLARE_ROOT_TOKEN repository secret"; exit 2; }
+          derive() { printf '%s' "estate-live-state:$1:v1" | openssl dgst -sha256 -hmac "$ROOT" -r | cut -d' ' -f1; }
+          read_t=$(derive read); ingest_t=$(derive ingest)
+          echo "::add-mask::$read_t"; echo "::add-mask::$ingest_t"
+          echo "read=$read_t" >> "$GITHUB_OUTPUT"; echo "ingest=$ingest_t" >> "$GITHUB_OUTPUT"
+          echo "ok      tokens  derived read and ingest tokens (values not printed)"
+      - name: Mint the ephemeral Workers token (R52 - one root, code mints the rest)
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          ZONE_NAME: meridianlabs.cloud
+        run: |
+          set -euo pipefail
+          API=https://api.cloudflare.com/client/v4
+          cf() { curl -sS -H "Authorization: Bearer $1" -H 'Content-Type: application/json' "${@:2}"; }
+          groups=$(cf "$ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
+          WS=$(gid "Workers Scripts Write" com.cloudflare.api.account)
+          WR=$(gid "Workers Routes Write" com.cloudflare.api.account.zone)
+          ZREAD=$(gid "Zone Read" com.cloudflare.api.account.zone.read) || true
+          [ -n "$ZREAD" ] || ZREAD=$(jq -r '.result[] | select((.scopes|index("com.cloudflare.api.account.zone.read")) or (.name|test("Zone Read";"i"))) | .id' <<<"$groups" | head -1)
+          [ -n "$WS" ] && [ -n "$WR" ] && [ -n "$ZREAD" ] || { echo "FAIL    cloudflare  missing permission group(s):"; jq -r '.result[] | select((.name|test("Workers")) or (.name|test("Zone";"i"))) | "        " + .name + "  " + (.scopes|join(","))' <<<"$groups"; exit 1; }
+          # The root is pinned to a zone set that predates the meridianlabs.cloud cutover (measured
+          # 2026-11-18, run 44183564083): resolve the zone through a zone-read child, then delete it.
+          probe=$(cf "$ROOT" -X POST -d "$(jq -nc --arg n "estate-live-state-release zone-read $GITHUB_RUN_ID" --arg g "$ZREAD" '{name:$n,policies:[{effect:"allow",resources:{"com.cloudflare.api.account.zone.*":"*"},permission_groups:[{id:$g}]}]}')" "$API/user/tokens")
+          jq -e '.success' <<<"$probe" >/dev/null || { echo "FAIL    cloudflare  zone-read child refused:"; jq -c '.errors' <<<"$probe"; exit 1; }
+          probe_id=$(jq -r .result.id <<<"$probe"); probe_value=$(jq -r .result.value <<<"$probe")
+          echo "::add-mask::$probe_value"
+          zone=$(cf "$probe_value" "$API/zones?name=$ZONE_NAME" | jq -r '.result[0] // empty')
+          cf "$ROOT" -X DELETE "$API/user/tokens/$probe_id" >/dev/null
+          [ -n "$zone" ] || { echo "FAIL    cloudflare  $ZONE_NAME is not a zone of the account this root can reach"; exit 1; }
+          zid=$(jq -r .id <<<"$zone")
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "estate-live-state-release $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg ws "$WS" --arg wr "$WR" --arg zr "$ZREAD" --arg e "$expires" \
+            '{name:$n, expires_on:$e, policies:[
+               {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:[{id:$ws}]},
+               {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$zr},{id:$wr}]}]}')
+          out=$(cf "$ROOT" -X POST -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  Workers token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          value=$(jq -r .result.value <<<"$out")
+          echo "::add-mask::$value"
+          echo "token=$value" >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Workers token minted (Scripts@account + ZoneRead/Routes@$ZONE_NAME), expires $expires"
+
+      - name: Deploy the exact main commit (only when the worker's own files changed)
+        if: github.event_name != 'schedule'
+        working-directory: platform/estate-live-state
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.mint.outputs.token }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          READ_T: ${{ steps.tokens.outputs.read }}
+          INGEST_T: ${{ steps.tokens.outputs.ingest }}
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0
+          ./node_modules/.bin/wrangler --version | grep -Eq '(^|[^[:digit:]])4\.131\.0([^[:digit:]]|$)'
+          ./node_modules/.bin/wrangler deploy --var "COMMIT_SHA:$GITHUB_SHA"
+          printf '%s' "$READ_T" | ./node_modules/.bin/wrangler secret put LIVE_STATE_READ_TOKEN
+          printf '%s' "$INGEST_T" | ./node_modules/.bin/wrangler secret put LIVE_STATE_INGEST_TOKEN
+      - name: Sweep every Optimus metric into the live state (the first producer)
+        env:
+          LIVE_STATE_URL: https://live.meridianlabs.cloud
+          LIVE_STATE_INGEST_TOKEN: ${{ steps.tokens.outputs.ingest }}
+        run: node platform/estate-live-state/scripts/sweep.mjs
+      - name: Proof - read the snapshot back from the deployed worker
+        working-directory: platform/estate-live-state
+        env:
+          LIVE_STATE_URL: https://live.meridianlabs.cloud
+          LIVE_STATE_READ_TOKEN: ${{ steps.tokens.outputs.read }}
+        run: |
+          set -euo pipefail
+          out=$(npm run --silent probe)
+          printf '%s\n' "$out"
+          { echo '```'; printf '%s\n' "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          node scripts/watch.mjs | tail -1
