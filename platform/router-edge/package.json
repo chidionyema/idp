@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --format=esm --platform=neutral --outfile=dist/index.js",
-    "test": "npm run build && node tests/router.falsifier.mjs && node tests/prober.falsifier.mjs && node --test tests/responses.falsifier.mjs",
+    "test": "npm run build && node tests/router.falsifier.mjs && node tests/prober.falsifier.mjs && node --test tests/responses.falsifier.mjs tests/codex-profile.falsifier.mjs",
     "deploy": "wrangler deploy --var COMMIT_SHA:$(git rev-parse --short HEAD)",
     "probe": "node scripts/blackbox-prober.mjs"
   },
