@@ -1,0 +1,334 @@
+﻿2026-11-25T15:32:12.5764013Z Current runner version: '2.338.2'
+2026-11-25T15:32:12.5791892Z ##[group]Runner Image Provisioner
+2026-11-25T15:32:12.5792817Z Hosted Compute Agent
+2026-11-25T15:32:12.5793566Z Version: 20261111.635
+2026-11-25T15:32:12.5794368Z Commit: b8a594ea514ff44cadb5342986c68b1eac6e22ed
+2026-11-25T15:32:12.5795233Z Build Date: 2026-11-11T01:49:01Z
+2026-11-25T15:32:12.5796068Z Worker ID: {22a7ccd6-48c1-42e2-8afc-93e4ab7c437e}
+2026-11-25T15:32:12.5796865Z Region: northcentralus
+2026-11-25T15:32:12.5797612Z Cloud: Azure
+2026-11-25T15:32:12.5798727Z ##[endgroup]
+2026-11-25T15:32:12.5800318Z ##[group]Operating System
+2026-11-25T15:32:12.5801030Z Ubuntu
+2026-11-25T15:32:12.5801709Z 24.04.5
+2026-11-25T15:32:12.5802324Z LTS
+2026-11-25T15:32:12.5802997Z ##[endgroup]
+2026-11-25T15:32:12.5803724Z ##[group]Runner Image
+2026-11-25T15:32:12.5804426Z Image: ubuntu-24.04
+2026-11-25T15:32:12.5805106Z Version: 20261116.376.1
+2026-11-25T15:32:12.5806610Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261116.376/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-25T15:32:12.5808618Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261116.376
+2026-11-25T15:32:12.5809683Z ##[endgroup]
+2026-11-25T15:32:12.5811048Z ##[group]GITHUB_TOKEN Permissions
+2026-11-25T15:32:12.5813395Z Contents: read
+2026-11-25T15:32:12.5814171Z Metadata: read
+2026-11-25T15:32:12.5814850Z ##[endgroup]
+2026-11-25T15:32:12.5817079Z Secret source: Actions
+2026-11-25T15:32:12.5818506Z Cache mode: write
+2026-11-25T15:32:12.5819554Z Prepare workflow directory
+2026-11-25T15:32:12.6193229Z Prepare all required actions
+2026-11-25T15:32:12.6291825Z Getting action download info
+2026-11-25T15:32:12.8793716Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-25T15:32:13.0159084Z Download action repository 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+2026-11-25T15:32:13.1052858Z Download action repository 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9' (SHA:cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+2026-11-25T15:32:13.2924736Z Complete job name: release
+2026-11-25T15:32:13.3791756Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-11-25T15:32:13.3792798Z with:
+2026-11-25T15:32:13.3793280Z   persist-credentials: false
+2026-11-25T15:32:13.3793824Z   repository: chidionyema/idp
+2026-11-25T15:32:13.3797562Z   token: ***
+2026-11-25T15:32:13.3798199Z   ssh-strict: true
+2026-11-25T15:32:13.3798670Z   ssh-user: git
+2026-11-25T15:32:13.3799122Z   clean: true
+2026-11-25T15:32:13.3799600Z   sparse-checkout-cone-mode: true
+2026-11-25T15:32:13.3800152Z   fetch-depth: 1
+2026-11-25T15:32:13.3800617Z   fetch-tags: false
+2026-11-25T15:32:13.3801086Z   show-progress: true
+2026-11-25T15:32:13.3801556Z   lfs: false
+2026-11-25T15:32:13.3802001Z   submodules: false
+2026-11-25T15:32:13.3802475Z   set-safe-directory: true
+2026-11-25T15:32:13.3803005Z   allow-unsafe-pr-checkout: false
+2026-11-25T15:32:13.3803780Z ##[endgroup]
+2026-11-25T15:32:13.6043946Z Syncing repository: chidionyema/idp
+2026-11-25T15:32:13.6046766Z ##[group]Getting Git version info
+2026-11-25T15:32:13.6048392Z Working directory is '/home/runner/work/idp/idp'
+2026-11-25T15:32:13.6050746Z [command]/usr/bin/git version
+2026-11-25T15:32:13.6182030Z git version 2.56.1
+2026-11-25T15:32:13.6215111Z ##[endgroup]
+2026-11-25T15:32:13.6227419Z Temporarily overriding HOME='/home/runner/work/_temp/bc851e18-87c1-4e54-8649-3f1e9fb2ab74' before making global git config changes
+2026-11-25T15:32:13.6231465Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-25T15:32:13.6234489Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/idp/idp
+2026-11-25T15:32:13.6292373Z Deleting the contents of '/home/runner/work/idp/idp'
+2026-11-25T15:32:13.6296483Z ##[group]Determining repository object format
+2026-11-25T15:32:13.6299048Z ##[endgroup]
+2026-11-25T15:32:13.6301233Z ##[group]Initializing the repository
+2026-11-25T15:32:13.6302863Z [command]/usr/bin/git init /home/runner/work/idp/idp
+2026-11-25T15:32:13.6414889Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-25T15:32:13.6418079Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-25T15:32:13.6420144Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-25T15:32:13.6421751Z hint: call:
+2026-11-25T15:32:13.6422534Z hint:
+2026-11-25T15:32:13.6423543Z hint: 	git config --global init.defaultBranch <name>
+2026-11-25T15:32:13.6424748Z hint:
+2026-11-25T15:32:13.6425898Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-25T15:32:13.6427788Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-25T15:32:13.6429625Z hint:
+2026-11-25T15:32:13.6430514Z hint: 	git branch -m <name>
+2026-11-25T15:32:13.6431471Z hint:
+2026-11-25T15:32:13.6432682Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-25T15:32:13.6440241Z Initialized empty Git repository in /home/runner/work/idp/idp/.git/
+2026-11-25T15:32:13.6452723Z [command]/usr/bin/git remote add origin https://github.com/chidionyema/idp
+2026-11-25T15:32:13.6533697Z ##[endgroup]
+2026-11-25T15:32:13.6535504Z ##[group]Disabling automatic garbage collection
+2026-11-25T15:32:13.6536782Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-25T15:32:13.6575495Z ##[endgroup]
+2026-11-25T15:32:13.6577223Z ##[group]Setting up auth
+2026-11-25T15:32:13.6578547Z Removing SSH command configuration
+2026-11-25T15:32:13.6590849Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-25T15:32:13.6638200Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-25T15:32:13.7020940Z Removing HTTP extra header
+2026-11-25T15:32:13.7026988Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-25T15:32:13.7075644Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-25T15:32:13.7329022Z Removing includeIf entries pointing to credentials config files
+2026-11-25T15:32:13.7333276Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-25T15:32:13.7392447Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-25T15:32:13.7662704Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-25T15:32:13.7716053Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/idp/idp/.git.path /home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:13.7764672Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/idp/idp/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:13.7814804Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:13.7862255Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:13.7906360Z ##[endgroup]
+2026-11-25T15:32:13.7907239Z ##[group]Fetching the repository
+2026-11-25T15:32:13.7913843Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f6911076519eb5a37438e88178a155b8fc358a09:refs/remotes/origin/main
+2026-11-25T15:32:17.4922168Z From https://github.com/chidionyema/idp
+2026-11-25T15:32:17.4924577Z  * [new ref]         f6911076519eb5a37438e88178a155b8fc358a09 -> origin/main
+2026-11-25T15:32:17.4930208Z [command]/usr/bin/git branch --list --remote origin/main
+2026-11-25T15:32:17.4976809Z   origin/main
+2026-11-25T15:32:17.4985326Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-11-25T15:32:17.5023318Z f6911076519eb5a37438e88178a155b8fc358a09
+2026-11-25T15:32:17.5029219Z ##[endgroup]
+2026-11-25T15:32:17.5031123Z ##[group]Determining the checkout info
+2026-11-25T15:32:17.5033115Z ##[endgroup]
+2026-11-25T15:32:17.5034537Z [command]/usr/bin/git sparse-checkout disable
+2026-11-25T15:32:17.5099314Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-25T15:32:17.5145139Z ##[group]Checking out the ref
+2026-11-25T15:32:17.5148884Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-11-25T15:32:18.5502126Z Updating files:  76% (5378/7059)
+2026-11-25T15:32:18.6329936Z Updating files:  77% (5436/7059)
+2026-11-25T15:32:18.8184612Z Updating files:  78% (5507/7059)
+2026-11-25T15:32:18.9782461Z Updating files:  79% (5577/7059)
+2026-11-25T15:32:19.0035286Z Updating files:  80% (5648/7059)
+2026-11-25T15:32:19.0073407Z Updating files:  81% (5718/7059)
+2026-11-25T15:32:19.0115540Z Updating files:  82% (5789/7059)
+2026-11-25T15:32:19.0160496Z Updating files:  83% (5859/7059)
+2026-11-25T15:32:19.0207300Z Updating files:  84% (5930/7059)
+2026-11-25T15:32:19.0253950Z Updating files:  85% (6001/7059)
+2026-11-25T15:32:19.0296100Z Updating files:  86% (6071/7059)
+2026-11-25T15:32:19.0336308Z Updating files:  87% (6142/7059)
+2026-11-25T15:32:19.0404210Z Updating files:  88% (6212/7059)
+2026-11-25T15:32:19.0448105Z Updating files:  89% (6283/7059)
+2026-11-25T15:32:19.0517067Z Updating files:  90% (6354/7059)
+2026-11-25T15:32:19.0582206Z Updating files:  91% (6424/7059)
+2026-11-25T15:32:19.0631507Z Updating files:  92% (6495/7059)
+2026-11-25T15:32:19.0685470Z Updating files:  93% (6565/7059)
+2026-11-25T15:32:19.0733775Z Updating files:  94% (6636/7059)
+2026-11-25T15:32:19.0778682Z Updating files:  95% (6707/7059)
+2026-11-25T15:32:19.0826543Z Updating files:  96% (6777/7059)
+2026-11-25T15:32:19.0871757Z Updating files:  97% (6848/7059)
+2026-11-25T15:32:19.0915845Z Updating files:  98% (6918/7059)
+2026-11-25T15:32:19.0963804Z Updating files:  99% (6989/7059)
+2026-11-25T15:32:19.0964187Z Updating files: 100% (7059/7059)
+2026-11-25T15:32:19.0964600Z Updating files: 100% (7059/7059), done.
+2026-11-25T15:32:19.1056279Z Switched to a new branch 'main'
+2026-11-25T15:32:19.1062060Z branch 'main' set up to track 'origin/main'.
+2026-11-25T15:32:19.1111810Z ##[endgroup]
+2026-11-25T15:32:19.1176504Z [command]/usr/bin/git log -1 --format=%H
+2026-11-25T15:32:19.1218600Z f6911076519eb5a37438e88178a155b8fc358a09
+2026-11-25T15:32:19.1228085Z ##[group]Removing auth
+2026-11-25T15:32:19.1228511Z Removing SSH command configuration
+2026-11-25T15:32:19.1321580Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-25T15:32:19.1323335Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-25T15:32:19.1565698Z Removing HTTP extra header
+2026-11-25T15:32:19.1569925Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-25T15:32:19.1619278Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-25T15:32:19.1899760Z Removing includeIf entries pointing to credentials config files
+2026-11-25T15:32:19.1903042Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-25T15:32:19.1946404Z includeif.gitdir:/home/runner/work/idp/idp/.git.path
+2026-11-25T15:32:19.1947573Z includeif.gitdir:/home/runner/work/idp/idp/.git/worktrees/*.path
+2026-11-25T15:32:19.1948231Z includeif.gitdir:/github/workspace/.git.path
+2026-11-25T15:32:19.1948688Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-25T15:32:19.1955766Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/idp/idp/.git.path
+2026-11-25T15:32:19.1994581Z /home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:19.2005113Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/idp/idp/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-60a785b4\-84d4\-4657\-80a5\-5a6464577a2f\.config
+2026-11-25T15:32:19.2062291Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/idp/idp/.git/worktrees/*.path
+2026-11-25T15:32:19.2100345Z /home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:19.2110642Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/idp/idp/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-60a785b4\-84d4\-4657\-80a5\-5a6464577a2f\.config
+2026-11-25T15:32:19.2163613Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-25T15:32:19.2202306Z /github/runner_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:19.2210798Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-60a785b4\-84d4\-4657\-80a5\-5a6464577a2f\.config
+2026-11-25T15:32:19.2260245Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-25T15:32:19.2297457Z /github/runner_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config
+2026-11-25T15:32:19.2305737Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-60a785b4\-84d4\-4657\-80a5\-5a6464577a2f\.config
+2026-11-25T15:32:19.2358750Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-25T15:32:19.2629889Z Removing credentials config '/home/runner/work/_temp/git-credentials-60a785b4-84d4-4657-80a5-5a6464577a2f.config'
+2026-11-25T15:32:19.2639783Z ##[endgroup]
+2026-11-25T15:32:19.2909499Z ##[group]Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+2026-11-25T15:32:19.2909919Z with:
+2026-11-25T15:32:19.2910145Z   node-version: 22
+2026-11-25T15:32:19.2910385Z   check-latest: false
+2026-11-25T15:32:19.2912800Z   token: ***
+2026-11-25T15:32:19.2913035Z   package-manager-cache: true
+2026-11-25T15:32:19.2913294Z ##[endgroup]
+2026-11-25T15:32:19.4301522Z Found in cache @ /opt/hostedtoolcache/node/22.23.5/x64
+2026-11-25T15:32:19.5002481Z ##[group]Environment details
+2026-11-25T15:32:19.8229197Z node: v22.23.5
+2026-11-25T15:32:19.8229632Z npm: 10.9.9
+2026-11-25T15:32:19.8229905Z yarn: 1.22.22
+2026-11-25T15:32:19.8230682Z ##[endgroup]
+2026-11-25T15:32:19.8379100Z ##[group]Run set -euo pipefail
+2026-11-25T15:32:19.8379489Z [36;1mset -euo pipefail[0m
+2026-11-25T15:32:19.8379995Z [36;1m# No package-lock yet: use the repo's esbuild pin; override Wrangler only for versioned releases.[0m
+2026-11-25T15:32:19.8380675Z [36;1mnpm install --no-save --package-lock=false --no-audit --no-fund wrangler@4.131.0[0m
+2026-11-25T15:32:19.8381309Z [36;1m./node_modules/.bin/wrangler --version | grep -Eq '(^|[^[:digit:]])4\.131\.0([^[:digit:]]|$)'[0m
+2026-11-25T15:32:19.8381757Z [36;1mnpm test[0m
+2026-11-25T15:32:19.8382035Z [36;1mnode --test tests/release.falsifier.mjs[0m
+2026-11-25T15:32:19.8382437Z [36;1mecho "$GITHUB_SHA" > "$RUNNER_TEMP/router-preflight.sha"[0m
+2026-11-25T15:32:19.8413638Z shell: /usr/bin/bash -e {0}
+2026-11-25T15:32:19.8413924Z ##[endgroup]
+2026-11-25T15:32:24.9821366Z 
+2026-11-25T15:32:24.9828730Z added 38 packages in 5s
+2026-11-25T15:32:26.0188216Z 
+2026-11-25T15:32:26.0189016Z > meridian-router-edge@1.0.0 test
+2026-11-25T15:32:26.0190180Z > npm run build && node tests/router.falsifier.mjs
+2026-11-25T15:32:26.0190551Z 
+2026-11-25T15:32:26.1172143Z 
+2026-11-25T15:32:26.1172705Z > meridian-router-edge@1.0.0 build
+2026-11-25T15:32:26.1173643Z > esbuild src/index.ts --bundle --format=esm --platform=neutral --outfile=dist/index.js
+2026-11-25T15:32:26.1174197Z 
+2026-11-25T15:32:26.1293166Z 
+2026-11-25T15:32:26.1293884Z   dist/index.js  26.3kb
+2026-11-25T15:32:26.1294182Z 
+2026-11-25T15:32:26.1294604Z ⚡ Done in 4ms
+2026-11-25T15:32:26.2004558Z ALL 4 FALSIFIER PROOFS PASSED (413->200 failover, pre-dispatch learned cap, fail-closed 429, 401 auth)
+2026-11-25T15:32:26.2649682Z TAP version 13
+2026-11-25T15:32:26.3065686Z # Subtest: only a full matching main SHA can deploy
+2026-11-25T15:32:26.3072809Z ok 1 - only a full matching main SHA can deploy
+2026-11-25T15:32:26.3073518Z   ---
+2026-11-25T15:32:26.3074013Z   duration_ms: 1.111402
+2026-11-25T15:32:26.3074493Z   type: 'test'
+2026-11-25T15:32:26.3075001Z   ...
+2026-11-25T15:32:26.3081302Z # Subtest: refuse uncertain or split rollback origins
+2026-11-25T15:32:26.3082567Z ok 2 - refuse uncertain or split rollback origins
+2026-11-25T15:32:26.3084034Z   ---
+2026-11-25T15:32:26.3084397Z   duration_ms: 1.740322
+2026-11-25T15:32:26.3084799Z   type: 'test'
+2026-11-25T15:32:26.3085132Z   ...
+2026-11-25T15:32:26.3086052Z # Subtest: immutable tags use full reviewed source SHA
+2026-11-25T15:32:26.3088973Z ok 3 - immutable tags use full reviewed source SHA
+2026-11-25T15:32:26.3089738Z   ---
+2026-11-25T15:32:26.3090092Z   duration_ms: 0.322256
+2026-11-25T15:32:26.3090477Z   type: 'test'
+2026-11-25T15:32:26.3090861Z   ...
+2026-11-25T15:32:26.3166214Z 1..3
+2026-11-25T15:32:26.3166563Z # tests 3
+2026-11-25T15:32:26.3166915Z # suites 0
+2026-11-25T15:32:26.3168392Z # pass 3
+2026-11-25T15:32:26.3168967Z # fail 0
+2026-11-25T15:32:26.3169368Z # cancelled 0
+2026-11-25T15:32:26.3169790Z # skipped 0
+2026-11-25T15:32:26.3170225Z # todo 0
+2026-11-25T15:32:26.3170753Z # duration_ms 63.322706
+2026-11-25T15:32:26.3285177Z ##[group]Run set -euo pipefail
+2026-11-25T15:32:26.3285568Z [36;1mset -euo pipefail[0m
+2026-11-25T15:32:26.3285904Z [36;1mAPI=https://api.cloudflare.com/client/v4[0m
+2026-11-25T15:32:26.3286630Z [36;1mcf() { curl -sS -H "Authorization: ***" -H 'Content-Type: application/json' "${@:2}"; }[0m
+2026-11-25T15:32:26.3287183Z [36;1mgroups=$(cf "$ROOT" "$API/user/tokens/permission_groups")[0m
+2026-11-25T15:32:26.3287796Z [36;1mgid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }[0m
+2026-11-25T15:32:26.3288821Z [36;1mWS=$(gid "Workers Scripts Write" com.cloudflare.api.account)[0m
+2026-11-25T15:32:26.3289311Z [36;1mWR=$(gid "Workers Routes Write" com.cloudflare.api.account.zone)[0m
+2026-11-25T15:32:26.3289840Z [36;1mZREAD=$(gid "Zone Read" com.cloudflare.api.account.zone.read) || true[0m
+2026-11-25T15:32:26.3290689Z [36;1m[ -n "$ZREAD" ] || ZREAD=$(jq -r '.result[] | select((.scopes|index("com.cloudflare.api.account.zone.read")) or (.name|test("Zone Read";"i"))) | .id' <<<"$groups" | head -1)[0m
+2026-11-25T15:32:26.3291934Z [36;1m[ -n "$WS" ] && [ -n "$WR" ] && [ -n "$ZREAD" ] || { echo "FAIL    cloudflare  missing permission group(s):"; jq -r '.result[] | select((.name|test("Workers")) or (.name|test("Zone";"i"))) | "        " + .name + "  " + (.scopes|join(","))' <<<"$groups"; exit 1; }[0m
+2026-11-25T15:32:26.3292969Z [36;1m# The root is pinned to a zone set that predates the meridianlabs.cloud cutover (measured[0m
+2026-11-25T15:32:26.3293597Z [36;1m# 2026-11-18, run 44183564083): resolve the zone through a zone-read child, then delete it.[0m
+2026-11-25T15:32:26.3294710Z [36;1mprobe=$(cf "$ROOT" -X POST -d "$(jq -nc --arg n "router-edge-release zone-read $GITHUB_RUN_ID" --arg g "$ZREAD" '{name:$n,policies:[{effect:"allow",resources:{"com.cloudflare.api.account.zone.*":"*"},permission_groups:[{id:$g}]}]}')" "$API/user/tokens")[0m
+2026-11-25T15:32:26.3295897Z [36;1mjq -e '.success' <<<"$probe" >/dev/null || { echo "FAIL    cloudflare  zone-read child refused:"; jq -c '.errors' <<<"$probe"; exit 1; }[0m
+2026-11-25T15:32:26.3296861Z [36;1mprobe_id=$(jq -r .result.id <<<"$probe"); probe_value=$(jq -r .result.value <<<"$probe")[0m
+2026-11-25T15:32:26.3297320Z [36;1mecho "::add-mask::$probe_value"[0m
+2026-11-25T15:32:26.3297764Z [36;1mzone=$(cf "$probe_value" "$API/zones?name=$ZONE_NAME" | jq -r '.result[0] // empty')[0m
+2026-11-25T15:32:26.3298522Z [36;1mcf "$ROOT" -X DELETE "$API/user/tokens/$probe_id" >/dev/null[0m
+2026-11-25T15:32:26.3299109Z [36;1m[ -n "$zone" ] || { echo "FAIL    cloudflare  $ZONE_NAME is not a zone of the account this root can reach"; exit 1; }[0m
+2026-11-25T15:32:26.3299627Z [36;1mzid=$(jq -r .id <<<"$zone")[0m
+2026-11-25T15:32:26.3299939Z [36;1mexpires=$(date -u -d '+2 hours' +%FT%TZ)[0m
+2026-11-25T15:32:26.3300619Z [36;1mbody=$(jq -nc --arg n "router-edge-release $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg z "$zid" --arg ws "$WS" --arg wr "$WR" --arg zr "$ZREAD" --arg e "$expires" \[0m
+2026-11-25T15:32:26.3301278Z [36;1m  '{name:$n, expires_on:$e, policies:[[0m
+2026-11-25T15:32:26.3301802Z [36;1m     {effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:[{id:$ws}]},[0m
+2026-11-25T15:32:26.3302533Z [36;1m     {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$zr},{id:$wr}]}]}')[0m
+2026-11-25T15:32:26.3303124Z [36;1mout=$(cf "$ROOT" -X POST -d "$body" "$API/user/tokens")[0m
+2026-11-25T15:32:26.3303749Z [36;1mjq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  Workers token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }[0m
+2026-11-25T15:32:26.3304324Z [36;1mvalue=$(jq -r .result.value <<<"$out")[0m
+2026-11-25T15:32:26.3304634Z [36;1mecho "::add-mask::$value"[0m
+2026-11-25T15:32:26.3304954Z [36;1mecho "token=$value" >> "$GITHUB_OUTPUT"[0m
+2026-11-25T15:32:26.3305715Z [36;1mecho "ok      cloudflare  Workers token minted (Scripts@account + ZoneRead/Routes@$ZONE_NAME), expires $expires"[0m
+2026-11-25T15:32:26.3328702Z shell: /usr/bin/bash -e {0}
+2026-11-25T15:32:26.3329022Z env:
+2026-11-25T15:32:26.3329431Z   ROOT: ***
+2026-11-25T15:32:26.3329677Z   ACCOUNT: ***
+2026-11-25T15:32:26.3329912Z   ZONE_NAME: meridianlabs.cloud
+2026-11-25T15:32:26.3330184Z ##[endgroup]
+2026-11-25T15:32:30.0629167Z ok      cloudflare  Workers token minted (Scripts@account + ZoneRead/Routes@meridianlabs.cloud), expires 2026-11-25T17:32:28Z
+2026-11-25T15:32:30.0705074Z ##[group]Run node scripts/release.mjs
+2026-11-25T15:32:30.0705416Z [36;1mnode scripts/release.mjs[0m
+2026-11-25T15:32:30.0727020Z shell: /usr/bin/bash -e {0}
+2026-11-25T15:32:30.0727287Z env:
+2026-11-25T15:32:30.0727512Z   GITHUB_REF: refs/heads/main
+2026-11-25T15:32:30.0728060Z   RELEASE_SHA: f6911076519eb5a37438e88178a155b8fc358a09
+2026-11-25T15:32:30.0728528Z   RELEASE_RECEIPT_PATH: /home/runner/work/_temp/router-release-receipt.json
+2026-11-25T15:32:30.0729051Z   RELEASE_PREFLIGHT_FILE: /home/runner/work/_temp/router-preflight.sha
+2026-11-25T15:32:30.0729525Z   MERIDIAN_ROUTER_URL: https://llm.meridianlabs.cloud
+2026-11-25T15:32:30.0730123Z   CLOUDFLARE_API_TOKEN: ***
+2026-11-25T15:32:30.0730457Z   CLOUDFLARE_ACCOUNT_ID: ***
+2026-11-25T15:32:30.0730920Z   MERIDIAN_CLIENT_KEY: ***
+2026-11-25T15:32:30.0731330Z   MERIDIAN_ADMIN_KEY: ***
+2026-11-25T15:32:30.0731574Z ##[endgroup]
+2026-11-25T15:32:32.1587207Z {"status":"NOT_OPERATIONAL","sha":"f6911076519eb5a37438e88178a155b8fc358a09","passed_rounds":0,"rollback_attempted":false,"rollback_verified":false}
+2026-11-25T15:32:32.1652833Z ##[error]Process completed with exit code 1.
+2026-11-25T15:32:32.1762114Z ##[group]Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+2026-11-25T15:32:32.1762550Z with:
+2026-11-25T15:32:32.1762901Z   name: router-edge-release-f6911076519eb5a37438e88178a155b8fc358a09
+2026-11-25T15:32:32.1763365Z   path: /home/runner/work/_temp/router-release-receipt.json
+2026-11-25T15:32:32.1763727Z   if-no-files-found: warn
+2026-11-25T15:32:32.1764176Z   retention-days: 30
+2026-11-25T15:32:32.1764413Z   compression-level: 6
+2026-11-25T15:32:32.1764657Z   overwrite: false
+2026-11-25T15:32:32.1764893Z   include-hidden-files: false
+2026-11-25T15:32:32.1765156Z   archive: true
+2026-11-25T15:32:32.1765379Z ##[endgroup]
+2026-11-25T15:32:32.3239134Z With the provided path, there will be 1 file uploaded
+2026-11-25T15:32:32.3240544Z Artifact name is valid!
+2026-11-25T15:32:32.3241392Z Root directory input is valid!
+2026-11-25T15:32:32.5851803Z Uploading artifact: router-edge-release-f6911076519eb5a37438e88178a155b8fc358a09.zip
+2026-11-25T15:32:32.5890164Z Beginning upload of artifact content to blob storage
+2026-11-25T15:32:32.7189078Z Uploaded bytes 436
+2026-11-25T15:32:32.7486955Z Finished uploading artifact content to blob storage!
+2026-11-25T15:32:32.7489814Z SHA256 digest of uploaded artifact is ebe7007381a2efeb5a15abe8e0722aea587e7bddf4959c4941fd8d1c1a052324
+2026-11-25T15:32:32.7490771Z Finalizing artifact upload
+2026-11-25T15:32:33.1780890Z Artifact router-edge-release-f6911076519eb5a37438e88178a155b8fc358a09 successfully finalized. Artifact ID 15038420316
+2026-11-25T15:32:33.1782712Z Artifact router-edge-release-f6911076519eb5a37438e88178a155b8fc358a09 has been successfully uploaded! Final size is 436 bytes. Artifact ID is 15038420316
+2026-11-25T15:32:33.1785009Z Artifact download URL: https://github.com/chidionyema/idp/actions/runs/45646222010/artifacts/15038420316
+2026-11-25T15:32:33.1997734Z Post job cleanup.
+2026-11-25T15:32:33.2889979Z [command]/usr/bin/git version
+2026-11-25T15:32:33.2949053Z git version 2.56.1
+2026-11-25T15:32:33.2989482Z Temporarily overriding HOME='/home/runner/work/_temp/3109d1f8-4b31-45ef-afc2-903253905340' before making global git config changes
+2026-11-25T15:32:33.2990884Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-25T15:32:33.2994244Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/idp/idp
+2026-11-25T15:32:33.3032912Z Removing SSH command configuration
+2026-11-25T15:32:33.3040063Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-25T15:32:33.3080952Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-25T15:32:33.3386939Z Removing HTTP extra header
+2026-11-25T15:32:33.3395105Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-25T15:32:33.3442545Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-25T15:32:33.3732570Z Removing includeIf entries pointing to credentials config files
+2026-11-25T15:32:33.3740108Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-25T15:32:33.3822476Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-25T15:32:33.4309269Z Cleaning up orphan processes

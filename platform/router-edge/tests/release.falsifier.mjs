@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, isAllBackendsFailed, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, shouldRollback, uploadArgs, isStrictConflict, workerSecrets } from "../scripts/release.mjs";
-import { MIN_OUTPUT_FLOOR, liveRoles, probeLanes, releasePool, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
+import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, isAllBackendsFailed, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, shouldRollback, uploadArgs, workerSecrets } from "../scripts/release.mjs";
+import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -87,10 +87,6 @@ test("a failed child carries its own cause, never a credential", () => {
   assert.equal(failureCause("Bearer abcdefghijklmnopqrstuvwxyz0123456789"), "Bearer <redacted>");
   assert.ok(!failureCause("token sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF").includes("abcdefghijklmnopqrstuvwxyz0123456789"));
   assert.equal(failureCause(""), "");
-  // A strict-upload conflict must carry the drift lines, not only the closing three.
-  const strict = "Your remote config differs:\n- bindings: GEMINI_API_KEY\n+ vars: NONE\nsome\nfiller\nUploading the Worker will override the remote configuration with your local one.\n✘ [ERROR] Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n";
-  assert.ok(failureCause(strict, 4000).includes("- bindings: GEMINI_API_KEY"), "the conflict names what drifted");
-  assert.ok(!failureCause("a\nb\nc\nd\ne\n").includes("a /"), "other failures stay at three lines");
   const wrangler = "\u001b[31m✘ [ERROR] A request to the Cloudflare API failed.\u001b[0m\n"
     + "  Authentication error [code: 10000]\n"
     + "🪵  Logs were written to \"/home/runner/.config/.wrangler/logs/x.log\"\n";
@@ -325,53 +321,4 @@ test("retired CNAME migration is exact, read-back verified and idempotent", asyn
   rows.set(cutoverFixture.hosts[0].hostname,{id:"1".repeat(32),type:"CNAME",name:cutoverFixture.hosts[0].hostname,content:"not-retired.example.com"});
   await assert.rejects(reconcileRetiredDomains(cutoverFixture,auth),/RETIRED_CNAME_NOT_EXACT/);
   assert.equal(writes.length,4);
-});
-
-test("a strict-upload conflict is reconciled once, and only that failure is", () => {
-  const relaxed = uploadArgs(SHA, immutableTag(SHA), true, false);
-  assert.ok(!relaxed.includes("--strict") && relaxed.includes("--keep-vars"));
-  assert.ok(isStrictConflict("✘ [ERROR] Aborting the upload operation because of conflicts."));
-  assert.ok(!isStrictConflict("authentication error 10000"));
-  assert.ok(!isStrictConflict(null));
-});
-
-// A lane nobody has called is a claim. These pin the gate that would have refused the
-// retired `deepseek-chat` id and the dead DeepSeek/MiniMax keys on the release that shipped them.
-test("every enabled lane gets its own one-candidate pinned role beside the failover role", () => {
-  const { roles } = releasePool();
-  const lanes = rolePool().roles["role:coder"].candidates.map((c) => c.id);
-  assert.deepEqual(roles["role:coder"], rolePool().roles["role:coder"], "the serving role is untouched");
-  for (const id of lanes) {
-    const probe = roles["role:" + id];
-    assert.ok(probe, "probe role for " + id);
-    assert.equal(probe.candidates.length, 1, "one candidate: no failover can hide a dead lane");
-    assert.equal(probe.candidates[0].id, id);
-  }
-  assert.equal(Object.keys(roles).length, lanes.length + 1);
-});
-test("a lane is live only on a 200 with text from the lane that was asked for", async () => {
-  const pool = releasePool();
-  const answer = (status, backend, body) => async (_url, init) => {
-    const model = JSON.parse(init.body).model;
-    const spec = typeof status === "function" ? status(model) : { status, backend, body };
-    return new Response(spec.body, { status: spec.status, headers: spec.backend ? { "x-meridian-backend": spec.backend(model) } : {} });
-  };
-  const good = JSON.stringify({ choices: [{ message: { content: "OK" } }] });
-  const all = await probeLanes("https://r", "k", pool, answer((m) => ({ status: 200, backend: (x) => x.slice("role:".length), body: good })));
-  assert.ok(all.length >= 3 && all.every((l) => l.ok), "every lane serving is live");
-  // the failure classes that shipped: retired model id, revoked key, empty wallet, wrong lane, no text, transport
-  const bad = (status, body = "{}") => async () => new Response(body, { status, headers: { "x-meridian-backend": "minimax-m3" } });
-  for (const [label, fetchImpl] of [
-    ["retired model id (400)", bad(400, '{"error":"Model Not Exist"}')],
-    ["revoked key (401)", bad(401)],
-    ["empty wallet (402)", bad(402)],
-    ["all backends failed (502)", bad(502)],
-    ["200 but served by another lane", async () => new Response(good, { status: 200, headers: { "x-meridian-backend": "other" } })],
-    ["200 with empty text", async () => new Response(JSON.stringify({ choices: [{ message: { content: "" } }] }), { status: 200, headers: { "x-meridian-backend": "gemini-3.5-flash" } })],
-    ["transport error", async () => { throw new Error("socket hang up"); }],
-  ]) {
-    const lanes = await probeLanes("https://r", "k", pool, fetchImpl);
-    assert.ok(lanes.length && lanes.filter((l) => l.id !== "gemini-3.5-flash" || label !== "200 with empty text").every((l) => !l.ok), label + " must not read as live");
-    assert.ok(lanes.every((l) => typeof l.id === "string" && l.id), "every dead lane is named");
-  }
 });

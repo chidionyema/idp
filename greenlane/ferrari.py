@@ -18,8 +18,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .pyfix import repair
-
 TRUSTED_DOF = Path(__file__).resolve().parents[1] / "bin" / "dof-gate"
 
 
@@ -179,33 +177,6 @@ def _pinned_ruff(execute, ruff_binary, safe_env) -> tuple[str | None, str]:
 
 FORMAT_REFUSAL = "pre-CI Ruff format failure"
 
-# The estate Python standard (bin/idp-python-strict): what a NEW Python file must pass. Existing files
-# are graded by a ratchet there (a regression is refused, an old gap is noted), so the repair below
-# only ever touches files the lane ADDS: it never rewrites old code or refuses what CI would pass.
-STANDARD_SELECT = "E9,F,B,S"
-STANDARD_IGNORE = "S603,S607"
-
-
-def _added_python(execute, cwd, base: str, head: str) -> set[str]:
-    run = execute(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "-z",
-            "--diff-filter=A",
-            f"{base}...{head}",
-            "--",
-            "*.py",
-        ],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    return {p for p in run.stdout.split("\0") if p} if run.returncode == 0 else set()
-
 
 def format_fixes(
     base: str,
@@ -272,40 +243,6 @@ def format_fixes(
             target.write_text(blob.stdout, encoding="utf-8")
             before[name] = blob.stdout
             files.append(str(target))
-        # Repair what the estate standard refuses and ruff cannot fix (assert, unused loop
-        # variable), then let the pinned ruff apply its own safe fixes (F401 ...), then format.
-        # The same rules bin/idp-python-strict grades, so fast-gate is never the first to see them.
-        added = _added_python(execute, cwd, base, head)
-        added_files = [str(Path(folder) / n) for n in paths if n in added]
-        for name in paths:
-            if name in added:
-                (Path(folder) / name).write_text(
-                    repair(before[name], name), encoding="utf-8"
-                )
-        if added_files:
-            lint = execute(
-                [
-                    binary,
-                    "check",
-                    "--config",
-                    config,
-                    "--select",
-                    STANDARD_SELECT,
-                    "--ignore",
-                    STANDARD_IGNORE,
-                    "--fix-only",
-                    "--exit-zero",
-                    *added_files,
-                ],
-                cwd=folder,
-                capture_output=True,
-                text=True,
-                timeout=35,
-                check=False,
-                env=safe_env,
-            )
-            if lint.returncode:
-                return {}
         ruff = [binary, "format", "--config", config]
         run = execute(
             [*ruff, *files],
@@ -440,48 +377,6 @@ def source_assess(
                 )
             if check.returncode != 0:
                 return Verdict("REFUSE", "pre-CI hold: pinned Ruff could not verify")
-            # A new file that still breaks the estate standard in a way the machine repairs
-            # (assert, unused loop variable, unused import) is refused with the FORMAT prefix, so
-            # the engine's existing repair hook fixes it here instead of CI going red on it.
-            added = _added_python(execute, cwd, base, candidate)
-            fresh = [n for n in python_paths if n in added]
-            repairable = [
-                n
-                for n in fresh
-                if repair((Path(folder) / n).read_text(encoding="utf-8"), n)
-                != (Path(folder) / n).read_text(encoding="utf-8")
-            ]
-            if fresh and not repairable:
-                lint = execute(
-                    [
-                        str(binary),
-                        "check",
-                        "--config",
-                        str(TRUSTED_ROOT / "pyproject.toml"),
-                        "--select",
-                        STANDARD_SELECT,
-                        "--ignore",
-                        STANDARD_IGNORE,
-                        "--fix-only",
-                        "--diff",
-                        *[str(Path(folder) / n) for n in fresh],
-                    ],
-                    cwd=folder,
-                    capture_output=True,
-                    text=True,
-                    timeout=35,
-                    check=False,
-                    env=safe_env,
-                )
-                if lint.returncode == 1 and lint.stdout.strip():
-                    repairable = fresh
-            if repairable:
-                return Verdict(
-                    "REFUSE",
-                    FORMAT_REFUSAL
-                    + " (estate standard, machine-repairable): "
-                    + ", ".join(repairable)[:200],
-                )
         return Verdict("ADMIT", "trusted language and exact-source Ruff format passed")
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return Verdict("REFUSE", "pre-CI hold: trusted source preflight unavailable")
