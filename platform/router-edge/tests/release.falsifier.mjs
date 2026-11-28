@@ -105,7 +105,11 @@ test("the pool is repo truth, so a key set out-of-band can serve without a relea
   assert.deepEqual(Object.keys(roles), ["role:coder"]);
   assert.deepEqual(
     roles["role:coder"].candidates.map((c) => c.id),
-    ["minimax-m3", "deepseek-chat", "gemini-3.5-flash"],
+    ["minimax-m3", "deepseek-flash", "deepseek-v4-pro", "gemini-3.5-flash"],
+  );
+  assert.ok(
+    !roles["role:coder"].candidates.some((c) => c.upstreamModel === "deepseek-chat"),
+    "deepseek-chat is retired in DeepSeek's own pricing table; the pool must not call it",
   );
   const bindings = new Set(Object.keys(vendorSecrets({
     SEED_MINIMAX_API_KEY: "m", SEED_DEEPSEEK_API_KEY: "d", SEED_GEMINI_API_KEY: "g",
@@ -123,7 +127,7 @@ test("the pool is repo truth, so a key set out-of-band can serve without a relea
 
 test("the pool carries the lane truth this repo records, not a copy of it", () => {
   const { roles } = rolePool();
-  const [minimax, deepseek, gemini] = roles["role:coder"].candidates;
+  const [minimax, deepseek, deepseekPro, gemini] = roles["role:coder"].candidates;
   assert.equal(roles["role:coder"].minOutputFloor, MIN_OUTPUT_FLOOR);
   assert.ok(roles["role:coder"].minOutputFloor >= 2048, "wrangler.toml DEFAULT_OUTPUT_FLOOR");
   assert.equal(minimax.baseUrl, "https://api.minimax.io/v1/chat/completions");
@@ -132,14 +136,20 @@ test("the pool carries the lane truth this repo records, not a copy of it", () =
   assert.equal(minimax.costPer1kInputUsd, 0.0003);
   assert.equal(minimax.costPer1kOutputUsd, 0.0012);
   assert.equal(deepseek.baseUrl, "https://api.deepseek.com/chat/completions");
-  assert.equal(deepseek.upstreamModel, "deepseek-chat");
-  assert.equal(deepseek.costPer1kInputUsd, 0.00014);
-  assert.equal(deepseek.costPer1kOutputUsd, 0.00028);
+  assert.equal(deepseek.upstreamModel, "deepseek-flash");
+  assert.equal(deepseek.costPer1kInputUsd, 0.0003);
+  assert.equal(deepseek.costPer1kOutputUsd, 0.0012);
+  assert.equal(deepseekPro.baseUrl, "https://api.deepseek.com/chat/completions");
+  assert.equal(deepseekPro.upstreamModel, "deepseek-v4-pro");
+  assert.equal(deepseekPro.costPer1kInputUsd, 0.00132);
+  assert.equal(deepseekPro.costPer1kOutputUsd, 0.00396);
+  assert.equal(deepseekPro.apiKeySecretName, "DEEPSEEK_API_KEY");
   assert.equal(gemini.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
   assert.equal(gemini.upstreamModel, "gemini-3.5-flash");
   // "Gemini goes last everywhere and heads nothing" (llm/config.yaml).
-  assert.ok(gemini.priority > minimax.priority && gemini.priority > deepseek.priority);
-  for (const c of [minimax, deepseek, gemini]) {
+  assert.ok(gemini.priority > minimax.priority && gemini.priority > deepseekPro.priority);
+  assert.ok(deepseekPro.priority > deepseek.priority, "flash is tried before the dearer pro lane");
+  for (const c of [minimax, deepseek, deepseekPro, gemini]) {
     assert.equal(c.maxOutputTokens, 8192);
     assert.equal(c.supportsTools, false, "tool support is a measurement, not an edit");
     assert.equal(c.lane, "edge-direct");
