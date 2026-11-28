@@ -6,7 +6,7 @@
     "intent": 121,
     "layer": 325,
     "service": 123,
-    "tool": 551,
+    "tool": 553,
     "workflow": 114
   },
   "records": [
@@ -31474,7 +31474,9 @@
       },
       "consumers": [
         "cap:tool/claim-gate",
-        "cap:tool/idp-install-hooks"
+        "cap:tool/idp-install-hooks",
+        "cap:tool/lane-preflight",
+        "cap:tool/lane-push-api"
       ],
       "cost": {
         "estimate": null,
@@ -31945,6 +31947,8 @@
         "cap:tool/idp-ci",
         "cap:tool/idp-install-deps",
         "cap:tool/idp-machine-submit",
+        "cap:tool/lane-preflight",
+        "cap:tool/lane-push-api",
         "cap:tool/media-dept-baseline",
         "cap:tool/pr-parity",
         "cap:tool/process-census",
@@ -32037,6 +32041,7 @@
         "cap:tool/claim-gate",
         "cap:tool/estate-memory-enforce",
         "cap:tool/idp-machine-submit",
+        "cap:tool/lane-preflight",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census"
       ],
@@ -41803,6 +41808,7 @@
         "cap:tool/idp-vendor-render",
         "cap:tool/intent-compile",
         "cap:tool/intent-lint",
+        "cap:tool/lane-preflight",
         "cap:tool/law32-gate",
         "cap:tool/memory-gate",
         "cap:tool/nodesoftware-operator-gate",
@@ -57474,6 +57480,157 @@
       ]
     },
     {
+      "id": "cap:tool/lane-preflight",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/lane-push-api"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/lane-preflight",
+      "depends_on": [
+        {
+          "id": "cap:tool/catalog-merge",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claim-open",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/language-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/lane-push-api",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/lane-push-api -- push files to a lane through the GitHub git-data API, judged first.",
+      "contract": {
+        "inputs": [
+          "--agent",
+          "--check",
+          "--claim",
+          "--config",
+          "--dir",
+          "--ignore",
+          "--input",
+          "--lane",
+          "--message-file",
+          "--no-cache",
+          "--per-file-ignores",
+          "--quiet",
+          "--repo",
+          "--select",
+          "--stdin-filename",
+          "--version"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/lane-push-api",
+      "depends_on": [
+        {
+          "id": "cap:tool/catalog-merge",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/lane-preflight",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/language-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/lane-where",
       "schema_version": 1,
       "kind": "tool",
@@ -57877,6 +58034,8 @@
       },
       "consumers": [
         "cap:tool/idp-ci",
+        "cap:tool/lane-preflight",
+        "cap:tool/lane-push-api",
         "cap:tool/legion-admit",
         "cap:workflow/gha-greenlane-efficiency-preflight"
       ],
