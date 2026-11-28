@@ -5,6 +5,7 @@ members = [
     "crates/meridian-legion",
     "crates/meridian-greenlane",
     "crates/meridian-cli",
+    "crates/meridian-outbox-ingest",
 ]
 resolver = "2"
 
