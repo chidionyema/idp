@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""estate-founder-gate: the admission gate for every message bound for the founder's Telegram.
+
+Founder ruling, 2026-11-28: Telegram is the only channel to the founder, an agent never messages him
+directly, and the standard is enforced where a message is admitted, not asked for in prose.
+
+    estate-founder-gate --kind DONE|FAILED|ACTION|DIGEST [--key K] < message.txt
+
+stdout is one JSON object. Exit 0 ADMIT (a ready Telegram payload without chat_id), 1 REFUSE (every
+reason code listed; nothing may be sent), 2 BLIND (input unreadable). An empty message is REFUSE.
+The contract is pure: it reads no credential and sends nothing, so the same judge runs in a hook, a
+sender and CI. The sender adds chat_id and the token.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+
+KINDS = ("DONE", "FAILED", "ACTION", "DIGEST")
+GLYPH = {"DONE": "✓", "FAILED": "✗", "ACTION": "▶", "DIGEST": "●"}
+MAX_HEADLINE = 100
+MAX_CHARS = 900
+MAX_LINES = 12
+SECRET = re.compile(
+    r"\bsk-[A-Za-z0-9_-]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bAKIA[0-9A-Z]{16}"
+    r"|(?i:bearer)\s+[A-Za-z0-9._~+/=-]{12,}|\bbot\d{6,}:[A-Za-z0-9_-]{20,}"
+)
+FILLER = re.compile(
+    r"(?i)\b(i'll|i will|i have|i've|i am|i'm|let me|sorry|apolog\w+|unfortunately|"
+    r"just wanted|hope this|as an ai|great news|happy to|certainly|basically)\b"
+)
+PROOF = re.compile(r"(?im)^proof:.*(https?://\S+|\b[0-9a-f]{7,64}\b|\bexit[= ]\d+)")
+DO_LINE = re.compile(r"(?im)^do:\s*\S")
+URL = re.compile(r"https?://\S+")
+
+
+def judge(kind: str, text: str):
+    """Return (verdict, reasons). Pure: the same input always gives the same answer."""
+    reasons = []
+    body = (text or "").strip()
+    if kind not in KINDS:
+        return "REFUSE", ["KIND"]
+    if not body:
+        return "REFUSE", ["EMPTY"]
+    lines = body.splitlines()
+    head = lines[0].strip()
+    if not head or len(head) > MAX_HEADLINE:
+        reasons.append("HEADLINE")
+    if len(body) > MAX_CHARS or len(lines) > MAX_LINES:
+        reasons.append("LENGTH")
+    if SECRET.search(body):
+        reasons.append("SECRET")
+    if FILLER.search(body):
+        reasons.append("FILLER")
+    if "```" in body:
+        reasons.append("FENCE")
+    if kind in ("DONE", "FAILED") and not PROOF.search(body):
+        reasons.append("NO_PROOF")
+    if kind == "ACTION" and not (DO_LINE.search(body) and URL.search(body)):
+        reasons.append("NO_ACTION")
+    return ("REFUSE", reasons) if reasons else ("ADMIT", [])
+
+
+def payload(kind: str, text: str, key: str | None):
+    body = text.strip()
+    out = {
+        "method": "sendMessage",
+        "text": f"{GLYPH[kind]} {kind}  {body}",
+        # a calm phone: only a failure or a required action is allowed to make a sound
+        "disable_notification": kind in ("DONE", "DIGEST"),
+        "disable_web_page_preview": True,
+        "edit_key": key,
+    }
+    if kind == "ACTION":
+        link = URL.search(body).group(0).rstrip(".,)")
+        out["reply_markup"] = {
+            "inline_keyboard": [[{"text": "Open", "url": link}]],
+        }
+    return out
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--kind", required=True)
+    ap.add_argument("--key", default=None)
+    ap.add_argument("--text", default=None)
+    args = ap.parse_args(argv)
+    try:
+        text = args.text if args.text is not None else sys.stdin.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        print(json.dumps({"verdict": "BLIND", "reasons": [f"UNREADABLE: {exc}"]}))
+        return 2
+    verdict, reasons = judge(args.kind, text)
+    result = {"verdict": verdict, "reasons": reasons}
+    if verdict == "ADMIT":
+        result["payload"] = payload(args.kind, text, args.key)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if verdict == "ADMIT" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
