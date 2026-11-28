@@ -98,6 +98,29 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      # The admission gate reads a fresh `estate.lane-fitness.v1` record per route and refuses
+      # `NO_FIT_LANE before inference` without one (#8659). Nothing wrote that ledger from a
+      # caller, so every `--harness auto` run was dead on arrival even with the writer on main
+      # (#8680). Write it first, from the SAME secret names the admission step below receives,
+      # so a measured route is a route admission can actually call.
+      - name: Measure lane fitness before admission
+        id: fitness
+        env:
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.SEED_ZAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          LEGION_PAID_PROVIDERS: ${{ vars.LEGION_PAID_PROVIDERS }}
+          LEGION_DISABLED_PROVIDERS: ${{ vars.LEGION_DISABLED_PROVIDERS }}
+        run: |
+          set -euo pipefail
+          fitness="$RUNNER_TEMP/fitness"
+          mkdir -p "$fitness"
+          # rustc ships on ubuntu-24.04; the crate is std-only, so no cargo or crates.io fetch
+          # sits between the lane and its admission decision.
+          bin/lane-fitness --fitness-dir "$fitness" --secret-name-template 'SEED_{key_env}'
       - name: Admit exact scope and provider capacity
         id: admission
         env:
@@ -121,13 +144,17 @@ jobs:
           case "$HARNESS" in auto|gemini|pi|claude-code) ;; *) exit 2 ;; esac
           # pi's execution model is fixed; probe that exact model.
           if [ "$HARNESS" = pi ]; then export MODEL=MiniMax-M2.7; fi
-          python3 bin/legion-admit --out "$out"
+          # The ledger step above writes even when it refuses (exit 1 for a missing key is the
+          # escalation, not an admission failure); a route with no usable record stays unfit
+          # and is refused by name, which is the honest verdict.
+          fitness="$RUNNER_TEMP/fitness"
+          python3 bin/legion-admit --out "$out" --fitness-dir "$fitness"
           printf 'base=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           provider=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("provider",""))' "$out/admission.json")
           fallback=0
           if [ "$HARNESS" = gemini ] && [ "$provider" = google ] && [ "$LEGION_FAILOVER" = 1 ]; then
             # An admitted primary does not imply an admitted fallback.
-            if env -u GITHUB_OUTPUT python3 bin/legion-admit --harness pi --model MiniMax-M2.7 --out "$out/fallback"; then
+            if env -u GITHUB_OUTPUT python3 bin/legion-admit --harness pi --model MiniMax-M2.7 --out "$out/fallback" --fitness-dir "$fitness"; then
               fallback=1
             fi
           fi
