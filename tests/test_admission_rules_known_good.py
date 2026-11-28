@@ -225,3 +225,39 @@ def test_the_json_mode_refuses_a_scope_that_spans_two_code_subsystems() -> None:
     )
     rc, out = _json_mode(body)
     assert rc != 0 and "cross-subsystem" in out, out
+
+
+def known_good_refusals() -> int:
+    """How many admission rules refuse the known-good change (a code change + its test).
+
+    This is the measure the registry names (admission.code_plus_test_refusals): 1
+    before idp#8649 (proof 2 refused a platform/ change whose test lives in tests/),
+    0 after. Every rule is asked the same question, so the number means one thing.
+    """
+    scope = ("platform/estate/memory/leases.py", "tests/test_leases.py")
+    paths = list(scope)
+    refusals = 0
+    ok, _report = V3P.verify_proof_2_boundary_and_gate(SHA, paths, False)
+    refusals += 0 if ok else 1
+    admitted, _why = BDD.verify_admission_block(_admission_body(scope))
+    refusals += 0 if admitted else 1
+    try:
+        APPLY.validate_scope(SHA, paths)
+    except Exception:  # noqa: BLE001 - a refusal is a raise here
+        refusals += 1
+    # The path binding refuses when a companion demands a bound test of its own.
+    if DIFF.subsystem_of(scope[1]) in DIFF.required_subsystems(paths):
+        refusals += 1
+    return refusals
+
+
+def test_no_admission_rule_refuses_the_known_good_change() -> None:
+    """The class, measured as a number: zero rules refuse a code change with its test."""
+    assert known_good_refusals() == 0
+
+
+if __name__ == "__main__":
+    if "--optimus" in sys.argv:
+        print(f"optimus.admission.code_plus_test_refusals={known_good_refusals()}")
+        sys.exit(0)
+    raise SystemExit("run this module with pytest, or with --optimus for the measure")

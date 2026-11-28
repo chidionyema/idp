@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -229,6 +230,7 @@ def _run(
         env=env,
     )
     if check and p.returncode != 0:
+        # FM:greenlane.subprocess-exit-nonzero-where-checked
         raise RuntimeError(
             f"{' '.join(args[:3])}: rc={p.returncode} {p.stderr.strip()[:400]}"
         )
@@ -326,6 +328,7 @@ class GitHubBackend:
             text=True,
         )
         if p.returncode != 0:
+            # FM:greenlane.remote-state-ref-unreadable
             raise RuntimeError(
                 f"git ls-remote {STATE_REF}: rc={p.returncode} {p.stderr.strip()[:400]}"
             )
@@ -347,11 +350,13 @@ class GitHubBackend:
         # this sha and refuses to overwrite a state it never saw.
         self._state_lease = self._remote_state()
         if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
+            # FM:greenlane.state-ref-absent-locally-or-empty
             raise RuntimeError(
                 f"{STATE_REF} exists on origin ({self._state_lease[:12]}) but not locally"
             )
         text = self.git("show", f"{STATE_REF}:state.json", check=False)
         if not text:
+            # FM:greenlane.state-ref-absent-locally-or-empty
             raise RuntimeError(f"{STATE_REF} exists but carries no state.json")
         return text
 
@@ -795,12 +800,14 @@ class GitHubBackend:
             if not re.fullmatch(r"[0-9a-f]{40}", head) or not (
                 lane.startswith("lane/") or lane == BOT_LANE
             ):
+                # FM:greenlane.lane-or-oid-invalid
                 raise UnavailableLaneObject("invalid lane/OID; reobserve") from original
             ref = f"refs/heads/{lane}"
             for _ in range(2):
                 observed = self.git("ls-remote", "--heads", "origin", ref)
                 remote = observed.split()[0] if observed.strip() else ""
                 if remote != head:
+                    # FM:greenlane.lane-ref-moved-before-fetch
                     raise UnavailableLaneObject(
                         f"{lane}: remote moved or deleted; expected {head[:12]}, "
                         f"now {remote[:12] or 'absent'}"
@@ -815,11 +822,13 @@ class GitHubBackend:
                 observed = self.git("ls-remote", "--heads", "origin", ref)
                 remote = observed.split()[0] if observed.strip() else ""
                 if remote != head:
+                    # FM:greenlane.lane-object-moved-mid-recovery
                     raise UnavailableLaneObject(
                         f"{lane}: remote moved during exact-object recovery"
                     ) from original
                 if local == head:
                     return self.git("merge-base", onto, head)
+            # FM:greenlane.lane-object-unavailable-after-two-fetches
             raise UnavailableLaneObject(
                 f"{lane}: exact {head[:12]} unavailable after two fetch attempts"
             ) from original
@@ -1336,8 +1345,10 @@ class GitHubBackend:
             if verdict == "green":
                 return
             if verdict == "red":
+                # FM:greenlane.required-check-red-after-push
                 raise RuntimeError(f"land: {sha[:12]} went red after the push: {why}")
             if time.time() > deadline:
+                # FM:greenlane.required-check-slow-past-deadline
                 raise RuntimeError(
                     f"land: {sha[:12]} still {why} {self.LAND_WAIT_S}s after the push"
                 )
@@ -1449,6 +1460,7 @@ class GitHubBackend:
             if not pr:
                 pr = self._pr_for(lane)
             if not pr:
+                # FM:greenlane.no-pull-request-for-landed-lane
                 raise RuntimeError(
                     f"land: no pull request for {lane}; cannot move main"
                 )
@@ -1555,6 +1567,7 @@ class GitHubBackend:
                     if "HTTP 405" not in merge_error or (
                         attempt == self.LAND_MERGE_TRIES - 1
                     ):
+                        # FM:greenlane.merge-refused-not-405-or-budget-spent
                         raise RuntimeError(merge_error)
                     fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
                     fresh_head = fresh_pr.get("head", {}).get("sha", "")
@@ -1633,6 +1646,46 @@ class GitHubBackend:
         proven = re.fullmatch(r"[0-9a-f]{40}", r[0] or "") is not None
         return actual if proven and a == r else rebased
 
+    def _admission_block(self, rebased: str) -> str:
+        """The scope this proof covers, bound to the commit it sits on.
+
+        I-8107 made the grader demand an ADMISSION block: a proof must name the scope it
+        covers and the base it was built on. NOBODY produced that block -- the lander
+        wrote a proof, not a scope, so the grader refused every body the estate writes
+        ("ADMISSION_MISSING", measured 2026-11-27 on c8dc5b538, 3 failures in
+        tests/test_bdd_proof_producer.py) -- and the rule had a consumer and no
+        producer. The producer fills it now, from the only source that can answer it
+        truthfully: the HEAD COMMIT's diff.
+
+        The head commit, not the whole lane: the estate's own rule for a change is at
+        most five files in ONE subsystem, and a lane is split into one commit per
+        subsystem (bin/verify_three_proofs.py proof 2).
+
+        The block states the scope as it is; the GRADER decides whether it is a legal
+        admission (bin/idp-bdd-proof-gate). A second copy of that rule here would drift
+        (R7), so the producer states the truth and lets the judge judge.
+        """
+        try:
+            diff = self.git(
+                "diff", "--name-only", f"{rebased}^..{rebased}", check=False
+            )
+            base = (self.git("rev-parse", f"{rebased}^", check=False) or "").strip()
+        except Exception:  # noqa: BLE001 -- a producer that cannot answer writes no block
+            return ""
+        scope = [line.strip() for line in (diff or "").splitlines() if line.strip()]
+        if not scope or not re.fullmatch(r"[0-9a-f]{40}", base):
+            return ""
+        digest = hashlib.sha256(
+            json.dumps({"base": base, "scope": sorted(scope)}, sort_keys=True).encode()
+        ).hexdigest()
+        return (
+            "ADMISSION\n"
+            f"base: {base}\n"
+            f"scope: {json.dumps(sorted(scope))}\n"
+            f"digest: {digest}\n"
+            "END-ADMISSION\n"
+        )
+
     def _proof_body(self, lane: str, head: str, rebased: str, tip: str) -> str:
         proved = self._proof_head(lane, rebased)
         return (
@@ -1641,6 +1694,7 @@ class GitHubBackend:
             f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
             f"BDD-PROOF\nhead: {proved}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
+            + self._admission_block(rebased)
         )
 
     def _lane_pr(self, lane: str) -> Optional[dict]:
