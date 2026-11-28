@@ -23,7 +23,10 @@ def parse_terraform_files():
     resources = {}
     dependencies = defaultdict(set)
 
-    tf_files = list(TF_ROOT.glob("*.tf"))
+    # sorted: glob order is the directory's, which differs between the engine's checkout and the
+    # Actions runner; unsorted, the two regenerations disagree and the workflow pushes a second
+    # commit that moves a queue tip off its tested sha (batches b6417-b6419, 2026-11-28).
+    tf_files = sorted(TF_ROOT.glob("*.tf"))
     if not tf_files:
         print("[ERROR] No .tf files found in platform/oci")
         return None, None
@@ -80,12 +83,12 @@ def gen_dot_graph(resources, dependencies):
     lines.append('  node [shape=box];')
 
     # Add nodes
-    for res_id, res_class in resources.items():
+    for res_id, res_class in sorted(resources.items()):
         label = f"{res_class}\\n{res_id.split('.')[-1]}"
         lines.append(f'  "{res_id}" [label="{label}"];')
 
     # Add edges
-    for src, targets in dependencies.items():
+    for src, targets in sorted(dependencies.items()):
         for target in sorted(targets):
             lines.append(f'  "{target}" -> "{src}";')
 
