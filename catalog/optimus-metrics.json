@@ -575,6 +575,17 @@
       "better": "higher",
       "owner": "delivery",
       "description": "How many of the friction producer's 6 built-in known-bad and known-good cases its alert rules get right, on synthetic results with no transcripts, so a CI runner can read it. 6 means every case behaved; the live friction.* metrics read BLIND wherever agent sessions are absent."
+    },
+    {
+      "name": "founder_action.falsifiers_declared",
+      "measure": [
+        "python3",
+        "tests/founder_action_falsifiers.py"
+      ],
+      "unit": "cases",
+      "better": "higher",
+      "owner": "delivery",
+      "description": "Number of falsifier tests declared for the founder-action door (tests/test_founder_action_buttons.py): one message with buttons for an action no agent can do; a tap counts only from the founder's chat; unknown decision, unknown key, other chat and repeat taps record nothing; an action without proof or a button payload over 64 bytes is refused. Counts declared tests, it does not run them; that they pass is proved by the Greenlane running tests/. 0 on main while the suite is absent."
     }
   ]
 }
