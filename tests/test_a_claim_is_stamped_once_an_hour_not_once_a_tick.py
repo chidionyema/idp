@@ -1,4 +1,4 @@
-"""A claim is stamped once an hour, not once a tick (idp#5953, idp#5951).
+"""A claim is stamped once per cadence, not once a tick (idp#5953, idp#5951).
 
 `_observe_lanes` heartbeated every lane it held -- one API call each -- at the top of every tick.
 `heartbeat` is not a cheap call: measured 2026-10-12 against a real held lane, 1.88s, because it
@@ -6,7 +6,7 @@ runs two local `git` invocations to find the lane's claim trailer and then reads
 comments. At the `lanes=29` a surviving tick reported, that is ~55s of an ~85s tick -- and the tick
 shares the single `greenlane` concurrency slot with every completion on main, so it is cancelled
 more often than it survives (measured: 82 of the last 100 runs). The freshness the call protects is
-hourly by the claim gate's own rule (MAX_AGE is two hours), and the backend already refuses to
+a cadence of HEARTBEAT_EVERY_MIN by the claim gate's own rule (MAX_AGE is 15 minutes), and the backend already refuses to
 write a stamp younger than STAMP_AFTER (greenlane/github.py:768) -- but it refuses only AFTER it
 has paid for the two git calls and the read that reveal the stamp's age.
 
@@ -101,15 +101,15 @@ def test_the_second_tick_does_not_look_up_a_claim_the_first_one_stamped():
     eng.tick()
     assert be.heartbeats == [("lane/x", "hx")], "the first sight of a lane stamps it"
 
-    be.minute += 10
+    be.minute += E.HEARTBEAT_EVERY_MIN - 1
     eng.tick()
     eng.tick()
     assert be.heartbeats == [("lane/x", "hx")], (
-        "a lane stamped ten minutes ago was looked up again: 1.88s per lane per tick"
+        "a lane stamped inside the cadence was looked up again: 1.88s per lane per tick"
     )
 
 
-def test_the_stamp_is_renewed_once_the_hour_is_up():
+def test_the_stamp_is_renewed_once_the_cadence_is_up():
     """Bound in the other direction: skipping must not mean never stamping again."""
     be = Clock({"lane/x": "hx"})
     eng = _engine(be)
@@ -174,7 +174,7 @@ def test_the_stamp_survives_the_state_round_trip():
 
     again = E.State.loads(eng.s.dumps())
     assert again.lanes["lane/x"].stamped == be.now()
-    be.minute += 5
+    be.minute += E.HEARTBEAT_EVERY_MIN - 1
     _engine(be, again)._heartbeat_lanes()
     assert be.heartbeats == [("lane/x", "hx")], (
         "the stamp did not survive the state file"

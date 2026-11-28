@@ -32,7 +32,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING, UnavailableLaneObject
+from .engine import (
+    BOT_LANE,
+    CONFLICT,
+    HEARTBEAT_EVERY_MIN,
+    LANDED,
+    RED,
+    TESTING,
+    UnavailableLaneObject,
+)
 from .ferrari import assess as ferrari_assess, format_fixes, source_assess
 
 STATE_REF = "refs/greenlane/state"
@@ -116,9 +124,10 @@ CLAIM_LINE = re.compile(
     r"heartbeat=(?P<hb>\S+)\s*$",
     re.M,
 )
-STAMP_AFTER = timedelta(
-    minutes=45
-)  # the gate's limit is 2h; stamp at most about hourly
+# One minute under the engine's cadence, so a stamp the engine asks for is never refused as too
+# young. Both derive from CLAIM_LAPSE_MIN in greenlane/engine.py, which mirrors the gate's MAX_AGE.
+STAMP_AFTER = timedelta(minutes=HEARTBEAT_EVERY_MIN - 1)
+MACHINE_STAMP = "Heartbeat refreshed by the Greenlane"
 
 
 def _bodies(comments: list) -> list:
@@ -2545,8 +2554,10 @@ class GitHubBackend:
     def heartbeat(self, lane: str, head: str) -> None:
         """Refresh the heartbeat of the claim a held lane lands on (idp#5758): an agent waiting
         on the lane queue must not watch its claim lapse and its finished work get refused.
-        Stamps at most about hourly (the gate's limit is 2h), keeps the agent and paths the
-        claim already declares, and never holds a lane on a stamping failure."""
+        Stamps at most every STAMP_AFTER (the gate lapses a claim at 15 minutes), keeps the agent
+        and paths the claim already declares, and never holds a lane on a stamping failure.
+        A stamp that follows the Greenlane's own previous stamp edits that comment in place, so
+        a lane held for hours leaves one machine comment, not one every few minutes."""
         try:
             base = (
                 self.git("merge-base", "origin/main", head, check=False)
@@ -2557,10 +2568,19 @@ class GitHubBackend:
             if not m:
                 return
             issue, comments = self._issue_comments(m.group(1))
-            claims = [c for c in map(CLAIM_LINE.search, _bodies(comments)) if c]
+            pairs = [
+                (cm, hit)
+                for cm, hit in (
+                    (cm, CLAIM_LINE.search(body))
+                    for cm, body in zip(comments, _bodies(comments))
+                )
+                if hit
+            ]
+            claims = [hit for _, hit in pairs]
             if not claims:
                 return
             c = claims[-1]
+            last_comment = pairs[-1][0]
             # The lane's own trailer names the agent that raised it. Refreshing a claim held by
             # a different agent keeps alive a claim the claim-gate must refuse on every run: the
             # lane can never pass, the path is held for as long as the machine keeps stamping,
@@ -2589,21 +2609,29 @@ class GitHubBackend:
                 )
             )
             model = f" model={c['model']}" if c["model"] else ""
-            self.gh(
-                f"issues/{m.group(1)}/comments",
-                "POST",
-                {
-                    "body": (
-                        f"CLAIM agent={c['agent']}{model} paths={paths} "
-                        f"heartbeat={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n"
-                        f"Heartbeat refreshed by the Greenlane: lane `{lane}` is held and still "
-                        f"proving this claim's work (idp#5758 -- the machine keeps the claim "
-                        f"alive it is working on)."
-                    )
-                },
+            body = (
+                f"CLAIM agent={c['agent']}{model} paths={paths} "
+                f"heartbeat={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n"
+                f"{MACHINE_STAMP}: lane `{lane}` is held and still "
+                f"proving this claim's work (idp#5758 -- the machine keeps the claim "
+                f"alive it is working on)."
             )
+            if self._restamp_in_place(last_comment, body):
+                return
+            self.gh(f"issues/{m.group(1)}/comments", "POST", {"body": body})
         except Exception:
             return
+
+    def _restamp_in_place(self, comment: dict, body: str) -> bool:
+        """Edit the newest claim comment when it is the Greenlane's own stamp. True only when the
+        edit was accepted; any refusal falls back to a new comment, so a stamp is never lost."""
+        cid = comment.get("id")
+        if not cid or MACHINE_STAMP not in (comment.get("body") or ""):
+            return False
+        try:
+            return bool(self.gh(f"issues/comments/{cid}", "PATCH", {"body": body}))
+        except Exception:
+            return False
 
     def _issue_comments(self, num: str):
         issue = self.gh(f"issues/{num}") or {}
