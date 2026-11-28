@@ -6,6 +6,7 @@
   "description": "The estate's live state: one Durable Object, one snapshot, BLIND is a value",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "watch": "node scripts/watch.mjs"
   }
 }
