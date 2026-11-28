@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "kernel_crate": "crates/mitp-thinking-packs",
+  "language_gate_compliant": true,
+  "deterministic_first_order": [
+    "1_ZERO_DISK_REFLEX_BYPASS",
+    "2_CBF_HOST_BARRIER_AND_CLOUD_OFFLOAD",
+    "3_SIX_TUPLE_BOUNDING_ENVELOPE",
+    "4_DEPENDENCY_CLOSURE_CONTAINMENT",
+    "5_ATMS_NOGOOD_FIREWALL",
+    "6_RCA_REPRODUCER_BEFORE_MUTATION",
+    "7_BAYESIAN_VOI_STOPPING_AND_DUPLICATE_PROBE_BAN",
+    "8_BOUNDED_LLM_PROPOSAL_ONLY_AFTER_1_TO_7_PASS"
+  ],
+  "issue_classes": {
+    "ERR_SPECULATIVE_PATCH_BEFORE_REPRO": "S2/S3/S5/S7 mutation attempted without verified failing reproducer.",
+    "ERR_ATMS_NOGOOD_REGRESSION": "Step relies on an assumption superset of a previously falsified nogood.",
+    "ERR_CBF_OFFLOAD_CLOUD_CI": "Host barrier h_dot + gamma*h < 0; heavy build offloaded to Cloud CI.",
+    "ERR_ZERO_EIG_DUPLICATE_PROBE": "Duplicate read/shell probe with zero Expected Information Gain.",
+    "ERR_PROXY_GREEN_LOW_SEVERITY": "Mayo test severity SEV(T,H) below threshold or canary failed.",
+    "ERR_LYAPUNOV_NON_CONVERGENT": "Retry failed to decrease defect potential V(s).",
+    "ERR_BOUNDED_LIVENESS_VIOLATION": "Defect unresolved past bounded TLA+ deadline."
+  },
+  "optimus_metrics": [
+    "estate.thinking_pack_deterministic_rejects",
+    "estate.thinking_pack_voi_early_stops",
+    "estate.thinking_pack_cbf_preemptive_offloads",
+    "estate.thinking_pack_brier_calibration_score"
+  ]
+}
