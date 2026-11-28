@@ -732,6 +732,18 @@
       "better": "lower",
       "owner": "greenlane",
       "description": "Minutes of a three-hour lane hold in which the claim sat past bin/claim-gate's own MAX_AGE, read by driving the shipped Engine._heartbeat_lanes and GitHubBackend.heartbeat once per simulated minute (only the clock is faked). 117 measured on main dcb7b68df7 (45-50 min cadence under a comment claiming a 2h limit), 0 on the lane that mirrors the gate's lapse (idp#8742)."
+    },
+    {
+      "name": "state_page.unknown_rendered",
+      "measure": [
+        "python3",
+        "tests/estate/test_state_page_unknown.py",
+        "--optimus"
+      ],
+      "unit": "count",
+      "better": "higher",
+      "owner": "governance",
+      "description": "1 when bin/estate-state-page renders an unreadable claim ledger as UNKNOWN instead of a measured zero (idp#8781), 0 when it renders '0 of 0' or crashes"
     }
   ]
 }
