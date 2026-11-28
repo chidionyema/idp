@@ -478,6 +478,17 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when the real Greenlane Engine asks its backend to repair a lane whose only pre-CI refusal is the pinned-ruff format refusal (no CI spent on the unformatted head), refuses unchanged without a fixer, and never invokes the fixer for any other refusal"
+    },
+    {
+      "name": "gemini_outbox.verifier_falsifiers_declared",
+      "measure": [
+        "python3",
+        "tests/gemini_outbox_verifier_falsifiers.py"
+      ],
+      "unit": "cases",
+      "better": "higher",
+      "owner": "delivery",
+      "description": "Number of #[test] falsifiers declared in the Gemini outbox verifier crate (platform/meridian-core-engines/crates/meridian-outbox-ingest): known-bad packets it must refuse (tampered or short bytes, proxy accept URL, target outside intake/, unsafe names, bad ids, wrong repo, duplicates) and known-good it must accept. Counts declared tests, it does not run them; that they pass is proved by cargo test in meridian-core-engines.yml. 0 on main while the crate is absent."
     }
   ]
 }
