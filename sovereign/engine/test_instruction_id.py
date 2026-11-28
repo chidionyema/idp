@@ -9,13 +9,26 @@ server. They never claim the production Temporal server is reachable.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import sys
 import types
+import uuid
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from temporalio import activity
+from temporalio.client import WorkflowFailureError  # noqa: F401
+from temporalio.exceptions import ApplicationError
+from temporalio.service import RPCError
+from temporalio.testing import WorkflowEnvironment
+from temporalio.worker import Replayer, Worker
 
+from sovereign.engine import activities as engine_activities
 from sovereign.engine import client as engine_client
+from sovereign.engine import fsm
+from sovereign.engine.workflow import SessionWorkflow
 
 
 class AlreadyStarted(Exception):
@@ -293,3 +306,394 @@ def test_worker_done_and_worker_exit_are_not_instruction_settlement():
     assert 'self._retain_instruction("worker-exit-unverified")' in source
     assert 'self._retain_instruction("worker-claim-unverified")' in source
     assert '"verify_instruction_yield"' in source
+
+
+# ---------------------------------------------------------------------------
+# MERIDIAN-CTRL-001 section 11: real Temporal Test Server (time-skipping), a real
+# Worker, the real SessionWorkflow, and the real Ed25519 verify_instruction_yield
+# activity. Only the disk/network activities are stubbed. No fixture above is used.
+# ---------------------------------------------------------------------------
+
+TASK = "ship the effect"
+IID = "INS-S11-001"
+DEADLINE_S = 60
+ROUNDS = 3
+
+
+class Lab:
+    def __init__(self) -> None:
+        self.loop = asyncio.new_event_loop()
+        self.env = self.loop.run_until_complete(WorkflowEnvironment.start_time_skipping())
+
+    def run(self, coro):
+        return self.loop.run_until_complete(coro)
+
+    def close(self) -> None:
+        self.loop.run_until_complete(self.env.shutdown())
+        self.loop.close()
+
+
+@pytest.fixture(scope="module")
+def lab():
+    lab = Lab()
+    try:
+        yield lab
+    finally:
+        lab.close()
+
+
+class Rec:
+    def __init__(self) -> None:
+        self.receipts: list[dict] = []
+        self.verdicts: list[str] = []
+        self.steps = 0
+
+    def kinds(self) -> list[str]:
+        return [r["kind"] for r in self.receipts]
+
+
+def _activities(rec: Rec, step_result):
+    @activity.defn(name="budget_op")
+    async def budget_op(inp):
+        return {"remaining": 1000}
+
+    @activity.defn(name="append_receipt")
+    async def append_receipt(record):
+        rec.receipts.append(record)
+        return {}
+
+    @activity.defn(name="notify_change")
+    async def notify_change(state):
+        return {}
+
+    @activity.defn(name="run_step")
+    async def run_step(inp):
+        rec.steps += 1
+        if step_result is None:
+            raise ApplicationError("worker exited", non_retryable=True)
+        return step_result
+
+    @activity.defn(name="verify_instruction_yield")
+    async def verify(inp):
+        verdict = await engine_activities.verify_instruction_yield(inp)
+        rec.verdicts.append(verdict)
+        return verdict
+
+    return [budget_op, append_receipt, notify_change, run_step, verify]
+
+
+def _params(**over):
+    params = {
+        "session_id": IID,
+        "instruction_id": IID,
+        "task": TASK,
+        "runner": "claude",
+        "repo": None,
+        "by": "genesis",
+        "budget": 1000,
+        "critical": False,
+        "receipt_activity_timeout_s": 30,
+        "receipt_retry_max_attempts": 1,
+        "notify_activity_timeout_s": 30,
+        "notify_retry_max_attempts": 1,
+        "step_start_to_close_min": 1,
+        "step_heartbeat_s": 30,
+        "step_activity_retry_max_attempts": 1,
+        "last_output_max_chars": 500,
+        "fsm_states": list(fsm.STATES),
+        "fsm_max_cycles": 5,
+        "budget_activity_timeout_s": 30,
+        "budget_retry_max_attempts": 1,
+        "approval_timeout_min": 0,
+        "verification_deadline_s": DEADLINE_S,
+        "verification_max_rounds": ROUNDS,
+    }
+    params.update(over)
+    return params
+
+
+def _envelope(key, run_id, **over):
+    receipt = {
+        "instruction_id": IID,
+        "run_id": run_id,
+        "epoch": 1,
+        "goal_sha256": hashlib.sha256(TASK.encode()).hexdigest(),
+        "commit_sha": None,
+        "action": "settle",
+        "ok": True,
+        "effect_ref": "effect-1",
+        "reconciled": True,
+    }
+    receipt.update(over)
+    subject = b"meridian/instruction-yield-v1:" + json.dumps(
+        receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
+    return {"receipt": receipt, "signature": key.sign(subject).hex()}
+
+
+async def _until(predicate, what, seconds=20.0):
+    deadline = asyncio.get_running_loop().time() + seconds
+    while asyncio.get_running_loop().time() < deadline:
+        if await predicate():
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"never reached: {what}")
+
+
+async def _halted(handle) -> bool:
+    try:
+        state = await handle.query("state")
+    except Exception:
+        return False
+    return state["status"] == "halted"
+
+
+@pytest.fixture()
+def signing(monkeypatch):
+    key = Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes_raw().hex()
+    monkeypatch.setenv("ESTATE_YIELD_VERIFIER_PUBKEY_HEX", pub)
+    return key
+
+
+async def _start(lab, workflow_cls, rec, step_result, params=None, wid=None):
+    queue = "s11-" + uuid.uuid4().hex
+    worker = Worker(
+        lab.env.client,
+        task_queue=queue,
+        workflows=[workflow_cls],
+        activities=_activities(rec, step_result),
+    )
+    return worker, queue
+
+
+def test_a_valid_independent_receipt_settles(lab, signing):
+    """Positive control: a real signed receipt from the independent verifier settles."""
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal(
+                "submit_independent_yield", _envelope(signing, handle.result_run_id)
+            )
+            return await asyncio.wait_for(handle.result(), 60)
+
+    state = lab.run(scenario())
+    assert state["status"] == "done"
+    assert rec.verdicts == ["settle"]
+    assert rec.kinds().count("done") == 1
+    assert "verification_requested" in rec.kinds()
+    assert "verification_timeout" not in rec.kinds()
+
+
+def test_b_missing_verifier_hits_deadline_and_fails_closed(lab, signing):
+    """Negative control: no verifier ever answers. The wait is bounded, re-dispatches
+    for the configured rounds, then fails closed. It must not hang."""
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            return await asyncio.wait_for(handle.result(), 90)
+
+    state = lab.run(scenario())
+    assert state["status"] == "failed"
+    assert state["reason"] == "verification-deadline-exceeded"
+    kinds = rec.kinds()
+    assert kinds.count("verification_requested") == ROUNDS
+    assert kinds.count("verification_timeout") == ROUNDS
+    assert kinds[-1] == "fail"
+    assert "done" not in kinds
+    assert rec.verdicts == []
+
+
+def test_b_delayed_verifier_after_one_timeout_still_settles(lab, signing):
+    """Bounded recovery, not an abort: a verifier that is late once (past the first
+    deadline) but inside the round budget still settles, in a later round."""
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await lab.env.sleep(DEADLINE_S + 5)
+            await _until(
+                lambda: asyncio.sleep(0, "verification_timeout" in rec.kinds()),
+                "first deadline fired",
+            )
+            await handle.signal(
+                "submit_independent_yield", _envelope(signing, handle.result_run_id)
+            )
+            return await asyncio.wait_for(handle.result(), 60)
+
+    state = lab.run(scenario())
+    assert state["status"] == "done"
+    assert rec.kinds().count("verification_timeout") == 1
+    assert rec.kinds().count("verification_requested") == 2
+    assert rec.verdicts == ["settle"]
+
+
+def test_c_stale_forged_and_duplicate_receipts_are_rejected(lab, signing):
+    rec = Rec()
+    attacker = Ed25519PrivateKey.generate()
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            run_id = handle.result_run_id
+            bad = [
+                _envelope(signing, "a-previous-run"),  # stale attempt: other run
+                _envelope(signing, run_id, epoch=0),  # stale attempt: older epoch
+                _envelope(attacker, run_id),  # wrong signer
+            ]
+            for n, envelope in enumerate(bad, start=1):
+                await handle.signal("submit_independent_yield", envelope)
+                await _until(
+                    lambda n=n: asyncio.sleep(0, len(rec.verdicts) >= n), f"verdict {n}"
+                )
+                assert await _halted(handle)
+            good = _envelope(signing, run_id)
+            await handle.signal("submit_independent_yield", good)
+            state = await asyncio.wait_for(handle.result(), 60)
+            duplicate_refused = False
+            try:
+                await handle.signal("submit_independent_yield", good)
+            except RPCError:
+                duplicate_refused = True
+            return state, duplicate_refused
+
+    state, duplicate_refused = lab.run(scenario())
+    assert rec.verdicts == ["reject", "reject", "reject", "settle"]
+    assert state["status"] == "done"
+    assert rec.kinds().count("done") == 1
+    assert duplicate_refused
+
+
+def test_c_missing_instruction_id_is_refused_by_client_and_by_workflow(lab):
+    with pytest.raises(ValueError, match="consequential runners require"):
+        asyncio.run(engine_client.start("do a thing", runner="claude", by="cli"))
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, SessionWorkflow, rec, {"output": "x", "tokens": 1})
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow",
+                _params(instruction_id=None, session_id="sb-" + uuid.uuid4().hex[:8], by="cli"),
+                id="sb-" + uuid.uuid4().hex[:8],
+                task_queue=queue,
+            )
+            return await asyncio.wait_for(handle.result(), 60)
+
+    state = lab.run(scenario())
+    assert state["status"] == "failed"
+    assert state["reason"].startswith("custody-required")
+    assert rec.steps == 0, "the consequential runner must never have been dispatched"
+
+
+def test_c_non_consequential_runner_without_instruction_id_still_runs(lab):
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(
+            lab, SessionWorkflow, rec, {"output": "ok", "tokens": 1, "done": True}
+        )
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow",
+                _params(instruction_id=None, runner="echo", by="cli"),
+                id="sb-" + uuid.uuid4().hex[:8],
+                task_queue=queue,
+            )
+            return await asyncio.wait_for(handle.result(), 60)
+
+    state = lab.run(scenario())
+    assert not str(state["reason"]).startswith("custody-required")
+    assert rec.steps >= 1
+
+
+def _prepatch():
+    from sovereign.engine.prepatch_workflow_snapshot import SessionWorkflow as Old
+
+    return Old
+
+
+def test_b_falsifier_prepatch_workflow_hangs_where_patched_one_fails_closed(lab, signing):
+    """Same scenario as the bounded test, run on the pre-patch code: it never terminates.
+    This is what proves the bounded test can fail."""
+    rec = Rec()
+
+    async def scenario():
+        worker, queue = await _start(lab, _prepatch(), rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            # Real time, not result(): awaiting result() lets the time-skipping server jump
+            # the clock, which is exactly what the patched deadline relies on.
+            await asyncio.sleep(3)
+            state = await handle.query("state")
+            hung = state["status"] == "halted"
+            await handle.terminate("test cleanup")
+            return hung, state
+
+    hung, state = lab.run(scenario())
+    assert hung and state["status"] == "halted"
+
+
+def test_d_prepatch_histories_replay_on_patched_workflow(lab, signing):
+    """Replay compatibility: histories recorded by the PRE-patch workflow replay on the
+    patched one with no non-determinism (workflow.patched keeps the old path)."""
+    histories = []
+    rec = Rec()
+
+    async def record():
+        worker, queue = await _start(lab, _prepatch(), rec, None)
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow", _params(), id=IID + uuid.uuid4().hex, task_queue=queue
+            )
+            await _until(lambda: _halted(handle), "halted awaiting verifier")
+            await handle.signal(
+                "submit_independent_yield", _envelope(signing, handle.result_run_id)
+            )
+            await asyncio.wait_for(handle.result(), 60)
+            histories.append(("guarded-settled", await handle.fetch_history()))
+        rec2 = Rec()
+        worker, queue = await _start(
+            lab, _prepatch(), rec2, {"output": "ok", "tokens": 1, "done": True}
+        )
+        async with worker:
+            handle = await lab.env.client.start_workflow(
+                "SessionWorkflow",
+                _params(instruction_id=None, runner="claude", by="cli"),
+                id="sb-" + uuid.uuid4().hex[:8],
+                task_queue=queue,
+            )
+            await asyncio.wait_for(handle.result(), 60)
+            histories.append(("unnamed-consequential", await handle.fetch_history()))
+
+    lab.run(record())
+    assert len(histories) == 2
+    for name, history in histories:
+        assert not any(
+            "bounded-verification-deadline-v1" in str(e) or "custody-required-v1" in str(e)
+            for e in history.events
+        ), name
+        lab.run(Replayer(workflows=[SessionWorkflow]).replay_workflow(history))
