@@ -7,20 +7,41 @@
     "scheme": "Bearer",
     "key_env": "MCP_GATEWAY_KEY",
     "vault_loader": "~/Documents/code/estate-secrets/scripts/secret-load",
-    "vault_entry": ["dev", "MCP_GATEWAY_KEY", "MCP_GATEWAY_KEY"]
+    "vault_entry": [
+      "dev",
+      "MCP_GATEWAY_KEY",
+      "MCP_GATEWAY_KEY"
+    ]
   },
   "server": "estate-memory",
-  "tools": ["brief", "recall", "remember"],
+  "tools": [
+    "brief",
+    "recall",
+    "remember"
+  ],
   "bridge": "bin/estate-memory-mcp",
   "session_start": "bin/estate-brief",
   "enforce": {
     "bin": "bin/estate-memory-enforce",
     "hooks": [
-      {"event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit", "arg": "pre"},
-      {"event": "PreToolUse", "arg": "plan"},
-      {"event": "Stop", "arg": "stop"}
+      {
+        "event": "PreToolUse",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "arg": "pre"
+      },
+      {
+        "event": "PreToolUse",
+        "arg": "plan"
+      },
+      {
+        "event": "Stop",
+        "arg": "stop"
+      }
     ],
-    "allow": ["mcp__{server}", "Bash({root}/bin/estate-plan *)"]
+    "allow": [
+      "mcp__{server}",
+      "Bash({root}/bin/estate-plan *)"
+    ]
   },
   "allow": "The permission rules a settings runtime needs so an agent can walk through the doors the enforce hooks send it to: the plan tools over MCP, and the estate-plan shell fallback the plan refusal names by path. A lock installed without its key is a deadlock: measured 2026-11-28, 55 of 523 Claude sessions in 3 days ended handing the turn to the founder after the plan door refused Bash and both doors to a plan waited on a permission prompt. Rendered with {server} and {root} (the installed home); written into permissions.allow beside the hooks, every other rule kept. Enforcement stays in the hooks: these rules only open the doors the hooks already allow.",
   "plan_lock": "How each runtime refuses work until a plan allows it (#6675): hook (the enforce plan hook above), plugin (the opencode hook file), extension (bin/pi-plan-lock-install). null means nothing enforces it there yet; such a runtime names its command, and the installer fails while that command is on PATH.",
@@ -28,9 +49,29 @@
   "estate_door": "Whether work this runtime sends to the estate (its MCP bridge, or the executor daemon) is gated by the shared plan door (#7518). True means estate-routed work from this runtime is refused without a declared plan; it does NOT mean the runtime's own native tools are gated -- a runtime whose native tools are ungated still has plan_lock null and is still reported UNLOCKED.",
   "runtime_enforce": "How a runtime reaches the write-side gates (the enforce bin above) when it has no hooks of its own. pi has no hook mechanism, so it gets an extension that renders pi's session into the transcript the binary reads and turns the binary's answer into pi's two refusals: the rules stay in the binary, so one rule decides for every runtime (#7006). A list, like 'tools'.",
   "runtimes": {
+    "antigravity": {
+      "mcp": {
+        "file": "~/.gemini/config/mcp_config.json",
+        "key": "mcpServers",
+        "shape": "stdio"
+      },
+      "plan_lock": null,
+      "command": "agy",
+      "owner": "#6675",
+      "estate_door": true
+    },
     "claude-code": {
-      "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},
-      "hook": {"kind": "settings", "file": "$CLAUDE_CONFIG_DIR/settings.json", "event": "SessionStart"},
+      "mcp": {
+        "file": "$CLAUDE_CONFIG_DIR/.claude.json",
+        "default_dir": "~/.claude",
+        "key": "mcpServers",
+        "shape": "stdio"
+      },
+      "hook": {
+        "kind": "settings",
+        "file": "$CLAUDE_CONFIG_DIR/settings.json",
+        "event": "SessionStart"
+      },
       "plan_lock": "hook",
       "owner": "#6675",
       "estate_door": true
@@ -41,35 +82,68 @@
       "owner": "#7518"
     },
     "cursor": {
-      "mcp": {"file": "~/.cursor/mcp.json", "key": "mcpServers", "shape": "stdio"},
+      "mcp": {
+        "file": "~/.cursor/mcp.json",
+        "key": "mcpServers",
+        "shape": "stdio"
+      },
       "plan_lock": null,
       "command": "cursor-agent",
       "owner": "#6675",
       "estate_door": true
     },
     "gemini": {
-      "mcp": {"file": "~/.gemini/settings.json", "key": "mcpServers", "shape": "stdio"},
+      "mcp": {
+        "file": "~/.gemini/settings.json",
+        "key": "mcpServers",
+        "shape": "stdio"
+      },
       "plan_lock": null,
       "command": "gemini",
       "owner": "#6675",
       "estate_door": true
     },
     "opencode": {
-      "mcp": {"file": "~/.config/opencode/opencode.jsonc", "key": "mcp", "shape": "opencode"},
-      "hook": {"kind": "link", "source": "platform/estate/memory/opencode-estate-memory.js", "dest": "~/.config/opencode/plugin/estate-memory.js"},
+      "mcp": {
+        "file": "~/.config/opencode/opencode.jsonc",
+        "key": "mcp",
+        "shape": "opencode"
+      },
+      "hook": {
+        "kind": "link",
+        "source": "platform/estate/memory/opencode-estate-memory.js",
+        "dest": "~/.config/opencode/plugin/estate-memory.js"
+      },
       "plan_lock": "plugin",
       "owner": "#6675",
       "estate_door": true
     },
     "pi": {
-      "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio", "reads": false},
+      "mcp": {
+        "file": "~/.pi/mcp.json",
+        "key": "mcpServers",
+        "shape": "stdio",
+        "reads": false
+      },
       "tools": [
-        {"kind": "link", "source": "extensions/estate-memory-tools", "dest": "~/.pi/agent/extensions/estate-memory-tools"}
+        {
+          "kind": "link",
+          "source": "extensions/estate-memory-tools",
+          "dest": "~/.pi/agent/extensions/estate-memory-tools"
+        }
       ],
       "enforce": [
-        {"kind": "link", "source": "extensions/pi-estate-enforce", "dest": "~/.pi/agent/extensions/pi-estate-enforce"}
+        {
+          "kind": "link",
+          "source": "extensions/pi-estate-enforce",
+          "dest": "~/.pi/agent/extensions/pi-estate-enforce"
+        }
       ],
-      "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"},
+      "hook": {
+        "kind": "link",
+        "source": "platform/estate/memory/pi-estate-memory.ts",
+        "dest": "~/.pi/agent/extensions/estate-memory.ts"
+      },
       "plan_lock": "extension",
       "owner": "#6675",
       "estate_door": true
