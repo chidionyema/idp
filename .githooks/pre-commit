@@ -29,9 +29,16 @@ elif [ "${FIX_RC}" -ne 0 ]; then
 fi
 
 
+# GATE-TIMING LAW (#8541, 2026-11-25). In pre-commit the commit (and its X-Idp-Auth
+# trailer) does not exist yet, so seal_verified(HEAD) can never grant the guarded-path
+# exemption here -- refusing there was a chicken-and-egg lock. Only the guarded-path decision is
+# DEFERRED, to the required `guarded-paths` CI check (bin/idp-ci-guarded-paths), which runs on the
+# real PR head and still refuses unsigned guarded paths. The file-count limit, the cross-subsystem
+# limit, the blacklist, physical bytes and the clock stay fatal here.
 python3 "${REPO_ROOT}/bin/verify_three_proofs.py" \
   --repo-root "${REPO_ROOT}" \
   --commit-sha "HEAD" \
   --timestamp "$(date +%s)" \
   --staged \
+  --defer-guarded \
   --files "${STAGED_FILES[@]}"
