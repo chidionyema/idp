@@ -48,7 +48,12 @@ export function failureCause(text, max = 300) {
   const clean = redact(String(text ?? "").replace(/\u001b\[[0-9;]*m/g, ""));
   const lines = clean.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
     .filter(s => !/logs were written to/i.test(s));
-  return lines.slice(-3).join(" / ").slice(0, max);
+  // A `--strict` upload that aborts on remote drift prints the drift itself (what the
+  // remote holds that the repo does not) ABOVE the three closing lines. Cut to three,
+  // the receipt said "Aborting ... because of conflicts" and never what conflicted
+  // (run 46104640154). Keep the whole block when that refusal is present.
+  const keep = /because of conflicts/i.test(clean) ? 40 : 3;
+  return lines.slice(-keep).join(" / ").slice(0, max);
 }
 function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false) {
   const childEnv = { ...process.env, ...env };
