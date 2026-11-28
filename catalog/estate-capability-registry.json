@@ -30786,6 +30786,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/capability-index",
         "cap:tool/multiarch-gate"
       ],
       "cost": {
@@ -30871,6 +30872,7 @@
           "--out",
           "--plane",
           "--state",
+          "--telegram",
           "--write",
           "--write-baseline"
         ],
@@ -30911,6 +30913,10 @@
       "writer": "repo",
       "path": "bin/capability-index",
       "depends_on": [
+        {
+          "id": "cap:tool/build-image",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/registry-gate",
           "edge": "invokes"

@@ -3470,6 +3470,180 @@ def load_records(ctx: Context, use_store: bool = True, refresh: bool = True):
 # the CLI
 
 
+# --------------------------------------------------------------------------------------
+# the map: everything the estate has, in one pass, with the places two capabilities
+# answer to the same job. Advisory by design: a finding names the records and the
+# decision a human or an owner agent must take; nothing here merges or deletes.
+
+TEMPLATE_MIN = 10  # a contract shared by this many records is the executor's template
+TWIN_MIN_SUMMARY = 24  # shorter summaries are labels, not descriptions
+CODE_CHARS = re.compile(r"[<>{};]|::")  # a scraped source line, not a description
+MAP_STATES = ("operating", "degraded", "frozen", "declared")
+
+
+def _remainder(cap_id: str) -> str:
+    """cap:intent/build-image -> build-image; cap:service/acg/gateway -> acg/gateway."""
+    return cap_id.split("/", 1)[1] if "/" in cap_id else cap_id
+
+
+def _contract_shape(record) -> str:
+    c = record.get("contract") or {}
+    return json.dumps(
+        [c.get("inputs"), c.get("outputs"), c.get("errors")], sort_keys=True
+    )
+
+
+def find_conflicts(records) -> list:
+    """Capabilities that contend for one job. Pure: records in, findings out.
+
+    NAME      one name, two kinds (an intent and a tool): an agent that asks by name
+              reaches whichever door it finds first.
+    TWIN      same kind, same description, different ids: a duplicate in waiting.
+    SHARED    one file claimed by records of different kinds: two writers of one fact.
+    DANGLING  depends_on names a record that does not exist.
+    """
+    found: list = []
+    ids = {r["id"] for r in records}
+
+    by_name: dict = {}
+    for r in records:
+        by_name.setdefault(_remainder(r["id"]), []).append(r)
+    for name, group in sorted(by_name.items()):
+        if len({r.get("kind") for r in group}) > 1:
+            found.append(
+                {
+                    "class": "NAME",
+                    "key": name,
+                    "ids": sorted(r["id"] for r in group),
+                    "decide": "name one the door and retire or rename the other",
+                }
+            )
+
+    by_text: dict = {}
+    for r in records:
+        text = " ".join((r.get("summary") or "").lower().split())
+        if len(text) >= TWIN_MIN_SUMMARY and not CODE_CHARS.search(text):
+            by_text.setdefault((r.get("kind"), text), []).append(r)
+    for (_, text), group in sorted(by_text.items()):
+        # a description shared by TEMPLATE_MIN records is a status label, not a twin
+        if 1 < len(group) < TEMPLATE_MIN:
+            found.append(
+                {
+                    "class": "TWIN",
+                    "key": text[:80],
+                    "ids": sorted(r["id"] for r in group),
+                    "decide": "merge into one record, or make the summaries say how they differ",
+                }
+            )
+
+    by_path: dict = {}
+    for r in records:
+        if r.get("path"):
+            by_path.setdefault(r["path"], []).append(r)
+    for path, group in sorted(by_path.items()):
+        if len({r.get("kind") for r in group}) > 1:
+            found.append(
+                {
+                    "class": "SHARED",
+                    "key": path,
+                    "ids": sorted(r["id"] for r in group),
+                    "decide": "one writer per file: name the record that owns it",
+                }
+            )
+
+    for r in records:
+        for dep in r.get("depends_on") or []:
+            if isinstance(dep, str) and dep not in ids:
+                found.append(
+                    {
+                        "class": "DANGLING",
+                        "key": r["id"],
+                        "ids": [r["id"], dep],
+                        "decide": "register the dependency or drop the edge",
+                    }
+                )
+    return found
+
+
+def estate_map(records, source: str) -> dict:
+    """The one-pass view: what exists, how much of it is proven, where it contends."""
+    rows = [read_record(r) for r in records]
+    shapes = Counter(_contract_shape(r) for r in rows)
+    templated = sum(1 for r in rows if shapes[_contract_shape(r)] >= TEMPLATE_MIN)
+    grid: dict = {}
+    for r in rows:
+        cell = grid.setdefault(r.get("plane") or "?", Counter())
+        cell[(r.get("health") or {}).get("state") or "declared"] += 1
+    conflicts = find_conflicts(rows)
+    by_class = Counter(c["class"] for c in conflicts)
+    states = Counter((r.get("health") or {}).get("state") or "declared" for r in rows)
+    return {
+        "source": source,
+        "records": len(rows),
+        "kinds": dict(sorted(Counter(r.get("kind") for r in rows).items())),
+        "states": {s: states.get(s, 0) for s in MAP_STATES},
+        "planes": {
+            plane: {s: cell.get(s, 0) for s in MAP_STATES}
+            for plane, cell in sorted(grid.items())
+        },
+        "proven_share": round(states.get("operating", 0) / len(rows), 4)
+        if rows
+        else 0.0,
+        "templated_contracts": templated,
+        "conflicts": {
+            "total": len(conflicts),
+            "by_class": dict(sorted(by_class.items())),
+            "items": conflicts,
+        },
+    }
+
+
+def render_map(m: dict, limit: int = 6, telegram: bool = False) -> str:
+    st = m["states"]
+    lines = [
+        "ESTATE MAP  {} capabilities  (source: {})".format(m["records"], m["source"]),
+        "operating {}  degraded {}  frozen {}  declared-only {}   proven {:.1%}".format(
+            st["operating"], st["degraded"], st["frozen"], st["declared"], m["proven_share"]
+        ),
+        "kinds: " + "  ".join("{} {}".format(k, v) for k, v in m["kinds"].items()),
+        "",
+    ]
+    for plane, cell in m["planes"].items():
+        total = sum(cell.values())
+        lines.append(
+            "  {:<8} {:>5}   operating {:>4}  declared-only {:>4}".format(
+                plane, total, cell["operating"], cell["declared"]
+            )
+        )
+    lines.append("")
+    lines.append(
+        "contracts that are the executor's template, not the capability's own: "
+        "{} of {}".format(m["templated_contracts"], m["records"])
+    )
+    c = m["conflicts"]
+    lines.append(
+        "CONFLICTS {}  ({})".format(
+            c["total"],
+            ", ".join("{} {}".format(k, v) for k, v in c["by_class"].items()) or "none",
+        )
+    )
+    shown = 0
+    for item in c["items"]:
+        if item["class"] == "SHARED" and shown >= limit:
+            continue
+        if shown >= limit:
+            break
+        shown += 1
+        lines.append("  {} {}".format(item["class"], item["key"][:60]))
+        lines.append("      " + ", ".join(i.replace("cap:", "") for i in item["ids"][:4]))
+    if c["total"] > shown:
+        lines.append("  ... {} more: capability-index map --json".format(c["total"] - shown))
+    if telegram:
+        lines.append("")
+        lines.append("Declared is not operating. Only a live receipt proves a capability.")
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="capability-index",
@@ -3516,6 +3690,16 @@ def main(argv=None) -> int:
     )
     p_emit.add_argument("--write", action="store_true")
     p_emit.add_argument("--out", default=str(SNAPSHOT_PATH))
+
+    p_map = sub.add_parser(
+        "map",
+        help="everything the estate has in one pass, and where capabilities conflict",
+    )
+    p_map.add_argument("--json", action="store_true")
+    p_map.add_argument(
+        "--telegram", action="store_true", help="the founder's view, sized for one message"
+    )
+    p_map.add_argument("--limit", type=int, default=6)
 
     p_status = sub.add_parser("status", help="counts and freshness")
     p_status.add_argument("--json", action="store_true")
@@ -3699,6 +3883,15 @@ def main(argv=None) -> int:
             for problem in payload["regressions"] + payload["hole_problems"]:
                 print("PROBLEM  {}".format(problem), file=sys.stderr)
         return 0 if not payload["regressions"] and not payload["hole_problems"] else 1
+
+    if args.cmd == "map":
+        records, source = load_records(ctx)
+        view = estate_map(records, source)
+        if args.json:
+            print(json.dumps(view, indent=2, default=str))
+        else:
+            print(render_map(view, limit=args.limit, telegram=args.telegram))
+        return 0
 
     if args.cmd == "status":
         records, source = load_records(ctx)
