@@ -98,6 +98,31 @@ open, `dof-gate` (a needs of `ci-success`) refuses every commit that does not ca
 `catalog/dof-registry.json`. A refusal is the estate naming what is broken: claim the incident
 issue and fix it. There is no other work until it is green.
 
+## 5c. An action only the founder can do: one door, one touch
+
+Founder, 2026-11-28: anything an agent genuinely cannot do (a sign-in, a share, a purchase
+approval, a console click that has no API) reaches the founder as ONE Telegram message with one
+tap. Nothing else is a handback.
+
+```bash
+bin/founder-decision ask --kind action \
+  --question "Share the Drive folder with the service account as Viewer" \
+  --proof "gh variable list shows GCP_SERVICE_ACCOUNT_EMAIL"
+```
+
+Or `estate-execute founder.decision` with `kind=action proof=<line>`. The message carries the
+action, the proof line and `done` / `cannot` buttons; the tap is recorded by `bin/founder-decision
+poll`, only from the founder's chat, once.
+
+- **Impossible means tried.** First try the API, the CLI, the executor and a free-tier route. An
+  action goes to the founder only when you can name the call that failed and its exit status.
+- **A proof line is mandatory.** The door refuses an action without one. The proof is a command
+  you will run after the tap; `done` is not believed until it prints.
+- **Then keep working.** Send the action, do every step that does not depend on it, and resume
+  from the tap. Do not stop, summarise or list what is "not proven".
+- **No other handback.** A request for the founder to run, paste, click or copy anything outside
+  this door is the failure class `headless-agent-needs-an-approver`.
+
 ## 5a. The lead engineer owns the outcome
 
 One agent is the lead engineer for the estate at any moment, and the lead is judged on the OUTCOME:

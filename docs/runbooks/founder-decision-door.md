@@ -38,6 +38,19 @@ bin/founder-decision show --decision-id dec-306c912e
 bin/founder-decision poll
 ```
 
+## An action only the founder can do
+
+`--kind action` (intent args `kind=action proof=<line>`) sends ONE message that names the
+action, the line that proves it is done, and two buttons, `done` and `cannot`. The founder taps;
+the tap is recorded as the answer. Rules, all enforced in `sovereign/otto/decision.py`:
+
+- an action without `--proof` is refused before any message is sent;
+- a tap counts only from the founder's chat, for a known decision and a known option, and a
+  second tap never rewrites the first;
+- no tap by the deadline is `expired`, never "assumed done".
+
+The law and its limits are in `docs/agents/coordination.md` section 5c.
+
 ## The founder's answer
 
 The founder receives exactly ONE message per decision: the id first, the question, the
