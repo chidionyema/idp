@@ -511,6 +511,14 @@
       "better": "higher",
       "owner": "governance",
       "description": "1 when the compiled Rust meridian-gate (crates/meridian-gate, kernel crates/mitp-core) passes its own both-ways check: admission and settlement with a valid independent Ed25519 receipt are allowed, while cross-class billing, a proxy-green (non-HTTPS or loopback or GitHub-source) observation URL, an expired verification deadline, a stale epoch and a self-certified receipt are refused (MERIDIAN-CTRL-001 B06/B08/B10, section 11). 0 when no gate binary can be produced."
+    },
+    {
+      "name": "founder_gate.falsifiers_passing",
+      "measure": ["python3", "bin/estate-founder-gate", "--selftest"],
+      "unit": "count",
+      "better": "higher",
+      "owner": "governance",
+      "description": "How many of 8 known-good and known-bad founder messages get the right verdict from bin/estate-founder-gate (proof line, one action, no secret, no filler, empty refused). 8 means every admission rule bites; less means a rule was weakened."
     }
   ]
 }
