@@ -44,6 +44,8 @@ args:
   deadline_min: {type: string, default: "60", description: "Minutes the founder has before the decision expires."}
   requester:   {type: string, default: "", description: "Who is asking, e.g. \"pi @ idp\"."}
   decision_id: {type: string, default: "-", description: "Read this decision back instead of asking a new one. '-' means ask."}
+  kind:        {type: string, default: "decision", description: "decision (a choice) or action (something only the founder can do: needs proof, gets one-tap done/cannot buttons)."}
+  proof:       {type: string, default: "", description: "kind=action only: the one line that shows the action is done. An action without proof is refused."}
   wait:        {type: string, default: "0", description: "Seconds to wait for the founder's answer (0 = return the id at once)."}
   take_webhook: {type: string, default: "false", description: "true: hold the bot's updates while this decision is live (only when the estate's own reader is unreachable)."}
   bus: {type: string, default: "false", description: "true: also open a bus session for the decision (the estate's card then posts a line message as well)."}
@@ -93,6 +95,7 @@ steps:
       fi
       args=(ask --question "$QUESTION" --options {{options}} --context {{context}})
       args+=(--deadline-min {{deadline_min}} --requester {{requester}})
+      args+=(--kind {{kind}} --proof {{proof}})
       if [ "$WAIT" != "0" ]; then args+=(--wait "$WAIT"); fi
       if [ "$TAKE_WEBHOOK" = "true" ]; then args+=(--take-webhook); fi
       if [ "$BUS" = "true" ]; then args+=(--bus); fi
