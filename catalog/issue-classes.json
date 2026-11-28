@@ -655,6 +655,18 @@
       "falsifier": "python3 tests/engine_verification_deadline_bounded.py prints optimus.engine.verification_deadline_bounded=1 (0 on the pre-patch workflow); sovereign/engine/test_instruction_id.py runs the real Temporal Test Server positive and negative controls and a pre-patch replay",
       "owner": "governance",
       "status": "mitigated"
+    },
+    {
+      "class": "format-only-lane-left-red",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "lane/rust-ctrl001-kernel-and-gate 079acce9 and lane/ctrl001-s11-bounded-verification 25ba38f9 were RED on the pre-CI pinned-ruff format check only; every retry cost a human or agent turn because Greenlane refused but never repaired (idp#8688)"
+      ],
+      "gap": "Greenlane knew the exact formatter, version and files that made a lane red and still handed the fix back to its owner; an API push bypasses the pre-commit hook that would have formatted it",
+      "compensating_action": "on a format-only pre-CI refusal Greenlane applies the pinned ruff in an isolated worktree and pushes one fast-forward Greenlane-Autoformat commit that keeps the claim trailers; it never fixes its own fix twice, never touches an unsafe path, and refuses unchanged when the pinned ruff is absent",
+      "falsifier": "python3 tests/greenlane_autoformat_repair.py prints optimus.greenlane.format_refusal_repaired=1 (0 with the engine repair hook removed); tests/test_greenlane_autoformat.py runs the real pinned ruff and real git",
+      "owner": "greenlane",
+      "status": "mitigated"
     }
   ]
 }
