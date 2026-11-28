@@ -63,6 +63,24 @@ def _focus_rows() -> List[Dict[str, Any]]:
         return []
 
 
+def _claim_counts(claims: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """The claim block, where an unreadable ledger is UNKNOWN and never zero.
+
+    `focus.live_focus()` returns None when the ledger could not be read, and says so in its own
+    docstring ("or None when the ledger could not be read (unknown)"). Iterating that None is how
+    `bin/estate-state-page` died on 2026-11-28 with `TypeError: 'NoneType' object is not iterable`,
+    which `bin/estate-brief` swallowed into "" -- an unknown measurement served as no measurement.
+    Zero and unknown are different facts and the page has to say which one it has (R1, §9.1).
+    """
+    if claims is None:
+        return {"live": None, "total": None, "unknown": True}
+    return {
+        "live": len([c for c in claims if isinstance(c, dict) and c.get("live")]),
+        "total": len(claims),
+        "unknown": False,
+    }
+
+
 def compute(root: str = REPO_ROOT, falsify: bool = False) -> Dict[str, Any]:
     """The live facts, each one measured rather than remembered.
 
@@ -114,10 +132,7 @@ def compute(root: str = REPO_ROOT, falsify: bool = False) -> Dict[str, Any]:
         },
         "renewals": renewals,
         "denied_providers": provider_renewal.denied_providers(),
-        "claims": {
-            "live": len([c for c in claims if c.get("live")]),
-            "total": len(claims),
-        },
+        "claims": _claim_counts(claims),
         "violations": {
             "total": len(ledger.violations()),
             "by_class": by_class,
@@ -161,9 +176,14 @@ def render(facts: Dict[str, Any]) -> str:
         )
     lines.append("")
     lines.append("## Claims")
-    lines.append(
-        f"- live claims: {facts['claims']['live']} of {facts['claims']['total']}"
-    )
+    if facts["claims"].get("unknown"):
+        # Never "0 of 0": a reader cannot tell that from a measured zero, and the whole point of
+        # this block is to say whether anything was measured at all.
+        lines.append("- claims: UNKNOWN (the claim ledger could not be read)")
+    else:
+        lines.append(
+            f"- live claims: {facts['claims']['live']} of {facts['claims']['total']}"
+        )
     lines.append("")
     lines.append("## Violations")
     lines.append(f"- total on record: {facts['violations']['total']}")

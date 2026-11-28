@@ -108,11 +108,19 @@ def state_section() -> str:
         root = os.path.abspath(os.path.join(os.path.dirname(gp), ".."))
         return state_page.current(root)
     except Exception as exc:  # never block a session on the page
+        # The session must not be blocked, but it must not be blinded either: swallowing the
+        # failure into "" told every session there was no estate state when in fact the page
+        # could not be measured (measured 2026-11-28: a TypeError here hid a broken page).
         print(
             f"estate-brief: no state page ({type(exc).__name__}: {str(exc)[:120]})",
             file=sys.stderr,
         )
-        return ""
+        return (
+            "# Estate state\n\n"
+            "measured at never\n\n"
+            f"UNKNOWN: the state page could not be measured "
+            f"({type(exc).__name__}: {str(exc)[:120]}). This is not a measured zero.\n"
+        )
 
 
 # The focus rules live in platform/estate/memory/focus.py, shared with bin/estate-memory-mcp:
