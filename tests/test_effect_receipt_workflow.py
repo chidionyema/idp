@@ -4,6 +4,7 @@ The workflow is ONE issuer of a three-issuer proof, so these tests pin what it m
 never do: certify from the Greenlane's own workflow, write the three-receipt comment,
 or accept a source-plane (GitHub) target as production.
 """
+
 from pathlib import Path
 
 import yaml
