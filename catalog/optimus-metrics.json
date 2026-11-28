@@ -500,6 +500,17 @@
       "better": "lower",
       "owner": "beast",
       "description": "Beast kernel files under beast/meridian-beast-v1 that differ from the committed sha256 manifest beast/measure/kernel.sha256; 0 means the landed tree is byte-identical to the tested archive 5bfbeee1ebc1 (idp#8710). Integrity only: it does not show the Beast is running."
+    },
+    {
+      "name": "founder_action.falsifiers_declared",
+      "measure": [
+        "python3",
+        "tests/founder_action_falsifiers.py"
+      ],
+      "unit": "cases",
+      "better": "higher",
+      "owner": "delivery",
+      "description": "Number of falsifier tests declared for the founder-action door (tests/test_founder_action_buttons.py): one message with buttons for an action no agent can do; a tap counts only from the founder's chat; unknown decision, unknown key, other chat and repeat taps record nothing; an action without proof or a button payload over 64 bytes is refused. Counts declared tests, it does not run them; that they pass is proved by the Greenlane running tests/. 0 on main while the suite is absent."
     }
   ]
 }
