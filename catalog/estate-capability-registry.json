@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 120,
-    "layer": 323,
+    "intent": 121,
+    "layer": 324,
     "service": 123,
     "tool": 547,
     "workflow": 112
@@ -1454,6 +1454,55 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/fleet-regression.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:intent/flow-decide",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Before building anything, ask the compiled FLOW engine whether the estate already has it. Outcome: one JSON line, event meridian.flow.decision, with decision REUSE_OPERATING (the registry proves the capability operating), DECLARED_NOT_VERIFIED (the registry only claims it: use the printed path as a lead, not as a service) or IMPLEMENT_NEW (nothing matches). First safe step: pass the task in plain words. Owner: crates/meridian-estate-engine (claim idp#8686). Runtime: cargo-built binary on the machine that runs the door, reading catalog/estate-capability-registry.json at the checkout. Proof of success: the decision line, appended to ~/.estate/results/flow-decide.jsonl. Refusal: exit 2 with event meridian.flow.refused (empty task, unreadable or empty registry). Fallback: `growmos query \"<task>\"` or estate_list(query=...). Read-only: it never runs a capability. class: read door_s: 100 args: task: {type: string, default: \"\", description: \"the task in plain words, e.g. 'agent invoke'\"} steps: - name: decide cmd: > IDP=${ESTATE_IDP:-$HOME/Documents/code/idp}; python3 \"$IDP/platform/estate/libexec/meridian-flow.py\" {{task}}",
+      "contract": {
+        "inputs": [
+          "task"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/flow-decide.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -11127,6 +11176,60 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/k8s-diag.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-meridian-flow",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "meridian-flow: ask the compiled FLOW engine what to do with a task, against the real registry.",
+      "contract": {
+        "inputs": [
+          "--intent",
+          "--json",
+          "--limit",
+          "--locked",
+          "--registry"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/meridian-flow.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
