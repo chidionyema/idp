@@ -808,8 +808,17 @@ def verdict(
                 # for the wait. A rival's newer CLAIM still refuses below; so does work
                 # authored after the holder's claim had lapsed.
                 pass
-            elif RENEW is not None and RENEW(
-                ref_repo or repo, int(num), agent, c["paths"]
+            elif (
+                RENEW is not None
+                # A renewer that cannot see the push (the Greenlane judging a lane in Actions)
+                # needs the push's own evidence: work the holder authored AFTER the heartbeat.
+                # Without new work there is no liveness to renew, so an abandoned claim stays
+                # lapsed (idp#8609 follow-up, the root cause of the lane-time lapse).
+                and (
+                    not getattr(RENEW, "needs_activity", False)
+                    or (made_at is not None and made_at > hb)
+                )
+                and RENEW(ref_repo or repo, int(num), agent, c["paths"])
             ):
                 # idp#8609: the holder's own newest CLAIM, renewed by the holder's own push --
                 # exactly what a manual re-stamp by that name does, so it is judged live below.
@@ -1083,8 +1092,19 @@ def optimus_reading(now: datetime) -> str:
 def renewer(env=os.environ):
     """The heartbeat renewal a push by the holder may perform, or None where the gate must only
     read. CI (GITHUB_ACTIONS, CI) judges read-only: there the pusher is a runner, not the agent.
-    CLAIM_GATE_NO_RENEW=1 turns it off on a laptop."""
-    if env.get("GITHUB_ACTIONS") or env.get("CI") or env.get("CLAIM_GATE_NO_RENEW"):
+    CLAIM_GATE_NO_RENEW=1 turns it off on a laptop.
+
+    The renewal used to be a side effect of one path: a laptop running this gate. A push through
+    the GitHub API, a web agent, or the thin client never ran it, so the lane reached the
+    Greenlane (which runs in Actions and judged read-only) with a heartbeat it had no way to
+    renew, and went red on a lease the same agent had kept in spirit. The Greenlane sets
+    CLAIM_GATE_RENEW_LANE=1 and so renews on the holder's behalf -- but only for a head the
+    holder authored after the last heartbeat (`needs_activity`); CI's ci-success never sets it
+    and stays read-only."""
+    in_actions = bool(env.get("GITHUB_ACTIONS") or env.get("CI"))
+    if env.get("CLAIM_GATE_NO_RENEW") or (
+        in_actions and not env.get("CLAIM_GATE_RENEW_LANE")
+    ):
         return None
 
     def renew(repo: str, num: int, agent: str, paths: str) -> bool:
@@ -1105,6 +1125,7 @@ def renewer(env=os.environ):
             print(f"ok    claim-gate  renewed {repo}#{num}: {body}")
         return r.returncode == 0
 
+    renew.needs_activity = in_actions  # type: ignore[attr-defined]
     return renew
 
 
