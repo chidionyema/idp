@@ -60,8 +60,11 @@ await runProbe("3_authenticated_large_payload_200", async () => {
       ],
     }),
   });
-  assert.equal(res.status, 200, `expected 200, got ${res.status}: ${await res.text()}`);
-  const data = await res.json();
+  // Read the body once. A template literal in an assert message is evaluated before the assert runs,
+  // so `${await res.text()}` there drained the body on a healthy 200 and res.json() then threw.
+  const body = await res.text();
+  assert.equal(res.status, 200, `expected 200, got ${res.status}: ${body}`);
+  const data = JSON.parse(body);
   assert(data.choices?.[0]?.message?.content?.length > 0, "empty assistant response");
   return {
     backend: res.headers.get("x-meridian-backend"),
