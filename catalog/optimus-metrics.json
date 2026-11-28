@@ -633,6 +633,18 @@
       "better": "lower",
       "owner": "estate",
       "description": "of the two doors the plan lock's refusal sends an agent to (the estate-memory MCP plan tools, and the estate-plan shell fallback), how many the installer does NOT write into permissions.allow beside the lock: 2 before idp#8762, 0 after. Measured 2026-11-28: 55 of 523 Claude sessions in 3 days ended handing the turn to the founder on this deadlock."
+    },
+    {
+      "name": "agents_md.stop_directives",
+      "measure": [
+        "python3",
+        "-c",
+        "import pathlib, re\nt = pathlib.Path('AGENTS.md').read_text()\npat = re.compile(r'(?i)\\bthen stop\\b|stop that action|may propose a change|contributes or waits|\\bthen wait\\b')\nprint('optimus.agents_md.stop_directives=%d' % len(pat.findall(t)))\n"
+      ],
+      "unit": "directives",
+      "better": "lower",
+      "owner": "estate",
+      "description": "instructions in the kernel AGENTS.md that tell an agent to stop, wait or only propose (founder, 2026-11-28: rules are enforced in code, not files; agents begin at full throttle and never stop). 1 before this change (\"stop that action and verify the current authority\"), 0 after."
     }
   ]
 }
