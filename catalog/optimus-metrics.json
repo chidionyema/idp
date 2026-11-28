@@ -709,6 +709,18 @@
       "better": "lower",
       "owner": "greenlane",
       "description": "Receipts in one simulated Greenlane tick whose post lands on an address GitHub's REST router answers with 404, measured by driving the shipped report_operational with a stand-in for `gh api`: 10 at bdab1b43a (run 46137784537 logged ten 404s at repos//issues//comments and repos/chidionyema/issues/idp/<n>), 0 with idp#8773."
+    },
+    {
+      "name": "tests_for.blind_base_unserved_files",
+      "measure": [
+        "python3",
+        "tests/test_idp_tests_for_a_blind_base_is_never_a_partial_selection.py",
+        "--optimus"
+      ],
+      "unit": "files",
+      "better": "lower",
+      "owner": "idp-ci",
+      "description": "Cheap test files a BLIND diff base leaves unselected: a diff-scoped gate that cannot name its base must widen to every cheap file, so a reading above 0 is a gate that graded something other than the commit. MEASURED 2026-11-28 on the fixture both sides: 2 with main's bin/idp-tests-for (blob 64ba03c8 -- it ran the test that reads the artefact the job wrote and neither test the commit changed; run 46150172966 job 140995357196 printed 'tests-for: 3 test file(s)' then '30 passed' for a candidate whose own tests/test_legion_admit.py was never selected), 0 with the fix (idp#8788)."
     }
   ]
 }

@@ -42654,6 +42654,7 @@
       },
       "consumers": [
         "cap:tool/idp-ci-touched",
+        "cap:tool/idp-tests-for",
         "cap:workflow/gha-guarded-paths",
         "cap:workflow/gha-verifier"
       ],
@@ -56149,6 +56150,10 @@
       "writer": "repo",
       "path": "bin/idp-tests-for",
       "depends_on": [
+        {
+          "id": "cap:tool/idp-ci-base",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-kyverno-dirs",
           "edge": "invokes"
