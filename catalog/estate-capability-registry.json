@@ -37336,6 +37336,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/estate-notify-done",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/estate-progress",
           "edge": "invokes"
         },
@@ -38090,6 +38094,10 @@
       "writer": "repo",
       "path": "bin/estate-stranded-watch",
       "depends_on": [
+        {
+          "id": "cap:tool/estate-notify-done",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/estate-stranded",
           "edge": "invokes"
