@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""bin/heavy-shim: the PATH shim that forces heavy commands through bin/heavy-slot.
+
+Installed (bin/heavy-install) as a symlink NAMED after the tool it stands in for -- pytest, cargo,
+docker, npm ... -- in a directory that comes first on PATH. Whatever launches the command (Claude
+Code, Codex, Gemini, aider, opencode, a script, a human shell) resolves the name through PATH and
+lands here, so the rule needs no hook, plugin or cooperation from any agent. execvp callers skip
+shell functions, which is why this is a file and not an alias.
+
+  * A heavy invocation on a founder laptop (Darwin, outside CI) is run as
+        bin/heavy-slot -- <real tool> <args>
+    so it waits its turn in the kernel, shares a result already earned, and refuses to start with no
+    disk. Inside a slot (HEAVY_SLOT_ACTIVE) it runs the real tool directly: no queue inside a queue.
+  * Anything not heavy (cargo --version, docker ps, npm view) runs the real tool untouched.
+  * Only a VERDICT refuses (heavy-slot exits 75). A fault in the shim itself runs the real tool, the
+    way the kill shim does: a guard that wedges the machine on its own bug is worse than no guard.
+"""
+
+from __future__ import annotations
+
+import os
+import platform
+import sys
+
+# tool -> the subcommands that are heavy; None means every invocation is.
+HEAVY = {
+    "pytest": None,
+    "py.test": None,
+    "tox": None,
+    "nox": None,
+    "jest": None,
+    "vitest": None,
+    "cargo": {"build", "test", "check", "clippy", "bench", "install"},
+    "npm": {"ci", "install", "i", "test", "t"},
+    "yarn": {"install", "build"},
+    "pnpm": {"install", "i"},
+    "docker": {"build", "buildx"},
+    "terraform": {"plan", "apply"},
+    "tofu": {"plan", "apply"},
+}
+
+
+def _real(name: str) -> str | None:
+    """The tool this shim stands in for: the first one on PATH that is not a shim."""
+    here = os.path.realpath(__file__)
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(folder, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            if os.path.realpath(candidate) != here:
+                return candidate
+    return None
+
+
+def _first_word(args: list[str]) -> str:
+    for arg in args:
+        if not arg.startswith("-") and not arg.startswith("+"):
+            return arg
+    return ""
+
+
+def main(argv: list[str]) -> int:
+    name = os.path.basename(argv[0])
+    real = _real(name)
+    if real is None:
+        print(f"heavy-shim: no real `{name}` found on PATH", file=sys.stderr)
+        return 127
+    args = argv[1:]
+    subcommands = HEAVY.get(name, ())
+    heavy = subcommands is None or (
+        subcommands != () and _first_word(args) in subcommands
+    )
+    applies = (
+        platform.system() == "Darwin"
+        and os.environ.get("GITHUB_ACTIONS", "").lower() != "true"
+        and os.environ.get("ESTATE_THIN_CLIENT", "").lower()
+        not in ("0", "false", "off")
+        and not os.environ.get("HEAVY_SLOT_ACTIVE")
+    )
+    if heavy and applies:
+        queue = os.path.join(os.path.dirname(os.path.realpath(__file__)), "heavy-slot")
+        if os.access(queue, os.X_OK):
+            os.execv(  # noqa: S606 -- the point: hand the caller's own argv to its real tool
+                sys.executable, [sys.executable, queue, "--", real, *args]
+            )
+    os.execv(real, [real, *args])  # noqa: S606 -- the caller's own argv, unchanged
+    return 1  # unreachable: execv replaces this process
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
