@@ -432,6 +432,18 @@
       "better": "lower",
       "owner": "governance",
       "description": "1 when bin/estate-memory-enforce dies on import because `import door` raised SystemExit (local_store without pydantic), which made every measure loading the hook UNKNOWN to Greenlane (idp#8660 judged NOT OPERATIONAL 2026-11-27T19:10:55Z). 1 on main 6b7932fd3; 0 with idp#8672."
+    },
+    {
+      "name": "recovery.idle_queue_judged_blind",
+      "measure": [
+        "python3",
+        "tests/estate/test_run_command_empty_queue.py",
+        "--optimus"
+      ],
+      "unit": "verdicts",
+      "better": "lower",
+      "owner": "recovery",
+      "description": "1 when require_idle_command_queue calls the OCI CLI's empty stdout (an idle queue) BLIND, refusing every recovery run (idp#7387); 0 when an idle queue is idle."
     }
   ]
 }
