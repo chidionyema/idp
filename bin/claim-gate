@@ -61,19 +61,14 @@ import fnmatch
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(minutes=15)
-# idp#8609: set by main() on a laptop, None in CI. A push by the holder renews the holder's own
-# lapsed claim instead of refusing it with "re-stamp"; see renewer().
-RENEW = None
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
 RUNNER_PIN = re.compile(r"^\s*runs-on:\s*ubuntu-\d{2}\.\d{2}\s*$", re.M)
 _PRS: dict[
@@ -268,18 +263,6 @@ def has_commit(sha: str) -> bool:
     )
 
 
-def authored_at(*shas: str) -> datetime | None:
-    """When the work was made: the author date of the first of `shas` git can read, else None
-    (judged at `now`, the old rule). The author date, not the committer date: a rebase by the
-    queue rewrites the committer date to the moment it waited until (idp#8629)."""
-    for sha in shas:
-        try:
-            return datetime.fromisoformat(git("log", "-1", "--format=%aI", sha).strip())
-        except (subprocess.CalledProcessError, ValueError):
-            continue
-    return None
-
-
 def lane_text(base: str, lane_head: str, squash: str) -> str:
     """The commit messages of the lane a squash came from.
 
@@ -449,40 +432,6 @@ def _judge_base() -> tuple[str, str]:
     return "", ""
 
 
-def catalog_merge_args(ref: str, tmp: str) -> list[str]:
-    """`git -c` args that merge the keyed catalogs by identity, with MAIN's rule and driver.
-
-    Every shipping lane appends one entry to catalog/issue-classes.json and one to
-    catalog/optimus-metrics.json, so git's line merge called any two such lanes a conflict:
-    four rebases across three lanes in one session on 2026-11-27 (idp#8615). bin/catalog-merge
-    merges them by key; a real same-key disagreement still conflicts.
-
-    Both pieces are read from `ref`, never from this checkout: merge-tree takes attributes from
-    the working tree, so a lane's own .gitattributes or driver would otherwise judge the lane.
-    A `ref` without the rule or the driver gets no args, i.e. git's own line merge, as before.
-    """
-    attrs = _git_proc("show", f"{ref}:.gitattributes")
-    driver = _git_proc("show", f"{ref}:bin/catalog-merge")
-    if (
-        attrs.returncode
-        or driver.returncode
-        or "merge=estate-catalog" not in attrs.stdout
-    ):
-        return []
-    attrs_path, driver_path = Path(tmp, "attributes"), Path(tmp, "catalog-merge")
-    attrs_path.write_text(attrs.stdout, encoding="utf-8")
-    driver_path.write_text(driver.stdout, encoding="utf-8")
-    command = (
-        f"{shlex.quote(sys.executable)} {shlex.quote(str(driver_path))} %O %A %B %P"
-    )
-    return [
-        "-c",
-        f"core.attributesFile={attrs_path}",
-        "-c",
-        f"merge.estate-catalog.driver={command}",
-    ]
-
-
 def merge_problems(head: str) -> list[str]:
     """Refuse a lane that no longer merges onto main (idp#8387).
 
@@ -501,15 +450,7 @@ def merge_problems(head: str) -> list[str]:
             f"merge-check cannot judge {head[:9]}: this checkout can see neither origin/main nor "
             "BASE. Run `git fetch origin main` and push again; an unread main is not a clean merge."
         ]
-    with tempfile.TemporaryDirectory(prefix="claim-gate-merge-") as tmp:
-        proc = _git_proc(
-            *catalog_merge_args(ref, tmp),
-            "merge-tree",
-            "--write-tree",
-            "--name-only",
-            ref,
-            head,
-        )
+    proc = _git_proc("merge-tree", "--write-tree", "--name-only", ref, head)
     if proc.returncode == 0:
         return []
     # `--write-tree --name-only`: line 1 is the tree oid, then one path per conflict, then a blank
@@ -709,17 +650,10 @@ def contract_problems(where: str, texts: list[str], head: str = "") -> list[str]
 
 
 def verdict(
-    text: str,
-    files: list[str],
-    repo: str,
-    fetch,
-    now: datetime,
-    head: str = "",
-    made_at: datetime | None = None,
+    text: str, files: list[str], repo: str, fetch, now: datetime, head: str = ""
 ) -> list[str]:
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
-    (issue dict, comments list). `made_at` is when the work was authored (idp#8629): the holder's
-    own claim is judged live when it was live then, so a queue's wait never lapses it."""
+    (issue dict, comments list)."""
     refs = CLAIM_REF.findall(text)
     # The same issue, once per commit (2026-10-28). A lane's commits each carry the two
     # trailers, so the text this gate reads -- `git log --format=%B base..head` -- holds one
@@ -801,36 +735,12 @@ def verdict(
                     f"{stale_min}m ago (lapse is 15m). Post CLAIM agent={agent} "
                     f"paths=<files> heartbeat=<UTC now> and re-push"
                 )
-            elif made_at is not None and made_at - hb <= MAX_AGE:
-                # idp#8629: the holder's own newest CLAIM was live when this head was authored.
-                # The lane then waited in the queue -- 08:21 adopted, 08:40 judged in CI, where
-                # nothing renews -- and an agent that obeyed "open the PR, then STOP" went RED
-                # for the wait. A rival's newer CLAIM still refuses below; so does work
-                # authored after the holder's claim had lapsed.
-                pass
-            elif (
-                RENEW is not None
-                # A renewer that cannot see the push (the Greenlane judging a lane in Actions)
-                # needs the push's own evidence: work the holder authored AFTER the heartbeat.
-                # Without new work there is no liveness to renew, so an abandoned claim stays
-                # lapsed (idp#8609 follow-up, the root cause of the lane-time lapse).
-                and (
-                    not getattr(RENEW, "needs_activity", False)
-                    or (made_at is not None and made_at > hb)
-                )
-                and RENEW(ref_repo or repo, int(num), agent, c["paths"])
-            ):
-                # idp#8609: the holder's own newest CLAIM, renewed by the holder's own push --
-                # exactly what a manual re-stamp by that name does, so it is judged live below.
-                pass
             else:
                 problems.append(
                     f"{where} heartbeat is {stale_min}m old (lapse is 15m): re-stamp "
                     f"CLAIM agent={agent} paths=... heartbeat=<UTC now> to keep working"
                 )
-                continue
-            if c["agent"] != agent:
-                continue
+            continue
         if c["agent"] != agent:
             problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
             continue
@@ -914,10 +824,9 @@ def judge(
                 continue
             lane_head = m.group(1)
             text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
-            made = authored_at(lane_head, c)
             problems += [
                 f"lane {lane_head[:9]}: {p}"
-                for p in verdict(text, files, repo, fetch, now, head, made)
+                for p in verdict(text, files, repo, fetch, now, head)
             ]
         return problems
     diff = git("diff", f"{base}...{head}")
@@ -929,7 +838,7 @@ def judge(
     if dependency_pin_only(files, diff):
         return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
-    return verdict(text, files, repo, fetch, now, head, authored_at(head))
+    return verdict(text, files, repo, fetch, now, head)
 
 
 def pr_of_head(repo: str, head: str) -> tuple[str, str]:
@@ -1089,53 +998,36 @@ def optimus_reading(now: datetime) -> str:
     return f"optimus.claims.ship_contract_enforced={1 if enforced else 0}"
 
 
-def renewer(env=os.environ):
-    """The heartbeat renewal a push by the holder may perform, or None where the gate must only
-    read. CI (GITHUB_ACTIONS, CI) judges read-only: there the pusher is a runner, not the agent.
-    CLAIM_GATE_NO_RENEW=1 turns it off on a laptop.
-
-    The renewal used to be a side effect of one path: a laptop running this gate. A push through
-    the GitHub API, a web agent, or the thin client never ran it, so the lane reached the
-    Greenlane (which runs in Actions and judged read-only) with a heartbeat it had no way to
-    renew, and went red on a lease the same agent had kept in spirit. The Greenlane sets
-    CLAIM_GATE_RENEW_LANE=1 and so renews on the holder's behalf -- but only for a head the
-    holder authored after the last heartbeat (`needs_activity`); CI's ci-success never sets it
-    and stays read-only."""
-    in_actions = bool(env.get("GITHUB_ACTIONS") or env.get("CI"))
-    if env.get("CLAIM_GATE_NO_RENEW") or (
-        in_actions and not env.get("CLAIM_GATE_RENEW_LANE")
-    ):
-        return None
-
-    def renew(repo: str, num: int, agent: str, paths: str) -> bool:
-        hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        body = f"CLAIM agent={agent} paths={paths} heartbeat={hb}"
-        try:
-            argv = ["gh", "api", "-X", "POST", f"repos/{repo}/issues/{num}/comments"]
-            argv += ["-f", f"body={body}"]
-            r = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-                argv,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        if r.returncode == 0:
-            print(f"ok    claim-gate  renewed {repo}#{num}: {body}")
-        return r.returncode == 0
-
-    renew.needs_activity = in_actions  # type: ignore[attr-defined]
-    return renew
+def gh_authenticated() -> bool:
+    """True when gh can actually reach GitHub with a credential."""
+    try:
+        p = subprocess.run(  # noqa: S603 - fixed argv, never a shell string
+            ["gh", "auth", "status"],  # noqa: S607 - gh resolved from PATH on purpose
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return p.returncode == 0
+    except Exception:
+        return False
 
 
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--optimus"]:
         print(optimus_reading(datetime.now(timezone.utc)))
         return 0
+    # LAW 38: a fence a correct machine cannot satisfy is an outage, not enforcement. On a
+    # laptop whose keychain is locked (measured 2026-11-27 06:40Z: gh reports "the token in
+    # default is invalid") this gate used to answer FAIL, refusing every branch push while CI
+    # would have judged the same commit with its own token seconds later. Unjudgeable is BLIND,
+    # never FAIL; the cloud remains the guarantee.
+    if not os.environ.get("GITHUB_ACTIONS") and not gh_authenticated():
+        print(
+            "BLIND claim-gate  gh is not authenticated on this host: deferring the claim check "
+            "to cloud CI, which runs it with its own token (LAW 38)"
+        )
+        return 3
     base, head = argv[1], argv[2]
-    global RENEW
-    RENEW = renewer()
     repo = repo_slug()
     num, author = pr_context(repo, head)
 

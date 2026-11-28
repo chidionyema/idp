@@ -4,6 +4,7 @@
 Runs the local falsifier surface (projector tests + build), captures repo state and disk,
 and writes an HMAC-signed proof. A commit/push without a valid proof is refused by the gate.
 """
+
 import hashlib
 import hmac
 import json
@@ -30,13 +31,34 @@ def _clean_env():
     env = dict(os.environ)
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
         env.pop(key, None)
+    # [nvm-always-on] This runs from git hooks, whose PATH often lacks the nvm bin dir that
+    # holds npm. With no npm, `npm run build` fails, build_ok stays 0, the proof can never be
+    # ok, and EVERY commit on the machine is refused -- a tool that exists appearing absent,
+    # the class secret-load documents. Resolve it the same way: PATH first, then nvm, then the
+    # usual installers, and only prepend a directory that actually contains the binary.
+    if not shutil.which("npm", path=env.get("PATH", "")):
+        import glob
+
+        cands = sorted(
+            glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")), reverse=True
+        )
+        cands += ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
+        for cand in cands:
+            if os.path.isfile(os.path.join(cand, "npm")):
+                env["PATH"] = os.pathsep.join([cand, env.get("PATH", "/usr/bin:/bin")])
+                break
     return env
 
 
 def run(args, cwd, timeout=180):
     try:
-        p = subprocess.run(
-            args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=_clean_env()
+        p = subprocess.run(  # noqa: S603 - fixed argv, never a shell string
+            args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=_clean_env(),
         )
         return p.returncode, p.stdout + p.stderr
     except Exception as exc:
@@ -54,7 +76,6 @@ def head(repo):
     return out.strip()
 
 
-
 def projector_verdict(code: int, out: str):
     """What the projector run actually says.
 
@@ -70,7 +91,12 @@ def projector_verdict(code: int, out: str):
     passed = int(m.group(1)) if m else 0
     failed = int(f.group(1)) if f else 0
     if code != 0 or failed > 0:
-        return "FAIL", passed, failed, f"projector reported {passed} pass / {failed} fail"
+        return (
+            "FAIL",
+            passed,
+            failed,
+            f"projector reported {passed} pass / {failed} fail",
+        )
     if passed == 0:
         return "BLIND", 0, 0, "projector produced no results"
     return "PASS", passed, failed, f"projector {passed} passed"
@@ -84,7 +110,9 @@ def main():
         os.chmod(KEY, 0o600)
     key = open(KEY).read().strip()
 
-    code, tests = run(["npm", "run", "test:projector"], ARGON, 120)  # not -s: silent hides "Missing script"
+    code, tests = run(
+        ["npm", "run", "test:projector"], ARGON, 120
+    )  # not -s: silent hides "Missing script"
     projector_state, passed, failed, projector_why = projector_verdict(code, tests)
 
     build_code, build_out = run(["npm", "run", "build"], ARGON, 180)
@@ -108,7 +136,9 @@ def main():
     }
     # BLIND passes the gate only when there is genuinely no suite to run: the gate's job is to
     # refuse a failing proof, not to demand a suite the repo never had.
-    projector_ok = projector_state == "BLIND" or (projector_state == "PASS" and passed >= 19)
+    projector_ok = projector_state == "BLIND" or (
+        projector_state == "PASS" and passed >= 19
+    )
     body["ok"] = projector_ok and build_ok and free >= 1500
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
     body["receipt"] = hmac.new(key.encode(), canonical, hashlib.sha256).hexdigest()
