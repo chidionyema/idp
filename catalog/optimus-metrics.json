@@ -511,6 +511,25 @@
       "better": "higher",
       "owner": "governance",
       "description": "1 when the compiled Rust meridian-gate (crates/meridian-gate, kernel crates/mitp-core) passes its own both-ways check: admission and settlement with a valid independent Ed25519 receipt are allowed, while cross-class billing, a proxy-green (non-HTTPS or loopback or GitHub-source) observation URL, an expired verification deadline, a stale epoch and a self-certified receipt are refused (MERIDIAN-CTRL-001 B06/B08/B10, section 11). 0 when no gate binary can be produced."
+    },
+    {
+      "name": "consult_plane.proofs_passing",
+      "measure": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts=",
+        "tests/test_consult_plane.py",
+        "tests/test_founder_firewall_and_poe.py"
+      ],
+      "unit": "count",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "The number of executable proofs in the consultation plane that pass: 16 in tests/test_consult_plane.py (budget conservation, the local-browser transport ban, the Tier-0 digest cache, Class C injection quarantine, tier gating, blind challenger isolation, noise rejection, the asymmetric veto, founder-seal escalation and operational_yield enforcement) and 16 in tests/test_founder_firewall_and_poe.py (the AST discovery fallback, the three compulsory stuck triggers, zero-spend PoE rejection, the raw-dump cap, 3-strike reaping, cooldown demotion, spam, the four-class whitelist, the five-field card contract and the outage path). 0 before idp#8745; 32 with it."
     }
   ]
 }
