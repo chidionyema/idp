@@ -15,6 +15,7 @@ second fast-forward of main to the same sha is a no-op.
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib.machinery
 import importlib.util
 import json
@@ -32,7 +33,7 @@ from pathlib import Path
 from typing import Optional
 
 from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING, UnavailableLaneObject
-from .ferrari import assess as ferrari_assess, source_assess
+from .ferrari import assess as ferrari_assess, format_fixes, source_assess
 
 STATE_REF = "refs/greenlane/state"
 # The capability witness is derived from the tree (`bin/capability-index emit`) and the
@@ -1193,6 +1194,71 @@ class GitHubBackend:
             return False, verdict.reason
         source = source_assess(base, candidate, self.repo)
         return source.admissible, source.reason
+
+    AUTOFORMAT_TRAILER = "Greenlane-Autoformat"
+
+    def format_fix(self, lane: str, head: str, base: str) -> str:
+        """Shift left: a lane that fails only the pinned Ruff format is fixed, not left red.
+
+        Pushes one fast-forward commit on top of the lane's own head that carries the formatted
+        files (same trusted Ruff and config the pre-CI check uses), and returns its sha. The new
+        head re-arms the lane. The author's Claim/Agent/Language-Exception trailers are copied so
+        the claim gate sees the same claim. One attempt per chain: a head that is already a
+        Greenlane autoformat commit is never fixed again. "" means nothing was pushed.
+        """
+        try:
+            message = self.git("log", "-1", "--format=%B", head)
+            if f"{self.AUTOFORMAT_TRAILER}:" in message:
+                return ""
+            fixes = format_fixes(base, head)
+            if not fixes:
+                return ""
+            items = []
+            for path, text in sorted(fixes.items()):
+                mode = self.git("ls-tree", head, "--", path).split()[0]
+                blob = self.gh(
+                    "git/blobs",
+                    "POST",
+                    {
+                        "content": base64.b64encode(text.encode()).decode(),
+                        "encoding": "base64",
+                    },
+                )
+                items.append(
+                    {"path": path, "mode": mode, "type": "blob", "sha": blob["sha"]}
+                )
+            tree = self.gh(
+                "git/trees",
+                "POST",
+                {"base_tree": self.git("rev-parse", f"{head}^{{tree}}"), "tree": items},
+            )
+            kept = ("Claim", "Agent", "Language-Exception")
+            trailers = [
+                ln for ln in message.splitlines() if ln.split(":", 1)[0] in kept
+            ]
+            body = (
+                f"Greenlane: apply the pinned Ruff format to {len(fixes)} file(s)\n\n"
+                "The lane failed only `ruff format --check`; Greenlane formatted the files with "
+                "the trusted pinned Ruff and config and re-arms the lane on this head.\n\n"
+                + "\n".join(f"  {p}" for p in sorted(fixes))
+                + "\n\n"
+                + "\n".join([*trailers, f"{self.AUTOFORMAT_TRAILER}: {head[:12]}"])
+                + "\n"
+            )
+            commit = self.gh(
+                "git/commits",
+                "POST",
+                {"message": body, "tree": tree["sha"], "parents": [head]},
+            )
+            # force:false is a fast-forward-only update: an author who pushed meanwhile wins.
+            self.gh(
+                f"git/refs/heads/{lane}",
+                "PATCH",
+                {"sha": commit["sha"], "force": False},
+            )
+            return commit["sha"]
+        except (RuntimeError, OSError, KeyError, IndexError, ValueError):
+            return ""
 
     CLAIM_GATE = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
 

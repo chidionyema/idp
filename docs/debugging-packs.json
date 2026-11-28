@@ -403,6 +403,16 @@
       "remedy": "bin/estate_context_fleet_sync.py composes: one ESTATE_FLEET_CONTEXT_CONTRACT block, inserted after the existing authority blocks and replaced in place on re-run, every byte outside it untouched; malformed markers are refused (exit 2), never rewritten. The cap is enforced as a ratchet (hold or shrink, never grow) until the content trim lands.",
       "status": "fixed",
       "law": "AGENTS.md section 6 (one of each layer: the existing context compiler stays authoritative, a second writer of AGENTS.md is stitching) and section 9 principle 1 (a gate ships with a falsifier that fails on the known-bad input: here, the kit's own output)."
+    },
+    {
+      "id": "DBG-041",
+      "title": "Greenlane refused a lane for formatting alone and handed the fix back, so each format miss cost an owner turn",
+      "symptom": "greenlane commit status failure: 'pre-CI ruff format: <files>' on lane/rust-ctrl001-kernel-and-gate 079acce9 and lane/ctrl001-s11-bounded-verification 25ba38f9, both pushed through the git-data API",
+      "cause": "MEASURED: an API push never runs .githooks/pre-commit, and Greenlane's source_assess knew the pinned ruff 0.15.18 and the exact files but only refused. The repair existed (bin/idp-ruff-format) and nothing at the refusal point applied it.",
+      "falsifier": "tests/test_greenlane_autoformat.py runs the real pinned ruff and real git: an unformatted lane comes back formatted as one fast-forward Greenlane-Autoformat commit; python3 tests/greenlane_autoformat_repair.py prints optimus.greenlane.format_refusal_repaired=1 and 0 with the engine hook removed.",
+      "remedy": "greenlane/engine.py calls the backend's format_fix when the pre-CI refusal starts with FORMAT_REFUSAL; GitHubBackend.format_fix formats in an isolated worktree with the pinned ruff, keeps the claim trailers, never fixes its own fix twice, and refuses unchanged when the pinned ruff is absent.",
+      "status": "fixed",
+      "law": "AGENTS.md law 6 (one of each layer: the estate's pinned ruff and bin/idp-ruff-format stay the only formatter; Greenlane applies it, it does not add a second one)"
     }
   ]
 }
