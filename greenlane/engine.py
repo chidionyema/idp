@@ -394,8 +394,15 @@ class Engine:
             age_min = now - lane.arrived
             if age_min < RETIRE_AFTER_MIN:
                 continue
+            # Age is not a verdict (idp#5618, measured 2026-11-28: 129 of 153 lanes on origin
+            # were retired by age alone, none landed, 53,006 of their lines on no path main
+            # has, and the age message had replaced the reason each could not land). Only a
+            # lane that can never move leaves the queue, and it keeps its own reason.
+            if not self.final(lane):
+                continue
             age_days = age_min / (60 * 24)
-            reason = f"refused: retired, this lane head is {age_days:.0f} days old"
+            cause = lane.reason or "no reason recorded"
+            reason = f"refused: retired after {age_days:.0f} days, final: {cause}"
             self.s.retired[name] = lane.head
             self.b.report(name, lane.head, RED, reason)
             del self.s.lanes[name]
