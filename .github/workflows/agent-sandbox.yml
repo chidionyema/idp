@@ -120,7 +120,13 @@ jobs:
           mkdir -p "$fitness"
           # rustc ships on ubuntu-24.04; the crate is std-only, so no cargo or crates.io fetch
           # sits between the lane and its admission decision.
-          bin/lane-fitness --fitness-dir "$fitness" --secret-name-template 'SEED_{key_env}'
+          # Exit 1 is the writer's escalation (some route has no usable credential); its records
+          # for every other route are already written, and admission refuses a route with no FIT
+          # record by name. Only 2 or more means the writer itself failed (run 46132706055:
+          # openrouter FIT, exit 1 for three absent keys, admission never ran).
+          rc=0
+          bin/lane-fitness --fitness-dir "$fitness" --secret-name-template 'SEED_{key_env}' || rc=$?
+          if [ "$rc" -ge 2 ]; then echo "::error::lane-fitness writer failed (exit $rc)"; exit "$rc"; fi
       - name: Admit exact scope and provider capacity
         id: admission
         env:
@@ -303,6 +309,15 @@ jobs:
             fi
           fi
           echo "harness exit $rc"
+          if [ "$rc" -ne 0 ]; then
+            # One-pass cause, as counts only (never the agent's words). The launcher folds every
+            # refusal into exit 2 and its output is sealed, so "exit 2" alone needed a second run
+            # to explain (run 46134401641). These counts separate an empty patch, a scope escape,
+            # a launcher refusal and a harness that never spoke.
+            { git diff --name-only --no-renames HEAD; git ls-files --others --exclude-standard; } | sort -u > "$RUNNER_TEMP/changed" || true
+            outside=$(python3 -c 'import json,sys; a=set(json.load(open(sys.argv[1])).get("paths") or []); print(sum(1 for p in open(sys.argv[2]).read().split("\n") if p and p not in a))' "$RUNNER_TEMP/admission/admission.json" "$RUNNER_TEMP/changed" 2>/dev/null || echo unknown)
+            echo "harness cause: exit=$rc launcher_refusals=$(grep -c '^REFUSED: ' "$out/stdout" || true) files_changed=$(wc -l < "$RUNNER_TEMP/changed" | tr -d ' ') outside_scope=$outside stdout_lines=$(wc -l < "$out/stdout" | tr -d ' ') transcript_lines=$( { [ -n "${transcript:-}" ] && wc -l < "$transcript"; } 2>/dev/null | tr -d ' ' || true) seconds=$SECONDS"
+          fi
           if [ -z "${transcript:-}" ]; then
             # No transcript means the harness never got as far as working; its first line is the
             # reason (a start-up error, not the agent's words).
