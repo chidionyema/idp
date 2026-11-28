@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 121,
-    "layer": 332,
+    "layer": 334,
     "service": 123,
     "tool": 553,
     "workflow": 115
@@ -8008,6 +8008,114 @@
       "mirrors": []
     },
     {
+      "id": "cap:layer/platform-estate-continuity-dependency",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Dependency-aware continuity: the estate's failure graph and its freeze.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-fields",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-continuity-dependency_gate"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/dependency.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-continuity-dependency_gate",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Greenlane dispatch wiring for the dependency-aware continuity engine.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-continuity-dependency",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/continuity/dependency_gate.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:layer/platform-estate-continuity-effects",
       "schema_version": 1,
       "kind": "layer",
@@ -8163,6 +8271,7 @@
       "consumers": [
         "cap:layer/platform-estate-continuity-accept",
         "cap:layer/platform-estate-continuity-checkpoints",
+        "cap:layer/platform-estate-continuity-dependency",
         "cap:layer/platform-estate-continuity-effects",
         "cap:layer/platform-estate-continuity-fence",
         "cap:layer/platform-estate-continuity-leases",
