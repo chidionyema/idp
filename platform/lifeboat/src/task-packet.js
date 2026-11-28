@@ -16,8 +16,18 @@ export class PacketError extends Error {
 }
 
 function shaValid(value, pattern = HEX40) { return typeof value === 'string' && pattern.test(value); }
+// The web-worker patch lane is code-only. Corporate, legal and vision content
+// belongs to separately authorised publishing workflows, never this task packet.
+function prosePath(path) {
+  const parts = path.toLowerCase().split('/');
+  const name = parts[parts.length - 1];
+  return parts.some(part => ['docs', 'documentation', 'runbooks'].includes(part))
+    || /\.(md|mdx|markdown|rst|adoc|asciidoc|org|pdf|docx?)$/.test(name)
+    || /^(agents|claude|gemini|readme|contributing|changelog|runbook)(\.|$)/.test(name);
+}
 function validPath(path) {
   if (typeof path !== 'string' || !PATH.test(path) || path.startsWith('/') || path.endsWith('/') || path.includes('\\')) return false;
+  if (prosePath(path)) return false;
   const parts = path.split('/');
   return parts.every((part) => part && part !== '.' && part !== '..' && !DENY_SEGMENTS.has(part.toLowerCase()) && !part.toLowerCase().startsWith('.env'));
 }
