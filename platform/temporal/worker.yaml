@@ -76,6 +76,15 @@ spec:
             - { name: TEMPORAL_NAMESPACE, value: estate }
             - { name: ESTATE_HOME, value: /tmp/estate }
             - { name: HOME, value: /tmp }
+            # MERIDIAN-CTRL-001: public trust anchors for settlement. Public keys only; the signing
+            # keys never reach the worker. Unset or empty fails closed (consequential sessions end
+            # verification-deadline-exceeded, never done). Provisioned by the independent verifier.
+            - name: ESTATE_YIELD_VERIFIER_PUBKEY_HEX
+              valueFrom: { configMapKeyRef: { name: settlement-trust, key: yield_verifier_pubkey_hex, optional: true } }
+            - name: ESTATE_SETTLEMENT_CERTIFIERS_HEX
+              valueFrom: { configMapKeyRef: { name: settlement-trust, key: certifiers_hex, optional: true } }
+            - name: ESTATE_WORKER_PUBKEY_HEX
+              valueFrom: { configMapKeyRef: { name: settlement-trust, key: worker_pubkey_hex, optional: true } }
           # The worker writes worker.ready under ESTATE_HOME/sovereign once it is polling
           # (sovereign/engine/worker.py) and removes it on stop; there is no HTTP port to probe.
           startupProbe:
