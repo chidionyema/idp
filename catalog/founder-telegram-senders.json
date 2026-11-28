@@ -1,0 +1,33 @@
+{
+  "purpose": "Every file allowed to name the Telegram API. A new file that does is refused in CI: a message to the founder passes bin/estate-founder-gate. Shrink this list; never grow it without a founder ruling.",
+  "measured": "git grep -l api.telegram.org origin/main, excluding docs/ and rescued_patches2/, 2026-11-28",
+  "senders": [
+    ".github/workflows/incident-loop.yml",
+    ".github/workflows/otto-parity.yml",
+    ".github/workflows/ping.yml",
+    "bin/estate-fleet-telegram",
+    "bin/estate-founder",
+    "bin/idp-ns-fence-gen",
+    "bin/pin-open",
+    "factory/surfaces/telegram.py",
+    "infra/recovery/telegram-digest.py",
+    "platform/estate/governance/state_page.py",
+    "platform/jit/broker/telegram.py",
+    "platform/jit/fence.yaml",
+    "platform/lifeboat/src/index.js",
+    "platform/lifeboat/test/lifeboat.test.mjs",
+    "platform/ns-fences/allowances.yaml",
+    "platform/otto-gateway/registration-reconciler.yaml",
+    "platform/otto-golden/network-policy.yaml",
+    "platform/vendors/consoles.yaml",
+    "sovereign/cockpit/config_keys.py",
+    "sovereign/otto/config_keys.py",
+    "sovereign/otto/decision.py",
+    "tests/test_every_failing_workflow_is_one_owned_ticket.py",
+    "tests/test_otto_readiness_gate.py",
+    "tests/test_pin_open.py",
+    "tests/test_the_jit_broker_cannot_be_talked_into_standing_access.py",
+    "web/lib/contact.ts",
+    "web/tests/contact.test.ts"
+  ]
+}
