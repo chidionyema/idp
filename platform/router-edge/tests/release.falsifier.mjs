@@ -337,12 +337,12 @@ test("a strict-upload conflict is reconciled once, and only that failure is", ()
 
 // A lane nobody has called is a claim. These pin the gate that would have refused the
 // retired `deepseek-chat` id and the dead DeepSeek/MiniMax keys on the release that shipped them.
-test("every enabled lane gets its own one-candidate probe role beside the failover role", () => {
+test("every enabled lane gets its own one-candidate pinned role beside the failover role", () => {
   const { roles } = releasePool();
   const lanes = rolePool().roles["role:coder"].candidates.map((c) => c.id);
   assert.deepEqual(roles["role:coder"], rolePool().roles["role:coder"], "the serving role is untouched");
   for (const id of lanes) {
-    const probe = roles["role:probe-" + id];
+    const probe = roles["role:" + id];
     assert.ok(probe, "probe role for " + id);
     assert.equal(probe.candidates.length, 1, "one candidate: no failover can hide a dead lane");
     assert.equal(probe.candidates[0].id, id);
@@ -357,7 +357,7 @@ test("a lane is live only on a 200 with text from the lane that was asked for", 
     return new Response(spec.body, { status: spec.status, headers: spec.backend ? { "x-meridian-backend": spec.backend(model) } : {} });
   };
   const good = JSON.stringify({ choices: [{ message: { content: "OK" } }] });
-  const all = await probeLanes("https://r", "k", pool, answer((m) => ({ status: 200, backend: (x) => x.slice("role:probe-".length), body: good })));
+  const all = await probeLanes("https://r", "k", pool, answer((m) => ({ status: 200, backend: (x) => x.slice("role:".length), body: good })));
   assert.ok(all.length >= 3 && all.every((l) => l.ok), "every lane serving is live");
   // the failure classes that shipped: retired model id, revoked key, empty wallet, wrong lane, no text, transport
   const bad = (status, body = "{}") => async () => new Response(body, { status, headers: { "x-meridian-backend": "minimax-m3" } });
