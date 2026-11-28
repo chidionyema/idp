@@ -69,6 +69,8 @@ pub struct ObligationRecord {
     pub instruction_id: String,
     pub initial_agent: String,
     pub current_agent: String,
+    /// Every agent that has ever held this debt, in order. Never shrinks.
+    pub custody_chain: Vec<String>,
     pub state: ObligationState,
     pub tokens_in: u64,
     pub tokens_out: u64,
@@ -87,136 +89,159 @@ pub struct KarmaProjection {
 }
 
 impl KarmaProjection {
+    fn gap(&mut self, ev: &KarmaEvent, reason: &str) {
+        self.gaps.push(KarmaGap {
+            event_id: ev.event_id.clone(),
+            reason: reason.to_string(),
+        });
+    }
+
     pub fn apply(&mut self, ev: &KarmaEvent) {
+        // A blank identity cannot be held to a debt: refuse it before it can key anything.
+        if [&ev.event_id, &ev.instruction_id, &ev.agent_urn]
+            .iter()
+            .any(|f| f.trim().is_empty())
+        {
+            self.gap(ev, "BLANK_IDENTITY");
+            return;
+        }
         if self.seen_events.contains(&ev.event_id) {
-            self.gaps.push(KarmaGap {
-                event_id: ev.event_id.clone(),
-                reason: "DUPLICATE_EVENT_IGNORED".to_string(),
-            });
+            self.gap(ev, "DUPLICATE_EVENT_IGNORED");
             return;
         }
         if !ev.externally_verified_authority {
-            self.gaps.push(KarmaGap {
-                event_id: ev.event_id.clone(),
-                reason: "UNVERIFIED_EXTERNAL_AUTHORITY".to_string(),
-            });
+            self.gap(ev, "UNVERIFIED_EXTERNAL_AUTHORITY");
             return;
         }
         for parent in &ev.parent_event_ids {
             if !self.seen_events.contains(parent) {
-                self.gaps.push(KarmaGap {
-                    event_id: ev.event_id.clone(),
-                    reason: "CAUSAL_PARENT_NOT_YET_OBSERVED".to_string(),
-                });
+                self.gap(ev, "CAUSAL_PARENT_NOT_YET_OBSERVED");
                 return;
             }
         }
 
-        match &ev.payload {
-            KarmaEventKind::InstructionAccepted { .. } => {
-                // A debt is issued once per instruction; re-accepting must never reset its ledger.
-                if self.obligations.contains_key(&ev.instruction_id) {
-                    self.gaps.push(KarmaGap {
-                        event_id: ev.event_id.clone(),
-                        reason: "INSTRUCTION_ALREADY_ISSUED".to_string(),
-                    });
-                    return;
-                }
-                self.obligations.insert(
-                    ev.instruction_id.clone(),
-                    ObligationRecord {
-                        instruction_id: ev.instruction_id.clone(),
-                        initial_agent: ev.agent_urn.clone(),
-                        current_agent: ev.agent_urn.clone(),
-                        state: ObligationState::Open,
-                        tokens_in: 0,
-                        tokens_out: 0,
-                        money_minor_units: None,
-                        submitted_digest: None,
-                        submitted_by: None,
-                        verified_yield: false,
-                        open_ancestor_failures: HashSet::new(),
-                    },
-                );
-                self.seen_events.insert(ev.event_id.clone());
+        if let KarmaEventKind::InstructionAccepted { .. } = &ev.payload {
+            // A debt is issued once per instruction; re-accepting must never reset its ledger.
+            if self.obligations.contains_key(&ev.instruction_id) {
+                self.gap(ev, "INSTRUCTION_ALREADY_ISSUED");
+                return;
             }
+            self.obligations.insert(
+                ev.instruction_id.clone(),
+                ObligationRecord {
+                    instruction_id: ev.instruction_id.clone(),
+                    initial_agent: ev.agent_urn.clone(),
+                    current_agent: ev.agent_urn.clone(),
+                    custody_chain: vec![ev.agent_urn.clone()],
+                    state: ObligationState::Open,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    money_minor_units: None,
+                    submitted_digest: None,
+                    submitted_by: None,
+                    verified_yield: false,
+                    open_ancestor_failures: HashSet::new(),
+                },
+            );
+            self.seen_events.insert(ev.event_id.clone());
+            return;
+        }
+
+        // Every other event mutates an existing debt. Dropping one silently would look like
+        // "nothing happened", so an unknown obligation is a recorded gap.
+        let Some(ob) = self.obligations.get_mut(&ev.instruction_id) else {
+            self.gap(ev, "UNKNOWN_OBLIGATION");
+            return;
+        };
+
+        let refusal: Option<&str> = match &ev.payload {
+            KarmaEventKind::InstructionAccepted { .. } => None,
             KarmaEventKind::CostObserved {
                 tokens_in,
                 tokens_out,
                 money_minor_units,
             } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
+                if matches!(money_minor_units, Some(m) if *m < 0) {
+                    // Negative money would erase recorded cost.
+                    Some("NEGATIVE_COST_REFUSED")
+                } else {
                     ob.tokens_in = ob.tokens_in.saturating_add(*tokens_in);
                     ob.tokens_out = ob.tokens_out.saturating_add(*tokens_out);
                     if let Some(m) = money_minor_units {
                         ob.money_minor_units =
                             Some(ob.money_minor_units.unwrap_or(0).saturating_add(*m));
                     }
-                    self.seen_events.insert(ev.event_id.clone());
-                } else {
-                    self.gaps.push(KarmaGap {
-                        event_id: ev.event_id.clone(),
-                        reason: "UNKNOWN_OBLIGATION".to_string(),
-                    });
+                    None
                 }
             }
             KarmaEventKind::AncestralFailure {
                 ancestor_event_id, ..
             } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
-                    ob.open_ancestor_failures.insert(ancestor_event_id.clone());
-                    self.seen_events.insert(ev.event_id.clone());
+                ob.open_ancestor_failures.insert(ancestor_event_id.clone());
+                // A settled debt with an open ancestral failure is not settled.
+                if ob.state == ObligationState::Settled || ob.verified_yield {
+                    ob.verified_yield = false;
+                    ob.state = ObligationState::AwaitingIndependentYield;
                 }
+                None
             }
             KarmaEventKind::OwnershipHandback {
                 successor_agent_urn,
             } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
-                    // Preserves `initial_agent` and `open_ancestor_failures` without erasure
+                if successor_agent_urn.trim().is_empty() {
+                    Some("BLANK_IDENTITY")
+                } else if ev.agent_urn != ob.current_agent {
+                    Some("HANDBACK_NOT_BY_CURRENT_CUSTODIAN")
+                } else {
+                    // Preserves `initial_agent` and `open_ancestor_failures` without erasure.
                     ob.current_agent = successor_agent_urn.clone();
-                    self.seen_events.insert(ev.event_id.clone());
+                    if !ob.custody_chain.contains(successor_agent_urn) {
+                        ob.custody_chain.push(successor_agent_urn.clone());
+                    }
+                    None
                 }
             }
             KarmaEventKind::CorrectionVerified {
                 ancestor_event_id, ..
             } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
-                    if ev.agent_urn != ob.current_agent && ev.agent_urn != ob.initial_agent {
-                        ob.open_ancestor_failures.remove(ancestor_event_id);
-                        self.seen_events.insert(ev.event_id.clone());
-                    } else {
-                        self.gaps.push(KarmaGap {
-                            event_id: ev.event_id.clone(),
-                            reason: "SELF_CERTIFIED_CORRECTION_FORBIDDEN".to_string(),
-                        });
-                    }
+                // Anyone who has ever held the debt is party to it and cannot certify a correction.
+                if ob.custody_chain.contains(&ev.agent_urn) {
+                    Some("SELF_CERTIFIED_CORRECTION_FORBIDDEN")
+                } else {
+                    ob.open_ancestor_failures.remove(ancestor_event_id);
+                    None
                 }
             }
             KarmaEventKind::YieldSubmitted { evidence_digest } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
+                if ob.state == ObligationState::Settled {
+                    // Settled is terminal: resubmission must not rewrite settled evidence.
+                    Some("OBLIGATION_ALREADY_SETTLED")
+                } else {
                     ob.submitted_digest = Some(evidence_digest.clone());
                     ob.submitted_by = Some(ev.agent_urn.clone());
                     ob.state = ObligationState::AwaitingIndependentYield;
-                    self.seen_events.insert(ev.event_id.clone());
+                    None
                 }
             }
             KarmaEventKind::YieldIndependentlyVerified { evidence_digest } => {
-                if let Some(ob) = self.obligations.get_mut(&ev.instruction_id) {
-                    let matches_digest =
-                        ob.submitted_digest.as_deref() == Some(evidence_digest.as_str());
-                    let is_independent = ob.submitted_by.as_deref() != Some(ev.agent_urn.as_str())
-                        && ob.current_agent != ev.agent_urn;
-                    if matches_digest && is_independent && ob.open_ancestor_failures.is_empty() {
-                        ob.verified_yield = true;
-                        ob.state = ObligationState::Settled;
-                        self.seen_events.insert(ev.event_id.clone());
-                    } else {
-                        self.gaps.push(KarmaGap {
-                            event_id: ev.event_id.clone(),
-                            reason: "SELF_GRADED_OR_UNLINKED_YIELD".to_string(),
-                        });
-                    }
+                let matches_digest =
+                    ob.submitted_digest.as_deref() == Some(evidence_digest.as_str());
+                let is_independent = ob.submitted_by.as_deref() != Some(ev.agent_urn.as_str())
+                    && !ob.custody_chain.contains(&ev.agent_urn);
+                if matches_digest && is_independent && ob.open_ancestor_failures.is_empty() {
+                    ob.verified_yield = true;
+                    ob.state = ObligationState::Settled;
+                    None
+                } else {
+                    Some("SELF_GRADED_OR_UNLINKED_YIELD")
                 }
+            }
+        };
+
+        match refusal {
+            Some(reason) => self.gap(ev, reason),
+            None => {
+                self.seen_events.insert(ev.event_id.clone());
             }
         }
     }
