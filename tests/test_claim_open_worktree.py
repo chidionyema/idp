@@ -308,3 +308,117 @@ def test_the_stall_budget_is_defined_before_it_is_used():
     assert mod.SUBPROCESS_BUDGET_S > 0
     # resolve_repo() already ran at import and used the constant; reaching here proves ordering.
     assert mod.REPO
+
+
+# ---------------------------------------------------------------------------------------------
+# 2026-11-28, chidionyema/idp#8705. claim-gate judges the NEWEST CLAIM comment on an issue alone,
+# and claim-open wrote `paths=` from the current branch only. Three lanes of one agent on one
+# issue, submitted in turn, left only the last lane covered: the other two were refused in the
+# Greenlane queue ("no live claim: N file(s) outside every claim's paths") 40 minutes after they
+# had passed claim-gate locally. These tests build a real origin with real lane branches.
+# ---------------------------------------------------------------------------------------------
+
+_ENV = {
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.invalid",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.invalid",
+}
+
+
+def _git(cwd: Path, *a: str) -> str:
+    p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+        # hooksPath is emptied: the machine's global pre-push hook must never run on a throwaway
+        # repository (it hung this test for minutes on 2026-11-28 and proves nothing about it).
+        ["git", "-c", "core.hooksPath=/dev/null", *a],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **_ENV},
+    )
+    assert p.returncode == 0, f"git {' '.join(a)}: {p.stderr}"
+    return p.stdout
+
+
+def _lane(work: Path, name: str, filename: str, trailers: str = "") -> None:
+    _git(work, "switch", "-q", "-c", f"lane/{name}", "origin/main")
+    (work / filename).write_text(name)
+    _git(work, "add", filename)
+    _git(work, "commit", "-q", "-m", f"work {name}\n\n{trailers}")
+    _git(work, "push", "-q", "origin", f"lane/{name}")
+
+
+@pytest.fixture()
+def fleet(tmp_path: Path):
+    """A bare origin with main, and a clone standing on a branch of its own."""
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "work"
+    _git(tmp_path, "clone", "-q", str(origin), str(work))
+    (work / "base.txt").write_text("base")
+    _git(work, "add", "base.txt")
+    _git(work, "commit", "-q", "-m", "base")
+    _git(work, "push", "-q", "origin", "HEAD:main")
+    _git(work, "fetch", "-q", "origin")
+    mine = "Claim: chidionyema/idp#8705\nAgent: claude-live-spine"
+    _lane(work, "spec", "spec.md", mine)
+    _lane(work, "watch", "watch.mjs", mine)
+    _lane(work, "stranger", "stranger.txt", "Claim: #8705\nAgent: someone-else")
+    _lane(work, "elsewhere", "elsewhere.txt", "Claim: #999\nAgent: claude-live-spine")
+    _lane(work, "bare", "bare.txt")
+    _lane(work, "landed", "landed.txt", mine)
+    _git(
+        work, "push", "-q", "origin", "lane/landed:main"
+    )  # the Greenlane fast-forwards main
+    _git(work, "fetch", "-q", "origin")
+    _git(work, "switch", "-q", "-c", "lane/sweep", "origin/main")
+    return work
+
+
+def _mod_in(work: Path) -> ModuleType:
+    mod = _load()
+    mod.REPO = str(work)
+    return mod
+
+
+def test_a_new_claim_still_covers_the_agents_other_open_lanes(fleet: Path) -> None:
+    mod = _mod_in(fleet)
+    assert mod.refresh_lane_refs() is True
+    got = mod.sibling_lane_files(8705, "claude-live-spine", "origin/main")
+    assert got == ["spec.md", "watch.mjs"], (
+        "the claim must name every file another open lane of this agent on this issue still "
+        "changes, and nothing else: not another agent's lane, not another issue's, not a lane "
+        f"without trailers, not a lane the Greenlane has already landed; got {got}"
+    )
+
+
+def test_the_head_lane_is_not_counted_twice(fleet: Path) -> None:
+    mod = _mod_in(fleet)
+    _git(fleet, "switch", "-q", "lane/spec")
+    mod.refresh_lane_refs()
+    assert mod.sibling_lane_files(8705, "claude-live-spine", "origin/main") == [
+        "watch.mjs"
+    ]
+
+
+def test_lanes_that_cannot_be_read_keep_the_last_claim_and_say_so(
+    fleet: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _mod_in(fleet)
+    mod.refresh_lane_refs = lambda: False
+    mod.gh = lambda *a, **k: (
+        "CLAIM agent=someone-else paths=x.txt heartbeat=2026-11-28T00:00:00Z\n"
+        "CLAIM agent=claude-live-spine paths=a.txt,b.txt heartbeat=2026-11-28T01:00:00Z\n"
+        "no claim here\n"
+    )
+    assert mod.lane_paths(8705, "claude-live-spine", "origin/main") == [
+        "a.txt",
+        "b.txt",
+    ]
+    assert "could not be read" in capsys.readouterr().out
+
+
+def test_an_unreachable_origin_is_reported_not_swallowed(fleet: Path) -> None:
+    mod = _mod_in(fleet)
+    _git(fleet, "remote", "set-url", "origin", str(fleet / "nowhere.git"))
+    assert mod.refresh_lane_refs() is False
