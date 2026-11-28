@@ -12,11 +12,15 @@ on:
     paths:
       - "platform/meridian-core-engines/**"
       - ".github/workflows/meridian-core-engines.yml"
+      - "bin/gemini-outbox-pull"
+      - "tests/test_gemini_outbox_lane.py"
   push:
     branches: [main]
     paths:
       - "platform/meridian-core-engines/**"
       - ".github/workflows/meridian-core-engines.yml"
+      - "bin/gemini-outbox-pull"
+      - "tests/test_gemini_outbox_lane.py"
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +30,7 @@ concurrency:
 jobs:
   cargo-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: platform/meridian-core-engines
@@ -50,3 +54,12 @@ jobs:
           set +e; printf '%s' "$bad" | ./target/release/meridian presubmit >/dev/null 2>&1; rc_bad=$?; set -e
           test "$rc_bad" = 2
           printf '%s' "$good" | ./target/release/meridian presubmit >/dev/null
+      - name: gemini outbox lane, end to end (fake Drive v3, real git, the built verifier)
+        working-directory: .
+        env:
+          MERIDIAN_OUTBOX_INGEST: ${{ github.workspace }}/platform/meridian-core-engines/target/release/meridian-outbox-ingest
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --manifest-path platform/meridian-core-engines/Cargo.toml -p meridian-outbox-ingest
+          python3 -m pip install --quiet pytest==8.4.2
+          python3 -m pytest tests/test_gemini_outbox_lane.py -q -p no:cacheprovider
