@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+"""bin/lane-push-api -- push files to a lane through the GitHub git-data API, judged first.
+
+    bin/lane-push-api --lane lane/<name> --claim owner/repo#N --agent <name> \
+        --message-file MSG [--dir DIR] PATH...
+
+Why this exists (2026-11-28, measured): 32 Greenlane verdicts, 29 red. An API push runs no git
+hook, so everything .githooks/pre-push now refuses (bin/lane-preflight) was never asked of an agent
+that pushes through the API -- it learned a ruff-format, language-gate, merge or claim-heartbeat
+refusal one Greenlane round later. The hook cannot cover this path; this door does, with the same
+four rules, read from the same places, before a single object is written:
+
+  1. claim       the holder's CLAIM is re-stamped immediately before the commit is authored, so the
+                 head is never authored after its own heartbeat lapsed (claim-gate, 15 minutes;
+                 idp#8629 forgives queue wait only). Refuses when the newest CLAIM is another agent's.
+  2. ruff format the pinned version (greenlane/ferrari.py TRUSTED_RUFF_VERSION on origin/main),
+                 on the pushed Python, with main's pyproject.toml. Refuses; it never rewrites.
+     python-strict `ruff check --select E9,F,B,S` (S603/S607 ignored; S101 ignored in tests) on the
+                 same Python, the estate standard fast-gate runs last (crew#620). A file already
+                 off-standard on main is a note, not a refusal. Measured 2026-11-28: lane 76dd398e
+                 passed ruff format and went red here (S310, S104, F401).
+  3. language    every NEW Python file outside tests/ names a `Language-Exception:` trailer in this
+                 message or a commit already on the lane (bin/language-gate's rule).
+  4. merge       the lane, as it will be after this push, must merge onto the CURRENT main: every
+                 file both sides changed is merged for real (git merge-file; the keyed catalogs with
+                 main's bin/catalog-merge, as claim-gate does). A conflict names the file.
+
+Nothing is guessed: a rule that cannot be judged exits 2 (BLIND) and writes nothing. There is no
+skip flag. PUSH_DRY_RUN=1 judges and stops. The ref update is never forced.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+CLAIM_RE = re.compile(r"^CLAIM agent=(\S+) paths=(\S+) heartbeat=(\S+)", re.MULTILINE)
+CLAIM_LINE_RE = re.compile(r"^Claim:\s*\S+#\d+\s*$", re.MULTILINE)
+AGENT_LINE_RE = re.compile(r"^Agent:\s*\S+\s*$", re.MULTILINE)
+TRAILER_RE = re.compile(r"^Language-Exception:\s*(\S+)\s*--\s*\S.*$", re.MULTILINE)
+KEYED_CATALOGS = ("catalog/issue-classes.json", "catalog/optimus-metrics.json")
+
+
+class Refused(Exception):
+    """A rule refused the push (exit 1)."""
+
+
+class Blind(Exception):
+    """A rule could not be judged (exit 2)."""
+
+
+def stamped(message: str, claim: str, agent: str) -> str:
+    """The commit message with the two lines claim-gate reads, added when missing.
+
+    Measured 2026-11-28: lanes pushed through this door went red at Greenlane with "no live claim:
+    no `Claim: <owner>/<repo>#<n>` line" because the door stamped the claim COMMENT but wrote a
+    message with no `Claim:`/`Agent:` lines. Each stays alone on its own line (the gate's shape).
+    """
+    text = message.rstrip("\n") + "\n"
+    extra = ""
+    if not CLAIM_LINE_RE.search(text):
+        extra += f"Claim: {claim}\n"
+    if not AGENT_LINE_RE.search(text):
+        extra += f"Agent: {agent}\n"
+    return text + ("\n" + extra if extra else "")
+
+
+def git_blob_sha(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()  # noqa: S324
+
+
+# --------------------------------------------------------------------------- pure rules
+
+
+def newest_claim(comments: list[str]) -> tuple[str, str, str] | None:
+    """(agent, paths, heartbeat) of the newest CLAIM comment, or None."""
+    found = None
+    for body in comments:
+        match = CLAIM_RE.match(body)
+        if match:
+            found = match.groups()
+    return found
+
+
+def language_problems(
+    pushed: dict[str, bytes], main_paths: set[str], messages: str
+) -> list[str]:
+    """Pushed files that bin/language-gate would refuse: new Python, no trailer, not a test."""
+    named = set(TRAILER_RE.findall(messages))
+    bad = []
+    for path, data in pushed.items():
+        if path in main_paths or path.startswith("tests/") or "/tests/" in path:
+            continue
+        first = data.split(b"\n", 1)[0]
+        is_py = path.endswith(".py") or (first.startswith(b"#!") and b"python" in first)
+        if is_py and path not in named:
+            bad.append(path)
+    return bad
+
+
+def three_way(
+    path: str, base: bytes | None, ours: bytes, theirs: bytes, driver: Path | None
+) -> bool:
+    """True when `ours` (the lane) and `theirs` (main) merge over `base` for this path."""
+    if ours == theirs:
+        return True
+    if base is None or base == ours or base == theirs:
+        # add/add of different bytes conflicts; one side unchanged takes the other.
+        return base is not None
+    with tempfile.TemporaryDirectory(prefix="lane-push-api.") as tmp:
+        o, a, b = (Path(tmp, n) for n in ("base", "ours", "theirs"))
+        o.write_bytes(base)
+        a.write_bytes(ours)
+        b.write_bytes(theirs)
+        if path in KEYED_CATALOGS and driver is not None:
+            # git runs the driver as `driver %O %A %B %P`: %A is rewritten in place, 0 = clean.
+            done = subprocess.run(  # noqa: S603
+                [sys.executable, str(driver), str(o), str(a), str(b), path],
+                capture_output=True,
+                check=False,
+            )
+            return done.returncode == 0
+        done = subprocess.run(  # noqa: S603, S607
+            ["git", "merge-file", "-p", str(a), str(o), str(b)],
+            capture_output=True,
+            check=False,
+        )
+        return done.returncode == 0
+
+
+# --------------------------------------------------------------------------- GitHub glue
+
+
+class Api:
+    def __init__(self, repo: str):
+        self.repo = repo
+
+    def call(self, path: str, body=None, method: str | None = None, raw: bool = False):
+        cmd = ["gh", "api"]
+        if method:
+            cmd += ["-X", method]
+        if raw:
+            cmd += ["-H", "Accept: application/vnd.github.raw"]
+        cmd.append(path)
+        if body is not None:
+            cmd += ["--input", "-"]
+        done = subprocess.run(  # noqa: S603, S607
+            cmd,
+            input=json.dumps(body).encode() if body is not None else None,
+            capture_output=True,
+            timeout=90,
+            check=False,
+        )
+        if done.returncode:
+            raise Blind(f"gh api {path}: {done.stderr.decode()[:300]}")
+        return done.stdout if raw else json.loads(done.stdout)
+
+    def r(self, tail: str, **kw):
+        return self.call(f"repos/{self.repo}/{tail}", **kw)
+
+    def blob(self, sha: str) -> bytes:
+        return base64.b64decode(self.r(f"git/blobs/{sha}")["content"])
+
+    def tree(self, commit_sha: str) -> dict[str, tuple[str, str]]:
+        tree_sha = self.r(f"git/commits/{commit_sha}")["tree"]["sha"]
+        got = self.r(f"git/trees/{tree_sha}?recursive=1")
+        if got.get("truncated"):
+            raise Blind("the repository tree is truncated; cannot judge the lane")
+        return {
+            t["path"]: (t["sha"], t["mode"]) for t in got["tree"] if t["type"] == "blob"
+        }
+
+
+def stamp_claim(api_for_claim: Api, issue: int, agent: str) -> str:
+    comments, page = [], 1
+    while True:
+        rows = api_for_claim.r(f"issues/{issue}/comments?per_page=100&page={page}")
+        comments += [row["body"] for row in rows]
+        if len(rows) < 100:
+            break
+        page += 1
+    held = newest_claim(comments)
+    if held is None:
+        raise Refused(f"no CLAIM comment on issue #{issue}: post one first")
+    if held[0] != agent:
+        raise Refused(
+            f"the newest CLAIM on #{issue} is agent={held[0]}, not agent={agent}: "
+            "a rival holds these paths"
+        )
+    beat = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    api_for_claim.r(
+        f"issues/{issue}/comments",
+        body={"body": f"CLAIM agent={agent} paths={held[1]} heartbeat={beat}"},
+    )
+    return beat
+
+
+def pinned_ruff(main_ferrari: str) -> tuple[str, str]:
+    match = re.search(r'^TRUSTED_RUFF_VERSION = "(\d[\d.]*)"', main_ferrari, re.M)
+    if not match:
+        raise Blind("greenlane/ferrari.py on main names no TRUSTED_RUFF_VERSION")
+    pin = match.group(1)
+    for cand in (
+        os.environ.get("LANE_PREFLIGHT_RUFF", ""),
+        shutil.which("ruff") or "",
+        str(Path.home() / ".local/bin/ruff"),
+    ):
+        if cand and Path(cand).is_file():
+            said = subprocess.run(  # noqa: S603
+                [cand, "--version"], capture_output=True, text=True, check=False
+            ).stdout.strip()
+            if said == f"ruff {pin}":
+                return cand, pin
+    raise Blind(
+        f"Greenlane pins ruff {pin} and none is installed: pip install ruff=={pin}"
+    )
+
+
+STRICT_RULES = (
+    "E9,F,B,S"  # the estate Python standard, crew#620 (python-strict-default)
+)
+STRICT_IGNORE = "S603,S607"
+STRICT_PER_FILE = "tests/*:S101,test_*.py:S101,*_test.py:S101"
+
+
+def strict_findings(ruff: str, cfg: Path, path: str, data: bytes) -> str:
+    """ruff check --select E9,F,B,S on one file's bytes; "" when clean, else the findings."""
+    done = subprocess.run(  # noqa: S603
+        [
+            ruff,
+            "check",
+            "--quiet",
+            "--no-cache",
+            "--config",
+            str(cfg),
+            "--select",
+            STRICT_RULES,
+            "--ignore",
+            STRICT_IGNORE,
+            "--per-file-ignores",
+            STRICT_PER_FILE,
+            "--stdin-filename",
+            path,
+            "-",
+        ],
+        input=data,
+        capture_output=True,
+        check=False,
+    )
+    return "" if done.returncode == 0 else done.stdout.decode(errors="replace")
+
+
+def strict_problems(
+    ruff: str, cfg: Path, pushed: dict[str, bytes], at_base: dict[str, bytes]
+) -> tuple[list[str], list[str]]:
+    """(refusals, notes). A file already off-standard at its base is a note: the estate ratchet."""
+    refused: list[str] = []
+    notes: list[str] = []
+    for path, data in sorted(pushed.items()):
+        found = strict_findings(ruff, cfg, path, data)
+        if not found:
+            continue
+        if path in at_base and strict_findings(ruff, cfg, path, at_base[path]):
+            notes.append(path)
+            continue
+        codes = sorted(set(re.findall(r"\b[A-Z]{1,3}\d{3}\b", found)))
+        refused.append(f"{path} ({', '.join(codes) or 'syntax'})")
+    return refused, notes
+
+
+def judge_and_push(args) -> int:
+    api = Api(args.repo)
+    claim_repo, claim_num = re.fullmatch(
+        r"([\w.-]+/[\w.-]+)#(\d+)", args.claim
+    ).groups()
+    root = Path(args.dir)
+    pushed: dict[str, bytes] = {}
+    for rel in args.paths:
+        if not (root / rel).is_file():
+            raise Blind(f"{rel} is not a file under {root}")
+        pushed[rel] = (root / rel).read_bytes()
+
+    main_sha = api.r("git/ref/heads/main")["object"]["sha"]
+    main_tree = api.tree(main_sha)
+    try:
+        lane_ref = api.r(f"git/ref/heads/{args.lane}")["object"]["sha"]
+    except Blind:
+        lane_ref = None  # a new lane starts from main
+    head = lane_ref or main_sha
+    head_tree = api.tree(head)
+
+    # 2. ruff format, pinned, on the pushed Python (never rewrites)
+    py_files = [p for p in pushed if p.endswith(".py")]
+    if py_files:
+        ruff, pin = pinned_ruff(
+            api.r("contents/greenlane/ferrari.py?ref=main", raw=True).decode()
+        )
+        with tempfile.TemporaryDirectory(prefix="lane-push-api.") as tmp:
+            cfg = Path(tmp, "pyproject.toml")
+            cfg.write_bytes(api.r("contents/pyproject.toml?ref=main", raw=True))
+            unformatted = [
+                p
+                for p in py_files
+                if subprocess.run(  # noqa: S603
+                    [
+                        ruff,
+                        "format",
+                        "--check",
+                        "--config",
+                        str(cfg),
+                        "--stdin-filename",
+                        p,
+                        "-",
+                    ],
+                    input=pushed[p],
+                    capture_output=True,
+                    check=False,
+                ).returncode
+            ]
+            if unformatted:
+                raise Refused(f"not formatted by ruff {pin}: {', '.join(unformatted)}")
+            print(f"ok    ruff format (ruff {pin}, {len(py_files)} file(s))")
+            at_base = {p: api.blob(main_tree[p][0]) for p in py_files if p in main_tree}
+            refused, notes = strict_problems(
+                ruff, cfg, {p: pushed[p] for p in py_files}, at_base
+            )
+            for p in notes:
+                print(
+                    f"note  python-strict: {p} was already off-standard on main (ratchet)"
+                )
+            if refused:
+                raise Refused(
+                    "python-strict (ruff check --select E9,F,B,S) refuses: "
+                    + "; ".join(refused)
+                    + " -- fix each finding, or add a justified `# noqa: <code> -- <reason>`"
+                )
+            print(
+                f"ok    python-strict (ruff check {STRICT_RULES}, {len(py_files)} file(s))"
+            )
+
+    # 3. language-gate
+    messages = stamped(Path(args.message_file).read_text(), args.claim, args.agent)
+    if lane_ref:
+        compare = api.r(f"compare/{main_sha}...{lane_ref}")
+        messages += "\n" + "\n".join(
+            c["commit"]["message"] for c in compare.get("commits", [])
+        )
+    bad = language_problems(pushed, set(main_tree), messages)
+    if bad:
+        raise Refused(
+            "language-gate: new Python without a trailer; add "
+            + "; ".join(f"`Language-Exception: {p} -- <reason>`" for p in bad)
+        )
+    print("ok    language-gate")
+
+    # 4. merge trial: the lane as it will be, against the CURRENT main
+    base = (
+        api.r(f"compare/{main_sha}...{head}")["merge_base_commit"]["sha"]
+        if lane_ref
+        else main_sha
+    )
+    if base != main_sha:
+        base_tree = api.tree(base)
+        lane_after = {
+            **head_tree,
+            **{p: (git_blob_sha(d), "") for p, d in pushed.items()},
+        }
+        main_changed = {
+            p
+            for p in set(main_tree) | set(base_tree)
+            if main_tree.get(p, ("",))[0] != base_tree.get(p, ("",))[0]
+        }
+        lane_changed = {
+            p
+            for p in set(lane_after) | set(base_tree)
+            if lane_after.get(p, ("",))[0] != base_tree.get(p, ("",))[0]
+        }
+        with tempfile.TemporaryDirectory(prefix="lane-push-api.") as tmp:
+            driver = None
+            if any(p in KEYED_CATALOGS for p in main_changed & lane_changed):
+                driver = Path(tmp, "catalog-merge")
+                driver.write_bytes(
+                    api.r("contents/bin/catalog-merge?ref=main", raw=True)
+                )
+            conflicts = []
+            for p in sorted(main_changed & lane_changed):
+                ours = (
+                    pushed[p]
+                    if p in pushed
+                    else (api.blob(lane_after[p][0]) if p in lane_after else None)
+                )
+                theirs = api.blob(main_tree[p][0]) if p in main_tree else None
+                basis = api.blob(base_tree[p][0]) if p in base_tree else None
+                if ours is None or theirs is None:
+                    conflicts.append(p)  # deleted on one side, changed on the other
+                elif not three_way(p, basis, ours, theirs, driver):
+                    conflicts.append(p)
+        if conflicts:
+            raise Refused(
+                "does not merge onto main "
+                + main_sha[:12]
+                + ": "
+                + ", ".join(conflicts[:10])
+            )
+    print("ok    merges onto main", main_sha[:12])
+
+    if os.environ.get("PUSH_DRY_RUN"):
+        print("dry run: every rule passed, nothing written")
+        return 0
+
+    # 1. claim, stamped last so the heartbeat is never older than the commit it covers
+    beat = stamp_claim(Api(claim_repo), int(claim_num), args.agent)
+    print(f"ok    claim #{claim_num} stamped {beat}")
+
+    items = []
+    for rel, data in pushed.items():
+        sha = git_blob_sha(data)
+        if rel in head_tree and head_tree[rel][0] == sha:
+            continue
+        made = api.r(
+            "git/blobs",
+            body={"content": base64.b64encode(data).decode(), "encoding": "base64"},
+        )
+        if made["sha"] != sha:
+            raise Blind(f"blob sha mismatch for {rel}")
+        mode = (
+            head_tree[rel][1]
+            if rel in head_tree
+            else ("100755" if os.access(root / rel, os.X_OK) else "100644")
+        )
+        items.append({"path": rel, "mode": mode, "type": "blob", "sha": sha})
+    if not items:
+        raise Refused("nothing changed")
+    parent = api.r(f"git/commits/{head}")
+    tree = api.r("git/trees", body={"base_tree": parent["tree"]["sha"], "tree": items})
+    commit = api.r(
+        "git/commits",
+        body={
+            "message": stamped(
+                Path(args.message_file).read_text(), args.claim, args.agent
+            ),
+            "tree": tree["sha"],
+            "parents": [head],
+        },
+    )
+    if lane_ref:
+        api.r(
+            f"git/refs/heads/{args.lane}",
+            body={"sha": commit["sha"], "force": False},
+            method="PATCH",
+        )
+    else:
+        api.r("git/refs", body={"ref": f"refs/heads/{args.lane}", "sha": commit["sha"]})
+    print("PUSHED", commit["sha"], "on top of", head[:10])
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--lane", required=True)
+    parser.add_argument(
+        "--claim", required=True, help="owner/repo#N the CLAIM lives on"
+    )
+    parser.add_argument("--agent", default=os.environ.get("ESTATE_AGENT_NAME", ""))
+    parser.add_argument("--message-file", required=True)
+    parser.add_argument("--dir", default=".")
+    parser.add_argument("--repo", default="chidionyema/idp")
+    parser.add_argument("paths", nargs="+")
+    args = parser.parse_args(argv)
+    if not args.lane.startswith("lane/"):
+        print(
+            "REFUSED lane-push-api: the lane must be named lane/<name>", file=sys.stderr
+        )
+        return 1
+    if not args.agent:
+        print(
+            "BLIND lane-push-api: pass --agent <name> (or ESTATE_AGENT_NAME)",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        return judge_and_push(args)
+    except Refused as why:
+        print(f"REFUSED lane-push-api: {why}", file=sys.stderr)
+        return 1
+    except (Blind, OSError, subprocess.SubprocessError, KeyError) as why:
+        print(f"BLIND lane-push-api: {why}; nothing was written", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

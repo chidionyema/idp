@@ -657,6 +657,17 @@
       "better": "lower",
       "owner": "estate",
       "description": "instructions in the kernel AGENTS.md that tell an agent to stop, wait or only propose (founder, 2026-11-28: rules are enforced in code, not files; agents begin at full throttle and never stop). 1 before this change (\"stop that action and verify the current authority\"), 0 after."
+    },
+    {
+      "name": "greenlane.lane_preflight_before_floor",
+      "measure": [
+        "python3",
+        "tests/lane_preflight_enforced.py"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "1 when bin/lane-preflight, run on real git in a tmp repo, refuses a new Python file with no Language-Exception trailer (naming it), refuses a lane that does not merge onto origin/main, passes a clean lane, and .githooks/pre-push calls it BEFORE its disk-floor exit, so a machine short of disk is judged like any other. 0 on code where the preflight is missing, wired after the floor, or cannot run. The ruff-format rule needs the pinned formatter the judge may not carry and is proved by tests/test_lane_preflight.py."
     }
   ]
 }

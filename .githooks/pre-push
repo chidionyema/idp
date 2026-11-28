@@ -176,6 +176,44 @@ if ! _claim_guard; then
   exit 1
 fi
 
+# 2026-11-28: the pre-CI rules a lane is refused for, judged before the push and BEFORE the disk
+# floor below. Measured the same day: of 32 Greenlane verdicts 29 were red, and the language-gate
+# (5), ruff format (4) and "does not merge onto origin/main" (~8) reds were all rules the pusher
+# could have run in seconds. The floor exits this hook at <3000MB free, ahead of Layer 1c ruff,
+# the syntax checks and bin/idp-ci (where the language-gate lives), so on a constrained machine
+# none of them ran. bin/lane-preflight reads git objects and one pinned formatter; it needs no
+# disk, so the floor does not apply to it. Judged with origin/main's bytes, like claim-gate.
+_preflight_guard() {
+  local root pf local_ref local_sha remote_ref remote_sha rc
+  root="$(git rev-parse --show-toplevel)"
+  pf="$(mktemp "${TMPDIR:-/tmp}/lane-preflight.main.XXXXXX")"
+  if git show origin/main:bin/lane-preflight >"$pf" 2>/dev/null && [ -s "$pf" ]; then
+    :
+  elif [ -f "$root/bin/lane-preflight" ]; then
+    cp "$root/bin/lane-preflight" "$pf"
+  else
+    rm -f "$pf"
+    echo "BLIND lane-preflight: on neither origin/main nor this checkout"
+    return 0
+  fi
+  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in refs/heads/main | refs/heads/queue/*) continue ;; refs/heads/*) ;; *) continue ;; esac
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    rc=0
+    bash "$pf" "$local_sha" >&2 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      rm -f "$pf"
+      echo "pre-push REFUSED: ${remote_ref#refs/heads/} would be refused by Greenlane's pre-CI rules (above). Fix it here; a red lane costs a batch." >&2
+      return 1
+    fi
+  done <<<"$push_refs"
+  rm -f "$pf"
+  return 0
+}
+if ! _preflight_guard; then
+  exit 1
+fi
+
 # The disk floor buys skipping the EXPENSIVE verification (bin/idp-ci, below), never the cheap
 # authorities above it (2026-11-15). Measured: free space sat at 780-1100 MB all afternoon, and
 # this exit fired on every push, so the claim guard and Layer 0 never ran -- eight lanes reached
