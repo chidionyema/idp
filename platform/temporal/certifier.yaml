@@ -1,0 +1,139 @@
+# MERIDIAN-CTRL-001: the independent settlement certifier. It is a different principal from the
+# worker: its own ServiceAccount, its own private key (minted on first start into its own volume,
+# never mounted into the worker), and it is the only thing that writes the public trust anchors the
+# worker pins. No human generates or wires any key.
+#
+# Each run (1) publishes the certifier's public key and a keyless worker identity into the
+# settlement-trust ConfigMap (the worker's Reloader restarts it only when a value changes), then
+# (2) sweeps instructions waiting for a verifier: it reads the SHIP-CONTRACT accept predicate from
+# the governing issue, observes the real production effect itself, and signs only what it saw.
+# An image that predates the certifier exits 0 and idles, so this lands before the image does.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: settlement-certifier
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: settlement-certifier
+    app.kubernetes.io/part-of: idp
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: settlement-certifier
+  namespace: temporal
+rules:
+  # Exactly one object, by name. It cannot read or write any Secret or any other ConfigMap.
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [settlement-trust]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: settlement-certifier
+  namespace: temporal
+subjects:
+  - { kind: ServiceAccount, name: settlement-certifier, namespace: temporal }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: settlement-certifier
+---
+# Public values only. The certifier fills it; Flux must never overwrite what the certifier wrote.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settlement-trust
+  namespace: temporal
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+  labels:
+    app.kubernetes.io/part-of: idp
+data: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: settlement-certifier-keys
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: settlement-certifier
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 16Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: settlement-certifier
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: settlement-certifier
+    app.kubernetes.io/part-of: idp
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 240
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 240
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: settlement-certifier
+            app.kubernetes.io/part-of: idp
+        spec:
+          restartPolicy: Never
+          serviceAccountName: settlement-certifier
+          imagePullSecrets:
+            - name: ghcr-pull
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: certifier
+              image: idp/sovereign-worker:local
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  python -c "import sys
+                  try:
+                      from sovereign.engine import certifier as c
+                  except ImportError:
+                      sys.exit(3)
+                  sys.exit(0 if hasattr(c, 'publish_trust') else 3)" \
+                    || { echo "certifier: image predates the certifier; idle until the next build"; exit 0; }
+                  exec python -m sovereign.engine.certifier --key-dir /keys --publish-trust --sweep
+              env:
+                - { name: TEMPORAL_HOST, value: temporal-frontend.temporal.svc }
+                - { name: TEMPORAL_PORT, value: "7233" }
+                - { name: TEMPORAL_NAMESPACE, value: estate }
+                - { name: HOME, value: /tmp }
+                # Whose SHIP-CONTRACT comment on the governing issue is trusted as the predicate.
+                - { name: ESTATE_CERTIFIER_CONTRACT_AUTHORS, value: chidionyema }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+                - { name: keys, mountPath: /keys }
+              resources:
+                requests: { cpu: 25m, memory: 96Mi }
+                limits: { cpu: 300m, memory: 256Mi }
+          volumes:
+            - { name: tmp, emptyDir: {} }
+            - name: keys
+              persistentVolumeClaim: { claimName: settlement-certifier-keys }

@@ -123,6 +123,77 @@ async def verify_instruction_yield(inp: dict[str, Any]) -> str:
 
 
 @activity.defn
+async def rust_gate_verify_settlement(inp: dict[str, Any]) -> str:
+    """Second, compiled authority over settlement (MERIDIAN-CTRL-001 B08, B10).
+
+    Everything that decides trust comes from this host, not from the verifier's message:
+    the trusted certifier keys, the worker key (so a worker cannot certify itself), the
+    revocation epoch and the clock. The envelope supplies only the obligation's predicate
+    and policy hashes and the receipt, and the certifier's signature covers both. Returns
+    "allow" only when meridian-gate prints ALLOW; every other outcome, including a missing
+    binary, a timeout or a malformed message, is "reject".
+    """
+    import time
+
+    from sovereign.engine import rust_gate_bridge
+
+    expected = inp.get("expected")
+    envelope = inp.get("envelope")
+    if not (isinstance(expected, dict) and isinstance(envelope, dict)):
+        return "reject"
+    settlement = envelope.get("settlement")
+    if not isinstance(settlement, dict):
+        return "reject"
+    claimed = settlement.get("obligation")
+    receipt = settlement.get("receipt")
+    if not (isinstance(claimed, dict) and isinstance(receipt, dict)):
+        return "reject"
+    hexkey = re.compile(r"[0-9a-fA-F]{64}")
+    certifiers = [
+        k.strip().lower()
+        for k in os.environ.get("ESTATE_SETTLEMENT_CERTIFIERS_HEX", "").split(",")
+        if k.strip()
+    ]
+    worker_key = os.environ.get("ESTATE_WORKER_PUBKEY_HEX", "")
+    if not certifiers or not all(hexkey.fullmatch(k) for k in certifiers):
+        return "reject"
+    if not hexkey.fullmatch(worker_key):
+        return "reject"
+    pinned_policy = os.environ.get("ESTATE_SETTLEMENT_POLICY_HASH", "")
+    policy = claimed.get("policy_hash")
+    predicate = claimed.get("acceptance_predicate_hash")
+    if not (isinstance(policy, str) and isinstance(predicate, str)):
+        return "reject"
+    if pinned_policy and policy != pinned_policy:
+        return "reject"
+    now = int(time.time())
+    request = {
+        "obligation": {
+            "instruction_id": expected.get("instruction_id"),
+            "attempt_id": expected.get("run_id"),
+            "execution_epoch": expected.get("epoch"),
+            "objective_hash": expected.get("goal_sha256"),
+            "acceptance_predicate_hash": predicate,
+            "policy_hash": policy,
+            "verification_deadline_utc": now,
+            "worker_pubkey_hex": worker_key,
+        },
+        "receipt": receipt,
+        "trusted_certifiers_hex": certifiers,
+        "current_revocation_epoch": expected.get("epoch"),
+        "now_utc": now,
+    }
+    try:
+        await asyncio.to_thread(
+            rust_gate_bridge.call_rust_gate, "verify-settlement", request
+        )
+    except Exception as exc:  # noqa: BLE001 - every failure to get an ALLOW is a reject
+        activity.logger.warning("rust gate refused settlement: %s", type(exc).__name__)
+        return "reject"
+    return "allow"
+
+
+@activity.defn
 async def budget_op(inp: dict[str, Any]) -> dict[str, Any]:
     """The one door to the versioned budget row (R29). sqlite here, never
     in workflow.py: a workflow may not touch disk, and the whole point of
