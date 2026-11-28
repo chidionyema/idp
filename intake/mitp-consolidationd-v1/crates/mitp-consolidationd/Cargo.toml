@@ -1,0 +1,16 @@
+[package]
+name = "mitp-consolidationd"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "MITP memory consolidation and dreaming loop: staged evidence-gated promotion, episodic-to-semantic distillation, Brier/CUSUM revalidation. Zero-dependency pure Rust core; Postgres access behind the MemoryStore trait."
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+
+[workspace]
+# intake material: standalone crate
