@@ -1347,7 +1347,11 @@ class GitHubBackend:
         with tarfile.open(fileobj=io.BytesIO(data)) as tf:
             for m in tf.getmembers():
                 parts = Path(m.name).parts
-                if (m.isfile() or m.isdir()) and ".." not in parts and not m.name.startswith("/"):
+                if (
+                    (m.isfile() or m.isdir())
+                    and ".." not in parts
+                    and not m.name.startswith("/")
+                ):
                     tf.extract(m, into)
 
     def _budget_fails(self, head: str) -> list[str]:
