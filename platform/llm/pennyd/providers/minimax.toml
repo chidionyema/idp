@@ -8,6 +8,16 @@ api_key_file = "/run/secrets/pennyd/minimax/MINIMAX_API_KEY"
 kind = "bearer"
 key_env = "MINIMAX_API_KEY"
 
+[billing]
+# #8283 (founder ruling 2026-11-28): MiniMax is paid by subscription, not per token.
+# A probe and every admitted call consume no marginal spend, so legion-admit judges
+# this lane by this declaration instead of the per-million catalogue price. The
+# declaration is registry code under review; no environment flag can grant it.
+kind = "subscription"
+period = "monthly"
+quota = "unmeasured"
+ruled = "founder 2026-11-28"
+
 [[models]]
 id = "MiniMax-M3.1-Flash"
 class = "paid"

@@ -58,6 +58,17 @@ LANES = {
     "minimax": ("LEGION_MINIMAX_BASE", "https://api.minimax.io/v1", "MINIMAX_API_KEY"),
 }
 
+# The provider registry this adapter reads. One location, so probe() and
+# auto_candidates() cannot disagree about what a lane costs.
+REGISTRY = HERE.parent / "platform/llm/pennyd/providers"
+
+# Billing that is not metered per token (founder, 2026-11-28, #8283). A lane the
+# founder pays for by subscription consumes no marginal spend per probe, so the
+# zero-catalogue-price boundary is the wrong test for it. The declaration lives in
+# the provider registry, under review, and is proved against the file's bytes; it is
+# never an environment flag.
+SUBSCRIPTION_BILLING = "subscription"
+
 SCOPE_LINE = re.compile(r"^\s*\**scope\**\s*:\s*\**\s*(.+?)\s*$", re.I | re.M)
 PATHS_TOKEN = re.compile(r"(?<![\w-])paths=(\S+)")
 
@@ -146,7 +157,8 @@ def probe(lane: str, model: str) -> dict:
     # independently authenticated no-charge entitlement, they cannot run remotely.
     # Loopback is retained solely for the real local HTTP falsifier in this suite.
     if urlsplit(base).hostname not in {"localhost", "127.0.0.1", "::1"}:
-        return {"lane": lane, "model": model, "verdict": "cost-unverified"}
+        if lane_billing(lane) != SUBSCRIPTION_BILLING:
+            return {"lane": lane, "model": model, "verdict": "cost-unverified"}
     body = json.dumps(
         {
             "model": model,
@@ -221,6 +233,51 @@ def zero_catalogue_cost(route: dict) -> bool:
     )
 
 
+def billing_kind(spec: dict) -> str:
+    """The provider registry's declared billing. No block means metered: the
+    historical default, and the only value a per-token route may carry. An unknown
+    kind is never upgraded -- it falls back to metered, which refuses new spend."""
+    billing = spec.get("billing") or {}
+    kind = billing.get("kind", "metered")
+    return kind if kind in {"metered", SUBSCRIPTION_BILLING} else "metered"
+
+
+def lane_billing(lane: str) -> str:
+    """The billing the lane's registry file declares, for the legacy probe() path."""
+    try:
+        return billing_kind(tomllib.loads((REGISTRY / f"{lane}.toml").read_text()))
+    except (OSError, ValueError):
+        return "metered"
+
+
+def admissible_cost(route: dict) -> bool:
+    """May this route be probed without new per-token spend?
+
+    Two arms, both proved rather than asserted: the catalogue price is zero, or the
+    provider registry on disk still declares a subscription for this provider and
+    still hashes to the bytes the route was built from. A route that merely says
+    `billing="subscription"` is not admissible: the declaration is the file.
+    """
+    if zero_catalogue_cost(route):
+        return True
+    if route.get("billing") != SUBSCRIPTION_BILLING:
+        return False
+    path, wanted = route.get("registry"), route.get("registry_sha256")
+    if not isinstance(path, str) or not isinstance(wanted, str):
+        return False
+    try:
+        raw = Path(path).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != wanted:
+            return False
+        spec = tomllib.loads(raw.decode("utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (
+        billing_kind(spec) == SUBSCRIPTION_BILLING
+        and spec.get("id") == route.get("provider")
+    )
+
+
 def auto_candidates(directory: Path, env: dict) -> list[dict]:
     # LEGION_PAID_PROVIDERS cannot grant new expenditure, even when set on a
     # historic workflow/environment. A new paid lane requires separate authority.
@@ -256,7 +313,11 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
             continue
         for model in spec["models"]:
             cls = model["class"]
-            if cls != "free":
+            # A subscription lane's models are class "paid" with a real catalogue
+            # price; the registry's [billing] block, not the price, says no marginal
+            # spend. Anything else must still prove a zero catalogue cost.
+            kind = billing_kind(spec)
+            if cls != "free" and kind != SUBSCRIPTION_BILLING:
                 continue
             context = model["context_window"]
             cost_in = model["price_in_per_mtok"]
@@ -277,6 +338,9 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
                     "class": cls,
                     "price_in": cost_in,
                     "price_out": cost_out,
+                    "billing": kind,
+                    "registry": str(path),
+                    "registry_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                     "probe_tokens": max(256, model.get("min_output_tokens", 0)),
                 }
             )
@@ -292,7 +356,7 @@ def auto_candidates(directory: Path, env: dict) -> list[dict]:
 
 
 def auto_probe(route: dict, env: dict) -> dict:
-    if not zero_catalogue_cost(route):
+    if not admissible_cost(route):
         return {"provider": route.get("provider", "UNKNOWN"),
                 "model": route.get("model", "UNKNOWN"),
                 "verdict": "cost-unverified"}
@@ -463,7 +527,7 @@ def auto_select(
     for route in routes:
         # Defence in depth: reject injected or stale paid admission records
         # before invoking even an injected probe callback.
-        if not zero_catalogue_cost(route):
+        if not admissible_cost(route):
             observations.append({"provider": route.get("provider", "UNKNOWN"),
                                  "model": route.get("model", "UNKNOWN"),
                                  "verdict": "cost-unverified"})
@@ -534,7 +598,7 @@ def auto_launch(
 ) -> int:
     selected = record.get("route")
     # A prior admission is not spend authority. Recheck at actual egress.
-    if not zero_catalogue_cost(selected):
+    if not admissible_cost(selected):
         raise ValueError("COST_UNVERIFIED: paid or unknown model route")
     env = dict(env)
     env[env.get("ADMITTED_KEY_ENV", "")] = env.get("LEGION_SELECTED_KEY", "")
@@ -646,7 +710,7 @@ def main() -> int:
         help="provider cooldown carried between runs ({provider: until_epoch})",
     )
     args = ap.parse_args()
-    registry = HERE.parent / "platform/llm/pennyd/providers"
+    registry = REGISTRY
     if args.launch_admitted:
         if not args.session_dir:
             return EXIT_SCOPE
