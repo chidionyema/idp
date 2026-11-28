@@ -16,6 +16,22 @@
 # GitHub adds to every answer and is dropped from both sides. Idempotent: an existing ruleset of the same name is
 # updated (PUT), a missing one created (POST).
 set -uo pipefail
+ruleset_shape() {
+  jq -eS '{target,enforcement,conditions,
+    bypass_actors: ((.bypass_actors // []) | sort_by(.actor_type,.actor_id,.bypass_mode)),
+    rules:[.rules[]|{type,parameters:(.parameters|del(.do_not_enforce_on_create))}]}'
+}
+if [ "${1:-}" = --self-test ]; then
+  empty='{"target":"branch","enforcement":"active","conditions":{},"rules":[],"bypass_actors":[]}'
+  extra='{"target":"branch","enforcement":"active","conditions":{},"rules":[],"bypass_actors":[{"actor_id":1,"actor_type":"RepositoryRole","bypass_mode":"always"}]}'
+  hidden='{"target":"branch","enforcement":"active","conditions":{},"rules":[]}'
+  test "$(printf '%s' "$empty" | ruleset_shape)" != "$(printf '%s' "$extra" | ruleset_shape)" || exit 1
+  test "$(printf '%s' "$empty" | ruleset_shape)" = "$(printf '%s' "$hidden" | ruleset_shape)" || exit 1
+  if printf '%s' "$hidden" | jq -e 'has("bypass_actors") and (.bypass_actors | type == "array")' >/dev/null; then exit 1; fi
+  printf '%s' "$empty" | jq -e 'has("bypass_actors") and (.bypass_actors | type == "array")' >/dev/null || exit 1
+  echo 'ruleset-bypass self-test: 4/4 passed'
+  exit 0
+fi
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OWNER="${ESTATE_GH_OWNER:-$(gh api /user -q .login)}"
 DEFAULT="$IDP/platform/github/ruleset.default-branch.json"
@@ -26,8 +42,17 @@ apply_spec() {
   list="$(gh api "/repos/$OWNER/$repo/rulesets" 2>/dev/null)" || { echo "BLOCKED $repo: private on the free plan (403); make it public or upgrade"; blocked=$((blocked+1)); return; }
   id="$(printf '%s' "$list" | jq -r --arg n "$NAME" '.[] | select(.name==$n) | .id' | head -1)"
   if [ -n "$id" ]; then
-    live="$(gh api "/repos/$OWNER/$repo/rulesets/$id" | jq -S '{target,enforcement,conditions,rules:[.rules[]|{type,parameters:(.parameters|del(.do_not_enforce_on_create))}]}')"
-    want="$(jq -S '{target,enforcement,conditions,rules:[.rules[]|{type,parameters:(.parameters|del(.do_not_enforce_on_create))}]}' "$SPEC")"
+    # The API omits bypass actors when the caller cannot administer this ruleset.
+    # Missing visibility is not proof that no actor can bypass.
+    live_json="$(gh api "/repos/$OWNER/$repo/rulesets/$id")" || {
+      echo "BLOCKED $repo: $NAME live ruleset unreadable"; blocked=$((blocked+1)); return; }
+    if ! printf '%s' "$live_json" | jq -e 'has("bypass_actors") and (.bypass_actors | type == "array")' >/dev/null; then
+      echo "BLOCKED $repo: $NAME bypass actors not observable"; blocked=$((blocked+1)); return
+    fi
+    live="$(printf '%s' "$live_json" | ruleset_shape)" || {
+      echo "BLOCKED $repo: $NAME invalid live rule shape"; blocked=$((blocked+1)); return; }
+    want="$(ruleset_shape < "$SPEC")" || {
+      echo "BLOCKED $repo: $NAME invalid declared rule shape"; blocked=$((blocked+1)); return; }
     if [ "$live" = "$want" ]; then echo "ok      $repo: $NAME #$id"; ok=$((ok+1)); return; fi
     if [ $apply = 1 ]; then gh api -X PUT "/repos/$OWNER/$repo/rulesets/$id" --input "$SPEC" >/dev/null && echo "FIXED   $repo: updated #$id" && ok=$((ok+1)) && return; fi
     echo "DRIFT   $repo: $NAME #$id differs from $SPEC"; drift=$((drift+1))
@@ -73,4 +98,4 @@ for f in "$IDP"/platform/github/ruleset.*.*.json; do
   fi
 done
 echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok in place, $drift missing or drifted, $blocked private repos blocked by plan, $waiting active repos waiting for the rollout"
-[ $drift = 0 ]
+[ "$drift" -eq 0 ] && [ "$blocked" -eq 0 ]
