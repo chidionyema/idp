@@ -1483,8 +1483,16 @@ def execute_command(
             )
         resolved_cwd = cwd
 
+    # 5. ONE ADMISSION POINT FOR HEAVY WORK (idp#8061). A compute-bound command (a suite, a build,
+    #    an install) is handed to bin/heavy-slot, which makes it wait its turn behind a kernel lock
+    #    (woken, never polling) and shares a passing result for the same code. The policy is
+    #    thin_client.heavy_wrap; this door only calls it, so there is one layer and no second door.
+    tc = _thin_client()
+    queued = tc.heavy_wrap(command, wait_sec=effective // 2) if tc else None
     try:
-        job = executor.submit(command, cwd=resolved_cwd, ceiling_sec=effective)
+        job = executor.submit(
+            queued or command, cwd=resolved_cwd, ceiling_sec=effective
+        )
     except ConnectionRefusedError as exc:
         # A DEAD DAEMON IS NOT A LOST JOB. Reporting `accepted` here would put a running node on
         # the board for work that never started, and the caller would wait on it forever. The
@@ -1505,6 +1513,7 @@ def execute_command(
         "accepted": True,
         "job_id": job.job_id,
         "ceiling_sec": effective,
+        "queued": bool(queued),
         "note": "the turn ends here; read the outcome with read_job or the jobs page",
     }
 

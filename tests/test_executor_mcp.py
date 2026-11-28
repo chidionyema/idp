@@ -380,3 +380,29 @@ def test_read_job_triggers_the_failure_producer_exactly_once(
     second = ex.read_job(job_id, executor=executor)
     assert second["state"] == "finished"
     assert len(calls) == 1  # not reported twice
+
+
+# --- ONE ADMISSION POINT FOR HEAVY WORK (idp#8061) ---
+
+
+def test_a_heavy_command_is_handed_to_the_slot_and_a_light_one_is_not(
+    executor, monkeypatch
+):
+    tc = ex._thin_client()
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("ESTATE_THIN_CLIENT", raising=False)
+    monkeypatch.delenv("HEAVY_SLOT_ACTIVE", raising=False)
+    monkeypatch.setattr(tc.platform, "system", lambda: "Darwin")
+    slot = pathlib.Path(tc._repo_root()) / "bin" / "heavy-slot"
+    if not slot.is_file():
+        pytest.skip("bin/heavy-slot is not in this tree")
+
+    heavy = ex.execute_command("pytest -q tests/test_x.py", executor=executor)
+    assert heavy["accepted"] is True
+    assert heavy["queued"] is True
+    assert "bin/heavy-slot" in executor._jobs[heavy["job_id"]].command
+
+    light = ex.execute_command("git status --short", executor=executor)
+    assert light["accepted"] is True
+    assert light["queued"] is False
+    assert executor._jobs[light["job_id"]].command == "git status --short"

@@ -247,3 +247,96 @@ def test_the_layer_stands_down_where_it_does_not_apply(darwin, no_fence, monkeyp
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is True
     assert darwin.creates_local_checkout("git worktree add /tmp/x") is False
+
+
+# ---- the single point for heavy work: heavy_wrap ----------------------------
+_ROOT_WITH_SLOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def no_slot_env(monkeypatch):
+    monkeypatch.delenv("HEAVY_SLOT_ACTIVE", raising=False)
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "pytest -q tests/test_x.py",
+        "python3 -m pytest tests/",
+        "cargo build --release",
+        "cd ps && cargo test",
+        "npm ci",
+        "docker build -t x .",
+        "make verify",
+        "CI=1 .venv/bin/pytest -q",
+        "time cargo check",
+    ],
+)
+def test_a_compute_bound_command_is_queued(darwin, no_slot_env, cmd):
+    wrapped = darwin.heavy_wrap(cmd, root=str(_ROOT_WITH_SLOT))
+    assert wrapped is not None
+    assert "bin/heavy-slot" in wrapped
+    assert wrapped.endswith(" -c " + __import__("shlex").quote(cmd))
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "git push origin lane/x",
+        "gh run watch 123",
+        "wrangler deploy",
+        "terraform apply",
+        "git status --short",
+        "echo pytest is slow",
+        'git commit -m "rerun pytest"',
+        "ls -la",
+    ],
+)
+def test_anything_else_runs_as_it_is(darwin, no_slot_env, cmd):
+    assert darwin.heavy_wrap(cmd, root=str(_ROOT_WITH_SLOT)) is None
+
+
+def test_only_a_pure_test_run_may_share_its_result(darwin, no_slot_env):
+    root = str(_ROOT_WITH_SLOT)
+    assert "--no-share" not in darwin.heavy_wrap("pytest -q tests/a.py", root=root)
+    # a build changes the machine: it queues, and it always runs
+    assert "--no-share" in darwin.heavy_wrap("cargo build", root=root)
+    # a chain may end in anything: never shared
+    assert "--no-share" in darwin.heavy_wrap("pytest -q && git push", root=root)
+
+
+def test_inside_a_slot_it_is_not_queued_again(darwin, monkeypatch):
+    monkeypatch.setenv("HEAVY_SLOT_ACTIVE", "1")
+    assert darwin.heavy_wrap("pytest -q", root=str(_ROOT_WITH_SLOT)) is None
+
+
+def test_a_command_naming_heavy_slot_is_not_wrapped_twice(darwin, no_slot_env):
+    cmd = "bin/heavy-slot -- pytest -q"
+    assert darwin.heavy_wrap(cmd, root=str(_ROOT_WITH_SLOT)) is None
+
+
+def test_not_a_laptop_means_no_queue(monkeypatch, no_slot_env):
+    monkeypatch.setattr(thin_client.platform, "system", lambda: "Linux")
+    assert thin_client.heavy_wrap("pytest -q", root=str(_ROOT_WITH_SLOT)) is None
+
+
+def test_a_missing_queue_never_stops_the_estate(darwin, no_slot_env, tmp_path):
+    assert darwin.heavy_wrap("pytest -q", root=str(tmp_path)) is None
+
+
+def test_the_wrapped_command_really_runs_through_the_slot(
+    darwin, no_slot_env, tmp_path, monkeypatch
+):
+    import subprocess
+
+    slot = _ROOT_WITH_SLOT / "bin" / "heavy-slot"
+    if not slot.is_file():
+        pytest.skip("bin/heavy-slot is not in this tree")
+    monkeypatch.setenv("HEAVY_DIR", str(tmp_path))
+    monkeypatch.setenv("HEAVY_MIN_FREE_MB", "1")
+    wrapped = darwin.heavy_wrap("make --version", root=str(_ROOT_WITH_SLOT))
+    done = subprocess.run(  # noqa: S602 -- the wrapped string is shell by design; we built it
+        wrapped, shell=True, capture_output=True, text=True, timeout=120, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    assert "GNU Make" in done.stdout or "make" in done.stdout.lower()
