@@ -1,0 +1,18 @@
+[package]
+name = "meridian-fitness"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Writes estate.lane-fitness.v1 records for the free routes bin/legion-admit admits (idp#3525)"
+
+[[bin]]
+name = "meridian-fitness"
+path = "src/main.rs"
+
+[dependencies]
+# No crates.io dependency on purpose (idp#3525). The writer runs inside the admission job on a
+# bare runner and in CI behind a pre-push gate; a registry outage or an un-pinned new version must
+# never decide whether the cloud lane can be admitted. The registry TOML is read with the same
+# bare-python shape tests/legion_fitness_gate.py already relies on, and the HTTP call is made by
+# the python3 the estate already requires.
+serde_json = "1"
