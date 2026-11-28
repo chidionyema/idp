@@ -667,6 +667,18 @@
       "falsifier": "python3 tests/greenlane_autoformat_repair.py prints optimus.greenlane.format_refusal_repaired=1 (0 with the engine repair hook removed); tests/test_greenlane_autoformat.py runs the real pinned ruff and real git",
       "owner": "greenlane",
       "status": "mitigated"
+    },
+    {
+      "class": "guarded-paths-diff-ref-never-resolves",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "bin/idp-ci-guarded-paths listed changed files with git diff BASE...HEAD_REV (no dollar sign): git exited 128, || true hid it, so the required guarded-paths check never saw a guarded path; #8700 changed .githooks/ and passed it. The same diff line is the one #8032 recorded as open since #7328 (2026-10-28)."
+      ],
+      "gap": "a gate that swallowed its own failure (|| true) and so passed whenever it could not judge; it also read an unresolvable base as the bootstrap exemption",
+      "compensating_action": "none: the check passed every guarded change, so the signature requirement was unenforced",
+      "falsifier": "tests/test_guarded_paths_sees_the_changed_files.py runs the real checker in a real repo: a guarded change is refused, an unguarded one accepted, an unlistable diff refused; the falsifier runs the pre-fix line and requires it to accept the guarded change",
+      "owner": "claude-ins00037-takeover",
+      "status": "fixed-pending-landing"
     }
   ]
 }

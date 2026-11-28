@@ -478,6 +478,18 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when the real Greenlane Engine asks its backend to repair a lane whose only pre-CI refusal is the pinned-ruff format refusal (no CI spent on the unformatted head), refuses unchanged without a fixer, and never invokes the fixer for any other refusal"
+    },
+    {
+      "name": "guarded_paths.unseen_guarded_changes",
+      "measure": [
+        "python3",
+        "tests/test_guarded_paths_sees_the_changed_files.py",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when bin/idp-ci-guarded-paths accepts an unsigned change to .githooks/ (it cannot see the changed files), 0 when it refuses. 1 on main 00f7b7358 (diff against the literal ref HEAD_REV); 0 on the fixed checker (idp#8032)."
     }
   ]
 }
