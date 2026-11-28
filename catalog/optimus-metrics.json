@@ -15,6 +15,18 @@
       "description": "platform/ kustomize directories that no Flux Kustomization applies (idp#8328)"
     },
     {
+      "name": "admission.code_plus_test_refusals",
+      "unit": "rules",
+      "better": "lower",
+      "owner": "governance",
+      "description": "admission rules that refuse a code change together with the test that proves it: 1 before idp#8649 (bin/verify_three_proofs.py proof 2 refused a platform/ change whose test lives in tests/), 0 after (the companion rides with the code, and two code subsystems, a guarded path without the founder seal and more than five files are still refused)",
+      "measure": [
+        "python3",
+        "tests/test_admission_rules_known_good.py",
+        "--optimus"
+      ]
+    },
+    {
       "name": "claims.ship_contract_enforced",
       "measure": [
         "python3",

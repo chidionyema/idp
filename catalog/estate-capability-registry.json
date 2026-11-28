@@ -55911,7 +55911,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/legion-admit"
+        "cap:tool/legion-admit",
+        "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
         "estimate": null,
@@ -62045,6 +62046,10 @@
         },
         {
           "id": "cap:tool/idp-production-readiness",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/lane-fitness",
           "edge": "invokes"
         },
         {
