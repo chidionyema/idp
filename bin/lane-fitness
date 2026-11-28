@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# bin/lane-fitness -- the writer half of the admission gate (idp#3525).
+#
+# `bin/legion-admit --harness auto` admits a route only with a fresh
+# `estate.lane-fitness.v1` record from this binary. Until this existed, nothing in the
+# tree wrote one, so after #8659 landed the gate refused every issue-triggered run with
+# `NO_FIT_LANE before inference` and the cloud lane was dead.
+#
+# The decision, and the reasoning, live in crates/meridian-fitness/src/main.rs. This
+# script only finds a compiler and runs it, so the writer has one implementation
+# (`bin/estate-gate` enforces one of each layer).
+#
+# Usage:
+#   bin/lane-fitness --fitness-dir DIR [--providers-dir DIR] [--ttl-hours N]
+#                    [--timeout S] [--secret-name-template 'SEED_{key_env}']
+#
+# Exit: 0 records written, 1 a credential is missing or was refused (one ESCALATE/1
+# line naming the exact secret; no retry), 2 a usage or environment defect.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+src="$root/crates/meridian-fitness/src/main.rs"
+
+if [[ ! -f "$src" ]]; then
+  echo "lane-fitness: missing $src" >&2
+  exit 2
+fi
+
+bin_dir="${LANE_FITNESS_BIN_DIR:-${TMPDIR:-/tmp}/lane-fitness-$UID}"
+mkdir -p "$bin_dir"
+bin="$bin_dir/meridian-fitness"
+
+# Rebuild when the source is newer than the binary. A cargo workspace is not required:
+# the crate is std-only by design (no crates.io fetch decides whether the lane admits),
+# so `rustc` alone produces the exact artifact the gate reads.
+if [[ ! -x "$bin" || "$src" -nt "$bin" ]]; then
+  if ! command -v rustc >/dev/null 2>&1; then
+    echo "lane-fitness: rustc not found; cannot build the record writer" >&2
+    exit 2
+  fi
+  tmp="$bin.$$"
+  if ! rustc --edition 2021 --crate-type bin -o "$tmp" "$src" 2>"$bin_dir/build.log"; then
+    echo "lane-fitness: build failed, see $bin_dir/build.log" >&2
+    exit 2
+  fi
+  mv -f "$tmp" "$bin"
+fi
+
+exec "$bin" "$@"
