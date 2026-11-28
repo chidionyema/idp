@@ -24,6 +24,12 @@
 #                      their lines, as bin/claim-gate reads them (MEASURED 2026-11-28 07:49Z: lane
 #                      6fff504e was red at Greenlane for "no `Claim:` line", a rule the pusher
 #                      could have judged here, with no disk, from the commit messages)
+#   5. guarded paths   a lane that touches a GUARDED_PATHS entry needs the Founder seal on the
+#                      HEAD commit message (MEASURED 2026-11-28 on PR #8811 head 7e6a28f85: CI
+#                      control-primitive-freeze and guarded-paths failed with "FATAL: Protected
+#                      control primitive (.github/workflows/) modified without Founder Passkey
+#                      seal.", a rule the pusher could have judged here in seconds). The list is
+#                      read from origin/main's bin/verify_three_proofs.py, never copied here.
 # There is no skip flag. A rule that cannot be judged is a refusal that says how to make it
 # judgeable, never a silent pass.
 set -u
@@ -157,5 +163,69 @@ else
   echo "ok    lane-preflight claim lines (Claim: and Agent: present)"
 fi
 
-[ "$rc_all" -eq 0 ] && echo "ok    lane-preflight: $(git rev-parse --short "$head_sha") passes language-gate, ruff format, the merge trial and the claim lines"
+# 5. the guarded paths: a control primitive (a .github/workflows/ file, a catalog, AGENTS.md)
+#    may only change with the Founder's seal on the HEAD commit message, exactly as the
+#    control-primitive-freeze CI check demands. The list of guarded paths is READ from
+#    origin/main's bin/verify_three_proofs.py (GUARDED_PATHS, extracted with python3 ast):
+#    a copy in this script would rot the moment main's list changes. If the list cannot be
+#    read, this rule is BLIND, never a silent pass.
+cat >"$tmp/extract_guarded" <<'PY'
+import ast
+import sys
+
+try:
+    tree = ast.parse(sys.stdin.read())
+except SyntaxError as exc:
+    print(f"cannot parse bin/verify_three_proofs.py: {exc}", file=sys.stderr)
+    sys.exit(3)
+for node in tree.body:
+    if not isinstance(node, ast.Assign):
+        continue
+    if not any(getattr(t, "id", None) == "GUARDED_PATHS" for t in node.targets):
+        continue
+    try:
+        value = ast.literal_eval(node.value)
+    except ValueError as exc:
+        print(f"GUARDED_PATHS is not a literal: {exc}", file=sys.stderr)
+        sys.exit(3)
+    if not isinstance(value, (list, tuple)):
+        print("GUARDED_PATHS is not a list", file=sys.stderr)
+        sys.exit(3)
+    for entry in value:
+        print(entry)
+    sys.exit(0)
+print("GUARDED_PATHS is not assigned at module level", file=sys.stderr)
+sys.exit(3)
+PY
+
+guarded_paths="$(main_file bin/verify_three_proofs.py | python3 "$tmp/extract_guarded" 2>"$tmp/extract_guarded.err")"
+guarded_rc=$?
+if [ "$guarded_rc" -ne 0 ]; then
+  blind "guarded-paths: GUARDED_PATHS could not be read from origin/main's bin/verify_three_proofs.py ($(tail -1 "$tmp/extract_guarded.err" 2>/dev/null | tr -d '\n')); fix: fetch origin/main (git fetch origin main) and make sure bin/verify_three_proofs.py on origin/main defines GUARDED_PATHS -- without it this rule cannot be judged, so it is refused, not passed"
+else
+  seal_line="$(git log -1 --format=%B "$head_sha" 2>/dev/null | grep -m1 '^X-Founder-Passkey-Seal: ')"
+  guarded_hits=""
+  changed_all="$(git diff --name-only "$base_sha" "$head_sha" 2>/dev/null)"
+  while IFS= read -r guarded; do
+    [ -n "$guarded" ] || continue
+    while IFS= read -r changed; do
+      [ -n "$changed" ] || continue
+      case "$changed" in
+        "$guarded"*) guarded_hits="$guarded_hits$changed"$'\n' ;;
+      esac
+    done <<<"$changed_all"
+  done <<<"$guarded_paths"
+  if [ -n "$guarded_hits" ] && [ -z "$seal_line" ]; then
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      fail "guarded-paths $hit needs a line 'X-Founder-Passkey-Seal: ' in the HEAD commit message (the control-primitive-freeze CI test)"
+    done <<<"$guarded_hits"
+  elif [ -n "$guarded_hits" ]; then
+    echo "ok    lane-preflight guarded paths ($(printf '%s' "$guarded_hits" | grep -c . ) guarded file(s) changed, Founder seal present on HEAD)"
+  else
+    echo "ok    lane-preflight guarded paths (no guarded path changed)"
+  fi
+fi
+
+[ "$rc_all" -eq 0 ] && echo "ok    lane-preflight: $(git rev-parse --short "$head_sha") passes language-gate, ruff format, the merge trial and the claim lines, and the guarded paths"
 exit "$rc_all"

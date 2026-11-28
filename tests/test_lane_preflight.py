@@ -70,7 +70,7 @@ def _metrics(names: list[str], unit: str = "bool") -> str:
     return json.dumps({"version": 1, "metrics": rows}, indent=2) + "\n"
 
 
-def _repo(tmp_path: Path, pin: str | None = None) -> Path:
+def _repo(tmp_path: Path, pin: str | None = None, guarded: bool = True) -> Path:
     origin = tmp_path / "origin.git"
     subprocess.run(
         ["git", "init", "-q", "--bare", "-b", "main", str(origin)], env=ENV, check=True
@@ -80,6 +80,13 @@ def _repo(tmp_path: Path, pin: str | None = None) -> Path:
     _git(work, "checkout", "-q", "-b", "main")
     (work / "bin").mkdir()
     shutil.copy(ROOT / "bin" / "language-gate", work / "bin" / "language-gate")
+    if guarded:
+        # main's own list of guarded paths: the preflight reads it from origin/main, never
+        # from a copy of its own.
+        shutil.copy(
+            ROOT / "bin" / "verify_three_proofs.py",
+            work / "bin" / "verify_three_proofs.py",
+        )
     (work / "greenlane").mkdir()
     (work / "greenlane" / "ferrari.py").write_text(
         f'TRUSTED_RUFF_VERSION = "{pin or _ruff_version()}"\n'
@@ -353,6 +360,47 @@ def test_a_lane_with_no_claim_line_is_refused_with_the_line_to_add(tmp_path):
     proc = _run(work)
     assert proc.returncode == 1, _said(proc)
     assert "Claim: owner/repo#N" in _said(proc)
+
+
+def test_a_lane_touching_a_guarded_path_without_the_founder_seal_is_refused(tmp_path):
+    # Measured 2026-11-28 on PR #8811 head 7e6a28f85: CI control-primitive-freeze and
+    # guarded-paths failed with "FATAL: Protected control primitive (.github/workflows/)
+    # modified without Founder Passkey seal." The pusher must learn that here, in seconds.
+    work = _repo(tmp_path)
+    _lane(work, {".github/workflows/x.yml": "name: x\non: push\n"})
+    proc = _run(work)
+    assert proc.returncode == 1, _said(proc)
+    assert ".github/workflows/x.yml" in _said(proc)
+    assert "X-Founder-Passkey-Seal: " in _said(proc)
+
+
+def test_the_same_guarded_lane_with_the_seal_line_passes(tmp_path):
+    work = _repo(tmp_path)
+    _lane(
+        work,
+        {".github/workflows/x.yml": "name: x\non: push\n"},
+        message="work\n\nX-Founder-Passkey-Seal: test\n",
+    )
+    proc = _run(work)
+    assert proc.returncode == 0, _said(proc)
+    assert "guarded" in _said(proc)
+
+
+def test_a_lane_touching_no_guarded_path_passes_the_guarded_rule(tmp_path):
+    work = _repo(tmp_path)
+    _lane(work, {"bin/foo": "hello\n"})
+    proc = _run(work)
+    assert proc.returncode == 0, _said(proc)
+    assert "guarded" in _said(proc)
+
+
+def test_guarded_paths_that_cannot_be_read_are_blind_not_a_pass(tmp_path):
+    work = _repo(tmp_path, guarded=False)
+    _lane(work, {".github/workflows/x.yml": "name: x\non: push\n"})
+    proc = _run(work)
+    assert proc.returncode == 2, _said(proc)
+    assert "BLIND" in _said(proc)
+    assert "GUARDED_PATHS" in _said(proc)
 
 
 def test_a_claim_without_an_agent_line_is_refused(tmp_path):

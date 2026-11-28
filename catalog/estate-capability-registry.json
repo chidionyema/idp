@@ -58095,6 +58095,10 @@
         {
           "id": "cap:tool/language-gate",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/verify_three_proofs.py",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -63620,7 +63624,8 @@
       "consumers": [
         "cap:tool/claim-open",
         "cap:tool/idp-agent-base-apply.py",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:tool/lane-preflight"
       ],
       "cost": {
         "estimate": null,
