@@ -1,0 +1,55 @@
+description: >
+  Both DeepSeek lanes of the router answer 401, and four live config rows still named the
+  retired id deepseek-chat. Question: why do the DeepSeek rows fail? The id swap in this change
+  is hygiene; this record grades the cause of the failure it does NOT fix.
+hypotheses:
+- name: H1
+  description: the vault/edge DeepSeek API key is invalid at DeepSeek (every id fails alike)
+  prior: 0.34
+- name: H2
+  description: the model id is retired or unknown (failure is specific to the id)
+  prior: 0.33
+- name: H3
+  description: the DeepSeek API is down or unreachable
+  prior: 0.33
+evidence:
+- name: direct probe 2026-11-28, vault key, GET /models plus chat on deepseek-flash, deepseek-v4-pro, deepseek-chat (request ids eb41be39, 0b47fe51, 217f0f1b, 4c71b670)
+  n_eff_divisor: 4
+  observed:
+    auth_fail: 4
+  likelihoods:
+    H1:
+      auth_fail: 0.97
+      model_not_found: 0.01
+      ok: 0.01
+      unreachable: 0.01
+    H2:
+      auth_fail: 0.05
+      model_not_found: 0.6
+      ok: 0.3
+      unreachable: 0.05
+    H3:
+      auth_fail: 0.02
+      model_not_found: 0.02
+      ok: 0.06
+      unreachable: 0.9
+- name: release run 46121711463 receipt, edge Worker lanes deepseek-flash and deepseek-v4-pro (a separate key copy, a separate network path)
+  n_eff_divisor: 2
+  observed:
+    auth_fail: 2
+  likelihoods:
+    H1:
+      auth_fail: 0.97
+      model_not_found: 0.01
+      ok: 0.01
+      unreachable: 0.01
+    H2:
+      auth_fail: 0.05
+      model_not_found: 0.6
+      ok: 0.3
+      unreachable: 0.05
+    H3:
+      auth_fail: 0.02
+      model_not_found: 0.02
+      ok: 0.06
+      unreachable: 0.9
