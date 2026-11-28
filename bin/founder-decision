@@ -6,6 +6,8 @@ Any agent, any harness, no model in the path:
     bin/founder-decision ask --question "Ship the AEI collector now?" \\
         --options "ship: land it, hold: wait for the cluster" \\
         --context "#7341" --requester "pi @ idp"
+    bin/founder-decision ask --kind action --proof "gh variable list shows GCP_SERVICE_ACCOUNT_EMAIL" \\
+        --question "Share the Drive folder with the service account as Viewer"
     bin/founder-decision show --decision-id dec-1a2b3c4d
     bin/founder-decision poll
 
@@ -57,6 +59,17 @@ def main(argv: list = None) -> int:
     ask.add_argument("--options", default="", help='"key: label, key2: label2"')
     ask.add_argument(
         "--context", default="", help="issue / PR / lane links, comma separated"
+    )
+    ask.add_argument(
+        "--kind",
+        choices=decision.KINDS,
+        default=decision.KIND_DECISION,
+        help="'action' = something only the founder can do; needs --proof, gets done/cannot buttons",
+    )
+    ask.add_argument(
+        "--proof",
+        default="",
+        help="for --kind action: the one line that shows it is done (required)",
     )
     ask.add_argument("--deadline-min", type=int, default=decision.DEFAULT_DEADLINE_MIN)
     ask.add_argument("--requester", default="")
@@ -114,6 +127,8 @@ def main(argv: list = None) -> int:
                 deadline_min=args.deadline_min,
                 requester=args.requester,
                 decision_id=args.decision_id,
+                kind=args.kind,
+                proof=args.proof,
             )
         except decision.DecisionError as exc:
             return _emit({"ok": False, "error": str(exc)})
