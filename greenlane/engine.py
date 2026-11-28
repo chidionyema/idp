@@ -44,9 +44,13 @@ DEFAULT_RETRIES = (
 DEFAULT_TIMEOUT = (
     90  # minutes a candidate may sit without a verdict before it counts as red
 )
-HEARTBEAT_EVERY_MIN = (
-    50  # minutes between claim stamps per lane; the gate's own limit is two hours
-)
+# bin/claim-gate lapses a claim 15 minutes after its heartbeat (MAX_AGE, founder SEV-0 2026-11-25).
+# tests/test_a_claim_is_stamped_within_the_gates_lapse.py reads that number from the gate's own
+# source and fails if this one drifts: the stamp cadence was left at 45-50 minutes under a comment
+# that still said "the gate's limit is 2h", so a held lane's claim lapsed for most of every wait.
+CLAIM_LAPSE_MIN = 15
+# Stamp at twice the lapse rate: a tick that runs late still lands inside the window.
+HEARTBEAT_EVERY_MIN = CLAIM_LAPSE_MIN // 2
 REJUDGE_LIMIT = (
     8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
