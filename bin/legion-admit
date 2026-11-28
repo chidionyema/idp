@@ -529,6 +529,30 @@ def verify_agent_scope(paths: list[str]) -> None:
         )
 
 
+# One fixed token per launch refusal. The launcher's stdout is shared with an untrusted
+# worker, so only these tokens are printed, never an exception's own text.
+LAUNCH_REFUSALS = (
+    ("REFUSED: AGENT_EMPTY_PATCH", "AGENT_EMPTY_PATCH"),
+    ("REFUSED: AGENT_SCOPE_ESCAPE", "AGENT_SCOPE_ESCAPE"),
+    ("REFUSED: AGENT_SCOPE_EMPTY", "AGENT_SCOPE_EMPTY"),
+    ("COST_UNVERIFIED", "COST_UNVERIFIED"),
+    ("provider admission base mismatch", "ADMISSION_BASE_MISMATCH"),
+    ("provider admission mismatch", "ADMISSION_MISMATCH"),
+    ("provider not admitted", "PROVIDER_NOT_ADMITTED"),
+    ("provider registry identity mismatch", "REGISTRY_IDENTITY_MISMATCH"),
+)
+
+
+def launch_refusal_class(exc: BaseException) -> str:
+    """The class of a launch refusal: a fixed token, UNCLASSIFIED_<type> when unknown."""
+    if isinstance(exc, ValueError) and not isinstance(exc, json.JSONDecodeError):
+        text = str(exc)
+        for prefix, token in LAUNCH_REFUSALS:
+            if text.startswith(prefix):
+                return token
+    return "UNCLASSIFIED_" + type(exc).__name__.upper()
+
+
 def auto_launch(
     directory: Path, record: dict, task: str, session_dir: Path, env: dict
 ) -> int:
@@ -658,8 +682,8 @@ def main() -> int:
                 args.session_dir,
                 dict(os.environ),
             )
-        except (ValueError, OSError, KeyError, TypeError):
-            print("REFUSED: provider admission invalid")
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            print(f"REFUSED: {launch_refusal_class(exc)}")
             return EXIT_SCOPE
     args.out.mkdir(parents=True, exist_ok=True)
     record: dict = {"harness": args.harness}

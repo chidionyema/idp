@@ -754,6 +754,37 @@ def test_auto_agent_postflight_refuses_empty_patch(repo, monkeypatch):
         mod.verify_agent_scope([])
 
 
+def test_a_launch_refusal_names_its_own_class_and_never_the_exception_text(repo, monkeypatch):
+    """Measured 2026-11-28, run 46137092198: `harness exit 2 launcher_refusals=1 files_changed=0`
+    and the only line printed was `REFUSED: provider admission invalid`: many causes, one line."""
+    mod = _auto_module()
+    monkeypatch.chdir(repo)
+    with pytest.raises(ValueError) as empty:
+        mod.verify_agent_scope(["web/f0.txt"])
+    assert mod.launch_refusal_class(empty.value) == "AGENT_EMPTY_PATCH"
+    with pytest.raises(ValueError) as none:
+        mod.verify_agent_scope([])
+    assert mod.launch_refusal_class(none.value) == "AGENT_SCOPE_EMPTY"
+    (repo / "web/f0.txt").write_text("authorised edit\n")
+    with pytest.raises(ValueError) as escape:
+        mod.verify_agent_scope(["web/f2.txt"])
+    assert mod.launch_refusal_class(escape.value) == "AGENT_SCOPE_ESCAPE"
+    assert mod.launch_refusal_class(ValueError("COST_UNVERIFIED: paid")) == "COST_UNVERIFIED"
+    mismatch = ValueError("provider admission mismatch")
+    assert mod.launch_refusal_class(mismatch) == "ADMISSION_MISMATCH"
+    base = ValueError("provider admission base mismatch")
+    assert mod.launch_refusal_class(base) == "ADMISSION_BASE_MISMATCH"
+    absent = ValueError("provider not admitted")
+    assert mod.launch_refusal_class(absent) == "PROVIDER_NOT_ADMITTED"
+    # Unknown is named unknown, and a worker's words or a key never reach the line.
+    leaked = mod.launch_refusal_class(ValueError("sk-secret said the model"))
+    assert leaked == "UNCLASSIFIED_VALUEERROR"
+    assert mod.launch_refusal_class(KeyError("NORTH_API_KEY")) == "UNCLASSIFIED_KEYERROR"
+    assert mod.launch_refusal_class(OSError("pi: not found")) == "UNCLASSIFIED_OSERROR"
+    tokens = [token for _, token in mod.LAUNCH_REFUSALS]
+    assert all(token.replace("_", "").isalpha() and token.isupper() for token in tokens)
+
+
 # -- fitness gate (founder 2026-11-27: "know well ahead of time at the point of admission") --------
 
 
