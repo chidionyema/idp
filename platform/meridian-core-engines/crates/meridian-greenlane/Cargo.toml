@@ -1,8 +1,0 @@
-[package]
-name = "meridian-greenlane"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-meridian-ledger = { path = "../meridian-ledger" }
-serde.workspace = true
