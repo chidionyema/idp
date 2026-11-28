@@ -19,7 +19,7 @@ price_in_per_mtok = 0
 price_out_per_mtok = 0
 context_window = 200000
 aliases = ["glm"]
-fallbacks = ["minimax/MiniMax-M3.1-Flash", "deepseek/deepseek-chat"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash", "deepseek/deepseek-flash"]
 ```
 
 The `id` is the exact upstream model version. `aliases` are the stable names
