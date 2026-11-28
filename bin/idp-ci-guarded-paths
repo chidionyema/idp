@@ -22,6 +22,12 @@ HEAD_REV="$(git rev-parse HEAD)"
 # before it exists. Bootstrap passes; every subsequent commit is fully enforced because main now
 # carries the pub key. This is the ONLY commit that ever gets this exemption; it is detected by
 # checking the base tree, not by a flag anyone can pass in.
+# A base that does not resolve is not a base without the key: it is unproven, and it refuses.
+# (Without this, `git show <missing-ref>:...` failed and the failure read as "no key: bootstrap".)
+if ! git rev-parse --verify -q "$BASE^{commit}" >/dev/null 2>&1; then
+  echo "BLIND guarded-paths  base $BASE does not resolve to a commit: refusing to pass unproven"
+  exit 1
+fi
 if ! git show "$BASE:docs/keys/founder.pub" >/dev/null 2>&1; then
   echo "bootstrap  guarded-paths  base $BASE has no docs/keys/founder.pub; this PR introduces the contract"
   echo "           enforcement begins on every commit after this one lands"
@@ -31,7 +37,14 @@ fi
 rc=0
 
 # 1) Guarded-path signature check.
-changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+# The diff must be computed or the check must refuse. It used to read `"$BASE"...HEAD_REV` (no
+# `$`): git was handed the literal ref HEAD_REV, exited 128, `|| true` hid it, and `changed` was
+# always empty, so no guarded path was ever seen and step 1 below could never fail.
+changed="$(git diff --name-only "$BASE"..."$HEAD_REV" 2>/dev/null)" || {
+  echo "BLIND guarded-paths  cannot list the files changed between $BASE and $HEAD_REV:"
+  echo "                 refusing to pass unproven"
+  exit 1
+}
 guard_hit=""
 while IFS= read -r g; do
   [ -z "$g" ] && continue

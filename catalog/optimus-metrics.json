@@ -756,6 +756,18 @@
       "better": "lower",
       "owner": "estate",
       "description": "of two completions, the first sent while Telegram is unreachable and the second once it is back, how many the founder never receives, measured by running the real notifier against a local fake Telegram (idp#8619). The one-attempt notifier still installed in ~/.estate/bin lost 2 of 2 when measured 2026-11-28; the recovered bin/estate-notify-done loses 0."
+    },
+    {
+      "name": "guarded_paths.unseen_guarded_changes",
+      "measure": [
+        "python3",
+        "tests/test_guarded_paths_sees_the_changed_files.py",
+        "--optimus"
+      ],
+      "unit": "bool",
+      "better": "lower",
+      "owner": "governance",
+      "description": "1 when bin/idp-ci-guarded-paths accepts an unsigned change to .githooks/ (it cannot see the changed files), 0 when it refuses. Measured 2026-11-28: 1 on main fff1c909cf (the diff was taken against the literal ref HEAD_REV, so git exited 128 and || true hid it), 0 on the recovered checker (idp#8032)."
     }
   ]
 }
