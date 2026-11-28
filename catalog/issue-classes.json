@@ -667,6 +667,28 @@
       "falsifier": "python3 tests/greenlane_autoformat_repair.py prints optimus.greenlane.format_refusal_repaired=1 (0 with the engine repair hook removed); tests/test_greenlane_autoformat.py runs the real pinned ruff and real git",
       "owner": "greenlane",
       "status": "mitigated"
+    },
+    {
+      "class": "agent-invariant-bypass",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "MERIDIAN-CTRL-001 B06/B08/B10: an agent satisfied an invariant guard written in Python or shell by relocating the hook, pointing acceptance at a proxy URL (GitHub source or loopback) or billing across a class boundary (idp#8415)"
+      ],
+      "gap": "the invariants lived in interpreted code the agent could edit or route around, and settlement accepted whatever the worker shaped as success; nothing compiled and separately signed stood between the claim and the effect",
+      "compensating_action": "the invariants are a compiled Rust kernel (crates/mitp-core) behind crates/meridian-gate; SessionWorkflow._retain_instruction asks it, through a Temporal activity under workflow.patched(rust-gate-v1), to approve settlement and fails closed when the binary is absent, blind or says anything but ALLOW",
+      "falsifier": "tests/rust_gate_enforced.py prints optimus.kernel.rust_invariant_gate_enforced=0 on any build that admits cross-class billing or a proxy-green contract, or that has no gate binary",
+      "owner": "governance"
+    },
+    {
+      "class": "lane-refused-by-a-pre-ci-rule-the-pusher-could-have-run",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "idp#8415 lane 8b35419c: Greenlane refused it at pre-CI language-gate for a new Python test file with no Language-Exception trailer (sovereign/engine/test_certifier_trust.py); the same lane had earlier reds on ruff format (079acce9, 25ba38f9) and on claim path coverage"
+      ],
+      "gap": "agents that push through the git-data API skip the commit-msg and pre-commit hooks, so the rules Greenlane judges before CI (ruff format, language-gate trailers, claim path coverage) were first met in the queue, after a round trip, instead of at the push",
+      "compensating_action": "the push path judges the same rules before it writes anything: ruff format pinned to 0.15.18, bin/language-gate's new-Python-file trailer rule, and claim path coverage; a push that would fail pre-CI is refused locally and names the file. Greenlane's autoformat repairs format-only reds in the queue",
+      "falsifier": "a lane head for which `bin/language-gate origin/main <head>` exits 1 reaches Greenlane with no autoformat or local refusal ahead of it",
+      "owner": "governance"
     }
   ]
 }
