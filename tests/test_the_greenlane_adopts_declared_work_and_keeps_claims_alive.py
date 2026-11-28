@@ -7,7 +7,7 @@ founder hand work only when nothing declares an agent (no Claim/Agent line in th
 the head commit message); declared work is adopted and proven.
 
 Mechanism 2: heartbeat(). While the lane holds a branch its claim must not lapse; the
-backend stamps the same agent and paths with a fresh heartbeat, at most about hourly.
+backend stamps the same agent and paths with a fresh heartbeat, at most every STAMP_AFTER.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ def test_a_fresh_claim_is_not_re_stamped_and_no_trailer_means_no_stamp():
     b = Stub(
         responses={
             "issues/5755/comments?per_page=100": [
-                {"body": _claim(age=timedelta(minutes=10))}
+                {"body": _claim(age=timedelta(minutes=3))}
             ]
         },
         messages={"branch": "Claim: Mumchimp/idp#5755\nAgent: opencode\n"},

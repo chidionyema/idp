@@ -717,6 +717,22 @@
         "discovery"
       ],
       "status": "fixed-pending-landing"
+    },
+    {
+      "class": "claim-lapsed-while-lane-held",
+      "first_seen": "2026-11-28",
+      "instances": [
+        "greenlane/engine.py stamped a held claim every 45-50 minutes under a comment that still said the gate's limit was two hours, while bin/claim-gate lapsed it at 15 minutes (founder SEV-0 2026-11-25): measured on main dcb7b68df7, the shipped stamping path left a held claim stale for 117 of a 180 minute hold, so a lane waiting in the queue lost its paths to any rival that claimed them (idp#8742)."
+      ],
+      "gap": "the machine kept alive a claim the gate had already refused, and the cadence that decided it was a constant restated from a stale comment instead of read from the gate",
+      "compensating_action": "greenlane/engine.py derives CLAIM_LAPSE_MIN from the gate's MAX_AGE and stamps at twice the lapse rate; greenlane/github.py derives STAMP_AFTER from that cadence, and tests/test_a_claim_is_stamped_within_the_gates_lapse.py reads MAX_AGE from bin/claim-gate and fails if either drifts",
+      "falsifier": "python3 tests/greenlane_claim_lapsed_while_held.py --optimus reads 117 on main dcb7b68df7 and 0 on the lane that makes the cadence derive from the gate; exit 2 when bin/claim-gate no longer declares MAX_AGE, so a broken reading is BLIND rather than clean",
+      "owner": "opencode-deepseek-direct",
+      "surfaces": [
+        "greenlane",
+        "claims"
+      ],
+      "status": "fixed-pending-landing"
     }
   ]
 }

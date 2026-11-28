@@ -720,6 +720,18 @@
       "better": "lower",
       "owner": "estate",
       "description": "Resources in catalog/estate-resources.json whose probe answered the opposite of the declared status, read by driving the shipped bin/estate-discovery over the whole ledger (11 resources, 0 contradictions measured 2026-11-28). A probe that cannot run on the host is counted apart and printed on stderr, so a laptop and a runner give the same reading (idp#8746)."
+    },
+    {
+      "name": "greenlane.claim_lapsed_while_held",
+      "measure": [
+        "python3",
+        "tests/greenlane_claim_lapsed_while_held.py",
+        "--optimus"
+      ],
+      "unit": "minutes",
+      "better": "lower",
+      "owner": "greenlane",
+      "description": "Minutes of a three-hour lane hold in which the claim sat past bin/claim-gate's own MAX_AGE, read by driving the shipped Engine._heartbeat_lanes and GitHubBackend.heartbeat once per simulated minute (only the clock is faked). 117 measured on main dcb7b68df7 (45-50 min cadence under a comment claiming a 2h limit), 0 on the lane that mirrors the gate's lapse (idp#8742)."
     }
   ]
 }
