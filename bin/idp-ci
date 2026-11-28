@@ -241,6 +241,23 @@ touched() {
 # ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
 FAST="${IDP_CI_FAST:-0}"
+
+# Founder-directed prose freeze: check the committed candidate and staged changes.
+# The gate refuses missing evidence rather than treating a failed diff as empty.
+_prose_base="${IDP_CI_BASE:-}"
+if [ -z "$_prose_base" ]; then
+  _prose_base=$(git -C "$IDP" merge-base origin/main HEAD) || {
+    echo "FAIL operational-prose: missing comparison base"; exit 1;
+  }
+  if [ -n "${GITHUB_ACTIONS:-}" ] && [ "$_prose_base" = "$(git -C "$IDP" rev-parse HEAD)" ]; then
+    _prose_base=$(git -C "$IDP" rev-parse HEAD^) || exit 1
+  fi
+fi
+if ! (cd "$IDP" && bash lib/operational-prose-gate.sh --self-test &&
+    bash lib/operational-prose-gate.sh "$_prose_base" HEAD); then
+  echo "FAIL operational-prose: freeze enforced"
+  exit 1
+fi
 # --check: syntax gate. Parse-only checks on every tracked file -- no execution,
 # no side effects, no secrets. Mathematically impossible for bad syntax to reach CI
 # if this passes. Layers: pre-push | CI --check | CI full run. crew#1194.
