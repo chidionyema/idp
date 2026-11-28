@@ -194,6 +194,36 @@ def plan_enforce(path: Path, root: Path) -> list[tuple[str, Path, object]]:
     return changes
 
 
+def allow_rules(root: Path) -> list[str]:
+    """The permission rules for the doors the enforce hooks send an agent to, rendered for root."""
+    return [
+        rule.format(server=MANIFEST["server"], root=root)
+        for rule in MANIFEST["enforce"].get("allow", [])
+    ]
+
+
+def plan_allow(path: Path, root: Path) -> list[tuple[str, Path, object]]:
+    """The lock's key: write the rules the plan door needs into permissions.allow.
+
+    A runtime that installs a hook refusing every tool until a plan exists, and does not allow the
+    tools that declare one, waits on a permission prompt that nobody answers and hands its turn to
+    the founder (runtimes.json "allow"). Missing rules are appended; every other rule, and every
+    ask and deny, is left alone.
+    """
+    want = allow_rules(root)
+    have = load(path).get("permissions", {}).get("allow", [])
+    if all(rule in have for rule in want):
+        return []
+
+    def put(path=path, want=want):
+        data = load(path)
+        allow = data.setdefault("permissions", {}).setdefault("allow", [])
+        allow.extend(rule for rule in want if rule not in allow)
+        save(path, data)
+
+    return [("allow", path, put)]
+
+
 def unlocked(rt: dict) -> "str | None":
     """The installed command of a runtime that nothing holds to a plan, else None."""
     if rt["plan_lock"]:
@@ -283,6 +313,7 @@ def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
 
             changes.append(("hook", path, put_hook))
         changes += plan_enforce(path, root)
+        changes += plan_allow(path, root)
     elif hook and hook["kind"] == "link":
         changes += plan_link(root / hook["source"], expand(hook["dest"], rt), "hook")
     for entry in rt.get("tools", []):
