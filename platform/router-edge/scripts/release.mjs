@@ -78,16 +78,26 @@ function run(cmd, args, env = {}, timeout = 120000, stripWorkerAuthority = false
   }
   return p.stdout;
 }
+// `--strict` aborts an upload when the Worker's remote configuration was last changed from
+// the Cloudflare dashboard (adding a secret there is enough) and so differs from the repo's
+// wrangler.toml; it will ALWAYS differ on COMMIT_SHA, which the release injects per version.
+// Measured 2026-11-28, run 46106336731. That refusal protects a drift nobody has seen, so
+// it is the one failure the release answers with a single reconciling upload: the drift is
+// kept in the receipt (`strict_override`) and the next upload is strict again, because the
+// version this one writes is wrangler's own.
+export function isStrictConflict(text) {
+  return /because of conflicts/i.test(String(text ?? ""));
+}
 // `--keep-vars` retains the vars of the PREVIOUS deployment. On a worker with no
 // deployment there is nothing to keep and Wrangler refuses the upload, so first boot
 // uploads without it (I-8455 Stage 1, founder waiver 2026-11-25).
-export function uploadArgs(sha, tag, hasPreviousVersion) {
+export function uploadArgs(sha, tag, hasPreviousVersion, strict = true) {
   const args = [
     "versions", "upload", "--tag", tag, "--message", "meridian:" + sha,
     "--var", "COMMIT_SHA:" + sha,
   ];
   if (hasPreviousVersion) args.push("--keep-vars");
-  args.push("--strict");
+  if (strict) args.push("--strict");
   return args;
 }
 // First boot creates the Worker and applies the Durable Object migration, which only
@@ -299,7 +309,7 @@ export async function release() {
     schema: "meridian/zone-b-release-v1", sha: process.env.RELEASE_SHA ?? null,
     status: "BLIND", previous_version_id: null, upload_ok: false, deploy_attempted: false,
     probes: [], rollback_attempted: false, rollback_verified: false, error: null,
-    role_seed: null, live_commit_sha: null, secrets_applied: false, error_detail: null,
+    role_seed: null, live_commit_sha: null, secrets_applied: false, error_detail: null, strict_override: null,
     rollback_skipped: null,
     started_at: new Date().toISOString(),
   };
@@ -364,7 +374,13 @@ export async function release() {
     if (r.previous_version_id === null) {
       run(wrangler, firstBootDeployArgs(sha, tag));
     } else {
-      run(wrangler, uploadArgs(sha, tag, true));
+      try {
+        run(wrangler, uploadArgs(sha, tag, true));
+      } catch (e) {
+        if (!isStrictConflict(e.detail ?? e.message)) throw e;
+        r.strict_override = String(e.detail ?? e.message).slice(0, 1500);
+        run(wrangler, uploadArgs(sha, tag, true, false));
+      }
       r.upload_ok = true;
       run(wrangler, ["versions", "deploy", "--version-tag", tag + "@100%", "--yes", "--message", "meridian:" + sha]);
     }

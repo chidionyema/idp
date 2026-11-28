@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, isAllBackendsFailed, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, shouldRollback, uploadArgs, workerSecrets } from "../scripts/release.mjs";
+import { SERVE_ATTEMPTS, SERVE_PAUSE_MS, activeRollbackId, failureCause, firstBootDeployArgs, isAllBackendsFailed, liveCommitSha, receiptError, requireMainSha, immutableTag, pinnedWranglerVersion, secretBulkArgs, shouldRollback, uploadArgs, isStrictConflict, workerSecrets } from "../scripts/release.mjs";
 import { MIN_OUTPUT_FLOOR, liveRoles, rolePool, seedRolePool, vendorSecrets } from "../scripts/role-pool.mjs";
 const SHA = "a".repeat(40);
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -325,4 +325,12 @@ test("retired CNAME migration is exact, read-back verified and idempotent", asyn
   rows.set(cutoverFixture.hosts[0].hostname,{id:"1".repeat(32),type:"CNAME",name:cutoverFixture.hosts[0].hostname,content:"not-retired.example.com"});
   await assert.rejects(reconcileRetiredDomains(cutoverFixture,auth),/RETIRED_CNAME_NOT_EXACT/);
   assert.equal(writes.length,4);
+});
+
+test("a strict-upload conflict is reconciled once, and only that failure is", () => {
+  const relaxed = uploadArgs(SHA, immutableTag(SHA), true, false);
+  assert.ok(!relaxed.includes("--strict") && relaxed.includes("--keep-vars"));
+  assert.ok(isStrictConflict("✘ [ERROR] Aborting the upload operation because of conflicts."));
+  assert.ok(!isStrictConflict("authentication error 10000"));
+  assert.ok(!isStrictConflict(null));
 });
