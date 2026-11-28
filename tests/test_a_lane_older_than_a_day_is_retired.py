@@ -53,6 +53,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from greenlane import engine as E  # noqa: E402
 
 BASE = "m" * 40
+# Since idp#5618 only a FINAL lane is retired (age alone is not a verdict), so the held lanes
+# below are final reds: RED with no `judged_on`. tests/test_age_alone_never_retires_a_lane.py
+# holds the other half: a pending lane of any age stays in the queue.
+WHY = "red: fast-gate / fast-gate failure"
 
 
 class Clock:
@@ -113,13 +117,17 @@ class Clock:
         pass
 
 
+def _final_red(name: str, head: str) -> E.Lane:
+    return E.Lane(name, head, seq=1, status=E.RED, reason=WHY, arrived=1_000.0)
+
+
 def _engine(be: Clock, st: E.State | None = None) -> E.Engine:
     return E.Engine(be, st if st is not None else E.State(), batch_size=2)
 
 
 def test_a_lane_held_longer_than_retire_after_min_is_dropped_from_state():
     """The defect: a 13-day-old PENDING lane held the queue a fresh push waited in."""
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
@@ -130,7 +138,7 @@ def test_a_lane_held_longer_than_retire_after_min_is_dropped_from_state():
 
 def test_a_lane_held_longer_than_retire_after_min_is_reported_once():
     """The reason, once: the agent learns its lane was retired, not a tick-by-tick nag."""
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     # 13 days, matching the 13-14-day-old lanes in refs/greenlane/state on 2026-10-12.
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + 13 * 24 * 60)
     eng = _engine(be, st)
@@ -242,7 +250,7 @@ def test_a_retired_lane_is_not_resurrected_by_the_tick_after_it():
     fresh push waits in never shortened. refs/greenlane/state that day: both lanes >=24h old
     were present, each `arrived` stamped about five minutes earlier.
     """
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
@@ -262,7 +270,7 @@ def test_the_retired_verdict_is_not_overwritten_by_a_later_tick():
     queued, and the resurrecting tick overwrote it about 80 seconds later. The status on the
     head has to keep saying it.
     """
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
@@ -279,7 +287,13 @@ def test_the_retired_verdict_is_not_overwritten_by_a_later_tick():
 
 def test_a_new_head_on_a_parked_lane_is_a_new_claim():
     """A new head is the one thing that revives a parked lane -- and it gets a full timer."""
-    st = E.State(lanes={"lane/x": E.Lane("lane/x", "h1", seq=1, arrived=1_000.0)})
+    st = E.State(
+        lanes={
+            "lane/x": E.Lane(
+                "lane/x", "h1", seq=1, status=E.RED, reason=WHY, arrived=1_000.0
+            )
+        }
+    )
     be = Clock({"lane/x": "h1"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
@@ -306,7 +320,7 @@ def test_the_retirement_outlives_the_state_file():
     A retirement held only in memory would come straight back on the next tick, which reads the
     state file -- the same defect, one layer down.
     """
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
@@ -332,7 +346,9 @@ def test_a_retired_lane_does_not_block_a_fresh_push_from_running():
     """
     st = E.State(
         lanes={
-            "lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0),
+            "lane/old": E.Lane(
+                "lane/old", "ho", seq=1, status=E.RED, reason=WHY, arrived=1_000.0
+            ),
             "lane/new": E.Lane(
                 "lane/new", "hn", seq=2, arrived=1_000.0 + E.RETIRE_AFTER_MIN + 100
             ),
@@ -370,7 +386,7 @@ def test_a_lane_that_loses_its_record_and_returns_keeps_its_clock():
     which is why `retired` was still empty with a 15-day-old lane in the queue. The state file
     cannot be the clock, or the queue the fresh push waits in is never shortened.
     """
-    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    st = E.State(lanes={"lane/old": _final_red("lane/old", "ho")})
     be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN - 30)
     eng = _engine(be, st)
     eng.tick()
@@ -395,8 +411,13 @@ def test_a_lane_that_loses_its_record_and_returns_keeps_its_clock():
     )
     be.minute += E.RETIRE_AFTER_MIN  # the head has now been held well past 24 hours
     eng.tick()
-    assert "lane/old" not in eng.s.lanes, (
-        f"a head held past RETIRE_AFTER_MIN was never retired: {eng.s.lanes}"
+    # idp#5618: the returned head is pending, not final, so its age is not a verdict. It was
+    # judged on its checks (this backend answers green) instead of being parked unjudged.
+    assert "lane/old" not in eng.s.retired, (
+        f"a pending head was retired for its age alone: {eng.s.retired}"
+    )
+    assert eng.s.lanes["lane/old"].status == E.LANDED, (
+        f"a head held past RETIRE_AFTER_MIN was not judged: {eng.s.lanes}"
     )
 
 
