@@ -2310,9 +2310,14 @@ class GitHubBackend:
         self, lane: str, rec: dict, verdict: str, evidence: str
     ) -> bool:
         """Post an independent operational receipt; false keeps the obligation open."""
-        claim = rec.get("claim") or "/".join(
-            self._claim_of(rec.get("head", ""))
-        ).replace("/", "#", 1)
+        claim = rec.get("claim")
+        if not claim:
+            # `_claim_of` answers (owner/repo, number). Joining on "/" and turning the first
+            # "/" into "#" split the owner from the repo: measured 2026-11-28, run 46137784537,
+            # ten receipts a tick went to `repos/chidionyema/issues/idp/<n>/comments` or
+            # `repos//issues//comments`, all 404, and their lanes never left verifying.
+            found_repo, found_number = self._claim_of(rec.get("head", ""))
+            claim = f"{found_repo}#{found_number}" if found_repo and found_number else ""
         if "#" not in str(claim):
             print(
                 f"WARN    greenlane  {lane} {verdict}: no claim to tell",
