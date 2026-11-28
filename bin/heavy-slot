@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""bin/heavy-slot [options] -- COMMAND [ARGS...]: the one admission point for heavy local work.
+
+Why (2026-11-28, measured on the founder's Mac): several agents (pytest, cargo, du scans, claude -p
+incident runs) started heavy work at once; swap was 5.7 of 5.9 GB and free disk 108 MB. The estate
+had a refusal (platform/estate/governance/thin_client.py) that refused or shunted and so left every
+agent to retry on its own, and nothing that made them take turns or share a result. This is that
+queue, for ANY agent, model or shell: wrap the heavy command and it waits its turn.
+
+    bin/heavy-slot -- python3 -m pytest tests/test_x.py
+    bin/heavy-slot --slots 2 --min-free-mb 1500 -- cargo test
+    bin/heavy-slot --status
+
+How it works (no polling, no daemon, no ticket files that can go stale):
+  * Admission is the kernel's flock(2). A waiter BLOCKS on a lock and the kernel wakes it the moment
+    a slot frees: zero timed wake-ups, nothing added to the latency beyond the wake. The lock dies
+    with its holder, so a crashed agent can never wedge the queue.
+  * One turnstile makes the line: only the head of the line waits on the slots, everyone else waits
+    on the turnstile. The slot is also handed to the command itself, so it stays held for as long as
+    the command lives, even if this wrapper is killed.
+  * Results are SHARED: a command that passed (exit 0) for the exact same code (git HEAD + every
+    uncommitted and untracked byte) and the same command line is recorded under HEAVY_DIR/results.
+    The next agent asking for it, including one that was waiting in the line behind it, is handed
+    that result and runs nothing. --no-share forces a run. A failure is never shared, so it retries.
+  * It refuses to START (exit 75, says why) when free disk is under --min-free-mb (default 1500):
+    a build that fills the disk takes every other agent down with it.
+  * It never kills anything. It runs the command at lower priority (nice 10), returns its exit code
+    and forwards SIGINT/SIGTERM to it. --wait SEC bounds the wait (exit 75, named, not silent).
+State is plain files under HEAVY_DIR (default ~/.estate/heavy).
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+EX_TEMPFAIL = 75
+
+
+class Timeout(Exception):
+    """The wait bound passed with the turn still not given."""
+
+
+def _dirs() -> tuple[str, str]:
+    root = os.environ.get("HEAVY_DIR") or os.path.expanduser("~/.estate/heavy")
+    os.makedirs(os.path.join(root, "results"), exist_ok=True)
+    return root, os.path.join(root, "results")
+
+
+def _open(path: str) -> int:
+    return os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+
+
+def _try(fd: int) -> bool:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _git(*args: str) -> bytes | None:
+    try:
+        done = subprocess.run(
+            ["git", *args], capture_output=True, timeout=60, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _code_key(command: list[str], explicit: str) -> str:
+    """Same code + same command = same key. No git and no --key: no sharing (empty)."""
+    digest = hashlib.sha256("\0".join(command).encode())
+    if explicit:
+        digest.update(explicit.encode())
+        return digest.hexdigest()
+    head = _git("rev-parse", "HEAD")
+    changes = _git("diff", "HEAD", "--binary")
+    untracked = _git("ls-files", "-o", "--exclude-standard", "-z")
+    if head is None or changes is None or untracked is None:
+        return ""
+    digest.update(head + changes + untracked)
+    for rel in filter(None, untracked.split(b"\0")):
+        try:
+            with open(rel, "rb") as handle:
+                digest.update(hashlib.sha256(handle.read()).digest())
+        except OSError:
+            return ""
+    return digest.hexdigest()
+
+
+def _shared_result(results: str, key: str, ttl: int) -> dict | None:
+    if not key:
+        return None
+    try:
+        with open(os.path.join(results, key + ".json")) as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if time.time() - float(record.get("at", 0)) > ttl:
+        return None
+    return record
+
+
+def _hand_over(record: dict) -> int:
+    for line in record.get("tail", []):
+        print(line)
+    print(
+        f"heavy-slot: SHARED RESULT: this exact code and command already passed "
+        f"{int(time.time() - float(record['at']))}s ago (pid {record.get('pid')}, "
+        f"took {record.get('seconds')}s); nothing was run here",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _record(
+    results: str, key: str, command: list[str], tail: list[str], seconds: int
+) -> None:
+    if not key:
+        return
+    path = os.path.join(results, key + ".json")
+    with open(path + ".tmp", "w") as handle:
+        json.dump(
+            {
+                "at": time.time(),
+                "pid": os.getpid(),
+                "seconds": seconds,
+                "cmd": " ".join(command),
+                "tail": tail,
+            },
+            handle,
+        )
+    os.rename(path + ".tmp", path)
+
+
+def _lower_priority() -> None:
+    os.nice(10)
+
+
+def _run(command: list[str], slot_fd: int, results: str, key: str) -> int:
+    started = time.monotonic()
+    tail: list[str] = []
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        pass_fds=(slot_fd,),
+        env={**os.environ, "HEAVY_SLOT_ACTIVE": "1"},
+        preexec_fn=_lower_priority,
+    )
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda s, _f: proc.send_signal(s))
+    for line in proc.stdout or []:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        tail.append(line.rstrip("\n"))
+        del tail[:-60]
+    code = proc.wait()
+    if code == 0:
+        _record(results, key, command, tail, int(time.monotonic() - started))
+    return code
+
+
+def _status(root: str, slots: int) -> int:
+    free = shutil.disk_usage(root).free // (1024 * 1024)
+    print(f"heavy-slot: {slots} slot(s), {free} MB free")
+    for index in range(slots):
+        path = os.path.join(root, f"slot.{index}")
+        fd = _open(path)
+        try:
+            if _try(fd):
+                print(f"  slot.{index}  free")
+            else:
+                with open(path) as handle:
+                    print(f"  slot.{index}  RUNNING  {handle.read().strip()[:100]}")
+        finally:
+            os.close(fd)
+    fd = _open(os.path.join(root, "turnstile"))
+    print(
+        "  line     "
+        + ("empty" if _try(fd) else "someone is at the head, waiting for a slot")
+    )
+    os.close(fd)
+    return 0
+
+
+def _take_slot(root: str, slots: int, bound: int, label: str) -> int:
+    """Wait (blocked in the kernel, never polling) for a slot; return its held fd."""
+    fds = [_open(os.path.join(root, f"slot.{i}")) for i in range(slots)]
+    gate = _open(os.path.join(root, "turnstile"))
+
+    def expired(_signum: int, _frame: object) -> None:
+        raise Timeout
+
+    taken = -1
+    signal.signal(signal.SIGALRM, expired)
+    signal.alarm(bound)
+    try:
+        fcntl.flock(gate, fcntl.LOCK_EX)  # the line: only its head waits on the slots
+        taken = next((fd for fd in fds if _try(fd)), -1)
+        while taken < 0:
+            # Every slot is held. Sleep on the one held longest; the kernel wakes us when it
+            # frees, and a slot another holder freed first is picked up on the next pass.
+            oldest = min(fds, key=lambda fd: os.fstat(fd).st_mtime)
+            fcntl.flock(oldest, fcntl.LOCK_EX)
+            taken = oldest
+    finally:
+        signal.alarm(0)
+        os.close(gate)  # releases the turnstile: the next waiter becomes the head
+        for fd in fds:
+            if fd != taken:
+                os.close(fd)
+    os.ftruncate(taken, 0)
+    os.write(taken, f"pid {os.getpid()} {label}\n".encode())
+    return taken
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="heavy-slot")
+    parser.add_argument(
+        "--slots", type=int, default=int(os.environ.get("HEAVY_SLOTS", "1"))
+    )
+    parser.add_argument(
+        "--min-free-mb",
+        type=int,
+        default=int(os.environ.get("HEAVY_MIN_FREE_MB", "1500")),
+    )
+    parser.add_argument(
+        "--wait", type=int, default=int(os.environ.get("HEAVY_WAIT", "3600"))
+    )
+    parser.add_argument("--status", action="store_true")
+    parser.add_argument(
+        "--no-share", action="store_true", help="run even if a shared result exists"
+    )
+    parser.add_argument("--key", default="", help="extra text mixed into the share key")
+    parser.add_argument(
+        "--share-ttl", type=int, default=int(os.environ.get("HEAVY_SHARE_TTL", "86400"))
+    )
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv)
+    root, results = _dirs()
+    slots = max(1, args.slots)
+    if args.status:
+        return _status(root, slots)
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not command:
+        print(
+            "heavy-slot: no command. usage: bin/heavy-slot [options] -- COMMAND",
+            file=sys.stderr,
+        )
+        return 2
+    key = "" if args.no_share else _code_key(command, args.key)
+    shared = _shared_result(results, key, args.share_ttl)
+    if shared:
+        return _hand_over(shared)
+    free = shutil.disk_usage(root).free // (1024 * 1024)
+    if free < args.min_free_mb:
+        print(
+            f"heavy-slot: REFUSED: {free} MB free is under the {args.min_free_mb} MB floor. "
+            "Free disk first, or run this on the cloud runner (a lane push); starting it here "
+            "would take the other agents down with it.",
+            file=sys.stderr,
+        )
+        return EX_TEMPFAIL
+    try:
+        slot_fd = _take_slot(root, slots, args.wait, " ".join(command)[:90])
+    except Timeout:
+        print(
+            f"heavy-slot: TIMED OUT after {args.wait}s waiting for a turn; nothing was run",
+            file=sys.stderr,
+        )
+        return EX_TEMPFAIL
+    try:
+        shared = _shared_result(results, key, args.share_ttl)
+        if (
+            shared
+        ):  # the one ahead in the line just ran this exact thing: share, do not repeat
+            return _hand_over(shared)
+        return _run(command, slot_fd, results, key)
+    except FileNotFoundError:
+        print(f"heavy-slot: command not found: {command[0]}", file=sys.stderr)
+        return 127
+    finally:
+        os.close(slot_fd)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

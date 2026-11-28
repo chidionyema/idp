@@ -27,7 +27,9 @@ from __future__ import annotations
 import os
 import platform
 import re
+import shlex
 import shutil
+import sys
 
 # The thresholds are named here, once, so a test can name the same numbers.
 MIN_FREE_GB = 10.0
@@ -75,6 +77,68 @@ _QUOTED = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
 def _unquoted(command: str) -> str:
     """The command with quoted argument spans blanked, so a flag word in prose is not a command."""
     return _QUOTED.sub(" " * 8, command)
+
+
+# --- the single point for heavy work: take a turn, share the result -----------------------------
+#
+# MEASURED 2026-11-28 on the founder's Mac: swap 5.7 of 5.9 GB, load average ~1000, ~23 agent
+# processes each running its own pytest/cargo/du at once, 108 MB free disk. The verdict() above
+# refuses or shunts and leaves every agent to retry on its own, which is what kept the machine
+# down. The fix is not a louder refusal: it is ONE admission point (bin/heavy-slot) that makes
+# compute-bound commands take turns (a kernel flock, so a waiter is woken, never polling) and hands
+# the same result to the next agent that asks for the same code. Every door that runs a command
+# calls heavy_wrap(); a command it returns is run INSTEAD of the original, so an agent keeps no
+# private way to start heavy work.
+#
+# Compute-bound only. `git push`, `gh run watch`, `wrangler deploy`, `terraform apply` are in
+# _HEAVY (the overload refusal) but are NOT queued: they are not CPU/disk work, and a SHARED RESULT
+# for a push or an apply would silently skip it.
+_QUEUEABLE = re.compile(
+    r"(?:^|[;&|(]\s*)(?:(?:[A-Za-z_]\w*=\S*|time|nice|env|exec|\S*python[0-9.]*\s+-m)\s+)*"
+    r"(?:\S*/)?(?:pytest|py\.test|tox|nox|jest|vitest|mocha|"
+    r"cargo\s+(?:build|test|check|clippy)|npm\s+(?:ci|install|test|run)|"
+    r"yarn\s+(?:install|build|test)|pnpm\s+(?:install|test|run)|pip3?\s+install|"
+    r"docker\s+build|docker\s+buildx|(?:tofu|terraform)\s+plan|make)\b"
+)
+# A result may be handed to another caller only for a pure check of the code: a test run. A build,
+# an install or a plan changes the machine, so it queues but always runs.
+_SHAREABLE = re.compile(
+    r"^\s*(?:\S*python[0-9.]*\s+-m\s+)?(?:pytest|py\.test|tox|nox|jest|vitest|mocha|"
+    r"cargo\s+(?:test|check|clippy))\b"
+)
+_SHELL_CHAIN = re.compile(r"[;&|<>()`\n]|\$\(")
+SLOT_ENV = "HEAVY_SLOT_ACTIVE"
+
+
+def _repo_root() -> str:
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+
+
+def heavy_wrap(
+    command: str, wait_sec: int = 1800, root: str | None = None
+) -> str | None:
+    """The command to run INSTEAD of `command` so it takes a turn, or None to run it as it is.
+
+    None when: this host is not a founder laptop, the command is not compute-bound, it is already
+    inside a slot (HEAVY_SLOT_ACTIVE) or names heavy-slot itself, or bin/heavy-slot is not there
+    (an unloadable queue must not stop the estate: R38). The wait is bounded by `wait_sec`, so a
+    caller's ceiling is never spent entirely in the line.
+    """
+    if not command or not applies() or os.environ.get(SLOT_ENV):
+        return None
+    text = _unquoted(command)
+    if "heavy-slot" in text or not _QUEUEABLE.search(text):
+        return None
+    slot = os.path.join(root or _repo_root(), "bin", "heavy-slot")
+    if not os.path.isfile(slot):
+        return None
+    share = bool(_SHAREABLE.match(text)) and not _SHELL_CHAIN.search(text)
+    argv = [sys.executable, slot, "--wait", str(max(5, int(wait_sec)))]
+    if not share:
+        argv.append("--no-share")
+    return shlex.join([*argv, "--", "sh", "-c", command])
 
 
 # --- the cap, and the instant off-switch ----------------------------------------------------

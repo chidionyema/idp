@@ -1,0 +1,19 @@
+#!/bin/sh
+# bin/heavy-install [DIR]: put the heavy-work shims first on PATH, for every agent on this machine.
+# Links DIR/<tool> -> bin/heavy-shim for each tool the shim governs (default DIR: ~/.estate/shims).
+# Then PATH must start with DIR (this prints the line to add to ~/.zshenv, which every shell and every
+# agent's subprocess reads; it never edits your dotfiles). It refuses to overwrite a real file.
+set -eu
+here="$(cd "$(dirname "$0")" && pwd -P)"
+dir="${1:-$HOME/.estate/shims}"
+mkdir -p "$dir"
+for tool in pytest py.test tox nox jest vitest cargo npm yarn pnpm docker terraform tofu; do
+  target="$dir/$tool"
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "refused: $target is a real file, not a shim; move it first" >&2
+    exit 1
+  fi
+  ln -sfn "$here/heavy-shim" "$target"
+done
+echo "ok    shims in $dir -> $here/heavy-shim"
+echo "add to ~/.zshenv:   export PATH=\"$dir:\$PATH\""
