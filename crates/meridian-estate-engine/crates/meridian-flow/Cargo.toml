@@ -1,0 +1,11 @@
+[package]
+name = "meridian-flow"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+meridian-dof = { path = "../meridian-dof" }
+meridian-karma = { path = "../meridian-karma" }
+meridian-muster = { path = "../meridian-muster" }
+serde.workspace = true
