@@ -1,5 +1,6 @@
 import { SCHEMA } from "./fold.mjs";
 import { EstateLiveStateDO } from "./live-state-do.mjs";
+import { PAGE } from "./fleet-page.mjs";
 
 export { EstateLiveStateDO };
 
@@ -35,6 +36,18 @@ export default {
 
     if (pathname === "/health" && request.method === "GET") {
       return json({ ok: true, schema: SCHEMA, zone: env.DEPLOYMENT_ZONE ?? null, commit_sha: env.COMMIT_SHA ?? null });
+    }
+
+    // The web reader holds no state and no secret: the viewer types the read token, which stays in
+    // that tab's sessionStorage, and the page asks /snapshot for everything it shows.
+    if (pathname === "/fleet" && request.method === "GET") {
+      return new Response(PAGE, {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'",
+        },
+      });
     }
 
     const stub = env.LIVE_STATE.get(env.LIVE_STATE.idFromName("estate"));
