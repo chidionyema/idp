@@ -1,0 +1,20 @@
+name: flow-decide
+description: >-
+  Before building anything, ask the compiled FLOW engine whether the estate already has it.
+  Outcome: one JSON line, event meridian.flow.decision, with decision REUSE_OPERATING (the registry
+  proves the capability operating), DECLARED_NOT_VERIFIED (the registry only claims it: use the
+  printed path as a lead, not as a service) or IMPLEMENT_NEW (nothing matches). First safe step:
+  pass the task in plain words. Owner: crates/meridian-estate-engine (claim idp#8686). Runtime:
+  cargo-built binary on the machine that runs the door, reading catalog/estate-capability-registry.json
+  at the checkout. Proof of success: the decision line, appended to ~/.estate/results/flow-decide.jsonl.
+  Refusal: exit 2 with event meridian.flow.refused (empty task, unreadable or empty registry).
+  Fallback: `growmos query "<task>"` or estate_list(query=...). Read-only: it never runs a capability.
+class: read
+door_s: 100
+args:
+  task: {type: string, default: "", description: "the task in plain words, e.g. 'agent invoke'"}
+steps:
+  - name: decide
+    cmd: >
+      IDP=${ESTATE_IDP:-$HOME/Documents/code/idp};
+      python3 "$IDP/platform/estate/libexec/meridian-flow.py" {{task}}
