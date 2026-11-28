@@ -35,8 +35,15 @@ bar from AGENTS.md section 6 is met only if the spine adds what FleetView cannot
 
 ## Design
 
-One Durable Object, `EstateLiveStateDO`, in `platform/router-edge` (the Zone B edge that already
-hosts the ledger and routing objects, so no new deployment target).
+One Durable Object, `EstateLiveStateDO`, in its own worker `platform/estate-live-state` (decided
+2026-11-28, replacing the earlier plan to put it in `platform/router-edge`). The model router serves
+every agent's calls, so a fault or a deploy of the live-state endpoint must not be able to take it
+down. The worker is registered in `platform/deploy/targets.json`, but that file is a registry
+only (measured 2026-11-28: it is read by `bin/estate-gate`, `bin/estate-topology`,
+`bin/estate-debug-pack` and a test, and deploys nothing). Each existing worker has its own release
+workflow (`router-edge-release.yml`, `otto-lifeboat.yml`). This worker has none yet, and a
+workflow under `.github/workflows/` is a guarded path that needs a founder-signed seal
+(chidionyema/idp#8705, #8032), so until that lands the worker is built, not operating.
 
 - Input: append-only events `{seq, ts, source, kind, subject, value | BLIND, evidence}`. A
   producer that cannot measure sends `BLIND` with a reason; the object never defaults a missing
