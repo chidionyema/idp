@@ -120,6 +120,10 @@ REPO = resolve_repo()
 GATE = os.path.join(REPO, "bin", "claim-gate")
 # The same list bin/verify_three_proofs.py refuses on. Copied deliberately: a claim that
 # resolves authority late costs a whole build, so it is named here, before the claim.
+# origin's lane branches, fetched here so sibling lanes are measured, not remembered
+LANE_REFS = "refs/remotes/origin/lane"
+FETCH_SECONDS = 15
+
 GUARDED = (
     ".github/workflows/",
     "catalog/dof-registry.json",
@@ -211,6 +215,75 @@ def globs_for(files: list[str], declared: list[str] = ()) -> list[str]:
             "                    a claim covers a change, so there is nothing to declare"
         )
     return globs
+
+
+def trailer_re(num: int, agent: str) -> tuple[re.Pattern[str], re.Pattern[str]]:
+    """The two trailers that make a commit part of this agent's work on issue `num`."""
+    return (
+        re.compile(rf"^Claim:\s*(?:[\w.-]+/[\w.-]+)?#{num}\s*$", re.M),
+        re.compile(rf"^Agent:\s*{re.escape(agent)}\s*$", re.M),
+    )
+
+
+def refresh_lane_refs() -> bool:
+    """Bring origin's lane branches local, so the siblings are measured, not remembered."""
+    try:
+        p = run(
+            ["git", "fetch", "-q", "--no-tags", "origin", f"+refs/heads/lane/*:{LANE_REFS}/*"],
+            timeout=FETCH_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return p.returncode == 0
+
+
+def sibling_lane_files(num: int, agent: str, base: str) -> list[str]:
+    """Every file an OPEN lane of this agent, on this issue, still changes against base.
+
+    claim-gate judges the NEWEST `CLAIM` comment on the issue alone (`claims[-1]`). A claim
+    written from this branch's files therefore REPLACES the coverage of every other lane the same
+    agent has in the Greenlane queue, and each of those lanes is then refused `no live claim: N
+    file(s) outside every claim's paths` when it is finally judged. Measured 2026-11-28 on #8705:
+    claims at 05:01, 05:13 and 05:53 each named one lane's files; the spec lane and the watch lane
+    failed in the queue, 40 minutes after they had passed claim-gate locally. The lane that
+    lands, or is deleted, drops out of this set by itself: its diff against main is empty.
+    """
+    claim_re, agent_re = trailer_re(num, agent)
+    own = git("rev-parse", "HEAD").strip()
+    files: set[str] = set()
+    for ref in git("for-each-ref", "--format=%(refname)", LANE_REFS).split():
+        if git("rev-parse", ref).strip() == own:
+            continue
+        mb = run(["git", "merge-base", base, ref])
+        if mb.returncode != 0:
+            continue
+        body = git("log", "--format=%B", f"{mb.stdout.strip()}..{ref}")
+        if claim_re.search(body) and agent_re.search(body):
+            files |= set(git("diff", "--name-only", f"{mb.stdout.strip()}..{ref}").split("\n")) - {""}
+    return sorted(files)
+
+
+def prior_claim_paths(num: int, agent: str) -> list[str]:
+    """The paths of this agent's newest CLAIM on the issue: the fallback when lanes cannot be read."""
+    out = gh("issue", "view", str(num), "--json", "comments", "-q", ".comments[].body")
+    mine = [
+        m
+        for m in re.findall(r"^CLAIM agent=(\S+) paths=(\S*) heartbeat=\S+", out, re.M)
+        if m[0] == agent
+    ]
+    return [g for g in mine[-1][1].split(",") if g] if mine else []
+
+
+def lane_paths(num: int, agent: str, base: str) -> list[str]:
+    """Paths owed to the agent's other open lanes; never silently fewer than the last claim."""
+    if refresh_lane_refs():
+        return sibling_lane_files(num, agent, base)
+    kept = prior_claim_paths(num, agent)
+    print(
+        f"warn    claim-open  origin's lanes could not be read: keeping the {len(kept)} path(s) "
+        f"of {agent}'s last claim on #{num} so no queued lane loses its coverage"
+    )
+    return kept
 
 
 def find_issue(title: str | None, issue: int | None) -> int:
@@ -386,6 +459,7 @@ def main() -> int:
     if not a.check_only:
         num = find_issue(a.title, a.issue)
         ensure_open(num)
+        paths = sorted(set(paths) | set(lane_paths(num, a.agent, a.base)))
         post_claim(num, a.agent, paths)
         # With nothing committed yet, HEAD is main's commit: there is no commit of ours to stamp.
         if files:

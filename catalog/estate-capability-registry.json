@@ -31785,6 +31785,7 @@
           "--json",
           "--limit",
           "--name-only",
+          "--no-tags",
           "--paths",
           "--search",
           "--show-toplevel",
