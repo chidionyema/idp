@@ -593,10 +593,40 @@ def verify_agent_scope(paths: list[str]) -> None:
         )
 
 
+# One fixed token per launch refusal. The launcher's stdout is shared with an untrusted
+# worker, so only these tokens are printed, never an exception's own text.
+LAUNCH_REFUSALS = (
+    ("REFUSED: AGENT_EMPTY_PATCH", "AGENT_EMPTY_PATCH"),
+    ("REFUSED: AGENT_SCOPE_ESCAPE", "AGENT_SCOPE_ESCAPE"),
+    ("REFUSED: AGENT_SCOPE_EMPTY", "AGENT_SCOPE_EMPTY"),
+    ("COST_UNVERIFIED", "COST_UNVERIFIED"),
+    ("provider admission base mismatch", "ADMISSION_BASE_MISMATCH"),
+    ("provider admission mismatch", "ADMISSION_MISMATCH"),
+    ("provider not admitted", "PROVIDER_NOT_ADMITTED"),
+    ("record has no route", "RECORD_UNROUTED"),
+    ("provider registry identity mismatch", "REGISTRY_IDENTITY_MISMATCH"),
+)
+
+
+def launch_refusal_class(exc: BaseException) -> str:
+    """The class of a launch refusal: a fixed token, UNCLASSIFIED_<type> when unknown."""
+    if isinstance(exc, ValueError) and not isinstance(exc, json.JSONDecodeError):
+        text = str(exc)
+        for prefix, token in LAUNCH_REFUSALS:
+            if text.startswith(prefix):
+                return token
+    return "UNCLASSIFIED_" + type(exc).__name__.upper()
+
+
 def auto_launch(
     directory: Path, record: dict, task: str, session_dir: Path, env: dict
 ) -> int:
     selected = record.get("route")
+    # A record with no route is a named refusal, not a traceback from the reporter: measured
+    # 2026-11-28, admissible_cost(None) raised AttributeError outside the except tuple, so the
+    # executor saw a crash (harness exit 2, launcher_refusals=1) and no class at all.
+    if not isinstance(selected, dict):
+        raise ValueError("record has no route")
     # A prior admission is not spend authority. Recheck at actual egress.
     if not admissible_cost(selected):
         raise ValueError("COST_UNVERIFIED: paid or unknown model route")
@@ -722,8 +752,9 @@ def main() -> int:
                 args.session_dir,
                 dict(os.environ),
             )
-        except (ValueError, OSError, KeyError, TypeError):
-            print("REFUSED: provider admission invalid")
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
+            # AttributeError is named too: the reporter must never be the thing that crashes.
+            print(f"REFUSED: {launch_refusal_class(exc)}")
             return EXIT_SCOPE
     args.out.mkdir(parents=True, exist_ok=True)
     record: dict = {"harness": args.harness}

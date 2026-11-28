@@ -623,18 +623,6 @@
       "description": "Number of falsifier tests declared for the founder admission gate (tests/test_estate_founder_gate.py): a FAILED or ACTION message to the founder with no Exhausted receipt, an unresolved receipt, or a receipt replayed for another instruction is refused, and DONE is admitted without one. Counts declared tests, it does not run them; that they pass is proved by the Greenlane running tests/. 0 on main while the suite is absent."
     },
     {
-      "name": "admission.code_plus_test_refusals",
-      "unit": "rules",
-      "better": "lower",
-      "owner": "governance",
-      "description": "admission rules that refuse a code change together with the test that proves it: 1 before idp#8649 (bin/verify_three_proofs.py proof 2 refused a platform/ change whose test lives in tests/), 0 after (the companion rides with the code, and two code subsystems, a guarded path without the founder seal and more than five files are still refused)",
-      "measure": [
-        "python3",
-        "tests/test_admission_rules_known_good.py",
-        "--optimus"
-      ]
-    },
-    {
       "name": "plan_lock.installed_without_key",
       "measure": [
         "python3",
@@ -699,6 +687,17 @@
       "better": "lower",
       "owner": "governance",
       "description": "1 when any of git worktree add, git -C worktree add or git clone reaches git through the tracked shell door estate/gates/shell-guard.sh, 0 when the door refuses all of them. 1 on main (the door judged kills only), 0 with the zero-worktree judge wired in (#8725)."
+    },
+    {
+      "name": "legion.launch_refusals_named",
+      "measure": [
+        "python3",
+        "tests/legion_launch_refusal_named.py"
+      ],
+      "unit": "bool",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "1 when every launch refusal the executor can hand bin/legion-admit prints one fixed token naming its own class, 0 when a cause folds into one sentence or ends on a traceback instead of a refusal, and BLIND when the launcher cannot run here. Read on main with the shipped launcher: 0 at 8a003f777 (runs 46137092198 and 46137271107 both ended `REFUSED: provider admission invalid`), 1 with idp#8772."
     }
   ]
 }
