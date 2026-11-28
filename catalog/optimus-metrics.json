@@ -668,6 +668,25 @@
       "better": "higher",
       "owner": "greenlane",
       "description": "1 when bin/lane-preflight, run on real git in a tmp repo, refuses a new Python file with no Language-Exception trailer (naming it), refuses a lane that does not merge onto origin/main, passes a clean lane, and .githooks/pre-push calls it BEFORE its disk-floor exit, so a machine short of disk is judged like any other. 0 on code where the preflight is missing, wired after the floor, or cannot run. The ruff-format rule needs the pinned formatter the judge may not carry and is proved by tests/test_lane_preflight.py."
+    },
+    {
+      "name": "consult_plane.proofs_passing",
+      "measure": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts=",
+        "tests/test_consult_plane.py",
+        "tests/test_founder_firewall_and_poe.py"
+      ],
+      "unit": "count",
+      "better": "higher",
+      "owner": "greenlane",
+      "description": "The number of executable proofs in the consultation plane that pass: 16 in tests/test_consult_plane.py (budget conservation, the local-browser transport ban, the Tier-0 digest cache, Class C injection quarantine, tier gating, blind challenger isolation, noise rejection, the asymmetric veto, founder-seal escalation and operational_yield enforcement) and 16 in tests/test_founder_firewall_and_poe.py (the AST discovery fallback, the three compulsory stuck triggers, zero-spend PoE rejection, the raw-dump cap, 3-strike reaping, cooldown demotion, spam, the four-class whitelist, the five-field card contract and the outage path). 0 before idp#8745; 32 with it."
     }
   ]
 }
